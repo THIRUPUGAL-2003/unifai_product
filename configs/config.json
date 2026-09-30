@@ -1,0 +1,88 @@
+{
+  "$schema": "https://www.getunifai.ai/schema",
+  "config_store": {
+    "enabled": true,
+    "type": "postgres",
+    "config": {
+      "host": {
+        "value": "env.DB_HOST"
+      },
+      "port": {
+        "value": "env.DB_PORT"
+      },
+      "db_name": {
+        "value": "env.DB_NAME"
+      },
+      "user": {
+        "value": "env.DB_USER"
+      },
+      "password": {
+        "value": "env.DB_PASSWORD"
+      },
+      "ssl_mode": {
+        "value": "env.DB_SSL_MODE"
+      }
+    }
+  },
+  "logs_store": {
+    "enabled": true,
+    "type": "postgres",
+    "config": {
+      "host": {
+        "value": "env.DB_HOST"
+      },
+      "port": {
+        "value": "env.DB_PORT"
+      },
+      "db_name": {
+        "value": "env.DB_NAME"
+      },
+      "user": {
+        "value": "env.DB_USER"
+      },
+      "password": {
+        "value": "env.DB_PASSWORD"
+      },
+      "ssl_mode": {
+        "value": "env.DB_SSL_MODE"
+      }
+    }
+  },
+  "client": {
+    "drop_excess_requests": false,
+    "initial_pool_size": 5000,
+    "prometheus_labels": [],
+    "enable_logging": true,
+    "disable_content_logging": false,
+    "log_retention_days": 365,
+    "enforce_auth_on_inference": true,
+    "allowed_origins": [
+      "env.SERVER_DOMAIN"
+    ],
+    "max_request_body_size_mb": 100,
+    "mcp_external_client_url": "env.SERVER_DOMAIN",
+    "compat": {
+      "should_convert_params": false
+    }
+  },
+  "governance": {
+    "auth_config": {
+      "is_enabled": true,
+      "admin_username": {
+        "value": "env.ADMIN_EMAIL"
+      },
+      "admin_password": {
+        "value": "env.ADMIN_PASSWORD"
+      }
+    }
+  },
+  "framework": {
+    "pricing": {
+      "pricing_url": "file:///app/configs/pricing.json",
+      "pricing_sync_interval": 86400,
+      "model_parameters_url": "file:///app/configs/model-parameters.json",
+      "mcp_library_url": "file:///app/configs/mcp-library.json",
+      "mcp_library_sync_interval": 86400
+    }
+  }
+}

@@ -1,0 +1,34 @@
+Domain,Platform Name,Host Role,Monitored,Block Entire Website
+chatgpt.com,ChatGPT,ui,TRUE,FALSE
+ab.chatgpt.com,ChatGPT,chat,TRUE,FALSE
+files.oaiusercontent.com,ChatGPT,file,TRUE,FALSE
+chat.openai.com,ChatGPT,chat,TRUE,FALSE
+api.openai.com,ChatGPT,chat,TRUE,FALSE
+oaistatic.com,ChatGPT,ui,TRUE,FALSE
+oaiusercontent.com,ChatGPT,file,TRUE,FALSE
+claude.ai,Claude,ui,TRUE,FALSE
+files.claudeusercontent.com,Claude,file,TRUE,FALSE
+api.anthropic.com,Claude,chat,TRUE,FALSE
+cdn.claude.ai,Claude,ui,TRUE,FALSE
+anthropic.com,Claude,ui,TRUE,FALSE
+gemini.google.com,Gemini,ui,TRUE,FALSE
+generativelanguage.googleapis.com,Gemini,chat,TRUE,FALSE
+alkalimakersuite-pa.clients6.google.com,Gemini,chat,TRUE,FALSE
+bard.google.com,Gemini,ui,TRUE,FALSE
+aistudio.google.com,Gemini,ui,TRUE,FALSE
+deepseek.com,DeepSeek,ui,TRUE,FALSE
+chat.deepseek.com,DeepSeek,chat,TRUE,FALSE
+api.deepseek.com,DeepSeek,chat,TRUE,FALSE
+platform.deepseek.com,DeepSeek,ui,TRUE,FALSE
+copilot.microsoft.com,Microsoft Copilot,ui,TRUE,FALSE
+sydney.bing.com,Microsoft Copilot,chat,TRUE,FALSE
+edgesvc.bing.com,Microsoft Copilot,chat,TRUE,FALSE
+copilot.cloud.microsoft,Microsoft Copilot,ui,TRUE,FALSE
+bing.com,Microsoft Copilot,chat,TRUE,FALSE
+grok.com,xAI Grok,ui,TRUE,FALSE
+api.x.ai,xAI Grok,chat,TRUE,FALSE
+x.com,xAI Grok,chat,TRUE,FALSE
+x.ai,xAI Grok,ui,TRUE,FALSE
+perplexity.ai,Perplexity,ui,TRUE,FALSE
+poe.com,Poe,ui,TRUE,FALSE
+chat.mistral.ai,Mistral Le Chat,ui,TRUE,FALSE

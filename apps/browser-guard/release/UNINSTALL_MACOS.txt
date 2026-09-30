@@ -1,0 +1,16 @@
+UnifAI Guard — macOS Uninstall (turn OFF)
+========================================
+
+1. Double-click Uninstall_UnifAI_Guard.command (from the install ZIP or /Applications helpers).
+   - If blocked: Right-click → Open → Open
+2. Enter the company uninstall key from IT (Browser AI → Setup).
+3. Wait for the success dialog — Guard stops, proxy/PAC cleared, app removed.
+4. Fully quit and reopen browsers (Cmd+Q).
+
+Same uninstall key rule as Windows. Leave blank only if IT disabled the key requirement.
+
+Admin remote uninstall from Browser AI also turns Guard OFF on the next heartbeat
+(no employee key) — same as Windows.
+
+After uninstall, remove any leftover LaunchAgents if IT asks:
+  ~/Library/LaunchAgents/ (UnifAI Guard entries)

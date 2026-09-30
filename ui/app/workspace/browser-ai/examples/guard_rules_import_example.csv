@@ -1,0 +1,5 @@
+Rule Name,Rule Type,Pattern,Severity,Action,Warning Message,Active,Description
+Block Credit Card Numbers,regex,\b(?:4[0-9]{12}(?:[0-9]{3})?)\b,CRITICAL,BLOCK,Credit card numbers are prohibited by corporate policy.,TRUE,PCI — block card PANs in AI prompts
+Redact Salary & Compensation,regex,\b(?:salary|payroll|bonus|compensation|ctc)\b,MEDIUM,REDACT,Employee compensation details redacted.,TRUE,HR confidentiality
+Warn on Secret Keys,regex,\b(?:api[_-]?key|secret[_-]?token|bearer[\s]+[a-zA-Z0-9_\-]{16,})\b,HIGH,WARN,Potential API key detected. Please verify before sending.,TRUE,Secrets hygiene
+Block Aadhaar Numbers,regex,\b[2-9]{1}[0-9]{3}\s?[0-9]{4}\s?[0-9]{4}\b,CRITICAL,BLOCK,Aadhaar numbers are not allowed in AI chats.,TRUE,India PII

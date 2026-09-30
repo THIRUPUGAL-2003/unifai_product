@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-sLPvdpSW.js";import{F as t}from"./index-DVkI5CHA.js";var n=e();function r({className:e,...r}){return(0,n.jsx)(`div`,{"data-slot":`skeleton`,className:t(`bg-accent pointer-events-none animate-pulse rounded-sm`,e),...r})}export{r as t};

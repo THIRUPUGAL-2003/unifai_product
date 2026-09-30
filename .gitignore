@@ -1,0 +1,69 @@
+# Secrets & local env
+.env
+.env.*
+!.env.example
+*.env
+!.env.example
+
+# Runtime data
+data/
+logs/
+*.log
+cookies.txt
+
+# Dependencies & build
+node_modules/
+ui/node_modules/
+ui/out/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+.cache/
+.parcel-cache/
+tmp/
+temp/
+.tmp/
+
+# Go
+vendor/
+*.exe
+*.test
+*.out
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Plugin / test artifacts
+plugins/*/dist/
+test-reports/
+
+# Python & Browser Guard builds
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.venv*/
+venv/
+venv*/
+apps/browser-guard/.venv*/
+apps/browser-guard/build/
+apps/browser-guard/dist/
+apps/browser-guard/installer/staging/
+apps/browser-guard/installer/staging-*/
+# Large packaged binaries (ship from CI / local build, not git)
+apps/browser-guard/release/*.zip
+apps/browser-guard/release/*.pkg
+apps/browser-guard/release/*_Setup.exe
+apps/browser-guard/release/UnifAI_Guard.exe
+apps/browser-guard/release/UnifAI_Guard.app/
+apps/browser-guard/installer/pkg-root/
+

@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+pkill -f "UnifAI_Guard.app/Contents/MacOS/UnifAI_Guard" 2>/dev/null || true
+pkill -f "/MacOS/UnifAI_Guard" 2>/dev/null || true
+sleep 1
+
+APP="/Applications/UnifAI_Guard.app"
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+if [[ -f "$APP/Contents/MacOS/UnifAI_Guard" ]]; then
+  chmod +x "$APP/Contents/MacOS/UnifAI_Guard" 2>/dev/null || true
+fi
+
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
+if [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != "root" ]]; then
+  USER_DATA="/Users/$CONSOLE_USER/Library/Application Support/UnifAI/Guard"
+  mkdir -p "$USER_DATA" 2>/dev/null || true
+  if [[ -f "$APP/Contents/Resources/unifai_guard_config.json" ]]; then
+    cp -f "$APP/Contents/Resources/unifai_guard_config.json" "$USER_DATA/unifai_guard_config.json" 2>/dev/null || true
+    chown -R "$CONSOLE_USER" "$USER_DATA" 2>/dev/null || true
+  fi
+  sudo -u "$CONSOLE_USER" open "$APP" || true
+else
+  open "$APP" || true
+fi
+exit 0

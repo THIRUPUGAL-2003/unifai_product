@@ -1,0 +1,30 @@
+UnifAI Guard — macOS Install (turn ON)
+=====================================
+
+Company server: https://unifai.yespanchi.com
+(If IT gave you a different URL, use the config packaged in this ZIP.)
+
+Preferred: if IT gave you a UnifAI_Guard_*.pkg — double-click and follow prompts.
+Allow Keychain/admin prompts so the Guard certificate is trusted.
+
+ZIP path
+--------
+1. Remove conflicting web content filters if present
+   (System Settings → Network → VPN & Filters → Filters).
+2. Unzip UnifAI_Guard_macOS.zip — keep ALL files in one folder.
+3. Double-click Install_UnifAI_Guard.command
+   - If blocked: Right-click → Open → Open
+   - Or: System Settings → Privacy & Security → Open Anyway
+4. Fully quit Safari / Chrome / Edge / Firefox / Brave (Cmd+Q), then reopen.
+5. Safari: System Settings → iCloud → Private Relay → Off (required for corp intercept).
+6. Open a monitored AI site and send a test prompt.
+
+Health check: http://127.0.0.1:18195/
+  → proxy_port must be OK (not FAIL).
+Logs: ~/Library/Application Support/UnifAI/Guard/unifai_guard.log
+
+Optional update later
+---------------------
+Run Update_UnifAI_Guard_macOS.command from this package.
+
+See also: EMPLOYEE_README_MAC.txt and UNINSTALL_MACOS.txt in this ZIP.

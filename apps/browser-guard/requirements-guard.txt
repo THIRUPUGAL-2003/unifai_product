@@ -1,0 +1,4 @@
+mitmproxy>=10.0.0
+Pillow>=10.0.0
+pypdf>=4.0.0
+pyinstaller>=6.0.0

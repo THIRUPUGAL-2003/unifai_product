@@ -1,0 +1,12 @@
+# Prometheus configuration for tracking unifai-http service (for development and testing purposes only, don't use in production without proper setup)
+global:
+  scrape_interval: 5s # Scrape every 5 seconds
+
+# Note: Target port must match APP_PORT in .env (Raksha default: 8001).
+# - Local / host scrape: host.docker.internal:8001
+# - Same Docker network: raksha_tech:8001 (or CONTAINER_NAME from .env)
+
+scrape_configs:
+  - job_name: "unifai-api"
+    static_configs:
+      - targets: ["host.docker.internal:8001"] # /metrics — APP_PORT from .env

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: unifai
+description: A Helm chart for deploying UnifAI - AI Gateway with unified interface for multiple providers
+type: application
+version: 2.1.25
+appVersion: "1.5.12"
+keywords:
+  - ai
+  - gateway
+  - llm
+  - openai
+  - anthropic
+home: https://www.getmaxim.ai/unifai
+sources:
+  - https://github.com/unifai/unifai
+maintainers:
+  - name: UnifAI Team
+    email: support@getunifai.ai
+icon: https://www.getunifai.ai/favicon.png

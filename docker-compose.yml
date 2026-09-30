@@ -1,0 +1,96 @@
+services:
+  # Production path for employees = Guard EXE on each laptop (local MitM via UNIFAI_PROXY_ADDR) → this UnifAI backend.
+  # Optional shared/network proxy (lab/office PAC) — enable with:
+  #   docker compose --profile network-proxy up -d raksha_browser_ai_proxy
+  # Secrets and environment-specific hosts MUST come from .env — no hardcoded fallbacks.
+  raksha_tech:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.local
+    image: unifai-local:latest
+    container_name: ${CONTAINER_NAME:?set CONTAINER_NAME in .env}
+    user: "0:0"
+    env_file:
+      - .env
+    environment:
+      - APP_DIR=${APP_DIR:-/app/data}
+      - APP_PORT=${APP_PORT:?set APP_PORT in .env}
+      - APP_HOST=${APP_HOST:-0.0.0.0}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_STYLE=${LOG_STYLE:-json}
+      - SERVER_DOMAIN=${SERVER_DOMAIN:?set SERVER_DOMAIN in .env}
+      - DB_TYPE=${DB_TYPE:-postgres}
+      - DB_HOST=${DB_HOST:?set DB_HOST in .env}
+      - DB_PORT=${DB_PORT:?set DB_PORT in .env}
+      - DB_NAME=${DB_NAME:?set DB_NAME in .env}
+      - DB_USER=${DB_USER:?set DB_USER in .env}
+      - DB_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      - DB_SSL_MODE=${DB_SSL_MODE:-disable}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      - BROWSER_AI_OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
+      - OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
+      - UNIFAI_GUARD_SECRET=${UNIFAI_GUARD_SECRET:?set UNIFAI_GUARD_SECRET in .env}
+      - UNIFAI_GUARD_REQUIRE_SECRET=${UNIFAI_GUARD_REQUIRE_SECRET:-1}
+      - UNIFAI_PAC_ALLOW_QUERY_PROXY=${UNIFAI_PAC_ALLOW_QUERY_PROXY:-0}
+      - UNIFAI_COMPANY_NAME=${UNIFAI_COMPANY_NAME:-YesPanchi Group of Companies}
+      - UNIFAI_COMPANY_LOGO=${UNIFAI_COMPANY_LOGO:-/yes-panchi-logo.png}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - ollama
+    ports:
+      - "${APP_PORT:?set APP_PORT in .env}:${APP_PORT:?set APP_PORT in .env}"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+      - ./apps/browser-guard/release:/app/release
+      # Guard code published to installed Guards by Browser AI → Setup → Rebuild & Publish.
+      - ./apps/browser-guard/proxy:/app/guard-proxy:ro
+      - ./apps/browser-guard/agent:/app/guard-agent:ro
+      # Keep config.json inside ./data only. Do not also bind-mount a single file onto
+      # /app/data/config.json — that breaks atomic rename saves (device or resource busy).
+    restart: unless-stopped
+
+  # LAB / optional network Guard proxy — OFF by default (laptop Guard EXE is enough).
+  # Enable only when you need office PAC/GPO → shared proxy:
+  #   docker compose --profile network-proxy up -d raksha_browser_ai_proxy
+  # Point PAC to: https://<backend>/api/browser-ai/pac?proxy=<this-host>:${PROXY_PORT}
+  # Container name: NETWORK_PROXY_CONTAINER_NAME in .env (default raksha_browser_ai_proxy).
+  raksha_browser_ai_proxy:
+    profiles:
+      - network-proxy
+    image: mitmproxy/mitmproxy:latest
+    container_name: ${NETWORK_PROXY_CONTAINER_NAME:-raksha_browser_ai_proxy}
+    command: mitmdump -s /app/proxy/browser_ai_proxy.py -p ${PROXY_PORT:?set PROXY_PORT in .env} --set listen_host=0.0.0.0 --set block_global=false --set ssl_insecure=true --set ignore_hosts='^(localhost|127\.0\.0\.1|${CONTAINER_NAME:?set CONTAINER_NAME in .env})'
+    environment:
+      - UNIFAI_BACKEND_URL=http://${CONTAINER_NAME:?set CONTAINER_NAME in .env}:${APP_PORT:?set APP_PORT in .env}
+      - UNIFAI_GUARD_SECRET=${UNIFAI_GUARD_SECRET:?set UNIFAI_GUARD_SECRET in .env}
+      - UNIFAI_FAIL_OPEN=0
+      - UNIFAI_SERVER_MODE=1
+      - UNIFAI_AGENT_TYPE=network
+      - UNIFAI_AGENT_ID=${UNIFAI_NETWORK_AGENT_ID:-network-proxy-1}
+      - UNIFAI_AGENT_HOSTNAME=${UNIFAI_NETWORK_AGENT_HOSTNAME:-corp-network-proxy}
+    ports:
+      - "${PROXY_PORT:?set PROXY_PORT in .env}:${PROXY_PORT:?set PROXY_PORT in .env}"
+    volumes:
+      - ./apps/browser-guard/proxy:/app/proxy
+    depends_on:
+      - raksha_tech
+    restart: unless-stopped
+
+networks:
+  # Auto-created bridge network. Works out of the box on any server (no manual 'docker network create' needed).
+  default:
+    name: ${DOCKER_NETWORK:-unifai-network}
+    driver: bridge
+  # Existing network the Ollama container runs on, so OLLAMA_URL can use its container name
+  # (1Panel apps: 1panel-network). It must exist before `up`; on a server without 1Panel run
+  # `docker network create 1panel-network` once or set OLLAMA_DOCKER_NETWORK in .env.
+  ollama:
+    name: ${OLLAMA_DOCKER_NETWORK:-1panel-network}
+    external: true

@@ -1,0 +1,42 @@
+Guard Rules — Excel / CSV import format
+======================================
+
+Where in UI
+-----------
+Browser AI → Guard Rules → Template (download) or Import Rules
+
+Accepted files
+--------------
+.xlsx  .xls  .csv
+
+Columns (row 1 = headers)
+-------------------------
+| Column           | Required | Allowed values                          | Default   |
+|------------------|----------|-----------------------------------------|-----------|
+| Rule Name        | YES      | any text                                | —         |
+| Rule Type        | no       | regex  (ai_bot not supported via Excel) | regex     |
+| Pattern          | YES      | valid JavaScript/Go regex               | —         |
+| Severity         | no       | CRITICAL | HIGH | MEDIUM               | HIGH      |
+| Action           | no       | BLOCK | REDACT | WARN                   | BLOCK     |
+| Warning Message  | no       | text shown when rule hits               | empty     |
+| Active           | no       | TRUE / FALSE / Yes / No / 1 / 0         | TRUE      |
+| Description      | no       | internal note                           | empty     |
+
+Example (open in Excel)
+-----------------------
+See: examples/guard_rules_import_example.csv
+
+Or click "Template" in the UI → guard_rules_template.xlsx (4 sample rows).
+
+Tips
+----
+1. In Excel, put a single backslash as \\ in the Pattern cell when needed (CSV example uses one `\`).
+2. Same Rule Name + "Overwrite existing" checked → updates that rule.
+3. Same Rule Name without overwrite → skipped.
+4. AI Guard Bot policies: create with Add Rule in the UI (not Excel).
+5. After import, Guard agents refresh rules within a few seconds (cached ~2s).
+
+Round-trip
+----------
+Export (header dropdown on Rules tab) now uses the same column names →
+you can Export → edit in Excel → Import Rules again.
