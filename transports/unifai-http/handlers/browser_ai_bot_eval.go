@@ -19,8 +19,8 @@ import (
 )
 
 func guardBotEvalBudget() time.Duration {
-	// Per-bot LLM budget. Agent wait is ~18–28s; keep bots under that (parallel = max, not sum).
-	sec := 12
+	// Per-bot LLM budget. Allows enough time for Outsource API roundtrips and local CPU Ollama inference.
+	sec := 22
 	if v := strings.TrimSpace(os.Getenv("UNIFAI_GUARD_BOT_TIMEOUT_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 3 && n <= 60 {
 			sec = n
@@ -417,9 +417,7 @@ Derive the pattern only from SECURITY_POLICY.`
 				unifaiReq.Params.ExtraParams = map[string]interface{}{}
 			}
 			unifaiReq.Params.ExtraParams["max_tokens"] = maxTokens
-			if strings.EqualFold(string(prov), string(schemas.OpenAI)) || strings.EqualFold(string(prov), string(schemas.Azure)) {
-				unifaiReq.Params.MaxCompletionTokens = &maxTokens
-			}
+			unifaiReq.Params.MaxCompletionTokens = &maxTokens
 		}
 		deadline := time.Now().Add(75 * time.Second)
 		unifaiCtx := schemas.NewUnifAIContext(context.Background(), deadline)
@@ -510,8 +508,6 @@ Derive the pattern only from SECURITY_POLICY.`
 			}
 		} else if genErr == nil {
 			genErr = err4
-		} else {
-			genErr = fmt.Errorf("%v; ollama fallback: %v", genErr, err4)
 		}
 	}
 
@@ -551,7 +547,19 @@ func sanitizeGeneratedRegex(pattern string) string {
 	pattern = strings.Trim(pattern, "`\"'")
 	pattern = strings.TrimPrefix(pattern, "(?i)")
 	pattern = strings.TrimPrefix(pattern, "(?m)")
+	pattern = strings.TrimPrefix(pattern, "(?s)")
 	pattern = strings.TrimSpace(pattern)
+	// Replace literal backspace \x08 with \b (models emitting \b unmarshaled by JSON as backspace)
+	pattern = strings.ReplaceAll(pattern, "\x08", `\b`)
+	// Strip JS-style leading/trailing slashes e.g. /pattern/i or /pattern/
+	if strings.HasPrefix(pattern, "/") {
+		if strings.HasSuffix(pattern, "/i") || strings.HasSuffix(pattern, "/I") {
+			pattern = pattern[1 : len(pattern)-2]
+		} else if strings.HasSuffix(pattern, "/") && len(pattern) > 2 {
+			pattern = pattern[1 : len(pattern)-1]
+		}
+		pattern = strings.TrimSpace(pattern)
+	}
 	// Models often emit double-escaped sequences intended as single escapes.
 	if strings.Contains(pattern, `\\`) && !strings.Contains(pattern, `\\\\`) {
 		if trial := strings.ReplaceAll(pattern, `\\`, `\`); trial != pattern {
@@ -592,11 +600,11 @@ func isUsableGeneratedRegex(pattern string) bool {
 	if strings.Contains(pattern, "[]") {
 		return false
 	}
-	if strings.Count(pattern, " ") > 8 && !strings.ContainsAny(pattern, `\[\].*+?{}|()\\`) {
+	if strings.Count(pattern, " ") > 6 && !strings.ContainsAny(pattern, `\[\].*+?{}|()\\`) {
 		return false // looks like a sentence, not a regex
 	}
 	lower := strings.ToLower(pattern)
-	for _, bad := range []string{"http://", "https://", "return ", "you should", "the pattern"} {
+	for _, bad := range []string{"http://", "https://", "return ", "you should", "the pattern", "this rule", "here is"} {
 		if strings.Contains(lower, bad) {
 			return false
 		}
@@ -607,14 +615,6 @@ func isUsableGeneratedRegex(pattern string) bool {
 	}
 	if _, err := regexp.Compile("(?i)" + pattern); err != nil {
 		return false
-	}
-	// Must have at least one "regex-ish" token or a simple word with boundaries
-	hasMeta := strings.ContainsAny(pattern, `\.*+?[]{}|()^$`)
-	if !hasMeta {
-		// plain keyword ok if single token-ish
-		if strings.Contains(pattern, " ") {
-			return false
-		}
 	}
 	return true
 }
@@ -635,9 +635,26 @@ func parseGeneratedRegexPayload(raw string) (pattern, focus, notes string) {
 		if pattern == "" {
 			pattern = strings.TrimSpace(obj.Regex)
 		}
-		return pattern, strings.TrimSpace(obj.Focus), strings.TrimSpace(obj.Notes)
+		if pattern != "" {
+			return pattern, strings.TrimSpace(obj.Focus), strings.TrimSpace(obj.Notes)
+		}
 	}
-	// Fallback: extract "pattern":"..." or 'pattern': '...'
+	// Fallback 1: extract JSON block if surrounded by explanatory text
+	if start := strings.Index(raw, "{"); start >= 0 {
+		if end := strings.LastIndex(raw, "}"); end > start {
+			jsonSlice := raw[start : end+1]
+			if err := sonic.Unmarshal([]byte(jsonSlice), &obj); err == nil {
+				pattern = strings.TrimSpace(obj.Pattern)
+				if pattern == "" {
+					pattern = strings.TrimSpace(obj.Regex)
+				}
+				if pattern != "" {
+					return pattern, strings.TrimSpace(obj.Focus), strings.TrimSpace(obj.Notes)
+				}
+			}
+		}
+	}
+	// Fallback 2: extract "pattern":"..." or 'pattern': '...'
 	re := regexp.MustCompile(`(?i)["']pattern["']\s*:\s*["']((?:\\.|[^"'\\])*)["']`)
 	if m := re.FindStringSubmatch(raw); len(m) > 1 {
 		pattern = m[1]
@@ -723,19 +740,16 @@ func isReasoningGuardModel(model string) bool {
 // browserAIGuardBotSystemPrompt is used for every AI Guard Bot text rule (any admin policy).
 // No predefined DLP topic list — only the admin SECURITY_POLICY defines what to enforce.
 func browserAIGuardBotSystemPrompt() string {
-	return `You are a careful enterprise policy classifier.
+	return `You are an enterprise AI security policy classifier.
 
-Your ONLY job: decide if CONTENT_TO_EVALUATE clearly breaks SECURITY_POLICY.
+Your ONLY job: Decide if CONTENT_TO_EVALUATE clearly violates the administrator's SECURITY_POLICY.
 
 Rules:
-1. SECURITY_POLICY is the admin's intent. Fix obvious typos (e.g. "notr"→"not"). Informal lists are fine.
-2. If the policy forbids a CATEGORY, only a concrete INSTANCE in CONTENT is a violation.
-   Example style: policy "fruit names not allowed" + content "banana" → {"violation":true}.
-3. Do NOT require the content to repeat the policy wording — but do NOT invent matches.
-4. If SECURITY_POLICY mentions PIN/OTP/phone/card/CVV/Aadhaar/SSN (or similar) and CONTENT clearly contains that form → {"violation":true}.
-5. If CONTENT is unrelated to the policy, filler with no concrete forbidden instance, or opaque/IDE wire junk → {"violation":false}.
-6. Default to {"violation":false} when unsure. Prefer false over false positives.
-7. Category policies (e.g. names) need a concrete instance in CONTENT — not a vague guess.
+1. SECURITY_POLICY defines the administrator's intent and what is forbidden. Minor typos in policy should be understood naturally.
+2. Direct Violations: If CONTENT contains, mentions, requests, leaks, or shares any data, topic, credential, secret, or action forbidden by SECURITY_POLICY → {"violation":true}.
+3. Category & Concept Matching: If the policy forbids a category or concept (e.g. credentials, salary data, personal identity numbers, financial records, passwords, proprietary code), any instance or request of that concept in CONTENT is a violation → {"violation":true}.
+4. Standard Identifiers: If the policy mentions PIN, OTP, phone numbers, credit/debit cards, CVV, Aadhaar, PAN, SSN, API keys, passwords, or tokens, and CONTENT contains them → {"violation":true}.
+5. Unrelated / Safe: If CONTENT does NOT contain or request anything forbidden by the policy, or is completely unrelated → {"violation":false}.
 
 Reply with one JSON object only:
 {"violation":true}
@@ -787,11 +801,7 @@ func browserAIGuardBotUserMessage(policy, content string) string {
 CONTENT_TO_EVALUATE:
 %s
 
-Task: Does CONTENT_TO_EVALUATE clearly break SECURITY_POLICY?
-- Concrete forbidden instances only (not guesses).
-- Unrelated or opaque/non-prompt junk → {"violation":false}.
-- Default {"violation":false} when unsure.
-
+Task: Does CONTENT_TO_EVALUATE violate the SECURITY_POLICY?
 Respond with ONLY: {"violation":true} or {"violation":false}`,
 		policy,
 		truncateRunes(content, browserAIGuardBotMaxPromptRunes),
@@ -802,14 +812,12 @@ func browserAIGuardBotStrictUserMessage(policy, content string) string {
 	policy = strings.TrimSpace(policy)
 	content = strings.TrimSpace(content)
 	return fmt.Sprintf(
-		`ADMIN_POLICY (intent): %s
+		`ADMIN_POLICY: %s
 
 EMPLOYEE_TEXT: %s
 
-Decide now.
-- True ONLY if EMPLOYEE_TEXT clearly contains something ADMIN_POLICY forbids.
-- Unsure or no concrete match → {"violation":false}
-JSON only.`,
+Decide if EMPLOYEE_TEXT violates ADMIN_POLICY.
+Respond with ONLY JSON: {"violation":true} or {"violation":false}`,
 		truncateRunes(policy, 4000),
 		truncateRunes(content, browserAIGuardBotMaxPromptRunes),
 	)
@@ -962,19 +970,17 @@ func buildGuardOutsourceChatRequest(provider schemas.ModelProvider, model, syste
 	}
 	temp := 0.0
 	params := &schemas.ChatParameters{
-		Temperature: &temp,
+		Temperature:         &temp,
+		MaxCompletionTokens: &maxTokens,
 		ExtraParams: map[string]interface{}{
 			// Most OpenAI-compatible gateways accept max_tokens; OpenAI also tolerates it.
 			"max_tokens": maxTokens,
 		},
 	}
-	// OpenAI / Azure prefer the newer field as well.
 	p := strings.ToLower(string(provider))
-	if p == string(schemas.OpenAI) || p == string(schemas.Azure) {
-		params.MaxCompletionTokens = &maxTokens
-	}
-	// Skip json_object for weak/reasoner models — many return 422 or empty content.
-	if withJSON && !isWeakGuardEvalModel(model) && !isReasoningGuardModel(model) {
+	// Skip json_object for weak/reasoner models, and providers that reject type:json_object (Anthropic, Bedrock).
+	supportsJSONMode := p == string(schemas.OpenAI) || p == string(schemas.Azure) || p == "groq" || p == "openrouter" || p == "mistral"
+	if withJSON && supportsJSONMode && !isWeakGuardEvalModel(model) && !isReasoningGuardModel(model) {
 		rf := any(map[string]any{"type": "json_object"})
 		params.ResponseFormat = &rf
 	}
@@ -1288,14 +1294,22 @@ func unifaiErrorMessage(err *schemas.UnifAIError) string {
 
 func stripEvalMarkdown(raw string) string {
 	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "```json") {
-		raw = strings.TrimPrefix(raw, "```json")
-		raw = strings.TrimSuffix(raw, "```")
-	} else if strings.HasPrefix(raw, "```") {
-		raw = strings.TrimPrefix(raw, "```")
-		raw = strings.TrimSuffix(raw, "```")
+	// If markdown code fence ``` is present anywhere, extract content between first ``` and closing ```
+	if start := strings.Index(raw, "```"); start >= 0 {
+		rest := raw[start+3:]
+		// Trim optional language identifier e.g. "json\n"
+		if idx := strings.Index(rest, "\n"); idx >= 0 {
+			tag := strings.ToLower(strings.TrimSpace(rest[:idx]))
+			if tag == "json" || tag == "regex" || tag == "re2" || tag == "text" || tag == "" {
+				rest = rest[idx+1:]
+			}
+		}
+		if end := strings.Index(rest, "```"); end >= 0 {
+			return strings.TrimSpace(rest[:end])
+		}
+		return strings.TrimSpace(rest)
 	}
-	return strings.TrimSpace(raw)
+	return raw
 }
 
 func parseAIBotViolation(raw string) bool {

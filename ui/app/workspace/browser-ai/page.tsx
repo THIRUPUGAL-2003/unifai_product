@@ -1383,9 +1383,7 @@ export default function BrowserAiPage() {
 				return;
 			}
 			setPat(pat);
-			if (res.focus || res.notes) {
-				setErr([res.focus && `Focus: ${res.focus}`, res.notes].filter(Boolean).join(" — "));
-			}
+			setErr("");
 		} catch (e: any) {
 			setErr(
 				e?.data?.error?.message ||
