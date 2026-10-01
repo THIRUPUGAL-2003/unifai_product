@@ -59,11 +59,12 @@ apps/browser-guard/build/
 apps/browser-guard/dist/
 apps/browser-guard/installer/staging/
 apps/browser-guard/installer/staging-*/
-# Large packaged binaries (ship from CI / local build, not git)
-apps/browser-guard/release/*.zip
-apps/browser-guard/release/*.pkg
-apps/browser-guard/release/*_Setup.exe
-apps/browser-guard/release/UnifAI_Guard.exe
+# Large packaged binaries (keep unpackaged app directory ignored)
 apps/browser-guard/release/UnifAI_Guard.app/
 apps/browser-guard/installer/pkg-root/
+
+# Allow Browser Guard release binaries (tracked via Git LFS)
+!apps/browser-guard/release/*.zip
+!apps/browser-guard/release/*.pkg
+!apps/browser-guard/release/*.exe
 
