@@ -99,7 +99,7 @@ func (r *BudgetResolver) EvaluateModelAndProviderRequest(ctx *schemas.UnifAICont
 		if decision, err := r.store.CheckProviderBudget(ctx, request, nil); err != nil || isBudgetViolation(decision) {
 			return &EvaluationResult{
 				Decision: decision,
-				Reason:   fmt.Sprintf("Provider-level budget exceeded: %s", reasonFromErr(err, decision)),
+				Reason:   fmt.Sprintf("Warning: Provider-level budget exceeded: %s", reasonFromErr(err, decision)),
 			}
 		}
 	}
@@ -116,7 +116,7 @@ func (r *BudgetResolver) EvaluateModelAndProviderRequest(ctx *schemas.UnifAICont
 		if decision, err := r.store.CheckModelBudget(ctx, request, nil); err != nil || isBudgetViolation(decision) {
 			return &EvaluationResult{
 				Decision: decision,
-				Reason:   fmt.Sprintf("Model-level budget exceeded: %s", reasonFromErr(err, decision)),
+				Reason:   fmt.Sprintf("Warning: Model-level budget exceeded: %s", reasonFromErr(err, decision)),
 			}
 		}
 	}
@@ -147,7 +147,7 @@ func (r *BudgetResolver) EvaluateCustomerRequest(ctx *schemas.UnifAIContext, cus
 	if decision, err := r.store.CheckCustomerBudget(ctx, customerID, request, nil); err != nil || isBudgetViolation(decision) {
 		return &EvaluationResult{
 			Decision: decision,
-			Reason:   fmt.Sprintf("Customer-level budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:   fmt.Sprintf("Warning: Customer-level budget exceeded: %s", reasonFromErr(err, decision)),
 		}
 	}
 
@@ -177,7 +177,7 @@ func (r *BudgetResolver) EvaluateTeamRequest(ctx *schemas.UnifAIContext, teamID 
 	if decision, err := r.store.CheckTeamBudget(ctx, teamID, request, nil); err != nil || isBudgetViolation(decision) {
 		return &EvaluationResult{
 			Decision: decision,
-			Reason:   fmt.Sprintf("Team-level budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:   fmt.Sprintf("Warning: Team-level budget exceeded: %s", reasonFromErr(err, decision)),
 		}
 	}
 
@@ -212,7 +212,7 @@ func (r *BudgetResolver) EvaluateUserRequest(ctx *schemas.UnifAIContext, userID 
 	if decision, err := r.store.CheckUserBudget(ctx, userID, request, nil); err != nil || isBudgetViolation(decision) {
 		return &EvaluationResult{
 			Decision: decision,
-			Reason:   fmt.Sprintf("User-level budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:   fmt.Sprintf("Warning: User-level budget exceeded: %s", reasonFromErr(err, decision)),
 		}
 	}
 
@@ -229,7 +229,7 @@ func (r *BudgetResolver) EvaluateUserRequest(ctx *schemas.UnifAIContext, userID 
 		if decision, err := r.store.CheckScopedModelBudget(ctx, configstoreTables.ModelConfigScopeUser, userID, request, nil); err != nil || isBudgetViolation(decision) {
 			return &EvaluationResult{
 				Decision: decision,
-				Reason:   fmt.Sprintf("User-level model budget exceeded: %s", reasonFromErr(err, decision)),
+				Reason:   fmt.Sprintf("Warning: User-level model budget exceeded: %s", reasonFromErr(err, decision)),
 			}
 		}
 	}
@@ -355,7 +355,7 @@ func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.UnifAIContext, v
 			if decision, err := r.store.CheckScopedModelBudget(ctx, configstoreTables.ModelConfigScopeVirtualKey, vk.ID, evaluationRequest, nil); err != nil || isBudgetViolation(decision) {
 				return &EvaluationResult{
 					Decision:   decision,
-					Reason:     fmt.Sprintf("Model-level budget exceeded (virtual key scope): %s", reasonFromErr(err, decision)),
+					Reason:     fmt.Sprintf("Warning: Model-level budget exceeded (virtual key scope): %s", reasonFromErr(err, decision)),
 					VirtualKey: vk,
 				}
 			}
@@ -472,7 +472,7 @@ func (r *BudgetResolver) checkBudgetHierarchy(ctx context.Context, vk *configsto
 		r.logger.Debug(fmt.Sprintf("Atomic budget exceeded for VK %s: %s", vk.ID, reasonFromErr(err, decision)))
 		return &EvaluationResult{
 			Decision:   decision,
-			Reason:     fmt.Sprintf("Budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:     fmt.Sprintf("Warning: Budget exceeded: %s", reasonFromErr(err, decision)),
 			VirtualKey: vk,
 		}
 	}
