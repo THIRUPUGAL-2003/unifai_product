@@ -90,65 +90,45 @@ func looksLikeBinaryOrWireGarbage(s string) bool {
 	}
 	runes := []rune(t)
 	n := len(runes)
-	if n < 100 {
-		high := 0
-		for _, r := range runes {
-			if r > 127 {
-				high++
-			}
-		}
-		if float64(high)/float64(n) >= 0.12 {
-			return true
+
+	// Only reject true replacement-character mojibake (>= 8% of content).
+	// NEVER treat non-ASCII (Tamil, Hindi, Arabic, Chinese, Russian, emojis, etc.) as garbage!
+	mojibake := 0
+	for _, r := range runes {
+		if r == '\ufffd' {
+			mojibake++
 		}
 	}
-	alnum, space, other := 0, 0, 0
-	specials := map[rune]struct{}{}
+	if n > 0 && float64(mojibake)/float64(n) >= 0.08 {
+		return true
+	}
+
+	// Any non-ASCII Unicode script (Tamil, Hindi, Chinese, Japanese, Arabic, Russian, emojis, etc.)
+	// is ALWAYS a real user prompt in world languages. Never drop by language!
+	for _, r := range runes {
+		if r > 127 {
+			return false
+		}
+	}
+
+	alnum, other := 0, 0
 	for _, r := range runes {
 		switch {
 		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
 			alnum++
 		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
-			space++
+			// whitespace
 		default:
 			other++
-			specials[r] = struct{}{}
 		}
 	}
-	if n <= 96 {
-		if other >= 4 && len(specials) >= 4 && float64(other)/float64(n) >= 0.28 {
-			return true
-		}
-		if float64(other)/float64(n) >= 0.42 && other >= 3 {
-			return true
-		}
-		letters, vowels := 0, 0
-		for _, r := range runes {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				letters++
-				switch r {
-				case 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U':
-					vowels++
-				}
-			}
-		}
-		if letters >= 4 && other >= 5 && vowels <= 1 {
-			return true
-		}
-		if alnum > 0 && other >= alnum && len(specials) >= 5 {
-			return true
-		}
+
+	// User-typed symbols of ANY length, emojis, or punctuation (e.g. "!@#$%^%%#$%@#!^", "@$$$%@#$%$%@$%", "$$$", "???")
+	// must ALWAYS be preserved in Prompt Logs and evaluated by Guard Rules!
+	if alnum == 0 && other > 0 {
+		return false
 	}
-	if n <= 80 {
-		weirdChars := `\]$^*` + "`" + `~|{};<>`
-		weird := 0
-		for _, ch := range weirdChars {
-			weird += strings.Count(t, string(ch))
-		}
-		if weird >= 3 && float64(other)/float64(n) >= 0.25 {
-			return true
-		}
-	}
-	_ = space
+
 	return false
 }
 

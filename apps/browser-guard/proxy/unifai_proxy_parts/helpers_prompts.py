@@ -890,9 +890,6 @@ def _should_intercept_extracted_prompt(
         # filename, not a typed prompt. File row is logged via post_upload_intercept.
         if _looks_like_filename_only(text):
             return False
-        if _is_ide_non_chat_noise(text, domain=domain) or _is_ide_non_chat_noise(text, domain=host):
-            if not _is_digit_heavy_user_text(text) and not _is_typed_numeric_prompt(text):
-                return False
         # Duplicate peek is still a real Send — caller reuses remembered decision.
         # Never return False here or the prompt silently vanishes from Prompt Logs.
         return True

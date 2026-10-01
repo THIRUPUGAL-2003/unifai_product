@@ -544,3 +544,28 @@ div.content-container:has(.no-border-parent) #trial-notification-banner {
 		animation: none;
 	}
 }
+
+/* ─── Google Translate UI Overrides ─────────────────────────────────────── */
+.goog-te-banner-frame.skiptranslate,
+.goog-te-banner-frame,
+#goog-gt-tt,
+.goog-te-balloon-frame,
+.goog-tooltip,
+.goog-tooltip:hover {
+	display: none !important;
+	visibility: hidden !important;
+}
+
+body {
+	top: 0px !important;
+	position: static !important;
+}
+
+.skiptranslate:not(.unifai-custom-lang) {
+	display: none !important;
+}
+
+font {
+	background-color: transparent !important;
+	box-shadow: none !important;
+}

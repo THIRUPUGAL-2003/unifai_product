@@ -1505,37 +1505,20 @@ def _looks_like_binary_or_wire_garbage(text: str) -> bool:
     if "\ufffd" in t and t.count("\ufffd") / max(len(t), 1) >= 0.08:
         return True
 
+    # Any non-ASCII Unicode script (Tamil, Hindi, Chinese, Japanese, Arabic, Russian, emojis, etc.)
+    # is ALWAYS a real user prompt in world languages. Never filter out by language!
+    if any(ord(c) > 127 for c in t):
+        return False
+
     alnum = sum(1 for c in t if c.isalnum())
     space = sum(1 for c in t if c.isspace())
     other = len(t) - alnum - space
-    specials = {c for c in t if not c.isalnum() and not c.isspace()}
-    letters = sum(1 for c in t if c.isalpha())
 
-    # User-typed short symbols / light punctuation must stay in Prompt Logs
-    # (confident Send: "#@!", "$$$", "?", "hello!"). Do not treat as IDE soup.
-    if len(t) <= 16 and alnum == 0 and other >= 1:
-        return False
-    if len(t) <= 24 and letters >= 2 and other <= 2 and letters >= other:
+    # User-typed symbols of ANY length, emojis, or punctuation (e.g. "!@#$%^%%#$%@#!^", "@$$$%@#$%$%@$%", "$$$", "???")
+    # must ALWAYS stay in Prompt Logs and be evaluated by Guard Rules!
+    if alnum == 0 and other >= 1:
         return False
 
-    # Short / medium strings with symbol soup (IDE wire frames, encrypted chunks)
-    if len(t) <= 96:
-        if other >= 4 and len(specials) >= 4 and other / len(t) >= 0.28:
-            return True
-        if other / len(t) >= 0.42 and other >= 3:
-            return True
-        vowels = sum(1 for c in t.lower() if c in "aeiou")
-        if letters >= 4 and other >= 5 and vowels <= 1:
-            return True
-        # Very few alnum relative to punctuation
-        if alnum > 0 and other >= alnum and len(specials) >= 5:
-            return True
-
-    # Backslash + brackets + dollar heavy fragments (common binary-as-text)
-    if len(t) <= 80:
-        weird = sum(t.count(ch) for ch in "\\]$^*`~|{};<>")
-        if weird >= 3 and other / max(len(t), 1) >= 0.25:
-            return True
     return False
 
 

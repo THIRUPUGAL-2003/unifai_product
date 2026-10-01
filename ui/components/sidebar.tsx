@@ -94,6 +94,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCookies } from "react-cookie";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./themeToggle";
+import { LanguageSelector } from "./languageSelector";
 import { Badge } from "./ui/badge";
 import { PromoCardStack } from "./ui/promoCardStack";
 
@@ -1598,6 +1599,7 @@ export default function AppSidebar() {
 										</div>
 									</a>
 								))}
+							<LanguageSelector compact />
 							<ThemeToggle />
 							{IS_ENTERPRISE && userInfo && (userInfo.name || userInfo.email) ? (
 								<Popover open={userPopoverOpen} onOpenChange={setUserPopoverOpen}>

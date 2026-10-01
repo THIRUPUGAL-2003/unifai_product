@@ -482,12 +482,10 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 
 	if !slices.Equal(payload.ClientConfig.AllowedOrigins, currentConfig.AllowedOrigins) {
 		updatedConfig.AllowedOrigins = payload.ClientConfig.AllowedOrigins
-		restartReasons = append(restartReasons, "Allowed origins")
 	}
 
 	if !slices.Equal(payload.ClientConfig.AllowedHeaders, currentConfig.AllowedHeaders) {
 		updatedConfig.AllowedHeaders = payload.ClientConfig.AllowedHeaders
-		restartReasons = append(restartReasons, "Allowed headers")
 	}
 
 	// Only update InitialPoolSize if explicitly provided (> 0) to avoid clearing stored value

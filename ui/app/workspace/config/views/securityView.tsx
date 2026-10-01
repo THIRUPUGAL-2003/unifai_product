@@ -38,6 +38,19 @@ const getPasswordPolicyFailures = (password?: string) => {
 	return PASSWORD_REQUIREMENTS.filter((requirement) => !requirement.test(password)).map((requirement) => requirement.label);
 };
 
+const isRedactedPassword = (pwd?: string) => {
+	if (!pwd) return false;
+	const trimmed = pwd.trim().toLowerCase();
+	return (
+		trimmed === "<redacted>" ||
+		trimmed === "redacted" ||
+		trimmed.startsWith("<redacted") ||
+		trimmed === "[redacted]" ||
+		trimmed.startsWith("[redacted") ||
+		/^[*•\s]+$/.test(pwd.trim())
+	);
+};
+
 export default function SecurityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
 	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true });
@@ -95,6 +108,7 @@ export default function SecurityView() {
 		}
 		if (unifaiConfig?.auth_config) {
 			setAuthConfig(unifaiConfig.auth_config);
+			setPasswordError("");
 		}
 	}, [config, unifaiConfig]);
 
@@ -187,22 +201,6 @@ export default function SecurityView() {
 		);
 	}, [config, localConfig, authConfig, unifaiConfig, showPasswordSection]);
 
-	const needsRestart = useMemo(() => {
-		if (!config) return false;
-
-		const localOrigins = localConfig.allowed_origins?.slice().sort().join(",");
-		const serverOrigins = config.allowed_origins?.slice().sort().join(",");
-		const originsChanged = localOrigins !== serverOrigins;
-
-		const localHeaders = localConfig.allowed_headers?.slice().sort().join(",");
-		const serverHeaders = config.allowed_headers?.slice().sort().join(",");
-		const headersChanged = localHeaders !== serverHeaders;
-
-		const enforceAuthOnInferenceChanged = localConfig.enforce_auth_on_inference !== config.enforce_auth_on_inference && IS_ENTERPRISE;
-
-		return originsChanged || headersChanged || enforceAuthOnInferenceChanged;
-	}, [config, localConfig]);
-
 	const handleAllowedOriginsChange = useCallback((value: string) => {
 		setLocalValues((prev) => ({ ...prev, allowed_origins: value }));
 		setLocalConfig((prev) => ({ ...prev, allowed_origins: parseArrayFromText(value) }));
@@ -233,11 +231,13 @@ export default function SecurityView() {
 
 	const handleAuthFieldChange = useCallback((field: "admin_username" | "admin_password", value: SecretVar) => {
 		if (field === "admin_password") {
-			const passwordPolicyFailures = !value.ref && value.value ? getPasswordPolicyFailures(value.value) : [];
+			const isRedacted = isRedactedPassword(value?.value);
+			const isUnchanged = value?.value === unifaiConfig?.auth_config?.admin_password?.value;
+			const passwordPolicyFailures = !value.ref && value.value && !isRedacted && !isUnchanged ? getPasswordPolicyFailures(value.value) : [];
 			setPasswordError(passwordPolicyFailures.length > 0 ? `Password must include ${passwordPolicyFailures.join(", ")}.` : "");
 		}
 		setAuthConfig((prev) => ({ ...prev, [field]: value }));
-	}, []);
+	}, [unifaiConfig]);
 
 	const handleSave = useCallback(async () => {
 		try {
@@ -251,8 +251,19 @@ export default function SecurityView() {
 			}
 			const hasUsername = authConfig.admin_username?.value || authConfig.admin_username?.ref;
 			const hasPassword = authConfig.admin_password?.value || authConfig.admin_password?.ref;
+			const passwordChanged =
+				authConfig.admin_password?.value !== unifaiConfig?.auth_config?.admin_password?.value ||
+				authConfig.admin_password?.ref !== unifaiConfig?.auth_config?.admin_password?.ref ||
+				authConfig.admin_password?.type !== unifaiConfig?.auth_config?.admin_password?.type;
+			const isRedacted = isRedactedPassword(authConfig.admin_password?.value);
+
 			const passwordPolicyFailures =
-				showPasswordSection && authConfig.is_enabled && !authConfig.admin_password?.ref && authConfig.admin_password?.value
+				showPasswordSection &&
+				authConfig.is_enabled &&
+				passwordChanged &&
+				!authConfig.admin_password?.ref &&
+				authConfig.admin_password?.value &&
+				!isRedacted
 					? getPasswordPolicyFailures(authConfig.admin_password.value)
 					: [];
 
@@ -520,7 +531,6 @@ export default function SecurityView() {
 					/>
 				</div>
 				{/* Allowed Origins */}
-				{needsRestart && <RestartWarning />}
 				<div>
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
@@ -614,12 +624,3 @@ export default function SecurityView() {
 		</div>
 	);
 }
-
-const RestartWarning = () => {
-	return (
-		<Alert variant="destructive" className="mt-2">
-			<AlertTriangle className="h-4 w-4" />
-			<AlertDescription>Need to restart UnifAI to apply changes.</AlertDescription>
-		</Alert>
-	);
-};

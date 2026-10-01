@@ -2,6 +2,7 @@ import FullPageLoader from "@/components/fullPageLoader";
 import NotAvailableBanner from "@/components/notAvailableBanner";
 import ProgressProvider from "@/components/progressBar";
 import Sidebar from "@/components/sidebar";
+import { LanguageSelector } from "@/components/languageSelector";
 import { ThemeProvider } from "@/components/themeProvider";
 import TrialExpiryBanner from "@/components/trialExpiryBanner";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -120,6 +121,9 @@ function AppContent({ children }: { children: React.ReactNode }) {
 				<SidebarProvider>
 					<Sidebar />
 					<div className="dark:bg-card custom-scrollbar content-container my-[0.5rem] mr-[0.5rem] h-[calc(100dvh-1rem)] w-full min-w-xl overflow-auto rounded-md border border-gray-200 bg-white px-10 dark:border-zinc-800">
+						<div className="sticky top-0 z-30 -mx-10 flex items-center justify-end px-6 py-2 border-b border-border/40 bg-background/85 backdrop-blur-md">
+							<LanguageSelector />
+						</div>
 						<TrialExpiryBanner />
 						<main className="custom-scrollbar content-container-inner relative mx-auto flex h-full min-h-0 flex-col overflow-y-hidden p-4">
 							{isLoading ? (
@@ -144,6 +148,9 @@ function AppContent({ children }: { children: React.ReactNode }) {
 function MinimalShell({ children }: { children: React.ReactNode }) {
 	return (
 		<div className="dark:bg-card custom-scrollbar content-container my-[0.5rem] h-[calc(100dvh-1rem)] w-full overflow-auto rounded-md border border-gray-200 bg-white px-10 dark:border-zinc-800">
+			<div className="sticky top-0 z-30 -mx-10 flex items-center justify-end px-6 py-2 border-b border-border/40 bg-background/85 backdrop-blur-md">
+				<LanguageSelector />
+			</div>
 			<main className="custom-scrollbar content-container-inner relative mx-auto flex h-full min-h-0 flex-col overflow-y-hidden p-4">
 				{children}
 			</main>
