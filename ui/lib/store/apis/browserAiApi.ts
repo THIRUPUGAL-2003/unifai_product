@@ -666,6 +666,8 @@ export const browserAiApi = baseApi.injectEndpoints({
 				offset: number;
 				latest_version?: string;
 				latest_mac_version?: string;
+				active_count?: number;
+				uninstalled_count?: number;
 			},
 			{ status?: string; search?: string; agent_type?: string; limit?: number; offset?: number } | void
 		>({

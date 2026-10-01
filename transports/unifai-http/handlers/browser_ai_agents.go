@@ -67,9 +67,12 @@ func (h *BrowserAIHandler) listAgents(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
+	activeCount, uninstalledCount, _ := h.manager.CountAgentsStatus(ctx, search, agentType)
 	SendJSON(ctx, map[string]any{
 		"agents":             agents,
 		"total":              total,
+		"active_count":       activeCount,
+		"uninstalled_count":  uninstalledCount,
 		"limit":              limit,
 		"offset":             offset,
 		"latest_version":     readGuardReleaseVersion(),

@@ -2436,6 +2436,35 @@ func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string
 	return agents, total, err
 }
 
+func (m *BrowserAIManager) CountAgentsStatus(ctx context.Context, search string, agentType ...string) (active int64, uninstalled int64, err error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.db == nil {
+		return 0, 0, nil
+	}
+	buildBase := func() *gorm.DB {
+		q := m.db.WithContext(ctx).Model(&BrowserAIAgent{})
+		typeFilter := ""
+		if len(agentType) > 0 {
+			typeFilter = strings.TrimSpace(agentType[0])
+		}
+		if typeFilter != "" && strings.ToLower(typeFilter) != "all" {
+			q = q.Where("LOWER(agent_type) = ?", NormalizeBrowserAIAgentType(typeFilter))
+		}
+		if search != "" {
+			s := "%" + strings.ToLower(search) + "%"
+			q = q.Where(
+				"LOWER(hostname) LIKE ? OR LOWER(username) LIKE ? OR LOWER(ip_address) LIKE ? OR LOWER(mac_address) LIKE ? OR LOWER(transport_name) LIKE ? OR LOWER(id) LIKE ? OR LOWER(agent_version) LIKE ? OR LOWER(agent_type) LIKE ?",
+				s, s, s, s, s, s, s, s,
+			)
+		}
+		return q
+	}
+	_ = buildBase().Where("LOWER(status) = ?", AgentStatusActive).Count(&active).Error
+	_ = buildBase().Where("LOWER(status) = ?", AgentStatusUninstalled).Count(&uninstalled).Error
+	return active, uninstalled, nil
+}
+
 func (m *BrowserAIManager) GetAgent(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

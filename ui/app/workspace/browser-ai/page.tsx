@@ -734,7 +734,8 @@ export default function BrowserAiPage() {
 	}, [controls.upload_warning, uploadWarningEditing]);
 	const agents = agentsData?.agents || [];
 	const totalAgents = agentsData?.total || 0;
-	const activeAgentsCount = agents.filter((a) => a.status === "active").length;
+	const activeAgentsCount = agentsData?.active_count ?? agents.filter((a) => a.status === "active").length;
+	const uninstalledAgentsCount = agentsData?.uninstalled_count ?? agents.filter((a) => a.status === "uninstalled").length;
 	const agentSettings = agentSettingsData?.settings;
 	const visibleAgentIds = useMemo(() => agents.map((a) => a.id), [agents]);
 	const selectedVisibleAgentIds = useMemo(
@@ -4235,7 +4236,7 @@ export default function BrowserAiPage() {
 						</Select>
 					</div>
 
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 						<Card className="bg-card border-border">
 							<CardHeader className="pb-2">
 								<CardDescription>Total registered</CardDescription>
@@ -4244,8 +4245,14 @@ export default function BrowserAiPage() {
 						</Card>
 						<Card className="bg-card border-border">
 							<CardHeader className="pb-2">
-								<CardDescription>Active (this page)</CardDescription>
+								<CardDescription>Active</CardDescription>
 								<CardTitle className="text-2xl text-emerald-400">{activeAgentsCount}</CardTitle>
+							</CardHeader>
+						</Card>
+						<Card className="bg-card border-border">
+							<CardHeader className="pb-2">
+								<CardDescription>Uninstalled</CardDescription>
+								<CardTitle className="text-2xl text-slate-400">{uninstalledAgentsCount}</CardTitle>
 							</CardHeader>
 						</Card>
 						<Card className="bg-card border-border">
