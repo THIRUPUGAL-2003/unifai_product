@@ -1542,12 +1542,9 @@ export default function BrowserAiPage() {
 		for (const t of targets) {
 			const p = (t.platform_name || "").trim();
 			const d = (t.domain || "").trim();
-			if (p && d && p.toLowerCase() !== d.toLowerCase()) {
-				map.set(p, `${p} (${d})`);
-			} else if (p) {
-				map.set(p, p);
-			} else if (d) {
-				map.set(d, d);
+			const name = p || d;
+			if (name && !map.has(name)) {
+				map.set(name, name);
 			}
 		}
 
@@ -3228,7 +3225,7 @@ export default function BrowserAiPage() {
 
 										{ruleError && <div className="mx-5 mt-3 p-3 bg-red-950/60 border border-red-800 text-red-400 rounded-md text-xs">{ruleError}</div>}
 
-										<div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 space-y-4 min-w-0">
+										<div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 space-y-4 min-w-0 no-scrollbar">
 											{/* Rule Engine Type Toggle */}
 											<div className="space-y-1.5">
 												<Label>Rule Engine Type</Label>
@@ -4158,7 +4155,7 @@ export default function BrowserAiPage() {
 
 						{ruleError && <div className="mx-5 mt-3 p-3 bg-red-950/60 border border-red-800 text-red-400 rounded-md text-xs">{ruleError}</div>}
 
-						<div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 space-y-4 min-w-0">
+						<div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 space-y-4 min-w-0 no-scrollbar">
 							{/* Rule Engine Type Toggle */}
 							<div className="space-y-1.5">
 								<Label>Rule Engine Type</Label>

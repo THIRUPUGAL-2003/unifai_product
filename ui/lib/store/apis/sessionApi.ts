@@ -107,10 +107,14 @@ export const sessionApi = baseApi.injectEndpoints({
 					method: "POST",
 				});
 
-				// Primary session logout must succeed — if it fails the server-side
-				// session is still alive, so we must surface the error to the user.
+				// Primary session logout: if the server returns 401, 403, or 404,
+				// the session is already non-existent or expired on the server,
+				// so treat it as successfully cleared.
 				if (passwordLogout.error) {
-					return { error: passwordLogout.error };
+					const status = (passwordLogout.error as FetchBaseQueryError)?.status;
+					if (status !== 401 && status !== 403 && status !== 404) {
+						return { error: passwordLogout.error };
+					}
 				}
 
 				// OAuth logout is best-effort — silently ignore failures since not

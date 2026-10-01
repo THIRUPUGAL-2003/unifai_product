@@ -457,10 +457,13 @@ def _extract_plain_text_bytes(data: bytes) -> str:
         except Exception:
             return ""
     # Heuristic: enough printable ratio
-    if not text or len(text) < 8:
+    if not text or not text.strip():
         return ""
     printable = sum(1 for ch in text if ch.isprintable() or ch in "\r\n\t")
-    if printable / max(1, len(text)) < 0.7:
+    total_len = max(1, len(text))
+    if len(text) >= 8 and (printable / total_len) < 0.65:
+        return ""
+    if len(text) < 8 and (printable / total_len) < 0.8:
         return ""
     return text[:200_000]
 
@@ -484,6 +487,8 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
             return "xlsx"
         if "presentation" in ct or "powerpoint" in ct or fn.endswith((".pptx", ".ppt")):
             return "pptx"
+        if any(fn.endswith(ext) for ext in (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".gz", ".bz2", ".xz")):
+            return "tar"
         if any(fn.endswith(ext) for ext in (".txt", ".json", ".xml", ".yaml", ".md", ".log")):
             return "plain"
         # Source / config text — treat as plain so rules scan without OCR/PDF chain (fast).
@@ -524,6 +529,13 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
         return "odf"
     if _looks_like_ole(data, content_type, file_name):
         return "ole"
+    if any(
+        fn.endswith(ext)
+        for ext in (
+            ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".gz", ".bz2", ".xz",
+        )
+    ) or data[:2] == b"\x1f\x8b" or (len(data) >= 262 and data[257:262] == b"ustar") or data[:3] == b"BZh" or data[:6] == b"\xfd7zXZ\x00":
+        return "tar"
     if fn.endswith((".txt", ".csv", ".json", ".md", ".log", ".xml", ".yaml", ".yml", ".ini", ".cfg")) or any(
         x in ct for x in ("text/", "csv", "json", "xml", "yaml")
     ):
@@ -681,6 +693,109 @@ def _extract_zip_archive_members_text(
     return out[:max_chars]
 
 
+def _extract_tar_archive_members_text(
+    data: bytes,
+    *,
+    depth: int = 0,
+    max_depth: int = 2,
+    max_files: int = 40,
+    max_chars: int = 250_000,
+) -> str:
+    """Unpack a .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz or standalone .gz and extract text from each member."""
+    if not data or depth > max_depth:
+        return ""
+    chunks: list[str] = []
+    total = 0
+    n_files = 0
+    import tarfile, io
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
+            for member in tf.getmembers():
+                if n_files >= max_files or total >= max_chars:
+                    break
+                if not member.isfile():
+                    continue
+                name = (member.name or "").replace("\\", "/")
+                base = name.rsplit("/", 1)[-1]
+                low = name.lower()
+                if not base or base.startswith("."):
+                    continue
+                if "__macosx" in low or "ds_store" in low:
+                    continue
+                if member.size <= 0 or member.size > 25 * 1024 * 1024:
+                    continue
+                try:
+                    f = tf.extractfile(member)
+                    if not f:
+                        continue
+                    inner = f.read(25 * 1024 * 1024)
+                except Exception:
+                    continue
+                if not inner or len(inner) < 2:
+                    continue
+                n_files += 1
+                try:
+                    inner_kind = _classify_upload_kind(inner, "", base)
+                except Exception:
+                    inner_kind = "unknown"
+                if inner_kind in ("zip", "tar") or low.endswith((".zip", ".tar", ".tar.gz", ".tgz")):
+                    if depth < max_depth:
+                        nested = ""
+                        if inner_kind == "zip" or low.endswith(".zip"):
+                            nested = _extract_zip_archive_members_text(inner, depth=depth + 1, max_depth=max_depth)
+                        else:
+                            nested = _extract_tar_archive_members_text(inner, depth=depth + 1, max_depth=max_depth)
+                        if nested:
+                            piece = f"[ARCHIVE:{base}]\n{nested}"
+                            chunks.append(piece)
+                            total += len(piece)
+                    continue
+                try:
+                    t = _extract_text_from_file_bytes(inner, "", base)
+                except Exception:
+                    t = ""
+                if t and t.strip():
+                    piece = f"[FILE:{base}]\n{t.strip()}"
+                    chunks.append(piece)
+                    total += len(piece)
+    except Exception as e:
+        # If it's a standalone .gz or .bz2 file (not tar archive), decompress directly
+        if data.startswith(b"\x1f\x8b"):
+            try:
+                import gzip
+                decomp = gzip.decompress(data)
+                t = _extract_text_from_file_bytes(decomp, "", "")
+                if t and t.strip():
+                    return t[:max_chars]
+            except Exception:
+                pass
+        elif data.startswith(b"BZh"):
+            try:
+                import bz2
+                decomp = bz2.decompress(data)
+                t = _extract_text_from_file_bytes(decomp, "", "")
+                if t and t.strip():
+                    return t[:max_chars]
+            except Exception:
+                pass
+    if not chunks:
+        if data.startswith(b"\x1f\x8b"):
+            try:
+                import gzip
+                decomp = gzip.decompress(data)
+                t = _extract_text_from_file_bytes(decomp, "", "")
+                if t and t.strip():
+                    return t[:max_chars]
+            except Exception:
+                pass
+        return ""
+    out = "\n\n".join(chunks)
+    print(
+        f"[UnifAI Proxy] TAR archive extract | members_text={len(chunks)} files~{n_files} | {len(out)} chars"
+    )
+    return out[:max_chars]
+
+
 def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name: str = "") -> str:
     """Extract scannable text — primary method per file type, then fallbacks until one succeeds."""
     if not data:
@@ -787,10 +902,11 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
                 ("docx-xml", lambda: _extract_docx_text(data)),
             ])
 
-        if kind == "zip":
-            # Real archives (resumes.zip): unpack members → PDF/Office/image/plain → rules.
+        if kind in ("zip", "tar"):
+            # Real archives (resumes.zip, code.tar.gz): unpack members → PDF/Office/image/plain → rules.
             return _try_file_extract_chain(data, ct, fn, kind, [
                 ("zip-members", lambda: _extract_zip_archive_members_text(data)),
+                ("tar-members", lambda: _extract_tar_archive_members_text(data)),
                 ("odf", lambda: _extract_opendocument_text(data)),
             ] + _office_extract_steps(data, "docx") + [
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
@@ -802,6 +918,7 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
             ("pdf-pypdf", lambda: _extract_pdf_pypdf(data)),
             ("pdf-regex", lambda: _extract_pdf_regex(data)),
             ("zip-members", lambda: _extract_zip_archive_members_text(data)),
+            ("tar-members", lambda: _extract_tar_archive_members_text(data)),
             ("rtf", lambda: _extract_rtf_text(data)),
             ("html", lambda: _extract_html_text(data)),
             ("odf", lambda: _extract_opendocument_text(data)),
@@ -1432,10 +1549,10 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
         # AI Guard Bot may call an LLM — keep under browser request timeouts.
         # evaluation_only: prefer fast defaults for Send.
         try:
-            default_to = "10" if evaluation_only and not upload_images else "18"
+            default_to = "25" if evaluation_only and not upload_images else "35"
             eval_timeout = float(os.getenv("UNIFAI_EVAL_TIMEOUT", default_to) or default_to)
         except Exception:
-            eval_timeout = 10.0 if evaluation_only else 18.0
+            eval_timeout = 25.0 if evaluation_only else 35.0
         eval_timeout = max(5.0, min(eval_timeout, 45.0 if evaluation_only else 95.0))
         with urllib.request.urlopen(req, timeout=eval_timeout) as response:
             if response.status == 200:

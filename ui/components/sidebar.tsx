@@ -72,6 +72,8 @@ import {
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE, COMPANY_NAME, COMPANY_LOGO, COMPANY_SHORT_NAME } from "@/lib/constants/config";
 import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, useLogoutMutation, useIsAuthEnabledQuery } from "@/lib/store";
+import { clearAuthStorage } from "@/lib/store/apis";
+import { invalidateSessionAuthCache } from "@/lib/utils/workspaceAccess";
 import {
 	parseAdminAllowedSections,
 	SECTION_KEY_BY_TITLE,
@@ -1447,13 +1449,20 @@ export default function AppSidebar() {
 	);
 
 	const handleLogout = async () => {
+		setUserPopoverOpen(false);
+		invalidateSessionAuthCache();
+		clearAuthStorage();
+		const currentTarget = pathname + (search ? (search.startsWith("?") ? search : `?${search}`) : "");
+		const gotoParam = currentTarget && currentTarget !== "/" && !currentTarget.startsWith("/login")
+			? `&goto=${encodeURIComponent(currentTarget)}`
+			: "";
+		const loginUrl = `/login?logged_out=1${gotoParam}`;
 		try {
-			setUserPopoverOpen(false);
 			await logout().unwrap();
-			window.location.assign("/login");
+			window.location.assign(loginUrl);
 		} catch {
-			// Even if logout fails on server, redirect to login
-			window.location.assign("/login");
+			// Even if logout fails on server, redirect to login with logged_out flag
+			window.location.assign(loginUrl);
 		}
 	};
 

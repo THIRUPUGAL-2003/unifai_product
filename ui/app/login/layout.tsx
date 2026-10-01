@@ -43,9 +43,12 @@ function PendingComponent() {
 export const Route = createFileRoute("/login")({
 	loader: async ({ location }) => {
 		invalidateSessionAuthCache();
+		const params = new URLSearchParams(location.searchStr);
+		const isExplicitLogout = params.get("logged_out") === "1" || params.get("logout") === "true";
 		const goto = getLoginGotoFromSearch(location.searchStr);
 		const data = await fetchSessionAuth(true);
-		if (data && (!data.is_auth_enabled || data.has_valid_token)) {
+		// Never auto-bounce back to workspace if user arrived via explicit logout
+		if (!isExplicitLogout && data && (!data.is_auth_enabled || data.has_valid_token)) {
 			throw redirect({ href: resolvePostLoginPath(data, goto) });
 		}
 	},

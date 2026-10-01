@@ -1,0 +1,1 @@
+import{A as e,j as t}from"./baseApi-Iqv0GAkc.js";import"./provider-C8APW73V.js";var n=e.withTypes(),r=t.withTypes();export{r as n,n as t};

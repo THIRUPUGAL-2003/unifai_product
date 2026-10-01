@@ -195,16 +195,19 @@ def enforce_file_send_policy(
             rule_action = (rule_action or "").upper()
             if rule_action == "ALERT":
                 rule_action = "WARN"
-            if platform and domain and (has_ai_bot_rules() or get_guard_rules()):
+            plat = (platform or domain or "Browser AI").strip()
+            dom = (domain or host or "").strip()
+            if dom and (has_ai_bot_rules() or get_guard_rules()):
                 try:
                     allowed, rt, action, _, _, eval_err = send_to_backend(
-                        platform, domain, scan_text[:50_000], client_ip, url, method or "POST",
+                        plat, dom, scan_text[:50_000], client_ip, url, method or "POST",
                         evaluation_only=True,
                         extracted_text=scan_text[:50_000],
                     )
-                    if not eval_err:
+                    is_rule_backend = (not allowed) or (action or "").upper() in ("BLOCK", "BLOCKED", "REDACT", "REDACTED", "WARN", "WARNED")
+                    if is_rule_backend or not eval_err:
                         rule_hit, rule_name, rule_action = _merge_file_scan_backend(
-                            rule_hit, rule_name, rule_action, allowed, rt, action or "",
+                            rule_hit, rule_name, rule_action, allowed, rt or "AI Guard Bot Policy", action or ("Blocked" if not allowed else "Allowed"),
                         )
                         rule_action = (rule_action or "").upper()
                         if rule_action == "ALERT":
@@ -575,7 +578,9 @@ def enforce_file_send_policy(
             file_rows = [r for r in ordered if r is not None]
 
     # Optional AI bot pass on combined extract (skip if regex-only).
-    need_bot = bool(has_ai_bot_rules() and platform and domain and not block_all)
+    plat = (platform or domain or "Browser AI").strip()
+    dom = (domain or host or "").strip()
+    need_bot = bool(has_ai_bot_rules() and dom and not block_all)
     any_local_block = any(
         r.get("rule_hit") and (r.get("rule_action") or "").upper() == "BLOCK" for r in file_rows
     )
@@ -595,8 +600,8 @@ def enforce_file_send_policy(
         if combined or vision:
             try:
                 allowed, rt, action, _, _, eval_err = send_to_backend(
-                    platform,
-                    domain,
+                    plat,
+                    dom,
                     combined[:40_000],
                     client_ip,
                     url,
@@ -605,15 +610,16 @@ def enforce_file_send_policy(
                     evaluation_only=True,
                     extracted_text=combined[:40_000],
                 )
-                if not eval_err:
+                is_rule_backend = (not allowed) or (action or "").upper() in ("BLOCK", "BLOCKED", "REDACT", "REDACTED", "WARN", "WARNED")
+                if is_rule_backend or not eval_err:
                     for r in file_rows:
                         hit, name, act = _merge_file_scan_backend(
                             bool(r.get("rule_hit")),
                             r.get("rule_name") or "",
                             (r.get("rule_action") or "").upper(),
                             allowed,
-                            rt,
-                            action or "",
+                            rt or "AI Guard Bot Policy",
+                            action or ("Blocked" if not allowed else "Allowed"),
                         )
                         r["rule_hit"] = bool(hit)
                         r["rule_name"] = name or ""
@@ -638,17 +644,18 @@ def enforce_file_send_policy(
         ):
             try:
                 allowed, rt, action, _, _, eval_err = send_to_backend(
-                    platform,
-                    domain,
+                    plat,
+                    dom,
                     caption[:40_000],
                     client_ip,
                     url,
                     method or "POST",
                     evaluation_only=True,
                 )
-                if not eval_err:
+                is_rule_backend = (not allowed) or (action or "").upper() in ("BLOCK", "BLOCKED", "REDACT", "REDACTED", "WARN", "WARNED")
+                if is_rule_backend or not eval_err:
                     cap_hit, cap_name, cap_action = _merge_file_scan_backend(
-                        cap_hit, cap_name, cap_action, allowed, rt, action or "",
+                        cap_hit, cap_name, cap_action, allowed, rt or "AI Guard Bot Policy", action or ("Blocked" if not allowed else "Allowed"),
                     )
                     cap_action = (cap_action or "").upper()
                     if cap_action == "ALERT":

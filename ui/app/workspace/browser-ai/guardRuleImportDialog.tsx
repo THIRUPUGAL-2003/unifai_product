@@ -462,7 +462,7 @@ export function GuardRuleImportDialog({
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className="flex-1 overflow-y-auto p-5 space-y-4">
+				<div className="flex-1 overflow-y-auto p-5 space-y-4 no-scrollbar">
 					{/* Dropzone Area */}
 					{parsedRules.length === 0 ? (
 						<div
@@ -540,7 +540,7 @@ export function GuardRuleImportDialog({
 
 							{/* Preview Table */}
 							<div className="rounded-lg border border-border overflow-hidden">
-								<div className="max-h-[320px] overflow-y-auto">
+								<div className="max-h-[320px] overflow-y-auto no-scrollbar">
 									<table className="w-full text-left text-xs border-collapse">
 										<thead className="bg-muted/70 text-muted-foreground sticky top-0 border-b border-border z-10">
 											<tr>

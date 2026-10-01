@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-sLPvdpSW.js";import{t}from"./noPermissionView-CMJ61J-Y.js";import{i as n,r,t as i}from"./lib-dDI6yBpP.js";import{t as a}from"./mcpView-DcgKzT7C.js";var o=e();function s(){return(0,o.jsx)(a,{})}function c(){return n(r.MCPGateway,i.View)?(0,o.jsx)(s,{}):(0,o.jsx)(t,{entity:`MCP gateway settings`})}export{c as component};

@@ -414,14 +414,17 @@ func rulePatternMatches(rule logstore.BrowserGuardRule, text string) bool {
 }
 
 // aiBotViolationLikelyFalsePositive only drops non-prompt wire/IDE junk.
-// No greeting lists, no product domains, no policy-topic hardcoding —
-// admin Target Websites + Guard Rules + the employee prompt decide the rest.
+// Never drop code or valid file content — code characters like {}, ;, operators must not be treated as binary noise.
 func aiBotViolationLikelyFalsePositive(_ logstore.BrowserGuardRule, content string) bool {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return true
 	}
-	return logstore.IsOpaqueOrWirePrompt(content)
+	low := strings.ToLower(content)
+	if strings.Contains(low, "cursor.exe") && strings.Contains(content, "@") {
+		return true
+	}
+	return false
 }
 
 // evaluateGuardOnly runs regex + AI Guard Bot rules without persisting a log row (file-scan pre-check).

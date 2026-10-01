@@ -2006,8 +2006,8 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
                     # Do not invent document.pdf here — that becomes a fake "prompt" in logs.
                     return part, ctype, name or "attachment"
 
-    # Direct binary body (resumable / octet-stream)
-    if len(raw) >= 32:
+    # Direct binary body (resumable / octet-stream / plain files)
+    if len(raw) >= 32 or (len(raw) >= 1 and (_has_any_file_extension(name) or (content_type or "").lower().startswith("text/"))):
         ctype = _sniff_upload_content_type(raw, name, content_type)
         # Skip tiny JSON metadata
         stripped = raw.lstrip()
@@ -3243,10 +3243,11 @@ def _scan_upload_for_rules(
                 rule_action = "WARN"
         # Backend regex/bot on extract or vision images.
         has_regex = bool(get_guard_rules())
+        plat = (platform or domain or "Browser AI").strip()
+        dom = (domain or "").strip()
         run_backend = bool(
             (not skip_backend)
-            and platform
-            and domain
+            and dom
             and (eval_blob or upload_images)
             and (has_ai_bot_rules() or has_regex)
             and not (rule_hit and rule_action == "BLOCK")
@@ -3261,20 +3262,21 @@ def _scan_upload_for_rules(
             try:
                 _eval_text = (eval_blob or scanned or "")[:50_000]
                 allowed, rt, action, _, _, eval_err = send_to_backend(
-                    platform, domain, _eval_text, client_ip, url, method or "POST",
+                    plat, dom, _eval_text, client_ip, url, method or "POST",
                     upload_images=upload_images,
                     evaluation_only=True,
                     extracted_text=_eval_text,
                 )
-                if eval_err:
+                is_rule_backend = (not allowed) or (action or "").upper() in ("BLOCK", "BLOCKED", "REDACT", "REDACTED", "WARN", "WARNED")
+                if is_rule_backend or not eval_err:
+                    scan_evaluated = True
+                    rule_hit, rule_name, rule_action = _merge_file_scan_backend(
+                        rule_hit, rule_name, rule_action, allowed, rt or "AI Guard Bot Policy", action or ("Blocked" if not allowed else "Allowed"),
+                    )
+                else:
                     scan_eval_error = str(eval_err).strip()
                     scan_evaluated = False
                     print(f"[UnifAI Proxy] AI bot file scan eval_error (will re-check on log): {scan_eval_error}")
-                else:
-                    scan_evaluated = True
-                    rule_hit, rule_name, rule_action = _merge_file_scan_backend(
-                        rule_hit, rule_name, rule_action, allowed, rt, action or "",
-                    )
             except Exception as e:
                 scan_evaluated = False
                 scan_eval_error = str(e).strip()[:300] or "backend file scan failed"
