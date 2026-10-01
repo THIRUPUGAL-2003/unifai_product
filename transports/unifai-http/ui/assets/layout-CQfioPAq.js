@@ -1,0 +1,1 @@
+import{o as e}from"./chunk-CMxvf4Kt.js";import{t}from"./react-CoHAqsLe.js";import{Y as n}from"./index-DskNI0FE.js";var r=e(t());function i(){let e=n();return(0,r.useEffect)(()=>{e({to:`/workspace/mcp-registry`,replace:!0})},[e]),null}var a=i;export{a as component};

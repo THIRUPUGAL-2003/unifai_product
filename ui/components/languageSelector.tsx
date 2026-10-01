@@ -215,6 +215,34 @@ export function ensureGoogleTranslateScript() {
 	}
 }
 
+export function suppressGoogleTranslateBanner() {
+	if (typeof window === "undefined") return;
+	if (document.body) {
+		if (document.body.style.top && document.body.style.top !== "0px") {
+			document.body.style.setProperty("top", "0px", "important");
+		}
+		if (document.body.style.marginTop && document.body.style.marginTop !== "0px") {
+			document.body.style.setProperty("margin-top", "0px", "important");
+		}
+	}
+	if (document.documentElement) {
+		if (document.documentElement.style.top && document.documentElement.style.top !== "0px") {
+			document.documentElement.style.setProperty("top", "0px", "important");
+		}
+	}
+	const frames = document.querySelectorAll(
+		'.goog-te-banner-frame, iframe[class*="VIpgJd"], iframe[class*="goog-te"], .VIpgJd-ZVi9od-ORHb-OEVmcd, [id^="goog-gt-"]'
+	);
+	frames.forEach((el) => {
+		const h = el as HTMLElement;
+		h.style.setProperty("display", "none", "important");
+		h.style.setProperty("visibility", "hidden", "important");
+		h.style.setProperty("height", "0px", "important");
+		h.style.setProperty("opacity", "0", "important");
+		h.style.setProperty("pointer-events", "none", "important");
+	});
+}
+
 interface LanguageSelectorProps {
 	compact?: boolean;
 	className?: string;
@@ -229,19 +257,39 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 		const stored = getStoredLanguage();
 		setSelectedCode(stored);
 		ensureGoogleTranslateScript();
+		suppressGoogleTranslateBanner();
 
+		let observer: MutationObserver | null = null;
+		if (typeof window !== "undefined" && window.MutationObserver && document.documentElement) {
+			observer = new MutationObserver(() => {
+				suppressGoogleTranslateBanner();
+			});
+			observer.observe(document.documentElement, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeFilter: ["style", "class"],
+			});
+		}
+
+		let pollTimer: NodeJS.Timeout | null = null;
 		if (stored && stored !== "en") {
 			setGoogleTransCookie(stored);
 			let attempts = 0;
-			const pollTimer = setInterval(() => {
+			pollTimer = setInterval(() => {
 				attempts++;
+				suppressGoogleTranslateBanner();
 				const applied = applyComboLanguage(stored);
 				if (applied || attempts > 25) {
-					clearInterval(pollTimer);
+					if (pollTimer) clearInterval(pollTimer);
 				}
 			}, 200);
-			return () => clearInterval(pollTimer);
 		}
+
+		return () => {
+			if (pollTimer) clearInterval(pollTimer);
+			if (observer) observer.disconnect();
+		};
 	}, []);
 
 	const currentLanguage = useMemo(() => {
@@ -262,10 +310,12 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 		setOpen(false);
 
 		try {
+			suppressGoogleTranslateBanner();
 			if (targetCode === "en") {
 				localStorage.removeItem("unifai_language");
 				clearGoogleTransCookie();
 				applyComboLanguage("en");
+				suppressGoogleTranslateBanner();
 				toast.success("Language reset to English");
 				setTimeout(() => {
 					window.location.reload();
@@ -278,6 +328,7 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 
 			// Try to apply immediately or poll for combo
 			const applied = applyComboLanguage(targetCode);
+			suppressGoogleTranslateBanner();
 			if (applied) {
 				toast.success(`Language changed to ${lang.name} (${lang.nativeName})`);
 			} else {
@@ -285,8 +336,10 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 				let attempts = 0;
 				const pollInterval = setInterval(() => {
 					attempts++;
+					suppressGoogleTranslateBanner();
 					if (applyComboLanguage(targetCode)) {
 						clearInterval(pollInterval);
+						suppressGoogleTranslateBanner();
 						toast.success(`Language changed to ${lang.name} (${lang.nativeName})`);
 					} else if (attempts >= 10) {
 						clearInterval(pollInterval);
@@ -318,11 +371,12 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 			variant="outline"
 			size="sm"
 			className={cn(
-				"h-8 gap-1.5 rounded-full border-border/80 bg-background/80 px-2.5 text-xs font-normal shadow-xs backdrop-blur-sm hover:border-primary/50 hover:bg-accent/60 transition-all cursor-pointer",
+				"notranslate h-8 gap-1.5 rounded-full border-border/80 bg-background/80 px-2.5 text-xs font-normal shadow-xs backdrop-blur-sm hover:border-primary/50 hover:bg-accent/60 transition-all cursor-pointer",
 				selectedCode !== "en" && "border-primary/50 bg-primary/5 font-medium text-primary",
 				className,
 			)}
 			type="button"
+			translate="no"
 		>
 			<Globe className="h-3.5 w-3.5 text-muted-foreground opacity-80 shrink-0" />
 			<span className="text-sm leading-none">{currentLanguage.flag}</span>
@@ -337,7 +391,7 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 				<TooltipTrigger asChild>
 					<PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
 				</TooltipTrigger>
-				<TooltipContent side="bottom" className="text-xs">
+				<TooltipContent side="bottom" className="notranslate text-xs" translate="no">
 					Change Language / மொழி மாற்ற / भाषा बदलें
 				</TooltipContent>
 			</Tooltip>
@@ -345,7 +399,8 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 			<PopoverContent
 				side="bottom"
 				align="end"
-				className="w-80 p-0 shadow-xl border-border bg-card/95 backdrop-blur-md rounded-xl overflow-hidden z-[100]"
+				className="notranslate w-80 p-0 shadow-xl border-border bg-card/95 backdrop-blur-md rounded-xl overflow-hidden z-[100]"
+				translate="no"
 			>
 				<div className="p-3 border-b border-border/60 bg-muted/30">
 					<div className="flex items-center justify-between mb-2">
