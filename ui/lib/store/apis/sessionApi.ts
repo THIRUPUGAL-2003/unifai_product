@@ -137,7 +137,7 @@ export const sessionApi = baseApi.injectEndpoints({
 					dispatch(baseApi.util.resetApiState());
 				}
 			},
-			invalidatesTags: ["Sessions", "Config", "Providers", "Logs", "VirtualKeys", "Teams", "Customers", "Budgets", "RateLimits"],
+			invalidatesTags: ["Sessions", "Providers", "Logs", "VirtualKeys", "Teams", "Customers", "Budgets", "RateLimits"],
 		}),
 	}),
 });

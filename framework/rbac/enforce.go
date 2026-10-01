@@ -110,6 +110,11 @@ func readRequirement(path string) *PathRequirement {
 	if path == "/api/rbac/me/permissions" {
 		return nil
 	}
+	// Core system configuration (is_db_connected, env, auth status, version) is required
+	// by all dashboard shells and clients; write operations still require Settings Update.
+	if path == "/api/config" {
+		return nil
+	}
 	switch {
 	case isDashboardAggregatePath(path):
 		return &PathRequirement{Resource: "Logs", Operation: "Read", AnyOfResources: []string{"Logs", "Dashboard"}}
@@ -174,7 +179,7 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "SkillsRepository", Operation: "View"}
 	case strings.HasPrefix(path, "/api/providers"), strings.HasPrefix(path, "/api/keys"), strings.HasPrefix(path, "/api/models"):
 		return &PathRequirement{Resource: "ModelProvider", Operation: "View"}
-	case strings.HasPrefix(path, "/api/config"), strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/vector-store-config"), strings.HasPrefix(path, "/api/smtp-config"):
+	case strings.HasPrefix(path, "/api/proxy-config"), strings.HasPrefix(path, "/api/vector-store-config"), strings.HasPrefix(path, "/api/smtp-config"):
 		return &PathRequirement{Resource: "Settings", Operation: "View"}
 	default:
 		return nil

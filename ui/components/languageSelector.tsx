@@ -75,56 +75,144 @@ function getStoredLanguage(): string {
 	return "en";
 }
 
-function setGoogleTransCookie(targetCode: string) {
+function clearGoogleTransCookie() {
 	if (typeof window === "undefined") return;
-	const isEn = targetCode === "en";
-	const cookieVal = isEn ? "" : `/en/${targetCode}`;
-	const expires = isEn ? "Thu, 01 Jan 1970 00:00:00 UTC" : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
+	const past = "Thu, 01 Jan 1970 00:00:00 GMT";
 	const domain = window.location.hostname;
+	const isIpOrLocal = /^\d+\.\d+\.\d+\.\d+$/.test(domain) || domain === "localhost";
+	const paths = ["/", window.location.pathname];
 
-	document.cookie = `googtrans=${cookieVal}; path=/; expires=${expires};`;
-	document.cookie = `googtrans=${cookieVal}; path=/; domain=${domain}; expires=${expires};`;
-	if (domain && domain.includes(".")) {
-		const parts = domain.split(".");
-		if (parts.length >= 2) {
-			const root = parts.slice(-2).join(".");
-			document.cookie = `googtrans=${cookieVal}; path=/; domain=.${root}; expires=${expires};`;
+	for (const p of paths) {
+		document.cookie = `googtrans=; path=${p}; expires=${past};`;
+		document.cookie = `googtrans=; path=${p}; domain=${domain}; expires=${past};`;
+		if (!isIpOrLocal && domain.includes(".")) {
+			const parts = domain.split(".");
+			if (parts.length >= 2) {
+				const root = parts.slice(-2).join(".");
+				document.cookie = `googtrans=; path=${p}; domain=.${root}; expires=${past};`;
+				document.cookie = `googtrans=; path=${p}; domain=${root}; expires=${past};`;
+			}
 		}
 	}
 }
 
+function setGoogleTransCookie(targetCode: string) {
+	if (typeof window === "undefined") return;
+	if (targetCode === "en") {
+		clearGoogleTransCookie();
+		return;
+	}
+	const cookieVal = `/en/${targetCode}`;
+	const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
+	const domain = window.location.hostname;
+	const isIpOrLocal = /^\d+\.\d+\.\d+\.\d+$/.test(domain) || domain === "localhost";
+
+	document.cookie = `googtrans=${cookieVal}; path=/; expires=${expires};`;
+
+	if (!isIpOrLocal) {
+		document.cookie = `googtrans=${cookieVal}; path=/; domain=${domain}; expires=${expires};`;
+		if (domain.includes(".")) {
+			const parts = domain.split(".");
+			if (parts.length >= 2) {
+				const root = parts.slice(-2).join(".");
+				document.cookie = `googtrans=${cookieVal}; path=/; domain=.${root}; expires=${expires};`;
+			}
+		}
+	}
+}
+
+function applyComboLanguage(targetCode: string): boolean {
+	if (typeof document === "undefined") return false;
+	const combo = document.querySelector<HTMLSelectElement>(".goog-te-combo");
+	if (!combo) return false;
+
+	const val = targetCode === "en" ? "" : targetCode;
+	let foundIndex = -1;
+	for (let i = 0; i < combo.options.length; i++) {
+		const optVal = combo.options[i].value;
+		if (targetCode === "en") {
+			if (optVal === "" || optVal.toLowerCase() === "en" || combo.options[i].text.toLowerCase().includes("select")) {
+				foundIndex = i;
+				break;
+			}
+		} else if (optVal.toLowerCase() === val.toLowerCase()) {
+			foundIndex = i;
+			break;
+		}
+	}
+
+	if (foundIndex >= 0) {
+		combo.selectedIndex = foundIndex;
+	} else {
+		combo.value = val;
+	}
+
+	combo.dispatchEvent(new Event("change", { bubbles: true }));
+	combo.dispatchEvent(new Event("input", { bubbles: true }));
+	if (typeof combo.onchange === "function") {
+		try {
+			combo.onchange(new Event("change") as unknown as Event);
+		} catch (e) {
+			console.warn("combo onchange error:", e);
+		}
+	}
+	return true;
+}
+
 export function ensureGoogleTranslateScript() {
 	if (typeof window === "undefined") return;
-	if (document.getElementById("google-translate-script")) return;
 
 	// Add container if not present
 	if (!document.getElementById("google_translate_element")) {
 		const div = document.createElement("div");
 		div.id = "google_translate_element";
-		div.style.display = "none";
+		div.style.position = "absolute";
+		div.style.left = "-9999px";
+		div.style.top = "-9999px";
+		div.style.width = "1px";
+		div.style.height = "1px";
+		div.style.opacity = "0";
+		div.style.pointerEvents = "none";
+		div.style.overflow = "hidden";
 		document.body.appendChild(div);
 	}
 
 	// Define global init handler
-	(window as unknown as { googleTranslateElementInit: () => void }).googleTranslateElementInit = function () {
-		const googleObj = (window as unknown as { google?: { translate?: { TranslateElement: new (opts: unknown, id: string) => void } } }).google;
-		if (googleObj && googleObj.translate && googleObj.translate.TranslateElement) {
-			new googleObj.translate.TranslateElement(
-				{
-					pageLanguage: "en",
-					autoDisplay: false,
-				},
-				"google_translate_element",
-			);
-		}
+	const w = window as unknown as {
+		googleTranslateElementInit?: () => void;
+		google?: { translate?: { TranslateElement: new (opts: unknown, id: string) => void } };
 	};
+	if (!w.googleTranslateElementInit) {
+		let attempts = 0;
+		const initTranslate = () => {
+			if (w.google?.translate?.TranslateElement) {
+				try {
+					new w.google.translate.TranslateElement(
+						{
+							pageLanguage: "en",
+							autoDisplay: false,
+						},
+						"google_translate_element",
+					);
+				} catch (e) {
+					console.warn("TranslateElement init failed:", e);
+				}
+			} else if (attempts < 30) {
+				attempts++;
+				setTimeout(initTranslate, 150);
+			}
+		};
+		w.googleTranslateElementInit = initTranslate;
+	}
 
-	const script = document.createElement("script");
-	script.id = "google-translate-script";
-	script.type = "text/javascript";
-	script.src = "//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
-	script.async = true;
-	document.head.appendChild(script);
+	if (!document.getElementById("google-translate-script")) {
+		const script = document.createElement("script");
+		script.id = "google-translate-script";
+		script.type = "text/javascript";
+		script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+		script.async = true;
+		document.head.appendChild(script);
+	}
 }
 
 interface LanguageSelectorProps {
@@ -138,8 +226,22 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 	const [searchQuery, setSearchQuery] = useState("");
 
 	useEffect(() => {
-		setSelectedCode(getStoredLanguage());
+		const stored = getStoredLanguage();
+		setSelectedCode(stored);
 		ensureGoogleTranslateScript();
+
+		if (stored && stored !== "en") {
+			setGoogleTransCookie(stored);
+			let attempts = 0;
+			const pollTimer = setInterval(() => {
+				attempts++;
+				const applied = applyComboLanguage(stored);
+				if (applied || attempts > 25) {
+					clearInterval(pollTimer);
+				}
+			}, 200);
+			return () => clearInterval(pollTimer);
+		}
 	}, []);
 
 	const currentLanguage = useMemo(() => {
@@ -160,21 +262,38 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 		setOpen(false);
 
 		try {
+			if (targetCode === "en") {
+				localStorage.removeItem("unifai_language");
+				clearGoogleTransCookie();
+				applyComboLanguage("en");
+				toast.success("Language reset to English");
+				setTimeout(() => {
+					window.location.reload();
+				}, 250);
+				return;
+			}
+
 			localStorage.setItem("unifai_language", targetCode);
 			setGoogleTransCookie(targetCode);
 
-			// Trigger Google Translate select element if present
-			const combo = document.querySelector<HTMLSelectElement>(".goog-te-combo");
-			if (combo) {
-				combo.value = targetCode;
-				combo.dispatchEvent(new Event("change"));
+			// Try to apply immediately or poll for combo
+			const applied = applyComboLanguage(targetCode);
+			if (applied) {
 				toast.success(`Language changed to ${lang.name} (${lang.nativeName})`);
 			} else {
-				// Script still initializing or first switch: reload to apply cookie cleanly
 				toast.info(`Applying ${lang.name} (${lang.nativeName})...`);
-				setTimeout(() => {
-					window.location.reload();
-				}, 300);
+				let attempts = 0;
+				const pollInterval = setInterval(() => {
+					attempts++;
+					if (applyComboLanguage(targetCode)) {
+						clearInterval(pollInterval);
+						toast.success(`Language changed to ${lang.name} (${lang.nativeName})`);
+					} else if (attempts >= 10) {
+						clearInterval(pollInterval);
+						// If combo still not present, reload to apply cookie
+						window.location.reload();
+					}
+				}, 150);
 			}
 		} catch (err) {
 			console.error("Language switch error:", err);
@@ -199,15 +318,16 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 			variant="outline"
 			size="sm"
 			className={cn(
-				"h-8 gap-1.5 rounded-full border-border/80 bg-background/80 px-2.5 text-xs font-normal shadow-xs backdrop-blur-sm hover:border-primary/50 hover:bg-accent/60 transition-all",
+				"h-8 gap-1.5 rounded-full border-border/80 bg-background/80 px-2.5 text-xs font-normal shadow-xs backdrop-blur-sm hover:border-primary/50 hover:bg-accent/60 transition-all cursor-pointer",
 				selectedCode !== "en" && "border-primary/50 bg-primary/5 font-medium text-primary",
 				className,
 			)}
 			type="button"
 		>
+			<Globe className="h-3.5 w-3.5 text-muted-foreground opacity-80 shrink-0" />
 			<span className="text-sm leading-none">{currentLanguage.flag}</span>
-			<span className="max-w-[80px] truncate">{currentLanguage.nativeName}</span>
-			<ChevronDown className="h-3 w-3 opacity-60 ml-0.5" />
+			<span className="max-w-[90px] truncate">{currentLanguage.nativeName}</span>
+			<ChevronDown className="h-3 w-3 opacity-60 ml-0.5 shrink-0" />
 		</Button>
 	);
 

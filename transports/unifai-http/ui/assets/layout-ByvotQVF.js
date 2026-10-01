@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-sLPvdpSW.js";import{J as t}from"./index-BbaeCWmh.js";var n=e(),r=()=>(0,n.jsx)(t,{to:`/workspace/model-limits`,replace:!0});export{r as component};

@@ -37,7 +37,7 @@ func SecurityHeadersMiddleware() schemas.UnifAIHTTPMiddleware {
 			ctx.Response.Header.Set("X-Frame-Options", "DENY")
 			ctx.Response.Header.Set("X-Content-Type-Options", "nosniff")
 			ctx.Response.Header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			ctx.Response.Header.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'")
+			ctx.Response.Header.Set("Content-Security-Policy", "default-src 'self' https://*.google.com https://*.googleapis.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://*.googleapis.com https://*.gstatic.com; style-src 'self' 'unsafe-inline' https://*.google.com https://*.googleapis.com https://*.gstatic.com; img-src 'self' data: https: https://*.google.com https://*.gstatic.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss: https://*.google.com https://*.googleapis.com; frame-src 'self' https://*.google.com https://*.googleapis.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'")
 			ctx.Response.Header.Set("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
 			// Only set HSTS when serving over HTTPS (detected via reverse proxy header or direct TLS)
 			if string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" || ctx.IsTLS() {

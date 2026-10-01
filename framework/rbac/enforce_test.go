@@ -20,10 +20,14 @@ func TestPathRequirementFor(t *testing.T) {
 		t.Fatalf("Unexpected requirement for POST virtual-keys: %+v", reqVKPost)
 	}
 
-	// 3. Settings / Config endpoints
+	// 3. Settings / Config endpoints: GET /api/config is available to all authenticated roles
 	reqConfigGet := PathRequirementFor("GET", "/api/config")
-	if reqConfigGet == nil || reqConfigGet.Resource != "Settings" || reqConfigGet.Operation != "View" {
-		t.Fatalf("Unexpected requirement for GET /api/config: %+v", reqConfigGet)
+	if reqConfigGet != nil {
+		t.Fatalf("Expected nil requirement for GET /api/config, got: %+v", reqConfigGet)
+	}
+	reqProxyGet := PathRequirementFor("GET", "/api/proxy-config")
+	if reqProxyGet == nil || reqProxyGet.Resource != "Settings" || reqProxyGet.Operation != "View" {
+		t.Fatalf("Unexpected requirement for GET /api/proxy-config: %+v", reqProxyGet)
 	}
 	reqConfigPut := PathRequirementFor("PUT", "/api/config")
 	if reqConfigPut == nil || reqConfigPut.Resource != "Settings" || reqConfigPut.Operation != "Update" {

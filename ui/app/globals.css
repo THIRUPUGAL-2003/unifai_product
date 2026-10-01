@@ -561,8 +561,24 @@ body {
 	position: static !important;
 }
 
-.skiptranslate:not(.unifai-custom-lang) {
-	display: none !important;
+#google_translate_element {
+	position: absolute !important;
+	left: -9999px !important;
+	top: -9999px !important;
+	width: 1px !important;
+	height: 1px !important;
+	opacity: 0 !important;
+	pointer-events: none !important;
+	overflow: hidden !important;
+}
+
+.goog-te-gadget {
+	font-size: 0px !important;
+	color: transparent !important;
+}
+
+.goog-te-gadget .goog-te-combo {
+	font-size: 12px !important;
 }
 
 font {
