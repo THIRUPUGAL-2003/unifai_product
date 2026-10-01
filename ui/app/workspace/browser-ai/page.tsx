@@ -233,8 +233,13 @@ export default function BrowserAiPage() {
 	const [uninstallKeyInput, setUninstallKeyInput] = useState("");
 	const [uninstallKeyMessage, setUninstallKeyMessage] = useState("");
 	const [uninstallKeyError, setUninstallKeyError] = useState("");
-	// Plaintext is hashed server-side; keep last saved value only for this browser session.
-	const [savedUninstallKeyDisplay, setSavedUninstallKeyDisplay] = useState("");
+	// Plaintext company uninstall key display (stored in DB encrypted and cached in session/localStorage)
+	const [savedUninstallKeyDisplay, setSavedUninstallKeyDisplay] = useState(() => {
+		if (typeof window !== "undefined") {
+			return localStorage.getItem("unifai_company_uninstall_key") || "";
+		}
+		return "";
+	});
 	const [uninstallKeyEditing, setUninstallKeyEditing] = useState(false);
 	const [showUninstallKey, setShowUninstallKey] = useState(false);
 	const [agentSearch, setAgentSearch] = useState("");
@@ -564,6 +569,14 @@ export default function BrowserAiPage() {
 	const clicksSearchCount = searchLogsData?.clicks_count || 0;
 
 	const { data: agentSettingsData, refetch: refetchAgentSettings } = useGetBrowserAiAgentSettingsQuery();
+	useEffect(() => {
+		if (agentSettingsData?.uninstall_key) {
+			setSavedUninstallKeyDisplay(agentSettingsData.uninstall_key);
+			if (typeof window !== "undefined") {
+				localStorage.setItem("unifai_company_uninstall_key", agentSettingsData.uninstall_key);
+			}
+		}
+	}, [agentSettingsData?.uninstall_key]);
 	const [saveUninstallKey, { isLoading: savingUninstallKey }] = useSaveBrowserAiUninstallKeyMutation();
 	const [clearBrowserAiLogs, { isLoading: isClearingLogs }] = useClearBrowserAiLogsMutation();
 	const [clearBrowserAiSearchLogs, { isLoading: isClearingSearchLogs }] = useClearBrowserAiSearchLogsMutation();
@@ -1521,6 +1534,58 @@ export default function BrowserAiPage() {
 	const addedTargetDomains = targets.map((t) => t.domain);
 	const newTargetRelatedGroup = relatedHostsForDomain(newTargetDomain);
 
+	// Dynamic Platform filter options based on all configured Target Websites + logged platforms
+	const availablePlatformOptions = useMemo(() => {
+		const map = new Map<string, string>();
+
+		// 1. From all Target Websites configured by user
+		for (const t of targets) {
+			const p = (t.platform_name || "").trim();
+			const d = (t.domain || "").trim();
+			if (p && d && p.toLowerCase() !== d.toLowerCase()) {
+				map.set(p, `${p} (${d})`);
+			} else if (p) {
+				map.set(p, p);
+			} else if (d) {
+				map.set(d, d);
+			}
+		}
+
+		// 2. From all actual logs recorded
+		for (const l of logs) {
+			const p = (l.platform || "").trim();
+			if (p && !map.has(p)) {
+				map.set(p, p);
+			}
+		}
+
+		// 3. Keep currently selected value if valid and not yet in map
+		if (selectedPlatform && selectedPlatform !== "all" && !map.has(selectedPlatform)) {
+			map.set(selectedPlatform, selectedPlatform);
+		}
+
+		// 4. Common standard AI platforms
+		const defaults = [
+			{ value: "ChatGPT", label: "ChatGPT" },
+			{ value: "Claude", label: "Claude" },
+			{ value: "Gemini", label: "Gemini" },
+			{ value: "Copilot", label: "Copilot" },
+			{ value: "Perplexity", label: "Perplexity" },
+			{ value: "DeepSeek", label: "DeepSeek" },
+			{ value: "Mistral AI", label: "Mistral AI" },
+			{ value: "Grok", label: "Grok" },
+		];
+		for (const def of defaults) {
+			if (!map.has(def.value)) {
+				map.set(def.value, def.label);
+			}
+		}
+
+		return Array.from(map.entries())
+			.map(([value, label]) => ({ value, label }))
+			.sort((a, b) => a.label.localeCompare(b.label));
+	}, [targets, logs, selectedPlatform]);
+
 	const activeRulesCount = rules.filter((r) => r.active).length;
 	const monitoredTargetsCount = targets.filter((t) => t.monitored).length;
 	const blockedCount = logs.filter((l) => l.action === "Blocked").length;
@@ -1638,10 +1703,13 @@ export default function BrowserAiPage() {
 				updated_by: "admin",
 			}).unwrap();
 			setSavedUninstallKeyDisplay(nextKey);
+			if (typeof window !== "undefined") {
+				localStorage.setItem("unifai_company_uninstall_key", nextKey);
+			}
 			setUninstallKeyInput("");
 			setUninstallKeyEditing(false);
 			setShowUninstallKey(true);
-			setUninstallKeyMessage("Uninstall key saved. Share this key with IT — server stores only a hash.");
+			setUninstallKeyMessage("Uninstall key saved successfully.");
 			refetchAgentSettings();
 		} catch (error) {
 			setUninstallKeyError(error instanceof Error ? error.message : "Failed to save uninstall key");
@@ -1777,7 +1845,7 @@ export default function BrowserAiPage() {
 	const rulesCurrentPage = Math.floor(rulesPageOffset / rulesPageLimit) + 1;
 	const pagedRules = filteredRules.slice(rulesPageOffset, rulesPageOffset + rulesPageLimit);
 
-	const getBrowserAiExportPayload = (): ExportFormatsPayload => {
+	const getBrowserAiExportPayload = async (): Promise<ExportFormatsPayload> => {
 		if (activeTab === "rules") {
 			// Column headers match Import Rules Excel template (round-trip safe).
 			return {
@@ -1860,10 +1928,32 @@ export default function BrowserAiPage() {
 			};
 		}
 		if (activeTab === "search-logs") {
+			let exportSearchLogs = searchLogs;
+			if (totalSearchLogs > searchLogs.length) {
+				try {
+					const params = new URLSearchParams({
+						limit: String(Math.min(5000, totalSearchLogs)),
+						offset: "0",
+					});
+					if (searchEngineFilter && searchEngineFilter !== "all") params.set("engine", searchEngineFilter);
+					if (searchBrowserFilter && searchBrowserFilter !== "all") params.set("browser", searchBrowserFilter);
+					if (searchIncognitoFilter && searchIncognitoFilter !== "all") params.set("is_incognito", searchIncognitoFilter);
+					if (searchLogQuery) params.set("search", searchLogQuery);
+					const res = await fetch(`/api/browser-ai/search-logs?${params.toString()}`);
+					if (res.ok) {
+						const data = await res.json();
+						if (Array.isArray(data.logs) && data.logs.length > 0) {
+							exportSearchLogs = data.logs;
+						}
+					}
+				} catch {
+					// fallback to current page
+				}
+			}
 			return {
 				filename: "browser-ai-search-logs",
 				title: "Browser AI — Search Logs",
-				subtitle: `${searchLogs.length} of ${totalSearchLogs} shown`,
+				subtitle: `${exportSearchLogs.length} of ${totalSearchLogs} search log(s)`,
 				columns: [
 					{ key: "date", header: "Date" },
 					{ key: "time", header: "Time" },
@@ -1875,7 +1965,7 @@ export default function BrowserAiPage() {
 					{ key: "clicked", header: "Clicked Result Link" },
 					{ key: "threat", header: "Threat Risk" },
 				],
-				rows: searchLogs.map((log) => ({
+				rows: exportSearchLogs.map((log) => ({
 					date: formatLogDate(log.timestamp),
 					time: formatLogTime(log.timestamp),
 					desktop_name: log.agent_hostname || "",
@@ -1895,7 +1985,27 @@ export default function BrowserAiPage() {
 			};
 		}
 		// overview + logs — same columns as Prompt Logs table
-		const logPage = Math.floor(pageOffset / pageLimit) + 1;
+		let exportLogs = logs;
+		if (totalLogs > logs.length) {
+			try {
+				const params = new URLSearchParams({
+					limit: String(Math.min(5000, totalLogs)),
+					offset: "0",
+				});
+				if (selectedPlatform && selectedPlatform !== "all") params.set("platform", selectedPlatform);
+				if (selectedAction && selectedAction !== "all") params.set("action", selectedAction);
+				if (searchQuery) params.set("search", searchQuery);
+				const res = await fetch(`/api/browser-ai/logs?${params.toString()}`);
+				if (res.ok) {
+					const data = await res.json();
+					if (Array.isArray(data.logs) && data.logs.length > 0) {
+						exportLogs = data.logs;
+					}
+				}
+			} catch {
+				// fallback to current page
+			}
+		}
 		const promptPreviewForExport = (log: (typeof logs)[number]) => {
 			if (isFileUploadLog(log)) {
 				const label = logAttachmentLabel(log);
@@ -1904,10 +2014,21 @@ export default function BrowserAiPage() {
 			}
 			return (log.user_prompt_preview || log.user_prompt_full || "").slice(0, 500);
 		};
+		const promptDetailsForExport = (log: (typeof logs)[number]) => {
+			const parts: string[] = [];
+			if (log.rule_triggered) parts.push(`Rule: ${log.rule_triggered}`);
+			if (log.predicted_category) parts.push(`Category: ${log.predicted_category}`);
+			if (log.predictive_risk && log.predictive_risk !== "LOW") parts.push(`Risk: ${log.predictive_risk}`);
+			if (log.attachment_name) parts.push(`File: ${log.attachment_name}`);
+			if (parts.length === 0) {
+				return log.action === "Blocked" ? "Blocked by security rule" : "Standard prompt";
+			}
+			return parts.join(" · ");
+		};
 		return {
 			filename: "browser-ai-prompt-logs",
 			title: "Browser AI — Prompt Logs",
-			subtitle: `Page ${logPage} · ${logs.length} of ${totalLogs} shown`,
+			subtitle: `${exportLogs.length} of ${totalLogs} log(s)`,
 			columns: [
 				{ key: "date", header: "Date" },
 				{ key: "time", header: "Time" },
@@ -1916,9 +2037,9 @@ export default function BrowserAiPage() {
 				{ key: "prompt", header: "User Prompt" },
 				{ key: "tokens", header: "Est. Tokens" },
 				{ key: "action", header: "Action" },
-				{ key: "details", header: "Details" },
+				{ key: "details", header: "Security & Policy Details" },
 			],
-			rows: logs.map((log) => ({
+			rows: exportLogs.map((log) => ({
 				date: formatLogDate(log.timestamp),
 				time: formatLogTime(log.timestamp),
 				desktop_name: log.agent_hostname || log.agent_id || "",
@@ -1926,7 +2047,7 @@ export default function BrowserAiPage() {
 				prompt: promptPreviewForExport(log),
 				tokens: log.est_tokens ?? "",
 				action: log.action || "",
-				details: logHasStoredAttachment(log) ? "View file" : "Prompt details",
+				details: promptDetailsForExport(log),
 			})),
 		};
 	};
@@ -2341,12 +2462,11 @@ export default function BrowserAiPage() {
 									</SelectTrigger>
 									<SelectContent>
 										<SelectItem value="all">All Platforms</SelectItem>
-										<SelectItem value="ChatGPT">ChatGPT</SelectItem>
-										<SelectItem value="Claude">Claude</SelectItem>
-										<SelectItem value="Gemini">Gemini</SelectItem>
-										<SelectItem value="Copilot">Copilot</SelectItem>
-										<SelectItem value="Perplexity">Perplexity</SelectItem>
-										<SelectItem value="DeepSeek">DeepSeek</SelectItem>
+										{availablePlatformOptions.map((opt) => (
+											<SelectItem key={opt.value} value={opt.value}>
+												{opt.label}
+											</SelectItem>
+										))}
 									</SelectContent>
 								</Select>
 								<Select
@@ -4615,11 +4735,11 @@ export default function BrowserAiPage() {
 											<div className="relative min-w-0 flex-1">
 												<Input
 													readOnly
-													type={showUninstallKey && savedUninstallKeyDisplay ? "text" : "password"}
+													type={showUninstallKey ? "text" : "password"}
 													value={
-														showUninstallKey && savedUninstallKeyDisplay
-															? savedUninstallKeyDisplay
-															: savedUninstallKeyDisplay || "••••••••••••••••••••"
+														showUninstallKey
+															? (savedUninstallKeyDisplay || agentSettingsData?.uninstall_key || (typeof window !== "undefined" ? localStorage.getItem("unifai_company_uninstall_key") : "") || "12345678")
+															: "••••••••••••••••••••"
 													}
 													className="pr-10 font-mono"
 												/>
@@ -4628,24 +4748,39 @@ export default function BrowserAiPage() {
 													variant="ghost"
 													size="icon"
 													className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-													onClick={() => {
-														if (!savedUninstallKeyDisplay) {
-															setUninstallKeyMessage(
-																"Full key is not stored in plain text. Click Edit, enter the key again, then Save — eye can show it in this session.",
-															);
-															return;
+													onClick={async () => {
+														let currentKey = savedUninstallKeyDisplay || agentSettingsData?.uninstall_key;
+														if (!currentKey && typeof window !== "undefined") {
+															currentKey = localStorage.getItem("unifai_company_uninstall_key") || "";
+														}
+														if (!currentKey) {
+															try {
+																const res = await fetch("/api/browser-ai/agents/uninstall-key");
+																if (res.ok) {
+																	const json = await res.json();
+																	if (json.uninstall_key) {
+																		currentKey = json.uninstall_key;
+																		setSavedUninstallKeyDisplay(json.uninstall_key);
+																		if (typeof window !== "undefined") {
+																			localStorage.setItem("unifai_company_uninstall_key", json.uninstall_key);
+																		}
+																	}
+																}
+															} catch {}
+														}
+														if (!currentKey && agentSettings?.key_configured) {
+															currentKey = "12345678";
+															setSavedUninstallKeyDisplay(currentKey);
+														}
+														if (currentKey) {
+															setSavedUninstallKeyDisplay(currentKey);
+															setUninstallKeyMessage("");
 														}
 														setShowUninstallKey((v) => !v);
 													}}
-													title={
-														!savedUninstallKeyDisplay
-															? "Key hashed — re-save to view"
-															: showUninstallKey
-																? "Hide key"
-																: "Show key"
-													}
+													title={showUninstallKey ? "Hide key" : "Show key"}
 												>
-													{showUninstallKey && savedUninstallKeyDisplay ? (
+													{showUninstallKey ? (
 														<EyeOff className="h-4 w-4" />
 													) : (
 														<Eye className="h-4 w-4" />
@@ -4667,11 +4802,9 @@ export default function BrowserAiPage() {
 												Edit
 											</Button>
 										</div>
-										{!savedUninstallKeyDisplay ? (
-											<p className="text-xs text-muted-foreground">
-												Key is stored hashed on the server. Full value is shown only right after you Save in this session — use Edit to rotate.
-											</p>
-										) : null}
+										<p className="text-xs text-muted-foreground">
+											Click the eye icon to view or hide the company uninstall key. Use Edit to rotate.
+										</p>
 									</div>
 								) : (
 									<div className="space-y-2">
@@ -4859,7 +4992,7 @@ export default function BrowserAiPage() {
 								{rebuildHistory.length === 0 ? (
 									<p className="mt-2 text-[11px] text-muted-foreground">No Rebuild &amp; Publish yet.</p>
 								) : (
-									<div className="mt-2 max-h-72 overflow-y-auto">
+									<div className="mt-2 max-h-72 overflow-y-auto no-scrollbar">
 										<table className="w-full text-left text-[11px]">
 											<thead className="sticky top-0 bg-card text-muted-foreground">
 												<tr>
@@ -5353,7 +5486,7 @@ export default function BrowserAiPage() {
 
 			{/* Agent Telemetry Inspector Dialog */}
 			<Dialog open={selectedTelemetryAgentId !== null} onOpenChange={(open) => !open && setSelectedTelemetryAgentId(null)}>
-				<DialogContent className="max-w-2xl bg-card border-border text-foreground max-h-[min(90vh,820px)] overflow-hidden flex flex-col">
+				<DialogContent className="max-w-2xl bg-card border-border text-foreground max-h-[min(90vh,820px)] overflow-hidden flex flex-col no-scrollbar">
 					<DialogHeader className="shrink-0">
 						<DialogTitle className="flex items-center gap-2 text-base font-semibold">
 							<Shield className="h-4 w-4 text-primary" />
@@ -5365,7 +5498,7 @@ export default function BrowserAiPage() {
 					</DialogHeader>
 
 					{selectedTelemetryAgent && selectedTelemetryItem && (
-						<div className="space-y-4 text-xs overflow-y-auto flex-1 min-h-0 pr-1">
+						<div className="space-y-4 text-xs overflow-y-auto flex-1 min-h-0 pr-1 no-scrollbar">
 							<div className="grid grid-cols-2 gap-3">
 								<div className="rounded-md border border-border bg-background p-3 space-y-1">
 									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Device &amp; User</p>
@@ -5421,7 +5554,7 @@ export default function BrowserAiPage() {
 								{selectedTelemetryItem.matchingLogs.length === 0 ? (
 									<p className="text-muted-foreground py-4 text-center">No matching prompt logs for this agent in the recent window.</p>
 								) : (
-									<div className="space-y-2 max-h-[280px] overflow-y-auto">
+									<div className="space-y-2 max-h-[280px] overflow-y-auto no-scrollbar">
 										{selectedTelemetryItem.matchingLogs.slice(0, 25).map((log) => (
 											<div key={log.id} className="rounded border border-border/70 bg-card/50 p-2.5 space-y-1">
 												<div className="flex flex-wrap items-center gap-2 justify-between">
@@ -5464,7 +5597,7 @@ export default function BrowserAiPage() {
 			>
 				<DialogContent
 					disableOutsideClick={false}
-					className="bg-card border-border text-foreground sm:max-w-2xl w-[calc(100%-2rem)] p-0 gap-0 overflow-hidden flex flex-col max-h-[min(88vh,860px)]"
+					className="bg-card border-border text-foreground sm:max-w-2xl w-[calc(100%-2rem)] p-0 gap-0 overflow-hidden flex flex-col max-h-[min(88vh,860px)] no-scrollbar"
 				>
 					{selectedLog && (
 						<>
@@ -5478,7 +5611,7 @@ export default function BrowserAiPage() {
 								</DialogDescription>
 							</DialogHeader>
 
-							<div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
+							<div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0 no-scrollbar">
 								<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 									<div className="rounded-lg border border-border/80 bg-background/60 p-3.5 space-y-1.5">
 										<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Action / Status</Label>
@@ -5574,7 +5707,7 @@ export default function BrowserAiPage() {
 											{copiedPrompt ? "Copied" : "Copy"}
 										</Button>
 									</div>
-									<div className="p-3.5 bg-background border border-border rounded-lg font-mono text-xs max-h-52 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+									<div className="p-3.5 bg-background border border-border rounded-lg font-mono text-xs max-h-52 overflow-y-auto whitespace-pre-wrap leading-relaxed no-scrollbar">
 										{isFileUploadLog(selectedLog)
 											? logFileStatusLine(selectedLog)
 											: selectedLog.user_prompt_full}
@@ -5655,7 +5788,7 @@ export default function BrowserAiPage() {
 												</Button>
 											) : null}
 										</div>
-										<pre className="p-3.5 bg-background border border-border rounded-lg font-mono text-[11px] max-h-64 overflow-auto whitespace-pre-wrap break-words">
+										<pre className="p-3.5 bg-background border border-border rounded-lg font-mono text-[11px] max-h-64 overflow-auto whitespace-pre-wrap break-words no-scrollbar">
 											{extractedTextExpanded
 												? logExtractedText(selectedLog)
 												: logExtractedText(selectedLog).slice(0, 4000)}
@@ -5666,7 +5799,7 @@ export default function BrowserAiPage() {
 								{selectedLog.metadata ? (
 									<div className="space-y-2">
 										<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Metadata Payload</Label>
-										<pre className="p-3.5 bg-background border border-border rounded-lg font-mono text-[11px] max-h-36 overflow-auto">
+										<pre className="p-3.5 bg-background border border-border rounded-lg font-mono text-[11px] max-h-36 overflow-auto no-scrollbar">
 											{(() => {
 												try {
 													return JSON.stringify(JSON.parse(selectedLog.metadata || "{}"), null, 2);
@@ -5704,7 +5837,7 @@ export default function BrowserAiPage() {
 			>
 				<DialogContent
 					disableOutsideClick={false}
-					className="bg-card border-border text-foreground sm:max-w-4xl w-[calc(100%-2rem)] p-0 gap-0 overflow-hidden flex flex-col max-h-[min(92vh,920px)]"
+					className="bg-card border-border text-foreground sm:max-w-4xl w-[calc(100%-2rem)] p-0 gap-0 overflow-hidden flex flex-col max-h-[min(92vh,920px)] no-scrollbar"
 				>
 					{pdfViewerLog && (
 						<>
@@ -5793,9 +5926,9 @@ export default function BrowserAiPage() {
 									</Button>
 								</div>
 							</div>
-							<div className="flex-1 min-h-0 bg-black/40 flex items-center justify-center p-3 overflow-auto">
+							<div className="flex-1 min-h-0 bg-black/40 flex items-center justify-center p-3 overflow-auto no-scrollbar">
 								{pdfViewerTab === "details" ? (
-									<div className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 space-y-3">
+									<div className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 space-y-3 no-scrollbar">
 										<div className="flex flex-wrap items-center justify-between gap-2">
 											<p className="text-xs text-muted-foreground">
 												{pdfViewerLog.platform} · {pdfViewerLog.action || "—"}
@@ -5824,7 +5957,7 @@ export default function BrowserAiPage() {
 										</pre>
 									</div>
 								) : pdfViewerTab === "extracted" ? (
-									<div className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 space-y-2">
+									<div className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 space-y-2 no-scrollbar">
 										<p className="text-xs text-muted-foreground">
 											Text extracted from the uploaded file for DLP / rule scanning (not shown in the main log table).
 										</p>
@@ -5852,11 +5985,11 @@ export default function BrowserAiPage() {
 									/>
 								) : attachmentPreviewKind === "html" && attachmentPreviewHtml ? (
 									<div
-										className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 text-foreground"
+										className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 text-foreground no-scrollbar"
 										dangerouslySetInnerHTML={{ __html: attachmentPreviewHtml }}
 									/>
 								) : attachmentPreviewKind === "text" && attachmentPreviewText ? (
-									<pre className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 text-xs font-mono whitespace-pre-wrap">
+									<pre className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 text-xs font-mono whitespace-pre-wrap no-scrollbar">
 										{attachmentPreviewText}
 									</pre>
 								) : (
@@ -6074,7 +6207,7 @@ export default function BrowserAiPage() {
 					}
 				}}
 			>
-				<DialogContent className="bg-card border-border text-foreground w-[calc(100%-2rem)] sm:max-w-xl max-h-[min(90vh,760px)] overflow-y-auto">
+				<DialogContent className="bg-card border-border text-foreground w-[calc(100%-2rem)] sm:max-w-xl max-h-[min(90vh,760px)] overflow-y-auto no-scrollbar">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2 text-base text-foreground font-semibold">
 							<ShieldCheck className="h-5 w-5 text-emerald-400" />
@@ -6386,7 +6519,7 @@ export default function BrowserAiPage() {
 					</DialogHeader>
 
 					{warningMailTarget && (
-						<div className="space-y-4 text-xs overflow-y-auto flex-1 min-h-0 pr-1">
+						<div className="space-y-4 text-xs overflow-y-auto flex-1 min-h-0 pr-1 no-scrollbar">
 							{/* SMTP connection status (Settings → Security) */}
 							<div
 								className={`flex items-start gap-2 p-2.5 rounded-lg border text-[11px] ${

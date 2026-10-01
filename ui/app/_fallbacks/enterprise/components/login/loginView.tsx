@@ -12,7 +12,7 @@ import {
 } from "@/lib/store/apis";
 import { getLoginGotoFromSearch } from "@/lib/utils/loginGoto";
 import { resolvePostLoginPath } from "@/lib/utils/workspaceAccess";
-import { Activity, Check, CheckCircle2, Eye, EyeOff, Globe, Lock, Shield, ShieldAlert, Upload } from "lucide-react";
+import { Activity, ArrowLeft, Check, CheckCircle2, Eye, EyeOff, Globe, Lock, Shield, ShieldAlert, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type AuthMode = "login" | "forgot" | "reset" | "forgot_username";
@@ -340,6 +340,24 @@ export default function LoginView() {
 
 					<section className="flex items-center justify-center lg:col-span-5">
 						<div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#10131c]/80 p-8 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+							{mode !== "login" && (
+								<button
+									type="button"
+									onClick={() => {
+										if (mode === "reset") {
+											setMode("forgot");
+										} else {
+											setMode("login");
+										}
+										setErrorMessage("");
+										setInfoMessage("");
+									}}
+									className="inline-flex items-center gap-1.5 text-xs font-medium text-[#8b949e] hover:text-[#45f3ff] transition-colors cursor-pointer mb-3"
+								>
+									<ArrowLeft className="h-3.5 w-3.5" />
+									{mode === "reset" ? "Back to forgot password" : "Back to sign in"}
+								</button>
+							)}
 							<div className="mb-6 space-y-2">
 								<h2 className="text-3xl font-bold text-white">
 									{mode === "login"
@@ -587,29 +605,44 @@ export default function LoginView() {
 											</div>
 										</div>
 
-										{/* Password requirements checklist — must match backend getPasswordPolicyFailures() */}
-										<div className="rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs space-y-1.5">
-											<p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Password requirements:</p>
-											<div className="grid grid-cols-2 gap-2 text-[11px]">
-												<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-													<Check className="h-3 w-3" /> 8+ characters
-												</span>
-												<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-													<Check className="h-3 w-3" /> 1+ capital letter
-												</span>
-												<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-													<Check className="h-3 w-3" /> 1+ lowercase letter
-												</span>
-												<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-													<Check className="h-3 w-3" /> 1+ number
-												</span>
-												<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-													<Check className="h-3 w-3" /> 1+ symbol (!@#...)
-												</span>
-												<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-													<Check className="h-3 w-3" /> Passwords match
-												</span>
-											</div>
+										{/* Password requirements checklist — single compact line */}
+										<div className="flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px]">
+											<span
+												title="Minimum 8 characters"
+												className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
+											>
+												<Check className="h-3 w-3 shrink-0" /> 8+ chars
+											</span>
+											<span
+												title="At least 1 uppercase letter"
+												className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
+											>
+												<Check className="h-3 w-3 shrink-0" /> A-Z
+											</span>
+											<span
+												title="At least 1 lowercase letter"
+												className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
+											>
+												<Check className="h-3 w-3 shrink-0" /> a-z
+											</span>
+											<span
+												title="At least 1 number"
+												className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
+											>
+												<Check className="h-3 w-3 shrink-0" /> 0-9
+											</span>
+											<span
+												title="At least 1 symbol (!@#...)"
+												className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
+											>
+												<Check className="h-3 w-3 shrink-0" /> Symbol
+											</span>
+											<span
+												title="Passwords must match"
+												className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
+											>
+												<Check className="h-3 w-3 shrink-0" /> Match
+											</span>
 										</div>
 									</>
 								)}
@@ -696,11 +729,22 @@ export default function LoginView() {
 												</button>
 											</div>
 										</div>
-									) : (
-										<div className="text-center">
+									) : mode === "reset" ? (
+										<div className="flex items-center justify-between text-xs">
 											<button
 												type="button"
-												className="text-[#45f3ff] underline-offset-2 hover:underline cursor-pointer"
+												className="text-[#8b949e] hover:text-[#45f3ff] inline-flex items-center gap-1 cursor-pointer transition-colors"
+												onClick={() => {
+													setMode("forgot");
+													setErrorMessage("");
+													setInfoMessage("");
+												}}
+											>
+												<ArrowLeft className="h-3 w-3" /> Back to forgot password
+											</button>
+											<button
+												type="button"
+												className="text-[#45f3ff] hover:underline cursor-pointer"
 												onClick={() => {
 													setMode("login");
 													setEmail("");
@@ -714,6 +758,26 @@ export default function LoginView() {
 												}}
 											>
 												Back to sign in
+											</button>
+										</div>
+									) : (
+										<div className="text-center">
+											<button
+												type="button"
+												className="text-[#45f3ff] underline-offset-2 hover:underline cursor-pointer inline-flex items-center gap-1.5"
+												onClick={() => {
+													setMode("login");
+													setEmail("");
+													setNewPassword("");
+													setConfirmPassword("");
+													setOtp("");
+													setIsOtpVerified(false);
+													setResetToken("");
+													setErrorMessage("");
+													setInfoMessage("");
+												}}
+											>
+												<ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
 											</button>
 										</div>
 									)}

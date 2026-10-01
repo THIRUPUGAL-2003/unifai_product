@@ -688,8 +688,13 @@ export const browserAiApi = baseApi.injectEndpoints({
 			providesTags: ["BrowserAiAgentSettings" as any],
 		}),
 
-		getBrowserAiAgentSettings: builder.query<{ settings: BrowserAIAgentSettings }, void>({
+		getBrowserAiAgentSettings: builder.query<{ settings: BrowserAIAgentSettings; uninstall_key?: string }, void>({
 			query: () => "/browser-ai/agents/settings",
+			providesTags: ["BrowserAiAgentSettings" as any],
+		}),
+
+		getBrowserAiCompanyUninstallKey: builder.query<{ uninstall_key: string; key_configured: boolean }, void>({
+			query: () => "/browser-ai/agents/uninstall-key",
 			providesTags: ["BrowserAiAgentSettings" as any],
 		}),
 
@@ -863,6 +868,8 @@ export const {
 	useGetBrowserAiSetupInfoQuery,
 	useGetBrowserAiRebuildHistoryQuery,
 	useGetBrowserAiAgentSettingsQuery,
+	useGetBrowserAiCompanyUninstallKeyQuery,
+	useLazyGetBrowserAiCompanyUninstallKeyQuery,
 	useGetBrowserAiFleetConfigQuery,
 	useSaveBrowserAiFleetConfigMutation,
 	useSaveBrowserAiUninstallKeyMutation,

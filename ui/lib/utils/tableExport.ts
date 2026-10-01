@@ -33,15 +33,41 @@ function escapeHtml(s: string): string {
 		.replace(/"/g, "&quot;");
 }
 
-async function loadLogoDataUrl(logoSrc = LOGO_SRC): Promise<string | null> {
+export type LogoAsset = {
+	dataUrl: string;
+	width: number;
+	height: number;
+};
+
+async function loadLogoAsset(logoSrc = LOGO_SRC): Promise<LogoAsset | null> {
 	try {
 		const res = await fetch(logoSrc);
 		if (!res.ok) return null;
 		const blob = await res.blob();
-		return await new Promise((resolve, reject) => {
+		return await new Promise((resolve) => {
 			const reader = new FileReader();
-			reader.onload = () => resolve(String(reader.result || "") || null);
-			reader.onerror = () => reject(reader.error);
+			reader.onload = () => {
+				const dataUrl = String(reader.result || "");
+				if (!dataUrl) {
+					resolve(null);
+					return;
+				}
+				if (typeof Image !== "undefined") {
+					const img = new Image();
+					img.onload = () => {
+						resolve({
+							dataUrl,
+							width: img.naturalWidth || 1024,
+							height: img.naturalHeight || 334,
+						});
+					};
+					img.onerror = () => resolve({ dataUrl, width: 1024, height: 334 });
+					img.src = dataUrl;
+				} else {
+					resolve({ dataUrl, width: 1024, height: 334 });
+				}
+			};
+			reader.onerror = () => resolve(null);
 			reader.readAsDataURL(blob);
 		});
 	} catch {
@@ -60,40 +86,38 @@ function buildHtmlDocument(opts: {
 	subtitle?: string;
 	columns: ExportTableColumn[];
 	rows: ExportTableRow[];
-	logoDataUrl?: string | null;
+	logoAsset?: LogoAsset | null;
 }): string {
-	const { title, subtitle, columns, rows, logoDataUrl } = opts;
-	const headerCells = columns.map((c) => `<th style="border:1px solid #ccc;padding:6px 8px;background:#f3f4f6;text-align:left;font-size:11px;">${escapeHtml(c.header)}</th>`).join("");
+	const { title, subtitle, columns, rows, logoAsset } = opts;
+	const headerCells = columns
+		.map((c) => `<th style="border:1px solid #d1d5db;padding:6pt 8pt;background:#f3f4f6;text-align:left;font-size:9pt;font-weight:bold;color:#1f2937;">${escapeHtml(c.header)}</th>`)
+		.join("");
 	const bodyRows = rows
-		.map((row) => {
+		.map((row, idx) => {
+			const bg = idx % 2 === 1 ? "background:#f9fafb;" : "background:#ffffff;";
 			const cells = columns
-				.map((c) => `<td style="border:1px solid #ddd;padding:5px 8px;font-size:10px;vertical-align:top;">${escapeHtml(cellValue(row, c.key))}</td>`)
+				.map((c) => `<td style="border:1px solid #e5e7eb;padding:5pt 7pt;font-size:8.5pt;vertical-align:top;color:#111827;${bg}">${escapeHtml(cellValue(row, c.key))}</td>`)
 				.join("");
 			return `<tr>${cells}</tr>`;
 		})
 		.join("");
 
-	const logoBlock = logoDataUrl
-		? `<img src="${logoDataUrl}" alt="Logo" style="height:36px;width:auto;margin-bottom:8px;" />`
-		: "";
+	let logoBlock = "";
+	if (logoAsset) {
+		const aspect = (logoAsset.width || 1) / (logoAsset.height || 1);
+		const targetH = 32;
+		const targetW = Math.min(160, Math.max(70, Math.round(targetH * aspect)));
+		logoBlock = `<p style="margin:0 0 10pt 0;"><img src="${logoAsset.dataUrl}" alt="Logo" width="${targetW}" height="${targetH}" style="width:${targetW}px;height:${targetH}px;max-width:${targetW}px;max-height:${targetH}px;display:block;margin:0 0 8pt 0;" /></p>`;
+	}
 
-	return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>${escapeHtml(title)}</title>
-</head>
-<body style="font-family:Segoe UI,Arial,sans-serif;color:#111;padding:24px;">
-${logoBlock}
-<h1 style="font-size:18px;margin:0 0 4px 0;">${escapeHtml(title)}</h1>
-${subtitle ? `<p style="font-size:11px;color:#666;margin:0 0 16px 0;">${escapeHtml(subtitle)}</p>` : ""}
-<p style="font-size:10px;color:#888;margin:0 0 12px 0;">Exported ${new Date().toLocaleString()} · ${rows.length} row(s)</p>
-<table style="border-collapse:collapse;width:100%;">
+	return `${logoBlock}
+<h1 style="font-size:16pt;margin:0 0 4pt 0;color:#111827;font-family:Calibri,'Segoe UI',Arial,sans-serif;">${escapeHtml(title)}</h1>
+${subtitle ? `<p class="subtitle" style="font-size:9.5pt;color:#4b5563;margin:0 0 6pt 0;font-family:Calibri,'Segoe UI',Arial,sans-serif;">${escapeHtml(subtitle)}</p>` : ""}
+<p class="meta" style="font-size:8.5pt;color:#6b7280;margin:0 0 12pt 0;font-family:Calibri,'Segoe UI',Arial,sans-serif;">Exported ${new Date().toLocaleString()} · ${rows.length} row(s)</p>
+<table style="border-collapse:collapse;width:100%;mso-table-layout-alt:fixed;">
 <thead><tr>${headerCells}</tr></thead>
-<tbody>${bodyRows || `<tr><td colspan="${columns.length}" style="padding:8px;color:#666;">No data</td></tr>`}</tbody>
-</table>
-</body>
-</html>`;
+<tbody>${bodyRows || `<tr><td colspan="${columns.length}" style="padding:8pt;color:#6b7280;">No data</td></tr>`}</tbody>
+</table>`;
 }
 
 /** Excel (.xlsx) export via SheetJS. */
@@ -130,21 +154,98 @@ export async function downloadDocTable(opts: {
 	rows: ExportTableRow[];
 	logoSrc?: string;
 }): Promise<void> {
-	const logoDataUrl = await loadLogoDataUrl(opts.logoSrc || LOGO_SRC);
+	const logoAsset = await loadLogoAsset(opts.logoSrc || LOGO_SRC);
 	const html = buildHtmlDocument({
 		title: opts.title,
 		subtitle: opts.subtitle,
 		columns: opts.columns,
 		rows: opts.rows,
-		logoDataUrl,
+		logoAsset,
 	});
 	const wordHtml = `\uFEFF<html xmlns:o="urn:schemas-microsoft-com:office:office"
  xmlns:w="urn:schemas-microsoft-com:office:word"
  xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>${escapeHtml(opts.title)}</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(opts.title)}</title>
+<!--[if gte mso 9]>
+<xml>
+ <w:WordDocument>
+  <w:View>Print</w:View>
+  <w:Zoom>100</w:Zoom>
+  <w:DoNotOptimizeForBrowser/>
+ </w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+@page Section1 {
+    size: 297mm 210mm;
+    mso-page-orientation: landscape;
+    margin: 15mm 15mm 15mm 15mm;
+    mso-header-margin: 10mm;
+    mso-footer-margin: 10mm;
+}
+div.Section1 {
+    page: Section1;
+}
+body {
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    color: #111827;
+    margin: 0;
+    padding: 24px;
+    background-color: #ffffff;
+}
+h1 {
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    font-size: 16pt;
+    font-weight: bold;
+    color: #111827;
+    margin: 0 0 4pt 0;
+}
+p.subtitle {
+    font-size: 9.5pt;
+    color: #4b5563;
+    margin: 0 0 8pt 0;
+}
+p.meta {
+    font-size: 8.5pt;
+    color: #6b7280;
+    margin: 0 0 12pt 0;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+    mso-table-layout-alt: fixed;
+}
+th {
+    background-color: #f3f4f6;
+    border: 1px solid #d1d5db;
+    padding: 6pt 8pt;
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    font-size: 9pt;
+    font-weight: bold;
+    color: #1f2937;
+    text-align: left;
+}
+td {
+    border: 1px solid #e5e7eb;
+    padding: 5pt 7pt;
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    font-size: 8.5pt;
+    color: #111827;
+    vertical-align: top;
+}
+tr:nth-child(even) td {
+    background-color: #f9fafb;
+}
+</style>
 </head>
-<body>${html.replace(/^[\s\S]*<body[^>]*>/i, "").replace(/<\/body>[\s\S]*$/i, "")}</body></html>`;
+<body>
+<div class="Section1">
+${html}
+</div>
+</body>
+</html>`;
 
 	triggerDownload(
 		new Blob([wordHtml], { type: "application/msword;charset=utf-8" }),
@@ -174,7 +275,7 @@ export async function downloadPdfTable(opts: {
 	logoSrc?: string;
 }): Promise<void> {
 	const { jsPDF } = await import("jspdf");
-	const logoDataUrl = await loadLogoDataUrl(opts.logoSrc || LOGO_SRC);
+	const logoAsset = await loadLogoAsset(opts.logoSrc || LOGO_SRC);
 
 	const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 	const pageW = pdf.internal.pageSize.getWidth();
@@ -229,10 +330,13 @@ export async function downloadPdfTable(opts: {
 
 	// Title block (page 1)
 	let y = margin;
-	if (logoDataUrl) {
+	if (logoAsset) {
 		try {
-			pdf.addImage(logoDataUrl, "PNG", margin, y - 2, 18, 7);
-			y += 8;
+			const aspect = (logoAsset.width || 1) / (logoAsset.height || 1);
+			const logoH = 6.5;
+			const logoW = Math.min(26, Math.max(10, logoH * aspect));
+			pdf.addImage(logoAsset.dataUrl, "PNG", margin, y - 2, logoW, logoH);
+			y += logoH + 2;
 		} catch {
 			// continue without logo
 		}

@@ -126,6 +126,7 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/browser-ai/fleet-config", lib.ChainMiddlewares(h.getFleetConfig, middlewares...))
 	r.PUT("/api/browser-ai/fleet-config", lib.ChainMiddlewares(h.putFleetConfig, middlewares...))
 	r.GET("/api/browser-ai/agents/settings", lib.ChainMiddlewares(h.getAgentSettings, middlewares...))
+	r.GET("/api/browser-ai/agents/uninstall-key", lib.ChainMiddlewares(h.getCompanyUninstallKey, middlewares...))
 	r.PUT("/api/browser-ai/agents/uninstall-key", lib.ChainMiddlewares(h.saveUninstallKey, middlewares...))
 	r.POST("/api/browser-ai/agents/uninstall-verify", lib.ChainMiddlewares(h.verifyUninstall, middlewares...))
 	r.POST("/api/browser-ai/agents/uninstall", lib.ChainMiddlewares(h.uninstallAgent, middlewares...))

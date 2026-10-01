@@ -391,6 +391,7 @@ func NormalizeBrowserAIAgentType(raw string) string {
 type BrowserAIAgentSettings struct {
 	ID                  string    `gorm:"primaryKey" json:"id"`
 	UninstallKeyHash    string    `json:"-"`
+	UninstallKeyEnc     string    `gorm:"type:text" json:"-"`
 	RequireUninstallKey bool      `json:"require_uninstall_key"`
 	KeyConfigured       bool      `gorm:"-" json:"key_configured"`
 	UpdatedAt           time.Time `json:"updated_at"`
@@ -649,7 +650,8 @@ func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action
 	query := m.db.WithContext(ctx).Model(&BrowserAILog{})
 
 	if platform != "" && strings.ToLower(platform) != "all" {
-		query = query.Where("LOWER(platform) = ?", strings.ToLower(platform))
+		pLower := strings.ToLower(platform)
+		query = query.Where("LOWER(platform) = ? OR LOWER(domain) = ?", pLower, pLower)
 	}
 	if status != "" && strings.ToLower(status) != "all" {
 		if strings.ToLower(status) == "blocked" {
@@ -2094,12 +2096,39 @@ func (m *BrowserAIManager) SaveUninstallKey(ctx context.Context, plaintext, upda
 	}
 	if plaintext = strings.TrimSpace(plaintext); plaintext != "" {
 		updates["uninstall_key_hash"] = hashUninstallKey(plaintext)
+		updates["uninstall_key_enc"] = sealAgentUninstallKey(plaintext)
 	}
 	_ = requireKey // ignored — key is always required
 	if err := m.db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return m.ensureAgentSettingsLocked(ctx)
+}
+
+// GetCompanyUninstallKeyReveal returns the plaintext company uninstall key if configured.
+func (m *BrowserAIManager) GetCompanyUninstallKeyReveal(ctx context.Context) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.db == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+	settings, err := m.ensureAgentSettingsLocked(ctx)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(settings.UninstallKeyEnc) != "" {
+		plain, err := openAgentUninstallKey(settings.UninstallKeyEnc)
+		if err == nil && plain != "" {
+			return plain, nil
+		}
+	}
+	if settings.UninstallKeyHash == hashUninstallKey("12345678") {
+		enc := sealAgentUninstallKey("12345678")
+		_ = m.db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Update("uninstall_key_enc", enc)
+		settings.UninstallKeyEnc = enc
+		return "12345678", nil
+	}
+	return "", fmt.Errorf("no company uninstall key stored")
 }
 
 func (m *BrowserAIManager) VerifyUninstallKey(ctx context.Context, plaintext string) (bool, *BrowserAIAgentSettings, error) {

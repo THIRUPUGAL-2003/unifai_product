@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 
 export function NotFoundComponent() {
 	return (
@@ -8,6 +9,13 @@ export function NotFoundComponent() {
 				<h1 className="text-foreground mt-4 text-2xl font-semibold">Page not found</h1>
 				<p className="text-muted-foreground mt-2 text-sm">The page you are looking for doesn’t exist or has been moved</p>
 				<div className="mt-6 flex items-center justify-center gap-3">
+					<button
+						type="button"
+						onClick={() => window.history.back()}
+						className="border border-border hover:bg-accent text-foreground inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer"
+					>
+						<ArrowLeft className="h-4 w-4" /> Go back
+					</button>
 					<Link
 						data-testid="not-found-go-home-link"
 						to="/workspace/logs"

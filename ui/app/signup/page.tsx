@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle, ArrowRight, Eye, EyeOff, ShieldAlert, Cpu, Clock, Loader2 } from "lucide-react";
+import { CheckCircle, ArrowLeft, ArrowRight, Eye, EyeOff, ShieldAlert, Cpu, Clock, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { getApiBaseUrl } from "@/lib/utils/port";
@@ -186,6 +186,27 @@ export default function SignupPage() {
 				<div className="md:col-span-7 p-8 md:p-12 flex flex-col justify-center">
 					{needsCode ? (
 						<div className="space-y-6">
+							<div className="flex items-center justify-between">
+								<button
+									type="button"
+									onClick={() => {
+										setNeedsCode(false);
+										setErrorMessage("");
+										setCode("");
+									}}
+									className="inline-flex items-center gap-1.5 text-xs font-medium text-[#8b949e] hover:text-[#45f3ff] transition-colors cursor-pointer"
+								>
+									<ArrowLeft className="h-3.5 w-3.5" />
+									Back to Sign Up
+								</button>
+								<Link
+									to="/login"
+									className="inline-flex items-center gap-1 text-xs text-[#8b949e] hover:text-white transition-colors"
+								>
+									Sign In
+								</Link>
+							</div>
+
 							<div className="space-y-2">
 								<h1 className="text-2xl font-bold text-white">Verify Your Email</h1>
 								<p className="text-sm text-[#8b949e]">{codeInfo}</p>
@@ -217,19 +238,31 @@ export default function SignupPage() {
 								</div>
 								<Button
 									type="submit"
-									className="w-full bg-[#45f3ff] text-[#0b0c10] hover:bg-[#45f3ff]/90 font-bold h-10"
+									className="w-full bg-[#45f3ff] text-[#0b0c10] hover:bg-[#45f3ff]/90 font-bold h-10 cursor-pointer"
 									disabled={isLoading}
 								>
 									{isLoading ? "Verifying..." : "Verify Email"}
 								</Button>
 							</form>
 
-							<div className="text-center">
+							<div className="flex items-center justify-between pt-1 text-xs">
+								<button
+									type="button"
+									onClick={() => {
+										setNeedsCode(false);
+										setErrorMessage("");
+										setCode("");
+									}}
+									className="text-[#8b949e] hover:text-[#45f3ff] transition-colors cursor-pointer inline-flex items-center gap-1"
+								>
+									<ArrowLeft className="h-3 w-3" /> Change email / username
+								</button>
+
 								<button
 									type="button"
 									onClick={handleResendCode}
 									disabled={isResending || resendCooldown > 0}
-									className="text-xs text-[#45f3ff] hover:underline disabled:text-[#8b949e] disabled:no-underline disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+									className="text-[#45f3ff] hover:underline disabled:text-[#8b949e] disabled:no-underline disabled:cursor-not-allowed inline-flex items-center gap-1.5"
 								>
 									{isResending ? (
 										<>
@@ -243,9 +276,29 @@ export default function SignupPage() {
 									)}
 								</button>
 							</div>
+
+							<div className="text-center pt-3 border-t border-white/5">
+								<Link
+									to="/login"
+									className="text-xs text-[#8b949e] hover:text-[#45f3ff] inline-flex items-center gap-1.5 font-medium transition-colors"
+								>
+									<ArrowLeft className="h-3 w-3" /> Back to Sign In
+								</Link>
+							</div>
 						</div>
 					) : !isSubmitted ? (
 						<div className="space-y-6">
+							<div className="flex items-center justify-between">
+								<button
+									type="button"
+									onClick={() => navigate({ to: "/login" })}
+									className="inline-flex items-center gap-1.5 text-xs font-medium text-[#8b949e] hover:text-[#45f3ff] transition-colors cursor-pointer"
+								>
+									<ArrowLeft className="h-3.5 w-3.5" />
+									Back to Sign In
+								</button>
+							</div>
+
 							<div className="space-y-2">
 								<h1 className="text-2xl font-bold text-white">Create Account</h1>
 								<p className="text-sm text-[#8b949e]">

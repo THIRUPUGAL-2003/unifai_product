@@ -260,13 +260,36 @@
 	}
 }
 
-.no-scrollbar {
+@utility no-scrollbar {
+	-ms-overflow-style: none; /* IE and Edge */
+	scrollbar-width: none; /* Firefox */
+
+	&::-webkit-scrollbar {
+		display: none; /* Chrome, Safari */
+	}
+}
+
+.no-scrollbar,
+.no-scrollbar * {
 	-ms-overflow-style: none; /* IE and Edge */
 	scrollbar-width: none; /* Firefox */
 }
 
-.no-scrollbar::-webkit-scrollbar {
+.no-scrollbar::-webkit-scrollbar,
+.no-scrollbar *::-webkit-scrollbar {
 	display: none; /* Chrome, Safari */
+}
+
+/* Modals & Dialogs: Hide native desktop scrollbars across all modals while preserving smooth scrolling */
+[data-slot="dialog-content"],
+[data-slot="dialog-content"] * {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+}
+
+[data-slot="dialog-content"]::-webkit-scrollbar,
+[data-slot="dialog-content"] *::-webkit-scrollbar {
+	display: none;
 }
 
 html {

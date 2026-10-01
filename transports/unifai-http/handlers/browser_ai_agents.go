@@ -146,7 +146,27 @@ func (h *BrowserAIHandler) getAgentSettings(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
-	SendJSON(ctx, map[string]any{"settings": settings})
+	resp := map[string]any{"settings": settings}
+	if plainKey, err := h.manager.GetCompanyUninstallKeyReveal(ctx); err == nil && plainKey != "" {
+		resp["uninstall_key"] = plainKey
+	}
+	SendJSON(ctx, resp)
+}
+
+func (h *BrowserAIHandler) getCompanyUninstallKey(ctx *fasthttp.RequestCtx) {
+	if !h.requireGuardAdmin(ctx, "Admin role required to view the company uninstall key") {
+		return
+	}
+	h.ensureDB(ctx)
+	plainKey, err := h.manager.GetCompanyUninstallKeyReveal(ctx)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusNotFound, err.Error())
+		return
+	}
+	SendJSON(ctx, map[string]any{
+		"uninstall_key":  plainKey,
+		"key_configured": true,
+	})
 }
 
 func (h *BrowserAIHandler) saveUninstallKey(ctx *fasthttp.RequestCtx) {
@@ -172,7 +192,11 @@ func (h *BrowserAIHandler) saveUninstallKey(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
-	SendJSON(ctx, map[string]any{"status": "success", "settings": settings})
+	resp := map[string]any{"status": "success", "settings": settings}
+	if plainKey, err := h.manager.GetCompanyUninstallKeyReveal(ctx); err == nil && plainKey != "" {
+		resp["uninstall_key"] = plainKey
+	}
+	SendJSON(ctx, resp)
 }
 
 func (h *BrowserAIHandler) verifyUninstall(ctx *fasthttp.RequestCtx) {
