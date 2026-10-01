@@ -87,6 +87,8 @@ func (p *GuardrailsPlugin) compileRules() error {
 	env, err := cel.NewEnv(
 		cel.Variable("request.model", cel.StringType),
 		cel.Variable("request.prompt_id", cel.StringType),
+		cel.Variable("request.virtual_key_id", cel.StringType),
+		cel.Variable("request.virtual_key_name", cel.StringType),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create CEL env: %w", err)
@@ -137,14 +139,24 @@ func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.U
 	if req.ChatRequest != nil {
 		modelName = req.ChatRequest.Model
 	}
-	
+
+	currentVKID := virtualKeyIDFromContext(ctx)
+	rawVK := rawVirtualKeyFromContext(ctx)
+	currentVKName := virtualKeyNameFromContext(ctx)
+
 	vars := map[string]interface{}{
-		"request.model":     modelName,
-		"request.prompt_id": promptIDFromContext(ctx),
+		"request.model":            modelName,
+		"request.prompt_id":        promptIDFromContext(ctx),
+		"request.virtual_key_id":   currentVKID,
+		"request.virtual_key_name": currentVKName,
 	}
 
 	for _, rule := range p.config.GuardrailRules {
 		if !rule.Enabled || (rule.ApplyTo != "input" && rule.ApplyTo != "both") {
+			continue
+		}
+
+		if !ruleMatchesVirtualKey(rule, currentVKID, rawVK) {
 			continue
 		}
 
@@ -188,9 +200,15 @@ func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas
 
 	accumulateStreamOutput(ctx, resp)
 
+	currentVKID := virtualKeyIDFromContext(ctx)
+	rawVK := rawVirtualKeyFromContext(ctx)
+	currentVKName := virtualKeyNameFromContext(ctx)
+
 	vars := map[string]interface{}{
-		"request.model":     modelNameFromResponse(resp),
-		"request.prompt_id": promptIDFromContext(ctx),
+		"request.model":            modelNameFromResponse(resp),
+		"request.prompt_id":        promptIDFromContext(ctx),
+		"request.virtual_key_id":   currentVKID,
+		"request.virtual_key_name": currentVKName,
 	}
 
 	streamFinished := chatStreamFinished(resp)
@@ -203,6 +221,10 @@ func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas
 
 	for _, rule := range p.config.GuardrailRules {
 		if !rule.Enabled || (rule.ApplyTo != "output" && rule.ApplyTo != "both") {
+			continue
+		}
+
+		if !ruleMatchesVirtualKey(rule, currentVKID, rawVK) {
 			continue
 		}
 
@@ -322,3 +344,49 @@ func guardrailViolationError(message string) *schemas.UnifAIError {
 		},
 	}
 }
+
+func virtualKeyIDFromContext(ctx *schemas.UnifAIContext) string {
+	if ctx == nil {
+		return ""
+	}
+	if vkID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyID); vkID != "" {
+		return vkID
+	}
+	if v, ok := ctx.Value(schemas.UnifAIContextKeyVirtualKey).(string); ok && v != "" {
+		return v
+	}
+	return ""
+}
+
+func rawVirtualKeyFromContext(ctx *schemas.UnifAIContext) string {
+	if ctx == nil {
+		return ""
+	}
+	if v, ok := ctx.Value(schemas.UnifAIContextKeyVirtualKey).(string); ok && v != "" {
+		return v
+	}
+	return ""
+}
+
+func virtualKeyNameFromContext(ctx *schemas.UnifAIContext) string {
+	if ctx == nil {
+		return ""
+	}
+	return unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyName)
+}
+
+func ruleMatchesVirtualKey(rule GuardrailRule, currentVKID string, rawVK string) bool {
+	if len(rule.VirtualKeyIDs) == 0 {
+		return true // rule applies to all virtual keys
+	}
+	if currentVKID == "" && rawVK == "" {
+		return false // rule requires specific virtual keys, but request has no virtual key
+	}
+	for _, id := range rule.VirtualKeyIDs {
+		if (currentVKID != "" && id == currentVKID) || (rawVK != "" && id == rawVK) {
+			return true
+		}
+	}
+	return false
+}
+

@@ -8,6 +8,7 @@ export interface GuardrailRule {
 	apply_to: "input" | "output" | "both";
 	enabled: boolean;
 	provider_config_ids: number[]; // List of provider IDs
+	virtual_key_ids?: string[]; // Optional list of Virtual Key IDs
 }
 
 export interface GuardrailProvider {

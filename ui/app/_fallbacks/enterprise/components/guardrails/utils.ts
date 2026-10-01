@@ -91,6 +91,8 @@ export function formatRuleConnectionPreview(opts: {
 	selectedPromptIds: string[];
 	promptNameById: Map<string, string>;
 	providerLabels: string[];
+	selectedVirtualKeyIds?: string[];
+	virtualKeyNameById?: Map<string, string>;
 }): string {
 	const phase =
 		opts.applyTo === "both" ? "user input and model output" : opts.applyTo === "output" ? "model output" : "user input";
@@ -102,7 +104,17 @@ export function formatRuleConnectionPreview(opts: {
 			? `only when Prompt Repo runs: ${names.join(", ")} (requires x-uf-prompt-id)`
 			: "selected Prompt Repo prompts (pick at least one)";
 	} else if (opts.promptScope === "custom") {
-		when = "when your custom CEL expression matches (request.model / request.prompt_id)";
+		when = "when your custom CEL expression matches (request.model / request.prompt_id / request.virtual_key_id)";
 	}
-	return `Will scan ${phase} with [${providers}] on ${when}. Does not apply to Browser AI Guard or MCP-only traffic.`;
+
+	let vkScope = "all Virtual Keys";
+	if (opts.selectedVirtualKeyIds && opts.selectedVirtualKeyIds.length > 0) {
+		const vkNames = opts.selectedVirtualKeyIds
+			.map((id) => opts.virtualKeyNameById?.get(id) || id)
+			.filter(Boolean);
+		vkScope = `restricted to Virtual Key${vkNames.length > 1 ? "s" : ""}: [${vkNames.join(", ")}]`;
+	}
+
+	return `Will scan ${phase} with [${providers}] on ${when} (${vkScope}). Does not apply to Browser AI Guard or MCP-only traffic.`;
 }
+

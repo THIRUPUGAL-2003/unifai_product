@@ -6174,6 +6174,13 @@
                   "type": "integer"
                 },
                 "description": "IDs of provider configurations to use with this rule"
+              },
+              "virtual_key_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Optional list of Virtual Key IDs or keys this rule applies to. If omitted or empty, the rule applies globally across all keys."
               }
             },
             "required": [

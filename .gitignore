@@ -45,6 +45,12 @@ Thumbs.db
 plugins/*/dist/
 test-reports/
 
+# Compiled UI assets (built by `npm run build` — not source files)
+transports/unifai-http/ui/assets/
+transports/unifai-http/ui/*.js
+transports/unifai-http/ui/*.css
+transports/unifai-http/ui/*.html
+
 # Python & Browser Guard builds
 __pycache__/
 *.pyc

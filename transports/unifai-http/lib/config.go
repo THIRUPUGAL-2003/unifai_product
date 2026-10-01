@@ -210,6 +210,7 @@ type GuardrailRule struct {
 	SamplingRate      int      `json:"sampling_rate,omitempty"`
 	Timeout           int      `json:"timeout,omitempty"`
 	ProviderConfigIDs []int    `json:"provider_config_ids,omitempty"`
+	VirtualKeyIDs     []string `json:"virtual_key_ids,omitempty"`
 }
 
 // GuardrailProvider defines the configuration for a guardrail provider (e.g., regex).

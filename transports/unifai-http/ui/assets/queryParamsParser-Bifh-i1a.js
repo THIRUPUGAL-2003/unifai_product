@@ -1,1 +1,0 @@
-import{n as e,t}from"./dist-B6MBc4WU.js";var n=t({parse:e=>{try{return decodeURIComponent(e)}catch{return e}},serialize:e=>{try{return encodeURIComponent(e)}catch{return e}}}),r=e(n);export{n,r as t};

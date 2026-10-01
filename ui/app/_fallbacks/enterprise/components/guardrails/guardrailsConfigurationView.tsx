@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Plus, Trash, Edit, ShieldAlert } from "lucide-react";
+import { Plus, Trash, Edit, ShieldAlert, Key } from "lucide-react";
 import { toast } from "sonner";
 import {
 	useGetGuardrailsConfigQuery,
 	useUpdateGuardrailsConfigMutation,
 	GuardrailRule,
 } from "@/lib/store/apis/guardrailsApi";
-import { getErrorMessage } from "@/lib/store";
+import { getErrorMessage, useGetVirtualKeysQuery } from "@/lib/store";
 import { useGetPromptsQuery } from "@/lib/store/apis/promptsApi";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -52,6 +53,7 @@ function validateRuleForm(
 export default function GuardrailsConfigurationView() {
 	const { data: config, isLoading, isError, error, refetch } = useGetGuardrailsConfigQuery();
 	const { data: promptsData } = useGetPromptsQuery();
+	const { data: virtualKeysData } = useGetVirtualKeysQuery();
 	const [updateConfig] = useUpdateGuardrailsConfigMutation();
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
@@ -71,6 +73,14 @@ export default function GuardrailsConfigurationView() {
 		return map;
 	}, [promptsData?.prompts]);
 
+	const virtualKeyNameById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const vk of virtualKeysData?.virtual_keys || []) {
+			map.set(vk.id, vk.name || vk.id);
+		}
+		return map;
+	}, [virtualKeysData?.virtual_keys]);
+
 	const promptOptions = useMemo(
 		() =>
 			(promptsData?.prompts || []).map((prompt) => ({
@@ -78,6 +88,15 @@ export default function GuardrailsConfigurationView() {
 				value: prompt.id,
 			})),
 		[promptsData?.prompts],
+	);
+
+	const virtualKeyOptions = useMemo(
+		() =>
+			(virtualKeysData?.virtual_keys || []).map((vk) => ({
+				label: vk.name ? `${vk.name} (${vk.id.slice(0, 8)}...)` : vk.id,
+				value: vk.id,
+			})),
+		[virtualKeysData?.virtual_keys],
 	);
 
 	const providerOptions = useMemo(
@@ -160,6 +179,7 @@ export default function GuardrailsConfigurationView() {
 			description: editingRule.description?.trim() || "",
 			cel_expression: celExpression,
 			provider_config_ids: editingRule.provider_config_ids || [],
+			virtual_key_ids: editingRule.virtual_key_ids || [],
 			apply_to: editingRule.apply_to || "input",
 			enabled: editingRule.enabled ?? true,
 		};
@@ -185,7 +205,13 @@ export default function GuardrailsConfigurationView() {
 	};
 
 	const openCreateRule = () => {
-		setEditingRule({ apply_to: "input", provider_config_ids: [], enabled: true, cel_expression: "true" });
+		setEditingRule({
+			apply_to: "input",
+			provider_config_ids: [],
+			virtual_key_ids: [],
+			enabled: true,
+			cel_expression: "true",
+		});
 		setPromptScope("all");
 		setSelectedPromptIds([]);
 		setIsModalOpen(true);
@@ -223,6 +249,7 @@ export default function GuardrailsConfigurationView() {
 							<TableHead>Description</TableHead>
 							<TableHead>Apply To</TableHead>
 							<TableHead>Providers</TableHead>
+							<TableHead>Virtual Keys</TableHead>
 							<TableHead>Applies When</TableHead>
 							<TableHead className="text-right">Actions</TableHead>
 						</TableRow>
@@ -230,7 +257,7 @@ export default function GuardrailsConfigurationView() {
 					<TableBody>
 						{rules.length === 0 ? (
 							<TableRow>
-								<TableCell colSpan={7} className="text-muted-foreground h-32 text-center">
+								<TableCell colSpan={8} className="text-muted-foreground h-32 text-center">
 									<div className="flex flex-col items-center justify-center">
 										<ShieldAlert className="text-muted-foreground/50 mb-2 h-8 w-8" />
 										<p>No guardrail rules configured yet.</p>
@@ -263,6 +290,24 @@ export default function GuardrailsConfigurationView() {
 									<TableCell>{rule.description}</TableCell>
 									<TableCell className="capitalize">{rule.apply_to}</TableCell>
 									<TableCell>{formatLinkedProviders(rule, providers)}</TableCell>
+									<TableCell className="max-w-[200px]">
+										{rule.virtual_key_ids && rule.virtual_key_ids.length > 0 ? (
+											<div className="flex flex-wrap gap-1">
+												{rule.virtual_key_ids.map((vkId) => (
+													<Badge
+														key={vkId}
+														variant="secondary"
+														className="text-[11px] font-normal py-0 px-1.5 flex items-center gap-1"
+													>
+														<Key className="h-3 w-3 text-muted-foreground shrink-0" />
+														<span className="truncate max-w-[120px]">{virtualKeyNameById.get(vkId) || vkId}</span>
+													</Badge>
+												))}
+											</div>
+										) : (
+											<span className="text-muted-foreground text-xs italic">All Keys</span>
+										)}
+									</TableCell>
 									<TableCell className="max-w-[280px] truncate text-xs">
 										{formatRuleTriggerSummary(rule.cel_expression, promptNameById)}
 									</TableCell>
@@ -357,6 +402,40 @@ export default function GuardrailsConfigurationView() {
 							</p>
 						</div>
 						<div className="grid gap-2">
+							<div className="flex items-center justify-between">
+								<Label>Virtual Keys (Optional)</Label>
+								<span className="text-muted-foreground text-xs">
+									{(editingRule?.virtual_key_ids || []).length === 0
+										? "Applies to all keys"
+										: `${editingRule?.virtual_key_ids?.length} key(s) linked`}
+								</span>
+							</div>
+							{virtualKeyOptions.length === 0 ? (
+								<p className="text-muted-foreground text-sm">No virtual keys available. Rules will apply to all requests.</p>
+							) : (
+								<MultiSelect
+									options={virtualKeyOptions}
+									defaultValue={editingRule?.virtual_key_ids || []}
+									resetOnDefaultValueChange
+									onValueChange={(values) =>
+										setEditingRule({
+											...editingRule,
+											virtual_key_ids: values,
+										})
+									}
+									placeholder="Select Virtual Keys (leave empty to apply to all keys)"
+									emptyIndicator="No virtual keys found."
+									maxCount={2}
+									className="border-input text-foreground hover:bg-accent hover:text-accent-foreground h-9 rounded-sm bg-transparent font-normal"
+									popoverClassName="w-[var(--radix-popover-trigger-width)]"
+									data-testid="guardrails-rule-virtual-keys-select"
+								/>
+							)}
+							<p className="text-muted-foreground text-xs">
+								Optionally bind this rule to specific Virtual Key(s). When requests use these keys, this rule will watch and enforce guardrails. If unselected, it applies across all keys.
+							</p>
+						</div>
+						<div className="grid gap-2">
 							<Label htmlFor="prompt_scope">Apply When</Label>
 							<Select
 								value={promptScope}
@@ -408,14 +487,13 @@ export default function GuardrailsConfigurationView() {
 									id="expression"
 									value={editingRule?.cel_expression || ""}
 									onChange={(e) => setEditingRule({ ...editingRule, cel_expression: e.target.value })}
-									placeholder="e.g. request.model.contains('gpt-4') || request.prompt_id == 'your-prompt-id'"
+									placeholder="e.g. request.model.contains('gpt-4') || request.prompt_id == 'your-prompt-id' || request.virtual_key_id == 'your-vk-id'"
 									className="font-mono text-sm"
 									rows={4}
 									data-testid="guardrails-rule-expression-input"
 								/>
 								<p className="text-muted-foreground text-xs">
-									Advanced mode. Variables: <code>request.model</code>, <code>request.prompt_id</code>. Use this to
-									limit rules to specific models — not every model blindly.
+									Advanced mode. Variables: <code>request.model</code>, <code>request.prompt_id</code>, <code>request.virtual_key_id</code>, <code>request.virtual_key_name</code>.
 								</p>
 							</div>
 						)}
@@ -434,6 +512,8 @@ export default function GuardrailsConfigurationView() {
 										.map((id) => providers.find((p) => String(p.id) === id))
 										.filter((p): p is NonNullable<typeof p> => p != null)
 										.map((p) => providerLabel(p)),
+									selectedVirtualKeyIds: editingRule?.virtual_key_ids || [],
+									virtualKeyNameById,
 								})}
 							</p>
 						</div>
