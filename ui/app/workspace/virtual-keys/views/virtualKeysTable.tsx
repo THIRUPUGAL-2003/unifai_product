@@ -109,22 +109,25 @@ function VKBudgetCell({ vk }: { vk: VirtualKey }) {
 
 function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
 	const { assignedUsers } = useVirtualKeyUsage(vk);
-	const assignedUser = assignedUsers[0];
 
-	let label: string | null = null;
+	const parts: string[] = [];
 	if (vk.team) {
-		label = `Team: ${vk.team.name}`;
-	} else if (vk.customer) {
-		label = `Customer: ${vk.customer.name}`;
-	} else if (assignedUsers.length > 1) {
-		label = `Users (${assignedUsers.length}): ${assignedUsers.map((u) => u.name || u.email).join(", ")}`;
-	} else if (assignedUser) {
-		label = `User: ${assignedUser.name || assignedUser.email}`;
+		parts.push(`Team: ${vk.team.name}`);
+	}
+	if (vk.customer) {
+		parts.push(`Customer: ${vk.customer.name}`);
+	}
+	if (assignedUsers.length > 1) {
+		parts.push(`Users (${assignedUsers.length}): ${assignedUsers.map((u) => u.name || u.email).join(", ")}`);
+	} else if (assignedUsers.length === 1) {
+		parts.push(`User: ${assignedUsers[0].name || assignedUsers[0].email}`);
 	}
 
-	if (!label) {
+	if (parts.length === 0) {
 		return <span className="text-muted-foreground max-w-full truncate text-left text-sm">-</span>;
 	}
+
+	const label = parts.join(" • ");
 
 	return (
 		<Tooltip>
