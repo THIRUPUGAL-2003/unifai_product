@@ -310,6 +310,22 @@ class TargetFileVoicePredictTests(unittest.TestCase):
         )
         self.assertTrue(_blocked(send), f"claude file SSN not blocked; evals={EVALS}")
 
+    def test_mistral_text_file_with_ssn_blocks_on_send(self) -> None:
+        up, send = self._upload_then_send(
+            "chat.mistral.ai", "/api/files", "payroll.txt", "text/plain",
+            f"employee ssn {SSN}\n".encode() * 4,
+            "/api/chat",
+            json.dumps({
+                "chatId": "m1", "mode": "append", "model": "mistral-large",
+                "messageInput": [
+                    {"type": "text", "text": "summarize this file"},
+                    {"type": "document_url", "document_url": "https://chat.mistral.ai/files/doc1.pdf"}
+                ]
+            }),
+        )
+        self.assertIsNone(up.response, "upload itself must not be blocked (cache only)")
+        self.assertTrue(_blocked(send), f"mistral file SSN not blocked on send; evals={EVALS} logs={len(UPLOAD_LOGS)}")
+
     def test_voice_transcript_with_ssn_blocks_on_any_target(self) -> None:
         for host, path in (("ai.acme-internal.io", "/api/voice/send"), ("chatgpt.com", "/backend-api/f/conversation")):
             _reset()

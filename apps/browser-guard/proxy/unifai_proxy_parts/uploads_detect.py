@@ -619,14 +619,12 @@ def _extract_names_from_one_text(raw_text: str) -> list[str]:
             _add(m.group(2), field=m.group(1))
     # Attachment objects: pull name fields inside attachments/files/parts arrays
     for arr_pat in (
-        r'"attachments"\s*:\s*\[([\s\S]{0,80000}?)\]',
-        r'"files"\s*:\s*\[([\s\S]{0,80000}?)\]',
-        r'"parts"\s*:\s*\[([\s\S]{0,80000}?)\]',
+        r'"(?:attachments|files|parts|documents|fileattachments|imageattachments|file_list|filelist|uploadedfiles|uploaded_files|assets|sources|media|docs|messageinput)"\s*:\s*\[([\s\S]{0,80000}?)\]',
     ):
         for am in re.finditer(arr_pat, raw_text, re.I):
             block = am.group(1) or ""
             for m in re.finditer(
-                r'["\'](file_name|fileName|filename|original_name|originalName|original_filename|originalFilename|display_name|displayName|name|title)["\']\s*:\s*["\']([^"\']+)["\']',
+                r'["\'](file_name|fileName|filename|original_name|originalName|original_filename|originalFilename|display_name|displayName|document_name|documentName|doc_name|docName|name|title|file|path|label)["\']\s*:\s*["\']([^"\']+)["\']',
                 block,
                 re.I,
             ):
@@ -1119,7 +1117,11 @@ def _walk_json_file_id_names(obj, out: dict[str, str] | None = None, depth: int 
         fid = ""
         for k in (
             "file_id", "fileId", "file_uuid", "fileUuid", "attachment_id",
-            "attachmentId", "docId", "document_id", "id",
+            "attachmentId", "docId", "doc_id", "document_id", "documentId",
+            "document_url", "documentUrl", "file_url", "fileUrl",
+            "upload_id", "uploadId", "blob_id", "blobId", "asset_id", "assetId",
+            "media_id", "mediaId", "storage_id", "storageId", "source_id", "sourceId",
+            "kb_id", "dataset_id", "id",
         ):
             v = obj.get(k)
             if isinstance(v, str) and len(v.strip()) >= 6:
@@ -1130,7 +1132,9 @@ def _walk_json_file_id_names(obj, out: dict[str, str] | None = None, depth: int 
         name_field = ""
         for k in (
             "filename", "file_name", "fileName", "original_filename", "originalFilename",
-            "original_name", "originalName", "display_name", "displayName", "name", "title",
+            "original_name", "originalName", "display_name", "displayName",
+            "document_name", "documentName", "doc_name", "docName", "name", "title",
+            "file", "path", "label",
         ):
             v = obj.get(k)
             if isinstance(v, str) and v.strip():
@@ -2203,7 +2207,16 @@ def _is_finished_user_file_send(
         userish = bool(re.search(
             r'"author"\s*:\s*\{[^}]{0,240}"role"\s*:\s*"user"'
             r'|"role"\s*:\s*"user"'
-            r'|"author"\s*:\s*"user"',
+            r'|"author"\s*:\s*"user"'
+            r'|"messageinput"'
+            r'|"chatid"'
+            r'|"chat_id"'
+            r'|"conversation_id"'
+            r'|"conversationid"'
+            r'|"session_id"'
+            r'|"sessionid"'
+            r'|"inputs"'
+            r'|"model"',
             low,
         ))
         if userish and (
@@ -2438,10 +2451,28 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
         r'"file_uuid"\s*:\s*"([^"]+)"',
         r'"fileUuid"\s*:\s*"([^"]+)"',
         r'"docId"\s*:\s*"([^"]+)"',
+        r'"doc_id"\s*:\s*"([^"]+)"',
         r'"document_id"\s*:\s*"([^"]+)"',
+        r'"documentId"\s*:\s*"([^"]+)"',
+        r'"document_url"\s*:\s*"([^"]+)"',
+        r'"documentUrl"\s*:\s*"([^"]+)"',
+        r'"file_url"\s*:\s*"([^"]+)"',
+        r'"fileUrl"\s*:\s*"([^"]+)"',
         r'"attachment_id"\s*:\s*"([^"]+)"',
         r'"attachmentId"\s*:\s*"([^"]+)"',
         r'"attachmentIds"\s*:\s*\[\s*"([^"]+)"',
+        r'"upload_id"\s*:\s*"([^"]+)"',
+        r'"uploadId"\s*:\s*"([^"]+)"',
+        r'"blob_id"\s*:\s*"([^"]+)"',
+        r'"blobId"\s*:\s*"([^"]+)"',
+        r'"asset_id"\s*:\s*"([^"]+)"',
+        r'"assetId"\s*:\s*"([^"]+)"',
+        r'"media_id"\s*:\s*"([^"]+)"',
+        r'"mediaId"\s*:\s*"([^"]+)"',
+        r'"source_id"\s*:\s*"([^"]+)"',
+        r'"sourceId"\s*:\s*"([^"]+)"',
+        r'"storage_id"\s*:\s*"([^"]+)"',
+        r'"storageId"\s*:\s*"([^"]+)"',
         r'/c/api/attachments/([^"?\s]+)',
         r'file-service://file-([a-zA-Z0-9_-]+)',
         r'asset_pointer"\s*:\s*"[^"]*file-([a-zA-Z0-9_-]+)',
@@ -2471,7 +2502,7 @@ def _expected_send_attachment_count(raw_text: str) -> int:
     # Non-empty attachments / files / documents object arrays
     n_objs = 0
     for m in re.finditer(
-        r'"(?:attachments|files|documents|uploadedFiles|media)"\s*:\s*\[(.*?)\]',
+        r'"(?:attachments|files|documents|uploadedFiles|uploaded_files|media|fileattachments|imageattachments|file_list|filelist|assets|sources|docs)"\s*:\s*\[(.*?)\]',
         body,
         re.I | re.S,
     ):
@@ -2498,12 +2529,13 @@ def chat_carries_attachment(raw_text: str) -> bool:
         return False
 
     # Empty arrays / nulls are not attachments
-    if re.search(r'"attachments"\s*:\s*\[\s*\]', low):
-        low = re.sub(r'"attachments"\s*:\s*\[\s*\]', " ", low)
-    if re.search(r'"files"\s*:\s*\[\s*\]', low):
-        low = re.sub(r'"files"\s*:\s*\[\s*\]', " ", low)
-    if re.search(r'"documents"\s*:\s*\[\s*\]', low):
-        low = re.sub(r'"documents"\s*:\s*\[\s*\]', " ", low)
+    for empty_arr in (
+        '"attachments"', '"files"', '"documents"', '"fileattachments"', '"imageattachments"',
+        '"file_list"', '"filelist"', '"uploadedfiles"', '"uploaded_files"', '"assets"',
+        '"sources"', '"media"', '"docs"',
+    ):
+        if re.search(rf'{empty_arr}\s*:\s*\[\s*\]', low):
+            low = re.sub(rf'{empty_arr}\s*:\s*\[\s*\]', " ", low)
 
     # Strong URI / pointer evidence
     if any(
@@ -2523,16 +2555,18 @@ def chat_carries_attachment(raw_text: str) -> bool:
             '"hiddenattachments"',
             '"parttype":"file"',
             '"contentorigin":"upload"',
+            "document_url",
+            "documenturl",
+            "file_url",
+            "fileurl",
+            "download_url",
+            "downloadurl",
         )
     ):
         return True
 
     # Non-empty attachment / files arrays
-    if re.search(r'"attachments"\s*:\s*\[\s*\{', low):
-        return True
-    if re.search(r'"files"\s*:\s*\[\s*\{', low):
-        return True
-    if re.search(r'"documents"\s*:\s*\[\s*\{', low):
+    if re.search(r'"(?:attachments|files|documents|fileattachments|imageattachments|file_list|filelist|uploadedfiles|uploaded_files|assets|sources|media|docs|messageinput)"\s*:\s*\[\s*\{', low):
         return True
 
     # Real IDs with non-empty values (not null / "")
@@ -2542,13 +2576,31 @@ def chat_carries_attachment(raw_text: str) -> bool:
         r'"file_uuid"\s*:\s*"(?!null)[^"]+"',
         r'"fileuuid"\s*:\s*"(?!null)[^"]+"',
         r'"docid"\s*:\s*"(?!null)[^"]+"',
+        r'"doc_id"\s*:\s*"(?!null)[^"]+"',
         r'"document_id"\s*:\s*"(?!null)[^"]+"',
+        r'"documentid"\s*:\s*"(?!null)[^"]+"',
         r'"attachment_id"\s*:\s*"(?!null)[^"]+"',
         r'"attachmentid"\s*:\s*"(?!null)[^"]+"',
         r'"file_uri"\s*:\s*"(?!null)[^"]+"',
         r'"fileuri"\s*:\s*"(?!null)[^"]+"',
         r'"image_url"\s*:\s*"(?!null)https?[^"]+"',
         r'"imageurl"\s*:\s*"(?!null)https?[^"]+"',
+        r'"document_url"\s*:\s*"(?!null)https?[^"]+"',
+        r'"documenturl"\s*:\s*"(?!null)https?[^"]+"',
+        r'"file_url"\s*:\s*"(?!null)https?[^"]+"',
+        r'"fileurl"\s*:\s*"(?!null)https?[^"]+"',
+        r'"upload_id"\s*:\s*"(?!null)[^"]+"',
+        r'"uploadid"\s*:\s*"(?!null)[^"]+"',
+        r'"blob_id"\s*:\s*"(?!null)[^"]+"',
+        r'"blobid"\s*:\s*"(?!null)[^"]+"',
+        r'"asset_id"\s*:\s*"(?!null)[^"]+"',
+        r'"assetid"\s*:\s*"(?!null)[^"]+"',
+        r'"storage_id"\s*:\s*"(?!null)[^"]+"',
+        r'"storageid"\s*:\s*"(?!null)[^"]+"',
+        r'"source_id"\s*:\s*"(?!null)[^"]+"',
+        r'"sourceid"\s*:\s*"(?!null)[^"]+"',
+        r'"media_id"\s*:\s*"(?!null)[^"]+"',
+        r'"mediaid"\s*:\s*"(?!null)[^"]+"',
     )
     if any(re.search(p, low) for p in id_patterns):
         return True
@@ -2568,20 +2620,22 @@ def chat_carries_attachment(raw_text: str) -> bool:
     ):
         return True
 
-    # Claude content blocks with real payload
+    # Claude / Mistral / generic content blocks with real payload
     if re.search(r'"type"\s*:\s*"(?:document|image|file|input_image|input_file|audio|input_audio|voice)"', low):
         if any(
             x in low
             for x in (
-                '"source"', '"data"', "base64", "file_uuid", "file_id",
-                "application/pdf", "image/png", "image/jpeg", "extracted_content",
+                '"source"', '"data"', "base64", "file_uuid", "file_id", "fileid",
+                "document_id", "documentid", "document_url", "documenturl",
+                "file_url", "fileurl", '"url"', '"uri"', "application/pdf",
+                "image/png", "image/jpeg", "extracted_content",
                 "audio/", "audio/wav", "audio/mpeg", "audio/webm",
             )
         ):
             return True
 
     # DeepSeek / Perplexity / generic file lists with uuid or url (non-empty)
-    if re.search(r'"(?:file_uuid|fileUuid|file_id|fileId)"\s*:\s*"(?!null)[^"]{4,}"', low):
+    if re.search(r'"(?:file_uuid|fileUuid|file_id|fileId|documentId|document_id|docId|doc_id)"\s*:\s*"(?!null)[^"]{4,}"', low):
         return True
     if re.search(r'"files"\s*:\s*\[[\s\S]{0,4000}?"(?:url|uri|path|name)"\s*:\s*"(?!null)[^"]+"', low):
         return True

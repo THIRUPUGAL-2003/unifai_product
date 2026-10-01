@@ -288,7 +288,7 @@ _UNIVERSAL_PROMPT_KEYS = (
     "followup", "follow_up", "search", "ask", "query_text",
     "prompt_text", "user_prompt", "userPrompt", "chat_message", "msg",
     # Extended: Grok / X.AI / DeepSeek / Mistral / Cohere / AI21 / Qwen
-    "human_input", "user_turn", "turn_input", "message_input",
+    "human_input", "user_turn", "turn_input", "message_input", "messageInput",
     "chat_query", "user_content", "request_text", "prompt_input",
     "user_message_text", "human_message", "ask_text", "user_ask",
     "chat_text", "input_message", "send_text", "user_send",
