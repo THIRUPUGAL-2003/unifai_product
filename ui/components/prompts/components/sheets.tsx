@@ -12,6 +12,7 @@ export function PromptSheets() {
 				open={folderSheet.open}
 				onOpenChange={(open) => setFolderSheet({ ...folderSheet, open })}
 				folder={folderSheet.folder}
+				parentId={folderSheet.parentId}
 				onSaved={() => {}}
 			/>
 

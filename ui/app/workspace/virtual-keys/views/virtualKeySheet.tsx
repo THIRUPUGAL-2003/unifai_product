@@ -113,7 +113,7 @@ const formSchema = z
 		description: z.string().optional(),
 		providerConfigs: z.array(providerConfigSchema).optional(),
 		mcpConfigs: z.array(mcpConfigSchema).optional(),
-		entityType: z.enum(["team", "customer", "user", "none"]),
+		entityType: z.enum(["team", "customer", "user", "none", "custom"]).optional(),
 		teamId: z.string().optional(),
 		teamIds: z.array(z.string()).optional(),
 		customerId: z.string().optional(),
@@ -138,25 +138,7 @@ const formSchema = z
 		// Request limits
 		requestMaxLimit: z.number().int().nonnegative().optional(),
 		requestResetDuration: z.string().optional(),
-	})
-	.refine(
-		(data) => {
-			if (data.entityType === "team") {
-				return (data.teamIds && data.teamIds.length > 0) || (data.teamId && data.teamId.trim() !== "");
-			}
-			if (data.entityType === "customer") {
-				return (data.customerIds && data.customerIds.length > 0) || (data.customerId && data.customerId.trim() !== "");
-			}
-			if (data.entityType === "user") {
-				return !!(data.userIds && data.userIds.length > 0);
-			}
-			return true;
-		},
-		{
-			message: "Please select at least one entity when assignment type is chosen",
-			path: ["entityType"], // This will show the error on the entityType field
-		},
-	);
+	});
 
 type FormData = z.infer<typeof formSchema>;
 type BudgetComparisonEntry = {
@@ -324,20 +306,48 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					mcp_client_name: config.mcp_client?.name || "",
 					tools_to_execute: config.tools_to_execute || [],
 				})) || [],
-			entityType: virtualKey?.team_id
-				? "team"
-				: virtualKey?.customer_id
-					? "customer"
-					: assignedUsers.length > 0
-						? "user"
-						: !isEditing && defaultTeamId
-							? "team"
-							: "none",
+			entityType:
+				virtualKey?.team_ids && virtualKey.team_ids.length > 0
+					? "team"
+					: virtualKey?.customer_ids && virtualKey.customer_ids.length > 0
+						? "customer"
+						: virtualKey?.user_ids && virtualKey.user_ids.length > 0
+							? "user"
+							: virtualKey?.team_id
+								? "team"
+								: virtualKey?.customer_id
+									? "customer"
+									: assignedUsers.length > 0
+										? "user"
+										: !isEditing && defaultTeamId
+											? "team"
+											: "none",
 			teamId: virtualKey?.team_id || (!isEditing ? defaultTeamId || "" : ""),
-			teamIds: virtualKey?.team_id ? [virtualKey.team_id] : !isEditing && defaultTeamId ? [defaultTeamId] : [],
+			teamIds:
+				virtualKey?.team_ids && virtualKey.team_ids.length > 0
+					? virtualKey.team_ids
+					: virtualKey?.teams && virtualKey.teams.length > 0
+						? virtualKey.teams.map((t) => t.id)
+						: virtualKey?.team_id
+							? [virtualKey.team_id]
+							: !isEditing && defaultTeamId
+								? [defaultTeamId]
+								: [],
 			customerId: virtualKey?.customer_id || "",
-			customerIds: virtualKey?.customer_id ? [virtualKey.customer_id] : [],
-			userIds: assignedUsers.map((u) => u.id),
+			customerIds:
+				virtualKey?.customer_ids && virtualKey.customer_ids.length > 0
+					? virtualKey.customer_ids
+					: virtualKey?.customers && virtualKey.customers.length > 0
+						? virtualKey.customers.map((c) => c.id)
+						: virtualKey?.customer_id
+							? [virtualKey.customer_id]
+							: [],
+			userIds:
+				virtualKey?.user_ids && virtualKey.user_ids.length > 0
+					? virtualKey.user_ids
+					: virtualKey?.users && virtualKey.users.length > 0
+						? virtualKey.users.map((u) => u.id)
+						: assignedUsers.map((u) => u.id),
 			isActive: virtualKey?.is_active ?? true,
 			expiresAt: virtualKey?.expires_at
 				? (() => {
@@ -382,40 +392,15 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 		}
 	}, [mcpClientsError]);
 
-	// Sync assignedUsers from hook when loaded for an existing virtual key
+	// Sync assignedUsers from hook when loaded for an existing virtual key if userIds empty
 	useEffect(() => {
-		if (assignedUsers.length > 0 && !form.formState.dirtyFields.entityType && !form.formState.dirtyFields.userIds) {
-			if (!virtualKey?.team_id && !virtualKey?.customer_id) {
-				form.setValue("entityType", "user");
+		if (assignedUsers.length > 0 && !form.formState.dirtyFields.userIds) {
+			const current = form.getValues("userIds") || [];
+			if (current.length === 0) {
+				form.setValue("userIds", assignedUsers.map((u) => u.id));
 			}
-			form.setValue("userIds", assignedUsers.map((u) => u.id));
 		}
-	}, [assignedUsers, form, virtualKey]);
-
-	// Clear entity IDs when entityType changes
-	useEffect(() => {
-		const entityType = form.watch("entityType");
-		if (entityType === "none") {
-			form.setValue("teamIds", [], { shouldDirty: true });
-			form.setValue("customerIds", [], { shouldDirty: true });
-			form.setValue("userIds", [], { shouldDirty: true });
-			form.setValue("teamId", "", { shouldDirty: true });
-			form.setValue("customerId", "", { shouldDirty: true });
-		} else if (entityType === "team") {
-			form.setValue("customerIds", [], { shouldDirty: true });
-			form.setValue("userIds", [], { shouldDirty: true });
-			form.setValue("customerId", "", { shouldDirty: true });
-		} else if (entityType === "customer") {
-			form.setValue("teamIds", [], { shouldDirty: true });
-			form.setValue("userIds", [], { shouldDirty: true });
-			form.setValue("teamId", "", { shouldDirty: true });
-		} else if (entityType === "user") {
-			form.setValue("teamIds", [], { shouldDirty: true });
-			form.setValue("customerIds", [], { shouldDirty: true });
-			form.setValue("teamId", "", { shouldDirty: true });
-			form.setValue("customerId", "", { shouldDirty: true });
-		}
-	}, [form.watch("entityType"), form]);
+	}, [assignedUsers, form]);
 
 	// MultiSelect options for Teams, Customers, and Users
 	const teamMultiSelectOptions = useMemo(
@@ -821,18 +806,11 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					description: data.description,
 					provider_configs: normalizedProviderConfigs,
 					mcp_configs: data.mcpConfigs,
-					team_id:
-						data.entityType === "team" && selectedTeamIds.length > 0
-							? selectedTeamIds[0]
-							: data.entityType === "none" || data.entityType === "user"
-								? null
-								: undefined,
-					customer_id:
-						data.entityType === "customer" && selectedCustomerIds.length > 0
-							? selectedCustomerIds[0]
-							: data.entityType === "none" || data.entityType === "user"
-								? null
-								: undefined,
+					team_id: selectedTeamIds.length > 0 ? selectedTeamIds[0] : null,
+					team_ids: selectedTeamIds,
+					customer_id: selectedCustomerIds.length > 0 ? selectedCustomerIds[0] : null,
+					customer_ids: selectedCustomerIds,
+					user_ids: selectedUserIds,
 					is_active: data.isActive,
 					calendar_aligned: data.budgetCalendarAligned,
 					reset_budget_usage: resetBudgetUsage,
@@ -873,88 +851,42 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 
 				// User assignment syncing
 				if (canAssignUser) {
-					if (data.entityType === "user") {
-						const targetUserIds = new Set(selectedUserIds);
-						const currentAssignedIds = new Set(assignedUsers.map((u) => u.id));
+					const targetUserIds = new Set(selectedUserIds);
+					const currentAssignedIds = new Set(assignedUsers.map((u) => u.id));
 
-						for (const uid of selectedUserIds) {
-							if (!currentAssignedIds.has(uid)) {
-								try {
-									await setVirtualKeyUser({ vkId: virtualKey.id, user_id: uid }).unwrap();
-								} catch (e) {
-									console.error("Failed to assign user:", e);
-								}
+					for (const uid of selectedUserIds) {
+						if (!currentAssignedIds.has(uid)) {
+							try {
+								await setVirtualKeyUser({ vkId: virtualKey.id, user_id: uid }).unwrap();
+							} catch (e) {
+								console.error("Failed to assign user:", e);
 							}
 						}
-						for (const user of assignedUsers) {
-							if (!targetUserIds.has(user.id)) {
-								try {
-									await deleteVirtualKeyUser({ vkId: virtualKey.id, user_id: user.id }).unwrap();
-								} catch (e) {
-									console.error("Failed to unassign user:", e);
-								}
+					}
+					for (const user of assignedUsers) {
+						if (!targetUserIds.has(user.id)) {
+							try {
+								await deleteVirtualKeyUser({ vkId: virtualKey.id, user_id: user.id }).unwrap();
+							} catch (e) {
+								console.error("Failed to unassign user:", e);
 							}
-						}
-					} else if (assignedUsers.length > 0) {
-						try {
-							await deleteVirtualKeyUser({ vkId: virtualKey.id }).unwrap();
-						} catch (e) {
-							console.error("Failed to detach users:", e);
 						}
 					}
 				}
 
-				if (data.entityType === "team" && selectedTeamIds.length > 1) {
-					for (let i = 1; i < selectedTeamIds.length; i++) {
-						const tid = selectedTeamIds[i];
-						const tObj = teams.find((t) => t.id === tid);
-						const teamSuffix = tObj ? ` (${tObj.name})` : "";
-						try {
-							await createVirtualKey({
-								name: `${data.name}${teamSuffix}`,
-								description: data.description || undefined,
-								provider_configs: normalizedProviderConfigs,
-								mcp_configs: data.mcpConfigs,
-								team_id: tid,
-								is_active: data.isActive,
-								calendar_aligned: data.budgetCalendarAligned,
-								...(data.expiresAt ? { expires_at: new Date(data.expiresAt).toISOString() } : {}),
-							}).unwrap();
-						} catch (e) {
-							console.error("Failed to create key for team", tid, e);
-						}
-					}
-					toast.success(`Virtual key updated and additional keys created for selected teams`);
-				} else if (data.entityType === "customer" && selectedCustomerIds.length > 1) {
-					for (let i = 1; i < selectedCustomerIds.length; i++) {
-						const cid = selectedCustomerIds[i];
-						const cObj = customers.find((c) => c.id === cid);
-						const custSuffix = cObj ? ` (${cObj.name})` : "";
-						try {
-							await createVirtualKey({
-								name: `${data.name}${custSuffix}`,
-								description: data.description || undefined,
-								provider_configs: normalizedProviderConfigs,
-								mcp_configs: data.mcpConfigs,
-								customer_id: cid,
-								is_active: data.isActive,
-								calendar_aligned: data.budgetCalendarAligned,
-								...(data.expiresAt ? { expires_at: new Date(data.expiresAt).toISOString() } : {}),
-							}).unwrap();
-						} catch (e) {
-							console.error("Failed to create key for customer", cid, e);
-						}
-					}
-					toast.success(`Virtual key updated and additional keys created for selected customers`);
-				} else {
-					toast.success("Virtual key updated successfully");
-				}
+				toast.success("Virtual key updated successfully");
 			} else {
 				// Create new virtual key
-				const baseCreateData: Omit<CreateVirtualKeyRequest, "name"> = {
+				const baseCreateData: CreateVirtualKeyRequest = {
+					name: data.name,
 					description: data.description || undefined,
 					provider_configs: normalizedProviderConfigs,
 					mcp_configs: data.mcpConfigs,
+					team_id: selectedTeamIds.length > 0 ? selectedTeamIds[0] : undefined,
+					team_ids: selectedTeamIds,
+					customer_id: selectedCustomerIds.length > 0 ? selectedCustomerIds[0] : undefined,
+					customer_ids: selectedCustomerIds,
+					user_ids: selectedUserIds,
 					is_active: data.isActive,
 					// VK-level setting that governs both budget and rate-limit calendar alignment.
 					calendar_aligned: data.budgetCalendarAligned,
@@ -982,55 +914,20 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					};
 				}
 
-				if (data.entityType === "team" && selectedTeamIds.length > 1) {
-					for (const tid of selectedTeamIds) {
-						const tObj = teams.find((t) => t.id === tid);
-						const teamSuffix = tObj ? ` (${tObj.name})` : "";
-						await createVirtualKey({
-							...baseCreateData,
-							name: `${data.name}${teamSuffix}`,
-							team_id: tid,
-						}).unwrap();
-					}
-					toast.success(`Successfully created ${selectedTeamIds.length} virtual keys for all selected teams`);
-				} else if (data.entityType === "customer" && selectedCustomerIds.length > 1) {
-					for (const cid of selectedCustomerIds) {
-						const cObj = customers.find((c) => c.id === cid);
-						const custSuffix = cObj ? ` (${cObj.name})` : "";
-						await createVirtualKey({
-							...baseCreateData,
-							name: `${data.name}${custSuffix}`,
-							customer_id: cid,
-						}).unwrap();
-					}
-					toast.success(`Successfully created ${selectedCustomerIds.length} virtual keys for all selected customers`);
-				} else {
-					const singleCreateData: CreateVirtualKeyRequest = {
-						...baseCreateData,
-						name: data.name,
-						team_id: data.entityType === "team" && selectedTeamIds.length > 0 ? selectedTeamIds[0] : undefined,
-						customer_id: data.entityType === "customer" && selectedCustomerIds.length > 0 ? selectedCustomerIds[0] : undefined,
-					};
+				const res = await createVirtualKey(baseCreateData).unwrap();
+				const newVkId = res?.virtual_key?.id;
 
-					const res = await createVirtualKey(singleCreateData).unwrap();
-					const newVkId = res?.virtual_key?.id;
-
-					if (data.entityType === "user" && selectedUserIds.length > 0 && newVkId) {
-						for (const uid of selectedUserIds) {
-							try {
-								await setVirtualKeyUser({ vkId: newVkId, user_id: uid }).unwrap();
-							} catch (e) {
-								console.error("Failed to assign user:", e);
-							}
+				if (selectedUserIds.length > 0 && newVkId && canAssignUser) {
+					for (const uid of selectedUserIds) {
+						try {
+							await setVirtualKeyUser({ vkId: newVkId, user_id: uid }).unwrap();
+						} catch (e) {
+							console.error("Failed to assign user:", e);
 						}
 					}
-
-					toast.success(
-						data.entityType === "user" && selectedUserIds.length > 0
-							? `Virtual key created and assigned to ${selectedUserIds.length} user(s)`
-							: "Virtual key created successfully"
-					);
 				}
+
+				toast.success("Virtual key created successfully");
 			}
 
 			onSave();
@@ -2040,94 +1937,23 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 
 										{/* Entity Assignment */}
 										<div className="space-y-4">
-											<Label className="text-sm font-medium">Entity Assignment</Label>
-											<p className="text-muted-foreground text-xs">
-												Attach this key to Team(s), Customer(s), or User(s), or leave unassigned. You can select one, multiple, or all entities.
-											</p>
+											<div>
+												<Label className="text-sm font-medium">Entity Assignment</Label>
+												<p className="text-muted-foreground text-xs mt-1">
+													Attach this key to Teams, Customers, and/or Users. You can assign to multiple teams, customers, and users simultaneously, or leave unassigned.
+												</p>
+											</div>
 
-											<div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
-												<FormField
-													control={form.control}
-													name="entityType"
-													render={({ field }) => (
-														<FormItem>
-															<FormLabel className="font-normal">Assignment Type</FormLabel>
-															<ComboboxSelect
-																options={[
-																	{ value: "none", label: "No Assignment" },
-																	...(teams?.length > 0
-																		? [
-																				{
-																					value: "team",
-																					label: "Assign to Team(s)",
-																				},
-																			]
-																		: []),
-																	...(customers?.length > 0
-																		? [
-																				{
-																					value: "customer",
-																					label: "Assign to Customer(s)",
-																				},
-																			]
-																		: []),
-																	...(userMultiSelectOptions?.length > 0
-																		? [
-																				{
-																					value: "user",
-																					label: "Assign to User(s)",
-																				},
-																			]
-																		: []),
-																]}
-																value={field.value}
-																onValueChange={async (value) => {
-																	const val = (value as "team" | "customer" | "user" | "none") ?? "none";
-																	field.onChange(val);
-																	if (val === "team" && teams?.length > 0) {
-																		form.setValue("teamIds", [teams[0].id], { shouldDirty: true, shouldValidate: true });
-																		form.setValue("teamId", teams[0].id, { shouldDirty: true, shouldValidate: true });
-																		form.setValue("customerIds", [], { shouldDirty: true });
-																		form.setValue("customerId", "", { shouldDirty: true });
-																		form.setValue("userIds", [], { shouldDirty: true });
-																	} else if (val === "customer" && customers?.length > 0) {
-																		form.setValue("customerIds", [customers[0].id], { shouldDirty: true, shouldValidate: true });
-																		form.setValue("customerId", customers[0].id, { shouldDirty: true, shouldValidate: true });
-																		form.setValue("teamIds", [], { shouldDirty: true });
-																		form.setValue("teamId", "", { shouldDirty: true });
-																		form.setValue("userIds", [], { shouldDirty: true });
-																	} else if (val === "user" && userMultiSelectOptions?.length > 0) {
-																		form.setValue("userIds", [userMultiSelectOptions[0].value], { shouldDirty: true, shouldValidate: true });
-																		form.setValue("teamIds", [], { shouldDirty: true });
-																		form.setValue("teamId", "", { shouldDirty: true });
-																		form.setValue("customerIds", [], { shouldDirty: true });
-																		form.setValue("customerId", "", { shouldDirty: true });
-																	} else {
-																		form.setValue("teamIds", [], { shouldDirty: true, shouldValidate: true });
-																		form.setValue("teamId", "", { shouldDirty: true, shouldValidate: true });
-																		form.setValue("customerIds", [], { shouldDirty: true, shouldValidate: true });
-																		form.setValue("customerId", "", { shouldDirty: true, shouldValidate: true });
-																		form.setValue("userIds", [], { shouldDirty: true, shouldValidate: true });
-																	}
-																	await form.trigger(["teamIds", "customerIds", "userIds", "entityType"]);
-																}}
-																disabled={isTeamLocked}
-																disableSearch
-																hideClear
-																className="h-9"
-															/>
-															<FormMessage />
-														</FormItem>
-													)}
-												/>
-
-												{form.watch("entityType") === "team" && teams?.length > 0 && (
+											<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+												{teams?.length > 0 && (
 													<FormField
 														control={form.control}
 														name="teamIds"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel className="font-normal">Select Team(s)</FormLabel>
+																<FormLabel className="font-normal">
+																	Teams {field.value && field.value.length > 0 ? `(${field.value.length})` : ""}
+																</FormLabel>
 																<MultiSelect
 																	options={teamMultiSelectOptions}
 																	defaultValue={field.value || []}
@@ -2136,7 +1962,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 																		field.onChange(vals);
 																		form.setValue("teamId", vals[0] || "", { shouldDirty: true });
 																	}}
-																	placeholder="Select teams (choose any or select all)..."
+																	placeholder="Select teams..."
 																	emptyIndicator="No teams found."
 																	disabled={isTeamLocked}
 																	maxCount={2}
@@ -2150,13 +1976,15 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 													/>
 												)}
 
-												{form.watch("entityType") === "customer" && customers?.length > 0 && (
+												{customers?.length > 0 && (
 													<FormField
 														control={form.control}
 														name="customerIds"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel className="font-normal">Select Customer(s)</FormLabel>
+																<FormLabel className="font-normal">
+																	Customers {field.value && field.value.length > 0 ? `(${field.value.length})` : ""}
+																</FormLabel>
 																<MultiSelect
 																	options={customerMultiSelectOptions}
 																	defaultValue={field.value || []}
@@ -2165,7 +1993,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 																		field.onChange(vals);
 																		form.setValue("customerId", vals[0] || "", { shouldDirty: true });
 																	}}
-																	placeholder="Select customers (choose any or select all)..."
+																	placeholder="Select customers..."
 																	emptyIndicator="No customers found."
 																	maxCount={2}
 																	className="border-input text-foreground hover:bg-accent min-h-9 rounded-sm bg-transparent font-normal"
@@ -2178,19 +2006,21 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 													/>
 												)}
 
-												{form.watch("entityType") === "user" && userMultiSelectOptions?.length > 0 && (
+												{userMultiSelectOptions?.length > 0 && (
 													<FormField
 														control={form.control}
 														name="userIds"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel className="font-normal">Select User(s)</FormLabel>
+																<FormLabel className="font-normal">
+																	Users {field.value && field.value.length > 0 ? `(${field.value.length})` : ""}
+																</FormLabel>
 																<MultiSelect
 																	options={userMultiSelectOptions}
 																	defaultValue={field.value || []}
 																	resetOnDefaultValueChange
 																	onValueChange={(vals) => field.onChange(vals)}
-																	placeholder="Select users (choose any or select all)..."
+																	placeholder="Select users..."
 																	emptyIndicator="No approved users found."
 																	disabled={!canAssignUser && isEditing}
 																	maxCount={2}

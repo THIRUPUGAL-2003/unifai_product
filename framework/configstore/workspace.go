@@ -85,6 +85,15 @@ type WorkspaceStore interface {
 	DeleteVirtualKeyUser(ctx context.Context, virtualKeyID string) error
 	RemoveVirtualKeyUser(ctx context.Context, virtualKeyID, userID string) error
 	ListVirtualKeysForUser(ctx context.Context, userID string) ([]tables.TableVirtualKeyUser, error)
+	SetVirtualKeyUsers(ctx context.Context, virtualKeyID string, userIDs []string) error
+
+	ListVirtualKeyTeams(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyTeam, error)
+	SetVirtualKeyTeams(ctx context.Context, virtualKeyID string, teamIDs []string) error
+	ListVirtualKeysForTeam(ctx context.Context, teamID string) ([]tables.TableVirtualKeyTeam, error)
+
+	ListVirtualKeyCustomers(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyCustomer, error)
+	SetVirtualKeyCustomers(ctx context.Context, virtualKeyID string, customerIDs []string) error
+	ListVirtualKeysForCustomer(ctx context.Context, customerID string) ([]tables.TableVirtualKeyCustomer, error)
 
 	ListTeamMembers(ctx context.Context, teamID string) ([]tables.TableTeamMember, error)
 	AddTeamMember(ctx context.Context, teamID, userID string) error
@@ -510,6 +519,150 @@ func (s *RDBConfigStore) DeleteVirtualKeyUser(ctx context.Context, virtualKeyID 
 func (s *RDBConfigStore) RemoveVirtualKeyUser(ctx context.Context, virtualKeyID, userID string) error {
 	s.ensureVirtualKeyUsersTable(ctx)
 	return s.DB().WithContext(ctx).Where("virtual_key_id = ? AND user_id = ?", virtualKeyID, userID).Delete(&tables.TableVirtualKeyUser{}).Error
+}
+
+func (s *RDBConfigStore) SetVirtualKeyUsers(ctx context.Context, virtualKeyID string, userIDs []string) error {
+	s.ensureVirtualKeyUsersTable(ctx)
+	db := s.DB().WithContext(ctx)
+	now := time.Now().UTC()
+
+	if len(userIDs) == 0 {
+		return db.Where("virtual_key_id = ?", virtualKeyID).Delete(&tables.TableVirtualKeyUser{}).Error
+	}
+
+	if err := db.Where("virtual_key_id = ? AND user_id NOT IN ?", virtualKeyID, userIDs).Delete(&tables.TableVirtualKeyUser{}).Error; err != nil {
+		return err
+	}
+
+	for _, uid := range userIDs {
+		if uid == "" {
+			continue
+		}
+		var existing tables.TableVirtualKeyUser
+		err := db.Where("virtual_key_id = ? AND user_id = ?", virtualKeyID, uid).First(&existing).Error
+		if err == nil {
+			existing.UpdatedAt = now
+			_ = db.Save(&existing)
+		} else {
+			_ = db.Create(&tables.TableVirtualKeyUser{
+				VirtualKeyID: virtualKeyID,
+				UserID:       uid,
+				CreatedAt:    now,
+				UpdatedAt:    now,
+			})
+		}
+	}
+	return nil
+}
+
+func (s *RDBConfigStore) ensureVirtualKeyTeamsTable(ctx context.Context) {
+	db := s.DB().WithContext(ctx)
+	if !db.Migrator().HasTable(&tables.TableVirtualKeyTeam{}) {
+		_ = db.AutoMigrate(&tables.TableVirtualKeyTeam{})
+	}
+}
+
+func (s *RDBConfigStore) ListVirtualKeyTeams(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyTeam, error) {
+	s.ensureVirtualKeyTeamsTable(ctx)
+	var rows []tables.TableVirtualKeyTeam
+	err := s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Find(&rows).Error
+	return rows, err
+}
+
+func (s *RDBConfigStore) ListVirtualKeysForTeam(ctx context.Context, teamID string) ([]tables.TableVirtualKeyTeam, error) {
+	s.ensureVirtualKeyTeamsTable(ctx)
+	var rows []tables.TableVirtualKeyTeam
+	err := s.DB().WithContext(ctx).Where("team_id = ?", teamID).Find(&rows).Error
+	return rows, err
+}
+
+func (s *RDBConfigStore) SetVirtualKeyTeams(ctx context.Context, virtualKeyID string, teamIDs []string) error {
+	s.ensureVirtualKeyTeamsTable(ctx)
+	db := s.DB().WithContext(ctx)
+	now := time.Now().UTC()
+
+	if len(teamIDs) == 0 {
+		return db.Where("virtual_key_id = ?", virtualKeyID).Delete(&tables.TableVirtualKeyTeam{}).Error
+	}
+
+	if err := db.Where("virtual_key_id = ? AND team_id NOT IN ?", virtualKeyID, teamIDs).Delete(&tables.TableVirtualKeyTeam{}).Error; err != nil {
+		return err
+	}
+
+	for _, tid := range teamIDs {
+		if tid == "" {
+			continue
+		}
+		var existing tables.TableVirtualKeyTeam
+		err := db.Where("virtual_key_id = ? AND team_id = ?", virtualKeyID, tid).First(&existing).Error
+		if err == nil {
+			existing.UpdatedAt = now
+			_ = db.Save(&existing)
+		} else {
+			_ = db.Create(&tables.TableVirtualKeyTeam{
+				VirtualKeyID: virtualKeyID,
+				TeamID:       tid,
+				CreatedAt:    now,
+				UpdatedAt:    now,
+			})
+		}
+	}
+	return nil
+}
+
+func (s *RDBConfigStore) ensureVirtualKeyCustomersTable(ctx context.Context) {
+	db := s.DB().WithContext(ctx)
+	if !db.Migrator().HasTable(&tables.TableVirtualKeyCustomer{}) {
+		_ = db.AutoMigrate(&tables.TableVirtualKeyCustomer{})
+	}
+}
+
+func (s *RDBConfigStore) ListVirtualKeyCustomers(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyCustomer, error) {
+	s.ensureVirtualKeyCustomersTable(ctx)
+	var rows []tables.TableVirtualKeyCustomer
+	err := s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Find(&rows).Error
+	return rows, err
+}
+
+func (s *RDBConfigStore) ListVirtualKeysForCustomer(ctx context.Context, customerID string) ([]tables.TableVirtualKeyCustomer, error) {
+	s.ensureVirtualKeyCustomersTable(ctx)
+	var rows []tables.TableVirtualKeyCustomer
+	err := s.DB().WithContext(ctx).Where("customer_id = ?", customerID).Find(&rows).Error
+	return rows, err
+}
+
+func (s *RDBConfigStore) SetVirtualKeyCustomers(ctx context.Context, virtualKeyID string, customerIDs []string) error {
+	s.ensureVirtualKeyCustomersTable(ctx)
+	db := s.DB().WithContext(ctx)
+	now := time.Now().UTC()
+
+	if len(customerIDs) == 0 {
+		return db.Where("virtual_key_id = ?", virtualKeyID).Delete(&tables.TableVirtualKeyCustomer{}).Error
+	}
+
+	if err := db.Where("virtual_key_id = ? AND customer_id NOT IN ?", virtualKeyID, customerIDs).Delete(&tables.TableVirtualKeyCustomer{}).Error; err != nil {
+		return err
+	}
+
+	for _, cid := range customerIDs {
+		if cid == "" {
+			continue
+		}
+		var existing tables.TableVirtualKeyCustomer
+		err := db.Where("virtual_key_id = ? AND customer_id = ?", virtualKeyID, cid).First(&existing).Error
+		if err == nil {
+			existing.UpdatedAt = now
+			_ = db.Save(&existing)
+		} else {
+			_ = db.Create(&tables.TableVirtualKeyCustomer{
+				VirtualKeyID: virtualKeyID,
+				CustomerID:   cid,
+				CreatedAt:    now,
+				UpdatedAt:    now,
+			})
+		}
+	}
+	return nil
 }
 
 func (s *RDBConfigStore) ensureTeamMembersTable(ctx context.Context) error {

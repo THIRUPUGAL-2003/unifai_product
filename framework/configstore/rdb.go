@@ -3401,7 +3401,10 @@ func preloadVirtualKeyBaseRelations(db *gorm.DB) *gorm.DB {
 			return db.Select("id, name, key_id, models_json, provider")
 		}).
 		Preload("MCPConfigs").
-		Preload("MCPConfigs.MCPClient")
+		Preload("MCPConfigs.MCPClient").
+		Preload("Teams").
+		Preload("Customers").
+		Preload("Users")
 }
 
 // preloadVirtualKeyDetailRelations preloads the detail relationships for a virtual key.
@@ -3533,14 +3536,17 @@ func (s *RDBConfigStore) GetVirtualKeysPaginated(ctx context.Context, params Vir
 	// on what the caller is allowed to see.
 	baseQuery := s.ScopedDB(ctx).Model(&tables.TableVirtualKey{})
 
-	// Virtual keys are either customer-scoped or team-scoped, never both.
-	// When both filters are provided, use OR to match keys belonging to either.
+	// Virtual keys can be associated via legacy FK (team_id, customer_id)
+	// or via many-to-many join tables (governance_virtual_key_teams, governance_virtual_key_customers).
 	if params.CustomerID != "" && params.TeamID != "" {
-		baseQuery = baseQuery.Where("(customer_id = ? OR team_id = ?)", params.CustomerID, params.TeamID)
+		baseQuery = baseQuery.Where("(governance_virtual_keys.customer_id = ? OR governance_virtual_keys.id IN (SELECT virtual_key_id FROM governance_virtual_key_customers WHERE customer_id = ?) OR governance_virtual_keys.team_id = ? OR governance_virtual_keys.id IN (SELECT virtual_key_id FROM governance_virtual_key_teams WHERE team_id = ?))", params.CustomerID, params.CustomerID, params.TeamID, params.TeamID)
 	} else if params.CustomerID != "" {
-		baseQuery = baseQuery.Where("customer_id = ?", params.CustomerID)
+		baseQuery = baseQuery.Where("(governance_virtual_keys.customer_id = ? OR governance_virtual_keys.id IN (SELECT virtual_key_id FROM governance_virtual_key_customers WHERE customer_id = ?))", params.CustomerID, params.CustomerID)
 	} else if params.TeamID != "" {
-		baseQuery = baseQuery.Where("team_id = ?", params.TeamID)
+		baseQuery = baseQuery.Where("(governance_virtual_keys.team_id = ? OR governance_virtual_keys.id IN (SELECT virtual_key_id FROM governance_virtual_key_teams WHERE team_id = ?))", params.TeamID, params.TeamID)
+	}
+	if params.UserID != "" {
+		baseQuery = baseQuery.Where("governance_virtual_keys.id IN (SELECT virtual_key_id FROM governance_virtual_key_users WHERE user_id = ?)", params.UserID)
 	}
 	if params.Search != "" {
 		search := "%" + strings.ToLower(params.Search) + "%"
@@ -3875,6 +3881,18 @@ func (s *RDBConfigStore) DeleteVirtualKey(ctx context.Context, id string, tx ...
 		// Delete user assignments; a dangling link would block the member's session traffic.
 		if txDB.Migrator().HasTable(&tables.TableVirtualKeyUser{}) {
 			if err := txDB.WithContext(ctx).Where("virtual_key_id = ?", id).Delete(&tables.TableVirtualKeyUser{}).Error; err != nil {
+				return err
+			}
+		}
+		// Delete team assignments
+		if txDB.Migrator().HasTable(&tables.TableVirtualKeyTeam{}) {
+			if err := txDB.WithContext(ctx).Where("virtual_key_id = ?", id).Delete(&tables.TableVirtualKeyTeam{}).Error; err != nil {
+				return err
+			}
+		}
+		// Delete customer assignments
+		if txDB.Migrator().HasTable(&tables.TableVirtualKeyCustomer{}) {
+			if err := txDB.WithContext(ctx).Where("virtual_key_id = ?", id).Delete(&tables.TableVirtualKeyCustomer{}).Error; err != nil {
 				return err
 			}
 		}

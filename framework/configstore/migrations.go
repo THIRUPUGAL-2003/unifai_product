@@ -456,6 +456,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_otp_failed_attempts"}, run: migrationAddOTPFailedAttempts},
 	{IDs: []string{"add_user_id_to_prompt_sessions"}, run: migrationAddUserIDToPromptSessions},
 	{IDs: []string{"add_governance_virtual_key_users_table"}, run: migrationAddGovernanceVirtualKeyUsersTable},
+	{IDs: []string{"add_governance_virtual_key_teams_and_customers_tables"}, run: migrationAddGovernanceVirtualKeyTeamsAndCustomersTables},
 	{IDs: []string{"enable_enforce_auth_on_inference_default"}, run: migrationEnableEnforceAuthOnInferenceDefault},
 }
 
@@ -11218,6 +11219,72 @@ func migrationEnableEnforceAuthOnInferenceDefault(ctx context.Context, db *gorm.
 			return tx.Exec("UPDATE config_client SET enforce_auth_on_inference = true").Error
 		},
 		Rollback: func(tx *gorm.DB) error { return nil },
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+// migrationAddGovernanceVirtualKeyTeamsAndCustomersTables creates many-to-many join tables
+// for virtual key teams and customers, and backfills existing associations from governance_virtual_keys.
+func migrationAddGovernanceVirtualKeyTeamsAndCustomersTables(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_governance_virtual_key_teams_and_customers_tables"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			mg := tx.Migrator()
+			if !mg.HasTable(&tables.TableVirtualKeyTeam{}) {
+				if err := mg.CreateTable(&tables.TableVirtualKeyTeam{}); err != nil {
+					return err
+				}
+			}
+			if !mg.HasTable(&tables.TableVirtualKeyCustomer{}) {
+				if err := mg.CreateTable(&tables.TableVirtualKeyCustomer{}); err != nil {
+					return err
+				}
+			}
+			if mg.HasTable("governance_virtual_keys") {
+				// Backfill teams safely across SQLite/Postgres/MySQL
+				_ = tx.Exec(`
+					INSERT INTO governance_virtual_key_teams (virtual_key_id, team_id, created_at, updated_at)
+					SELECT vk.id, vk.team_id, vk.created_at, vk.updated_at
+					FROM governance_virtual_keys vk
+					WHERE vk.team_id IS NOT NULL AND vk.team_id != ''
+					  AND NOT EXISTS (
+						SELECT 1 FROM governance_virtual_key_teams vkt
+						WHERE vkt.virtual_key_id = vk.id AND vkt.team_id = vk.team_id
+					  )
+				`).Error
+
+				// Backfill customers safely across SQLite/Postgres/MySQL
+				_ = tx.Exec(`
+					INSERT INTO governance_virtual_key_customers (virtual_key_id, customer_id, created_at, updated_at)
+					SELECT vk.id, vk.customer_id, vk.created_at, vk.updated_at
+					FROM governance_virtual_keys vk
+					WHERE vk.customer_id IS NOT NULL AND vk.customer_id != ''
+					  AND NOT EXISTS (
+						SELECT 1 FROM governance_virtual_key_customers vkc
+						WHERE vkc.virtual_key_id = vk.id AND vkc.customer_id = vk.customer_id
+					  )
+				`).Error
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			mg := tx.Migrator()
+			if mg.HasTable(&tables.TableVirtualKeyTeam{}) {
+				_ = mg.DropTable(&tables.TableVirtualKeyTeam{})
+			}
+			if mg.HasTable(&tables.TableVirtualKeyCustomer{}) {
+				_ = mg.DropTable(&tables.TableVirtualKeyCustomer{})
+			}
+			return nil
+		},
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error running %s migration: %w", migrationName, err)

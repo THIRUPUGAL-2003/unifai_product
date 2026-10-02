@@ -17,6 +17,8 @@ import { CreateSessionRequest, Folder, Prompt } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
 import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
 import {
+	Archive,
+	Building,
 	ChevronDown,
 	ChevronRight,
 	FileText,
@@ -28,6 +30,7 @@ import {
 	PlusIcon,
 	Search,
 	Trash2,
+	Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePromptContext } from "../context";
@@ -83,7 +86,7 @@ export function PromptSidebar() {
 		{ history: "replace" },
 	);
 
-	const onCreateFolder = useCallback(() => setFolderSheet({ open: true }), [setFolderSheet]);
+	const onCreateFolder = useCallback((parentId?: string) => setFolderSheet({ open: true, parentId }), [setFolderSheet]);
 	const onEditFolder = useCallback((folder: Folder) => setFolderSheet({ open: true, folder }), [setFolderSheet]);
 	const onDeleteFolder = useCallback((folder: Folder) => setDeleteFolderDialog({ open: true, folder }), [setDeleteFolderDialog]);
 	const onCreatePrompt = useCallback((folderId?: string) => setPromptSheet({ open: true, folderId }), [setPromptSheet]);
@@ -92,32 +95,6 @@ export function PromptSidebar() {
 	const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 	const [searchQuery, setSearchQuery] = useState("");
 	const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
-
-	// Auto-expand the folder containing the selected prompt
-	useEffect(() => {
-		if (!selectedPromptId) return;
-		const prompt = prompts.find((p) => p.id === selectedPromptId);
-		if (prompt?.folder_id) {
-			setExpandedFolders((prev) => {
-				if (prev.has(prompt.folder_id!)) return prev;
-				const next = new Set(prev);
-				next.add(prompt.folder_id!);
-				return next;
-			});
-		}
-	}, [selectedPromptId, prompts]);
-
-	const toggleFolder = useCallback((folderId: string) => {
-		setExpandedFolders((prev) => {
-			const next = new Set(prev);
-			if (next.has(folderId)) {
-				next.delete(folderId);
-			} else {
-				next.add(folderId);
-			}
-			return next;
-		});
-	}, []);
 
 	// Group prompts by folder, root prompts have no folder_id
 	const { promptsByFolder, rootPrompts } = useMemo(() => {
@@ -135,10 +112,81 @@ export function PromptSidebar() {
 		return { promptsByFolder: map, rootPrompts: root };
 	}, [prompts]);
 
+	// Organize folders and subfolders
+	const { rootFolders, childFoldersByParent, folderMap } = useMemo<{
+		rootFolders: Folder[];
+		childFoldersByParent: Map<string, Folder[]>;
+		folderMap: Map<string, Folder>;
+	}>(() => {
+		const root: Folder[] = [];
+		const childrenMap = new Map<string, Folder[]>();
+		const fMap = new Map<string, Folder>();
+
+		for (const folder of folders) {
+			fMap.set(folder.id, folder);
+			if (!folder.parent_id) {
+				root.push(folder);
+			} else {
+				const list = childrenMap.get(folder.parent_id) || [];
+				list.push(folder);
+				childrenMap.set(folder.parent_id, list);
+			}
+		}
+
+		// Sort root folders: Customers (1), Users (2), custom folders (5), Removed archives (10)
+		const order = (f: Folder) => {
+			if (f.name === "Customers" || f.type === "system_customers_root") return 1;
+			if (f.name === "Users" || f.type === "system_users_root") return 2;
+			if (f.name.startsWith("Removed") || f.type?.startsWith("archived_")) return 10;
+			return 5;
+		};
+		root.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+
+		return { rootFolders: root, childFoldersByParent: childrenMap, folderMap: fMap };
+	}, [folders]);
+
+	// Auto-expand the folder and all its parent folders containing the selected prompt
+	useEffect(() => {
+		if (!selectedPromptId) return;
+		const prompt = prompts.find((p) => p.id === selectedPromptId);
+		if (prompt?.folder_id) {
+			const toExpand = new Set<string>();
+			let currentId: string | undefined = prompt.folder_id;
+			while (currentId) {
+				toExpand.add(currentId);
+				const parentFolderId: string | undefined = folderMap.get(currentId)?.parent_id;
+				currentId = parentFolderId;
+			}
+			setExpandedFolders((prev) => {
+				let changed = false;
+				const next = new Set(prev);
+				for (const id of toExpand) {
+					if (!next.has(id)) {
+						next.add(id);
+						changed = true;
+					}
+				}
+				return changed ? next : prev;
+			});
+		}
+	}, [selectedPromptId, prompts, folderMap]);
+
+	const toggleFolder = useCallback((folderId: string) => {
+		setExpandedFolders((prev) => {
+			const next = new Set(prev);
+			if (next.has(folderId)) {
+				next.delete(folderId);
+			} else {
+				next.add(folderId);
+			}
+			return next;
+		});
+	}, []);
+
 	// Filter folders and prompts based on search
 	const filteredData = useMemo(() => {
 		if (!searchQuery.trim()) {
-			return { folders, promptsByFolder, rootPrompts };
+			return { folders, rootFolders, childFoldersByParent, promptsByFolder, rootPrompts };
 		}
 
 		const query = searchQuery.toLowerCase();
@@ -151,7 +199,11 @@ export function PromptSidebar() {
 				if (!prompt.folder_id) {
 					filteredRootPrompts.push(prompt);
 				} else {
-					matchedFolderIds.add(prompt.folder_id);
+					let curr: string | undefined | null = prompt.folder_id;
+					while (curr) {
+						matchedFolderIds.add(curr);
+						curr = folderMap.get(curr)?.parent_id;
+					}
 					const list = filteredPromptsByFolder.get(prompt.folder_id) || [];
 					list.push(prompt);
 					filteredPromptsByFolder.set(prompt.folder_id, list);
@@ -159,14 +211,27 @@ export function PromptSidebar() {
 			}
 		}
 
-		const filteredFolders = folders.filter((folder) => folder.name.toLowerCase().includes(query) || matchedFolderIds.has(folder.id));
+		for (const folder of folders) {
+			if (folder.name.toLowerCase().includes(query)) {
+				let curr: string | undefined | null = folder.id;
+				while (curr) {
+					matchedFolderIds.add(curr);
+					curr = folderMap.get(curr)?.parent_id;
+				}
+			}
+		}
+
+		const filteredFolders = folders.filter((folder) => matchedFolderIds.has(folder.id));
+		const filteredRootFolders = rootFolders.filter((folder) => matchedFolderIds.has(folder.id));
 
 		return {
 			folders: filteredFolders,
+			rootFolders: filteredRootFolders,
+			childFoldersByParent,
 			promptsByFolder: filteredPromptsByFolder,
 			rootPrompts: filteredRootPrompts,
 		};
-	}, [folders, prompts, promptsByFolder, rootPrompts, searchQuery]);
+	}, [folders, rootFolders, childFoldersByParent, folderMap, prompts, promptsByFolder, rootPrompts, searchQuery]);
 
 	// Prompt lookup for drag events
 	const promptMap = useMemo(() => {
@@ -364,19 +429,24 @@ export function PromptSidebar() {
 							<div className="text-muted-foreground py-8 text-center text-sm">{searchQuery ? "No results found" : "No prompts yet"}</div>
 						) : (
 							<>
-								{filteredData.folders.map((folder) => (
+								{filteredData.rootFolders.map((folder) => (
 									<DroppableFolder
 										key={folder.id}
 										folder={folder}
 										prompts={filteredData.promptsByFolder.get(folder.id) || promptsByFolder.get(folder.id) || []}
-										isExpanded={expandedFolders.has(folder.id) || !!searchQuery}
-										isDragOver={dragOverTarget === `folder-${folder.id}`}
+										childFolders={filteredData.childFoldersByParent.get(folder.id) || []}
+										allChildFoldersByParent={filteredData.childFoldersByParent}
+										allPromptsByFolder={filteredData.promptsByFolder}
+										expandedFolders={expandedFolders}
+										searchQuery={searchQuery}
+										dragOverTarget={dragOverTarget}
 										selectedPromptId={selectedPromptId}
-										onToggle={() => toggleFolder(folder.id)}
+										onToggle={toggleFolder}
 										onSelectPrompt={onSelectPrompt}
-										onEdit={() => onEditFolder(folder)}
-										onDelete={() => onDeleteFolder(folder)}
-										onCreatePrompt={() => onCreatePrompt(folder.id)}
+										onEdit={onEditFolder}
+										onDelete={onDeleteFolder}
+										onCreateFolder={onCreateFolder}
+										onCreatePrompt={onCreatePrompt}
 										onEditPrompt={onEditPrompt}
 										onDeletePrompt={onDeletePrompt}
 										canCreate={canCreate}
@@ -460,14 +530,20 @@ function RootDropZone({
 interface DroppableFolderProps {
 	folder: Folder;
 	prompts: Prompt[];
-	isExpanded: boolean;
-	isDragOver: boolean;
+	childFolders?: Folder[];
+	allChildFoldersByParent: Map<string, Folder[]>;
+	allPromptsByFolder: Map<string, Prompt[]>;
+	expandedFolders: Set<string>;
+	searchQuery: string;
+	dragOverTarget: string | null;
 	selectedPromptId?: string | null;
-	onToggle: () => void;
+	level?: number;
+	onToggle: (folderId: string) => void;
 	onSelectPrompt: (promptId: string) => void;
-	onEdit: () => void;
-	onDelete: () => void;
-	onCreatePrompt: () => void;
+	onEdit: (folder: Folder) => void;
+	onDelete: (folder: Folder) => void;
+	onCreateFolder: (parentId?: string) => void;
+	onCreatePrompt: (folderId?: string) => void;
 	onEditPrompt: (prompt: Prompt) => void;
 	onDeletePrompt: (prompt: Prompt) => void;
 	canCreate: boolean;
@@ -475,36 +551,35 @@ interface DroppableFolderProps {
 	canDelete: boolean;
 }
 
-/**
- * Renders a droppable folder header with optional action menu and its list of prompts.
- *
- * @param folder - Folder metadata (id, name, etc.)
- * @param prompts - Prompts that belong to this folder
- * @param isExpanded - Whether the folder is expanded to show its prompts
- * @param isDragOver - Whether a draggable item is currently over this folder (affects visual state)
- * @param selectedPromptId - ID of the currently selected prompt, used to highlight an item
- * @param onToggle - Callback invoked to toggle the folder's expanded state
- * @param onSelectPrompt - Callback invoked with a prompt ID when a prompt is selected
- * @param onEdit - Callback invoked to start editing the folder
- * @param onDelete - Callback invoked to start deleting the folder
- * @param onCreatePrompt - Callback invoked to create a new prompt inside this folder
- * @param onEditPrompt - Callback invoked with a prompt to start editing that prompt
- * @param onDeletePrompt - Callback invoked with a prompt to start deleting that prompt
- * @param canCreate - Whether the current user may create prompts in this folder
- * @param canUpdate - Whether the current user may move/rename prompts or edit the folder
- * @param canDelete - Whether the current user may delete prompts or the folder
- * @returns A JSX element containing the folder row and, when expanded, its nested prompt items
- */
+function getRecursivePromptCount(
+	folderId: string,
+	promptsMap: Map<string, Prompt[]>,
+	childrenMap: Map<string, Folder[]>,
+): number {
+	let count = (promptsMap.get(folderId) || []).length;
+	const children = childrenMap.get(folderId) || [];
+	for (const child of children) {
+		count += getRecursivePromptCount(child.id, promptsMap, childrenMap);
+	}
+	return count;
+}
+
 function DroppableFolder({
 	folder,
 	prompts,
-	isExpanded,
-	isDragOver,
+	childFolders,
+	allChildFoldersByParent,
+	allPromptsByFolder,
+	expandedFolders,
+	searchQuery,
+	dragOverTarget,
 	selectedPromptId,
+	level = 0,
 	onToggle,
 	onSelectPrompt,
 	onEdit,
 	onDelete,
+	onCreateFolder,
 	onCreatePrompt,
 	onEditPrompt,
 	onDeletePrompt,
@@ -513,32 +588,63 @@ function DroppableFolder({
 	canDelete,
 }: DroppableFolderProps) {
 	const { ref } = useDroppable({ id: `folder-${folder.id}` });
-	const showActions = canCreate || canUpdate || canDelete;
+	const isExpanded = expandedFolders.has(folder.id) || !!searchQuery;
+	const isDragOver = dragOverTarget === `folder-${folder.id}`;
+
+	const isSystemFolder =
+		folder.type?.startsWith("system_") ||
+		folder.name === "Users" ||
+		folder.name === "Customers" ||
+		folder.name === "Removed Users" ||
+		folder.name === "Removed Customers" ||
+		folder.name === "Removed Teams";
+
+	const isArchiveFolder = folder.type?.startsWith("archived_") || folder.name.startsWith("Removed");
+	const isCustomersFolder = folder.type === "system_customers_root" || folder.name === "Customers";
+	const isUsersFolder = folder.type === "system_users_root" || folder.name === "Users";
+
+	const showActions = canCreate || ((canUpdate || canDelete) && !isSystemFolder);
+	const totalCount = getRecursivePromptCount(folder.id, allPromptsByFolder, allChildFoldersByParent);
 
 	return (
-		<div ref={ref} className="mb-1 last:mb-0">
+		<div ref={ref} className="mb-0.5 last:mb-0">
 			<div
 				className={cn(
 					"hover:bg-muted/50 group relative flex h-[30px] cursor-pointer items-center gap-1 rounded-sm px-2 transition-colors",
 					isDragOver && "bg-primary/10 ring-primary/30 ring-1",
+					isArchiveFolder && "opacity-80 text-muted-foreground",
 				)}
-				onClick={onToggle}
+				onClick={() => onToggle(folder.id)}
 				data-testid={`sidebar-folder-${folder.id}`}
 			>
-				<button className="flex shrink-0 items-center" aria-label="Toggle folder">
+				<button
+					type="button"
+					className="flex shrink-0 items-center"
+					aria-label="Toggle folder"
+					onClick={(e) => {
+						e.stopPropagation();
+						onToggle(folder.id);
+					}}
+				>
 					{isExpanded ? (
 						<ChevronDown className="text-muted-foreground h-4 w-4" />
 					) : (
 						<ChevronRight className="text-muted-foreground h-4 w-4" />
 					)}
 				</button>
-				{isExpanded ? (
+				{isArchiveFolder ? (
+					<Archive className="text-muted-foreground h-4 w-4 shrink-0" />
+				) : isUsersFolder ? (
+					<Users className="text-primary h-4 w-4 shrink-0" />
+				) : isCustomersFolder ? (
+					<Building className="text-primary h-4 w-4 shrink-0" />
+				) : isExpanded ? (
 					<FolderOpen className="text-muted-foreground h-4 w-4 shrink-0" />
 				) : (
 					<FolderIcon className="text-muted-foreground h-4 w-4 shrink-0" />
 				)}
 				<span className="flex-1 truncate text-sm font-medium">{folder.name}</span>
-				<span className="text-muted-foreground mr-1 shrink-0 text-xs">{prompts.length}</span>
+				<span className="text-muted-foreground mr-1 shrink-0 text-xs">{totalCount}</span>
 				{showActions && (
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()} className="bg-card absolute top-1/2 right-2 -translate-y-1/2">
@@ -553,41 +659,53 @@ function DroppableFolder({
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
-							{canCreate && (
-								<DropdownMenuItem
-									data-testid="folder-create-prompt"
-									onClick={(e) => {
-										e.stopPropagation();
-										onCreatePrompt();
-									}}
-								>
-									<Plus className="mr-2 h-4 w-4" />
-									New Prompt
-								</DropdownMenuItem>
+							{canCreate && !isArchiveFolder && (
+								<>
+									<DropdownMenuItem
+										data-testid="folder-create-prompt"
+										onClick={(e) => {
+											e.stopPropagation();
+											onCreatePrompt(folder.id);
+										}}
+									>
+										<Plus className="mr-2 h-4 w-4" />
+										New Prompt
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										data-testid="folder-create-subfolder"
+										onClick={(e) => {
+											e.stopPropagation();
+											onCreateFolder(folder.id);
+										}}
+									>
+										<FolderIcon className="mr-2 h-4 w-4" />
+										New Subfolder
+									</DropdownMenuItem>
+								</>
 							)}
-							{canCreate && (canUpdate || canDelete) && <DropdownMenuSeparator />}
-							{canUpdate && (
+							{canCreate && !isArchiveFolder && !isSystemFolder && (canUpdate || canDelete) && <DropdownMenuSeparator />}
+							{!isSystemFolder && canUpdate && (
 								<DropdownMenuItem
 									data-testid="folder-action-edit"
 									onClick={(e) => {
 										e.stopPropagation();
-										onEdit();
+										onEdit(folder);
 									}}
 								>
-									<Pencil className="h-4 w-4" />
+									<Pencil className="mr-2 h-4 w-4" />
 									Edit Folder
 								</DropdownMenuItem>
 							)}
-							{canDelete && (
+							{!isSystemFolder && canDelete && (
 								<DropdownMenuItem
 									variant="destructive"
 									data-testid="folder-action-delete"
 									onClick={(e) => {
 										e.stopPropagation();
-										onDelete();
+										onDelete(folder);
 									}}
 								>
-									<Trash2 className="h-4 w-4" />
+									<Trash2 className="mr-2 h-4 w-4" />
 									Delete Folder
 								</DropdownMenuItem>
 							)}
@@ -597,22 +715,47 @@ function DroppableFolder({
 			</div>
 
 			{isExpanded && (
-				<div className="ml-4 border-l pl-2">
-					{prompts.length === 0 ? (
-						<div className="text-muted-foreground py-2 pl-4 text-xs">{isDragOver ? "Drop here" : "No prompts"}</div>
-					) : (
-						prompts.map((prompt) => (
-							<DraggablePromptItem
-								key={prompt.id}
-								prompt={prompt}
-								isSelected={selectedPromptId === prompt.id}
-								onSelect={() => onSelectPrompt(prompt.id)}
-								onEdit={() => onEditPrompt(prompt)}
-								onDelete={() => onDeletePrompt(prompt)}
-								canUpdate={canUpdate}
-								canDelete={canDelete}
-							/>
-						))
+				<div className={cn("ml-3 border-l border-border/40 pl-1.5 flex flex-col gap-0.5", level > 0 && "ml-2.5 pl-1")}>
+					{childFolders && childFolders.map((child) => (
+						<DroppableFolder
+							key={child.id}
+							folder={child}
+							prompts={allPromptsByFolder.get(child.id) || []}
+							childFolders={allChildFoldersByParent.get(child.id) || []}
+							allChildFoldersByParent={allChildFoldersByParent}
+							allPromptsByFolder={allPromptsByFolder}
+							expandedFolders={expandedFolders}
+							searchQuery={searchQuery}
+							dragOverTarget={dragOverTarget}
+							selectedPromptId={selectedPromptId}
+							level={level + 1}
+							onToggle={onToggle}
+							onSelectPrompt={onSelectPrompt}
+							onEdit={onEdit}
+							onDelete={onDelete}
+							onCreateFolder={onCreateFolder}
+							onCreatePrompt={onCreatePrompt}
+							onEditPrompt={onEditPrompt}
+							onDeletePrompt={onDeletePrompt}
+							canCreate={canCreate}
+							canUpdate={canUpdate}
+							canDelete={canDelete}
+						/>
+					))}
+					{prompts.map((prompt) => (
+						<DraggablePromptItem
+							key={prompt.id}
+							prompt={prompt}
+							isSelected={selectedPromptId === prompt.id}
+							onSelect={() => onSelectPrompt(prompt.id)}
+							onEdit={() => onEditPrompt(prompt)}
+							onDelete={() => onDeletePrompt(prompt)}
+							canUpdate={canUpdate}
+							canDelete={canDelete}
+						/>
+					))}
+					{(!childFolders || childFolders.length === 0) && prompts.length === 0 && (
+						<div className="text-muted-foreground py-1 pl-4 text-xs">{isDragOver ? "Drop here" : "Empty"}</div>
 					)}
 				</div>
 			)}

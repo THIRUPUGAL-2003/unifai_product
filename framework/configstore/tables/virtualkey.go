@@ -225,7 +225,7 @@ type TableVirtualKey struct {
 	ProviderConfigs []TableVirtualKeyProviderConfig `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"provider_configs"` // Empty means no providers allowed (deny-by-default)
 	MCPConfigs      []TableVirtualKeyMCPConfig      `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"mcp_configs"`
 
-	// Foreign key relationships (mutually exclusive: either TeamID or CustomerID, not both)
+	// Foreign key relationships (legacy single fields retained for backward compatibility)
 	TeamID      *string `gorm:"type:varchar(255);index" json:"team_id,omitempty"`
 	CustomerID  *string `gorm:"type:varchar(255);index" json:"customer_id,omitempty"`
 	RateLimitID *string `gorm:"type:varchar(255);index" json:"rate_limit_id,omitempty"`
@@ -233,10 +233,16 @@ type TableVirtualKey struct {
 	CalendarAligned bool `gorm:"default:false" json:"calendar_aligned"`
 
 	// Relationships
-	Team      *TableTeam      `gorm:"foreignKey:TeamID" json:"team,omitempty"`
-	Customer  *TableCustomer  `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
-	RateLimit *TableRateLimit `gorm:"foreignKey:RateLimitID;onDelete:CASCADE" json:"rate_limit,omitempty"`
-	Budgets   []TableBudget   `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"budgets,omitempty"` // Multiple budgets with different reset intervals
+	Team        *TableTeam            `gorm:"foreignKey:TeamID" json:"team,omitempty"`
+	Customer    *TableCustomer        `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
+	Teams       []TableTeam           `gorm:"many2many:governance_virtual_key_teams;foreignKey:ID;joinForeignKey:VirtualKeyID;references:ID;joinReferences:TeamID" json:"teams,omitempty"`
+	Customers   []TableCustomer       `gorm:"many2many:governance_virtual_key_customers;foreignKey:ID;joinForeignKey:VirtualKeyID;references:ID;joinReferences:CustomerID" json:"customers,omitempty"`
+	Users       []TableVirtualKeyUser `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"users,omitempty"`
+	TeamIDs     []string              `gorm:"-" json:"team_ids,omitempty"`
+	CustomerIDs []string              `gorm:"-" json:"customer_ids,omitempty"`
+	UserIDs     []string              `gorm:"-" json:"user_ids,omitempty"`
+	RateLimit   *TableRateLimit       `gorm:"foreignKey:RateLimitID;onDelete:CASCADE" json:"rate_limit,omitempty"`
+	Budgets     []TableBudget         `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"budgets,omitempty"` // Multiple budgets with different reset intervals
 
 	// Config hash is used to detect the changes synced from config.json file
 	// Every time we sync the config.json file, we will update the config hash
@@ -296,14 +302,9 @@ func (vk *TableVirtualKey) IsExpiredAt(now time.Time) bool {
 	return !now.UTC().Before(vk.ExpiresAt.UTC())
 }
 
-// BeforeSave is a GORM hook that enforces mutual exclusion (team vs customer), computes
-// a SHA-256 hash of the plaintext value for indexed lookups, and encrypts the virtual key
-// value before writing to the database.
+// BeforeSave is a GORM hook that computes a SHA-256 hash of the plaintext value
+// for indexed lookups, and encrypts the virtual key value before writing to the database.
 func (vk *TableVirtualKey) BeforeSave(tx *gorm.DB) error {
-	// Enforce mutual exclusion: VK can belong to either Team OR Customer, not both
-	if vk.TeamID != nil && vk.CustomerID != nil {
-		return fmt.Errorf("virtual key cannot belong to both team and customer")
-	}
 
 	// Hash must be computed before encryption (from plaintext value).
 	if vk.Value.IsSet() {

@@ -20,7 +20,7 @@ type TableTeam struct {
 	Customer    *TableCustomer    `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
 	Budgets     []TableBudget     `gorm:"foreignKey:TeamID;constraint:OnDelete:CASCADE" json:"budgets,omitempty"` // Multiple budgets with different reset intervals
 	RateLimit   *TableRateLimit   `gorm:"foreignKey:RateLimitID" json:"rate_limit,omitempty"`
-	VirtualKeys []TableVirtualKey `gorm:"foreignKey:TeamID" json:"virtual_keys,omitempty"`
+	VirtualKeys []TableVirtualKey `gorm:"many2many:governance_virtual_key_teams;foreignKey:ID;joinForeignKey:TeamID;references:ID;joinReferences:VirtualKeyID" json:"virtual_keys,omitempty"`
 
 	// Computed (not a DB column) — populated via correlated subquery in query layer, hence no migration
 	VirtualKeyCount int64 `gorm:"->;-:migration" json:"virtual_key_count"`

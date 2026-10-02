@@ -16,6 +16,7 @@ import (
 type UserGovernanceSyncer interface {
 	SyncUserGovernance(ctx context.Context, userID string, budget *tables.TableBudget, rateLimit *tables.TableRateLimit)
 	DeleteUserGovernance(ctx context.Context, userID string)
+	GetBudgetUsage(ctx context.Context, budgetID string) (float64, bool)
 }
 
 const (

@@ -55,6 +55,10 @@ func newMemoryConfigStore() *memoryConfigStore {
 	}
 }
 
+func (m *memoryConfigStore) DB() *gorm.DB {
+	return nil
+}
+
 func (m *memoryConfigStore) GetAuthConfig(ctx context.Context) (*configstore.AuthConfig, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

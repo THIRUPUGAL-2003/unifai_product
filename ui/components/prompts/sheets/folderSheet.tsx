@@ -19,10 +19,11 @@ interface FolderSheetProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	folder?: Folder;
+	parentId?: string | null;
 	onSaved: () => void;
 }
 
-export function FolderSheet({ open, onOpenChange, folder, onSaved }: FolderSheetProps) {
+export function FolderSheet({ open, onOpenChange, folder, parentId, onSaved }: FolderSheetProps) {
 	const [createFolder, { isLoading: isCreating }] = useCreateFolderMutation();
 	const [updateFolder, { isLoading: isUpdating }] = useUpdateFolderMutation();
 
@@ -58,6 +59,7 @@ export function FolderSheet({ open, onOpenChange, folder, onSaved }: FolderSheet
 			} else {
 				await createFolder({
 					name: data.name.trim(),
+					parent_id: parentId ?? undefined,
 					description: data.description.trim() || undefined,
 				}).unwrap();
 				toast.success("Folder created");

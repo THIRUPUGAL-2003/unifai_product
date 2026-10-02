@@ -119,7 +119,8 @@ type GovernanceHandler struct {
 	// logManager sources actual per-model usage (from request logs) for the quota
 	// endpoint's model_usage breakdown. Optional: nil when the logging plugin is
 	// not enabled, in which case the breakdown is simply omitted.
-	logManager logging.LogManager
+	logManager      logging.LogManager
+	promptLifecycle *PromptLifecycleManager
 }
 
 // NewGovernanceHandler creates a new governance handler instance.
@@ -146,6 +147,7 @@ func NewGovernanceHandler(manager GovernanceManager, configStore configstore.Con
 		governanceManager: manager,
 		configStore:       configStore,
 		logManager:        logManager,
+		promptLifecycle:   NewPromptLifecycleManager(configStore),
 	}, nil
 }
 
@@ -166,8 +168,11 @@ type CreateVirtualKeyRequest struct {
 		MCPClientName  string            `json:"mcp_client_name" validate:"required"`
 		ToolsToExecute schemas.WhiteList `json:"tools_to_execute,omitempty"`
 	} `json:"mcp_configs,omitempty"` // Empty means no MCP clients allowed (deny-by-default)
-	TeamID          *string                 `json:"team_id,omitempty"`     // Mutually exclusive with CustomerID
-	CustomerID      *string                 `json:"customer_id,omitempty"` // Mutually exclusive with TeamID
+	TeamIDs         []string                `json:"team_ids,omitempty"`
+	CustomerIDs     []string                `json:"customer_ids,omitempty"`
+	UserIDs         []string                `json:"user_ids,omitempty"`
+	TeamID          *string                 `json:"team_id,omitempty"`     // Legacy single team
+	CustomerID      *string                 `json:"customer_id,omitempty"` // Legacy single customer
 	Budgets         []CreateBudgetRequest   `json:"budgets,omitempty"`     // Multi-budget: each must have a unique reset_duration
 	RateLimit       *CreateRateLimitRequest `json:"rate_limit,omitempty"`
 	IsActive        *bool                   `json:"is_active,omitempty"`
@@ -194,6 +199,9 @@ type UpdateVirtualKeyRequest struct {
 		MCPClientName  string            `json:"mcp_client_name" validate:"required"`
 		ToolsToExecute schemas.WhiteList `json:"tools_to_execute,omitempty"`
 	} `json:"mcp_configs,omitempty"`
+	TeamIDs          *[]string                    `json:"team_ids,omitempty"`
+	CustomerIDs      *[]string                    `json:"customer_ids,omitempty"`
+	UserIDs          *[]string                    `json:"user_ids,omitempty"`
 	TeamID           schemas.OptionalJSON[string] `json:"team_id,omitempty"`
 	CustomerID       schemas.OptionalJSON[string] `json:"customer_id,omitempty"`
 	Budgets          []CreateBudgetRequest        `json:"budgets,omitempty"` // Multi-budget: replaces all VK-level budgets
@@ -204,8 +212,6 @@ type UpdateVirtualKeyRequest struct {
 	ExpiresAt        *string                      `json:"expires_at,omitempty"` // RFC3339 timestamp sets a new expiry, "" clears it, omitted leaves it unchanged
 }
 
-var errVirtualKeyDualAssociation = errors.New("VirtualKey cannot be attached to both Team and Customer")
-
 // optionalJSONStringHasValue reports whether a presence-aware string contains a non-empty value.
 func optionalJSONStringHasValue(value schemas.OptionalJSON[string]) bool {
 	return value.Set && !value.Null && value.Value != ""
@@ -213,22 +219,21 @@ func optionalJSONStringHasValue(value schemas.OptionalJSON[string]) bool {
 
 // applyVirtualKeyOwnershipUpdate applies presence-aware team/customer ownership changes.
 func applyVirtualKeyOwnershipUpdate(vk *configstoreTables.TableVirtualKey, req *UpdateVirtualKeyRequest) error {
-	if optionalJSONStringHasValue(req.TeamID) && optionalJSONStringHasValue(req.CustomerID) {
-		return errVirtualKeyDualAssociation
+	if req.TeamID.Set {
+		if req.TeamID.Null || req.TeamID.Value == "" {
+			vk.TeamID = nil
+			vk.Team = nil
+		} else {
+			vk.TeamID = new(req.TeamID.Value)
+		}
 	}
-	if optionalJSONStringHasValue(req.TeamID) {
-		vk.TeamID = new(req.TeamID.Value)
-		vk.CustomerID = nil
-		return nil
-	}
-	if optionalJSONStringHasValue(req.CustomerID) {
-		vk.CustomerID = new(req.CustomerID.Value)
-		vk.TeamID = nil
-		return nil
-	}
-	if req.TeamID.Set || req.CustomerID.Set {
-		vk.TeamID = nil
-		vk.CustomerID = nil
+	if req.CustomerID.Set {
+		if req.CustomerID.Null || req.CustomerID.Value == "" {
+			vk.CustomerID = nil
+			vk.Customer = nil
+		} else {
+			vk.CustomerID = new(req.CustomerID.Value)
+		}
 	}
 	return nil
 }
@@ -854,6 +859,44 @@ func (h *GovernanceHandler) hydrateVKGovernance(ctx context.Context, vk *configs
 		add(&prov)
 	}
 	applyVKGovernanceFromModelConfigs(vk, byKey)
+	populateVKEntityIDs(vk)
+}
+
+// populateVKEntityIDs populates TeamIDs, CustomerIDs, and UserIDs slices from relations
+func populateVKEntityIDs(vk *configstoreTables.TableVirtualKey) {
+	if vk == nil {
+		return
+	}
+	if len(vk.Teams) > 0 {
+		vk.TeamIDs = make([]string, len(vk.Teams))
+		for i, t := range vk.Teams {
+			vk.TeamIDs[i] = t.ID
+		}
+	} else if vk.TeamID != nil && *vk.TeamID != "" {
+		vk.TeamIDs = []string{*vk.TeamID}
+	} else {
+		vk.TeamIDs = []string{}
+	}
+
+	if len(vk.Customers) > 0 {
+		vk.CustomerIDs = make([]string, len(vk.Customers))
+		for i, c := range vk.Customers {
+			vk.CustomerIDs[i] = c.ID
+		}
+	} else if vk.CustomerID != nil && *vk.CustomerID != "" {
+		vk.CustomerIDs = []string{*vk.CustomerID}
+	} else {
+		vk.CustomerIDs = []string{}
+	}
+
+	if len(vk.Users) > 0 {
+		vk.UserIDs = make([]string, len(vk.Users))
+		for i, u := range vk.Users {
+			vk.UserIDs[i] = u.UserID
+		}
+	} else {
+		vk.UserIDs = []string{}
+	}
 }
 
 // buildVKModelConfigIndex builds a lookup map of VK-scoped model configs keyed by
@@ -888,6 +931,7 @@ func (h *GovernanceHandler) hydrateVKListGovernance(ctx context.Context, vks []c
 	}
 	for i := range vks {
 		applyVKGovernanceFromModelConfigs(&vks[i], byKey)
+		populateVKEntityIDs(&vks[i])
 	}
 }
 
@@ -1188,6 +1232,7 @@ func (h *GovernanceHandler) getVirtualKeys(ctx *fasthttp.RequestCtx) {
 			copy(pcs, vk.ProviderConfigs)
 			clone.ProviderConfigs = pcs
 			applyVKGovernanceFromModelConfigs(&clone, byKey)
+			populateVKEntityIDs(&clone)
 			hydratedVKs[i] = &clone
 		}
 		if allowed, filter := h.allowedVKIDsForCaller(ctx); filter {
@@ -1214,6 +1259,7 @@ func (h *GovernanceHandler) getVirtualKeys(ctx *fasthttp.RequestCtx) {
 	search := string(ctx.QueryArgs().Peek("search"))
 	customerID := string(ctx.QueryArgs().Peek("customer_id"))
 	teamID := string(ctx.QueryArgs().Peek("team_id"))
+	userID := string(ctx.QueryArgs().Peek("user_id"))
 	sortBy := string(ctx.QueryArgs().Peek("sort_by"))
 	order := string(ctx.QueryArgs().Peek("order"))
 	isExport := string(ctx.QueryArgs().Peek("export")) == "true"
@@ -1221,12 +1267,13 @@ func (h *GovernanceHandler) getVirtualKeys(ctx *fasthttp.RequestCtx) {
 	excludeAssignedVirtualKeys := string(ctx.QueryArgs().Peek("exclude_assigned_virtual_keys")) == "true"
 	forUserAssignment := string(ctx.QueryArgs().Peek("for_user_assignment")) == "true"
 
-	if limitStr != "" || offsetStr != "" || search != "" || customerID != "" || teamID != "" || sortBy != "" || isExport || excludeAccessProfileManagedVirtual || excludeAssignedVirtualKeys || forUserAssignment {
+	if limitStr != "" || offsetStr != "" || search != "" || customerID != "" || teamID != "" || userID != "" || sortBy != "" || isExport || excludeAccessProfileManagedVirtual || excludeAssignedVirtualKeys || forUserAssignment {
 		// Paginated/filtered path
 		params := configstore.VirtualKeyQueryParams{
 			Search:                             search,
 			CustomerID:                         customerID,
 			TeamID:                             teamID,
+			UserID:                             userID,
 			SortBy:                             sortBy,
 			Order:                              order,
 			Export:                             isExport,
@@ -1336,10 +1383,16 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 400, "Virtual key name is required")
 		return
 	}
-	// Validate mutually exclusive TeamID and CustomerID
-	if req.TeamID != nil && req.CustomerID != nil {
-		SendError(ctx, 400, "VirtualKey cannot be attached to both Team and Customer")
-		return
+	// Synchronize legacy and multi-entity fields
+	if len(req.TeamIDs) > 0 && req.TeamID == nil {
+		req.TeamID = &req.TeamIDs[0]
+	} else if req.TeamID != nil && len(req.TeamIDs) == 0 {
+		req.TeamIDs = []string{*req.TeamID}
+	}
+	if len(req.CustomerIDs) > 0 && req.CustomerID == nil {
+		req.CustomerID = &req.CustomerIDs[0]
+	} else if req.CustomerID != nil && len(req.CustomerIDs) == 0 {
+		req.CustomerIDs = []string{*req.CustomerID}
 	}
 	// Validate budgets if provided
 	if len(req.Budgets) > 0 {
@@ -1398,6 +1451,18 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 		}
 		if err := h.configStore.CreateVirtualKey(ctx, &vk, tx); err != nil {
 			return err
+		}
+		// Synchronize multi-entity join table rows
+		if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
+			if len(req.TeamIDs) > 0 {
+				_ = ws.SetVirtualKeyTeams(ctx, vk.ID, req.TeamIDs)
+			}
+			if len(req.CustomerIDs) > 0 {
+				_ = ws.SetVirtualKeyCustomers(ctx, vk.ID, req.CustomerIDs)
+			}
+			if len(req.UserIDs) > 0 {
+				_ = ws.SetVirtualKeyUsers(ctx, vk.ID, req.UserIDs)
+			}
 		}
 		// VK top-level and per-provider budgets/rate-limits are stored in VK-scoped model configs,
 		// the single source of truth, written via syncVKGovernanceToModelConfigs below.
@@ -1558,6 +1623,7 @@ func (h *GovernanceHandler) getVirtualKey(ctx *fasthttp.RequestCtx) {
 				copy(pcs, vk.ProviderConfigs)
 				clone.ProviderConfigs = pcs
 				applyVKGovernanceFromModelConfigs(&clone, byKey)
+				populateVKEntityIDs(&clone)
 				SendJSON(ctx, map[string]interface{}{
 					"virtual_key": &clone,
 				})
@@ -1590,11 +1656,6 @@ func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 	var req UpdateVirtualKeyRequest
 	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
 		SendError(ctx, 400, "Invalid JSON")
-		return
-	}
-	// Validate mutually exclusive TeamID and CustomerID
-	if optionalJSONStringHasValue(req.TeamID) && optionalJSONStringHasValue(req.CustomerID) {
-		SendError(ctx, 400, "VirtualKey cannot be attached to both Team and Customer")
 		return
 	}
 	// Parse expires_at when provided: a timestamp must be in the future, "" clears the expiry.
@@ -1659,10 +1720,35 @@ func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 			vk.Description = *req.Description
 		}
 		if err := applyVirtualKeyOwnershipUpdate(vk, &req); err != nil {
-			if errors.Is(err, errVirtualKeyDualAssociation) {
-				return &badRequestError{err: err}
-			}
 			return err
+		}
+		// Synchronize multi-entity join table rows if provided
+		if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
+			if req.TeamIDs != nil {
+				if err := ws.SetVirtualKeyTeams(ctx, vk.ID, *req.TeamIDs); err != nil {
+					return err
+				}
+				if len(*req.TeamIDs) > 0 {
+					vk.TeamID = &(*req.TeamIDs)[0]
+				} else {
+					vk.TeamID = nil
+				}
+			}
+			if req.CustomerIDs != nil {
+				if err := ws.SetVirtualKeyCustomers(ctx, vk.ID, *req.CustomerIDs); err != nil {
+					return err
+				}
+				if len(*req.CustomerIDs) > 0 {
+					vk.CustomerID = &(*req.CustomerIDs)[0]
+				} else {
+					vk.CustomerID = nil
+				}
+			}
+			if req.UserIDs != nil {
+				if err := ws.SetVirtualKeyUsers(ctx, vk.ID, *req.UserIDs); err != nil {
+					return err
+				}
+			}
 		}
 		if req.IsActive != nil {
 			vk.IsActive = req.IsActive
@@ -2307,6 +2393,9 @@ func (h *GovernanceHandler) createTeam(ctx *fasthttp.RequestCtx) {
 		logger.Error("failed to reload team: %v", err)
 		preloadedTeam = &team
 	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnTeamCreated(ctx, &team)
+	}
 	SendJSON(ctx, map[string]interface{}{
 		"message": "Team created successfully",
 		"team":    preloadedTeam,
@@ -2604,6 +2693,9 @@ func (h *GovernanceHandler) deleteTeam(ctx *fasthttp.RequestCtx) {
 		// But we ignore this error because its not
 		logger.Error("failed to remove team: %v", err)
 	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnTeamDeleted(ctx, team)
+	}
 	if err := h.configStore.DeleteTeam(ctx, teamID); err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {
 			SendError(ctx, 404, "Team not found")
@@ -2758,6 +2850,9 @@ func (h *GovernanceHandler) createCustomer(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		logger.Error("failed to reload customer: %v", err)
 		preloadedCustomer = &customer
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnCustomerCreated(ctx, &customer)
 	}
 	SendJSON(ctx, map[string]interface{}{
 		"message":  "Customer created successfully",
@@ -2972,6 +3067,9 @@ func (h *GovernanceHandler) deleteCustomer(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		// But we ignore this error because its not
 		logger.Error("failed to remove customer: %v", err)
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnCustomerDeleted(ctx, customer)
 	}
 	if err := h.configStore.DeleteCustomer(ctx, customerID); err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {

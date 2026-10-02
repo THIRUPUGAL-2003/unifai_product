@@ -286,6 +286,28 @@ type TableVirtualKeyUser struct {
 
 func (TableVirtualKeyUser) TableName() string { return "governance_virtual_key_users" }
 
+// TableVirtualKeyTeam links a virtual key to a team for multi-team access.
+type TableVirtualKeyTeam struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	VirtualKeyID string    `gorm:"type:varchar(255);not null;index:idx_vk_team_pair,unique;index:idx_vkt_vk_id" json:"virtual_key_id"`
+	TeamID       string    `gorm:"type:varchar(255);not null;index:idx_vk_team_pair,unique;index:idx_vkt_team_id" json:"team_id"`
+	CreatedAt    time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt    time.Time `gorm:"not null" json:"updated_at"`
+}
+
+func (TableVirtualKeyTeam) TableName() string { return "governance_virtual_key_teams" }
+
+// TableVirtualKeyCustomer links a virtual key to a customer for multi-customer access.
+type TableVirtualKeyCustomer struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	VirtualKeyID string    `gorm:"type:varchar(255);not null;index:idx_vk_customer_pair,unique;index:idx_vkc_vk_id" json:"virtual_key_id"`
+	CustomerID   string    `gorm:"type:varchar(255);not null;index:idx_vk_customer_pair,unique;index:idx_vkc_cust_id" json:"customer_id"`
+	CreatedAt    time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt    time.Time `gorm:"not null" json:"updated_at"`
+}
+
+func (TableVirtualKeyCustomer) TableName() string { return "governance_virtual_key_customers" }
+
 // TableAuditLog records administrative mutations.
 type TableAuditLog struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
@@ -314,6 +336,8 @@ func WorkspaceModels() []any {
 		&TableMCPToolGroup{},
 		&TablePromptDeployment{},
 		&TableVirtualKeyUser{},
+		&TableVirtualKeyTeam{},
+		&TableVirtualKeyCustomer{},
 		&TableTeamMember{},
 		&TableWorkspaceSetting{},
 		&TableAuditLog{},

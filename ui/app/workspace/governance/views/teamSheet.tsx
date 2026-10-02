@@ -621,9 +621,15 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 								<ul className="space-y-2">
 									{(membersData?.members || []).map((m) => (
 										<li key={m.user_id || m.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
-											<div>
-												<span className="font-medium">{m.username}</span>
-												{m.email ? <span className="text-muted-foreground ml-2 text-xs">{m.email}</span> : null}
+											<div className="flex flex-col">
+												<div className="flex items-center gap-2">
+													<span className="font-medium">{m.username}</span>
+													{m.email ? <span className="text-muted-foreground text-xs">{m.email}</span> : null}
+												</div>
+												<div className="text-muted-foreground mt-0.5 font-mono text-xs">
+													Spent: <span className="text-foreground font-semibold">${(m.budget_current_usage ?? 0).toFixed(2)}</span>
+													{m.budget && m.budget > 0 ? ` / $${m.budget.toFixed(2)}` : " (Unlimited)"}
+												</div>
 											</div>
 											<Button
 												type="button"

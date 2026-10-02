@@ -71,12 +71,14 @@ export function useVirtualKeyUsage(vk: VirtualKey | null | undefined): {
 		: vk?.rate_limit;
 
 	const isExhausted =
-		(displayBudgets?.some((b) => b.current_usage >= b.max_limit) ?? false) ||
+		(displayBudgets?.some((b) => b.max_limit > 0 && b.current_usage >= b.max_limit) ?? false) ||
 		(displayRateLimit?.token_current_usage != null &&
 			displayRateLimit?.token_max_limit != null &&
+			displayRateLimit.token_max_limit > 0 &&
 			displayRateLimit.token_current_usage >= displayRateLimit.token_max_limit) ||
 		(displayRateLimit?.request_current_usage != null &&
 			displayRateLimit?.request_max_limit != null &&
+			displayRateLimit.request_max_limit > 0 &&
 			displayRateLimit.request_current_usage >= displayRateLimit.request_max_limit);
 
 	return { assignedUsers, isManagedByProfile, managingProfile, hasApRateLimit, displayBudgets, displayRateLimit, isExhausted };

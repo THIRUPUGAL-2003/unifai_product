@@ -73,13 +73,9 @@ export default function VirtualKeyDetailSheet({
 	});
 
 	const getEntityInfo = () => {
-		if (virtualKey.team) {
-			return { type: "Team", name: virtualKey.team.name };
-		}
-		if (virtualKey.customer) {
-			return { type: "Customer", name: virtualKey.customer.name };
-		}
-		return { type: "None", name: "" };
+		const teamsList = virtualKey.teams?.length ? virtualKey.teams : virtualKey.team ? [virtualKey.team] : [];
+		const customersList = virtualKey.customers?.length ? virtualKey.customers : virtualKey.customer ? [virtualKey.customer] : [];
+		return { teamsList, customersList };
 	};
 
 	const entityInfo = getEntityInfo();
@@ -119,12 +115,16 @@ export default function VirtualKeyDetailSheet({
 				<div className="space-y-6 px-8 py-4">
 					<ManagedVirtualKeyNotice managingProfile={managingProfile} />
 
-					{assignedUsers.length > 0 ? (
+					{((virtualKey.users && virtualKey.users.length > 0) || assignedUsers.length > 0) ? (
 						<div className="space-y-1">
 							<Label className="text-sm font-medium">Assigned Users</Label>
 							<div className="flex items-center gap-2">
 								<Users className="text-muted-foreground h-4 w-4" />
-								<span className="text-sm">{assignedUsers.map((u) => u.name || u.email).join(", ")}</span>
+								<span className="text-sm">
+									{((virtualKey.users && virtualKey.users.length > 0) ? virtualKey.users : assignedUsers)
+										.map((u: any) => u.name || u.username || u.email)
+										.join(", ")}
+								</span>
 							</div>
 						</div>
 					) : null}
@@ -176,12 +176,32 @@ export default function VirtualKeyDetailSheet({
 								</div>
 							</div>
 
-							{entityInfo.type !== "None" && (
+							{entityInfo.teamsList.length > 0 && (
 								<div className="grid grid-cols-3 items-center gap-4">
-									<span className="text-muted-foreground text-sm">Assigned To</span>
-									<div className="col-span-2 flex items-center gap-2">
-										<Badge variant={entityInfo.type === "None" ? "outline" : "secondary"}>{entityInfo.type}</Badge>
-										<span className="text-sm">{entityInfo.name}</span>
+									<span className="text-muted-foreground text-sm">
+										{entityInfo.teamsList.length > 1 ? `Teams (${entityInfo.teamsList.length})` : "Team"}
+									</span>
+									<div className="col-span-2 flex flex-wrap items-center gap-1.5">
+										{entityInfo.teamsList.map((t) => (
+											<Badge key={t.id} variant="secondary">
+												{t.name}
+											</Badge>
+										))}
+									</div>
+								</div>
+							)}
+
+							{entityInfo.customersList.length > 0 && (
+								<div className="grid grid-cols-3 items-center gap-4">
+									<span className="text-muted-foreground text-sm">
+										{entityInfo.customersList.length > 1 ? `Customers (${entityInfo.customersList.length})` : "Customer"}
+									</span>
+									<div className="col-span-2 flex flex-wrap items-center gap-1.5">
+										{entityInfo.customersList.map((c) => (
+											<Badge key={c.id} variant="secondary">
+												{c.name}
+											</Badge>
+										))}
 									</div>
 								</div>
 							)}

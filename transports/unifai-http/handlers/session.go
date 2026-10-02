@@ -27,17 +27,19 @@ import (
 
 // SessionHandler manages HTTP requests for session operations
 type SessionHandler struct {
-	configStore    configstore.ConfigStore
-	wsTicketStore  *WSTicketStore
-	userGovernance UserGovernanceSyncer
+	configStore     configstore.ConfigStore
+	wsTicketStore   *WSTicketStore
+	userGovernance  UserGovernanceSyncer
+	promptLifecycle *PromptLifecycleManager
 }
 
 // NewSessionHandler creates a new session handler instance.
 // Optional userGovernance syncs Users.Budget into the live governance meter.
 func NewSessionHandler(configStore configstore.ConfigStore, wsTicketStore *WSTicketStore, userGovernance ...UserGovernanceSyncer) *SessionHandler {
 	h := &SessionHandler{
-		configStore:   configStore,
-		wsTicketStore: wsTicketStore,
+		configStore:     configStore,
+		wsTicketStore:   wsTicketStore,
+		promptLifecycle: NewPromptLifecycleManager(configStore),
 	}
 	if len(userGovernance) > 0 {
 		h.userGovernance = userGovernance[0]
@@ -236,7 +238,11 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 	hasValidToken := false
 	role := ""
 	username := ""
+	email := ""
+	userID := ""
 	allowedSections := ""
+	userBudget := 0.0
+	budgetUsage := 0.0
 	if token != "" {
 		session, err := h.configStore.GetSession(ctx, token)
 		if err == nil && session != nil && session.ExpiresAt.After(time.Now()) {
@@ -250,18 +256,37 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 						role = ""
 					} else {
 						allowedSections = dbUser.AllowedSections
+						email = dbUser.Email
+						userID = dbUser.ID
+						userBudget = dbUser.Budget
+						if dbUser.BudgetID != nil && *dbUser.BudgetID != "" {
+							if h.userGovernance != nil {
+								if usage, ok := h.userGovernance.GetBudgetUsage(ctx, *dbUser.BudgetID); ok {
+									budgetUsage = usage
+								}
+							}
+							if budgetUsage == 0 {
+								if b, err := h.configStore.GetBudget(ctx, *dbUser.BudgetID); err == nil && b != nil {
+									budgetUsage = b.CurrentUsage
+								}
+							}
+						}
 					}
 				}
 			}
 		}
 	}
 	SendJSON(ctx, map[string]any{
-		"is_auth_enabled":  authConfig.IsEnabled,
-		"has_valid_token":  hasValidToken,
-		"auth_type":        dashboardAuthType(authConfig.IsEnabled),
-		"role":             role,
-		"username":         username,
-		"allowed_sections": allowedSections,
+		"is_auth_enabled":      authConfig.IsEnabled,
+		"has_valid_token":      hasValidToken,
+		"auth_type":            dashboardAuthType(authConfig.IsEnabled),
+		"role":                 role,
+		"username":             username,
+		"email":                email,
+		"user_id":              userID,
+		"allowed_sections":     allowedSections,
+		"budget":               userBudget,
+		"budget_current_usage": budgetUsage,
 	})
 }
 
@@ -794,9 +819,20 @@ func (h *SessionHandler) getUsers(ctx *fasthttp.RequestCtx) {
 			"updated_at":           u.UpdatedAt,
 		}
 		if u.BudgetID != nil && *u.BudgetID != "" {
-			if b, err := h.configStore.GetBudget(ctx, *u.BudgetID); err == nil && b != nil {
-				item["budget_current_usage"] = b.CurrentUsage
+			var currentUsage float64
+			found := false
+			if h.userGovernance != nil {
+				if usage, ok := h.userGovernance.GetBudgetUsage(ctx, *u.BudgetID); ok {
+					currentUsage = usage
+					found = true
+				}
 			}
+			if !found {
+				if b, err := h.configStore.GetBudget(ctx, *u.BudgetID); err == nil && b != nil {
+					currentUsage = b.CurrentUsage
+				}
+			}
+			item["budget_current_usage"] = currentUsage
 		}
 		visible = append(visible, item)
 	}
@@ -818,6 +854,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		RateLimit          int     `json:"rate_limit"`
 		AllowedPromptRepos string  `json:"allowed_prompt_repos"`
 		AllowedSections    string  `json:"allowed_sections"`
+		AutoCreatePrompt   *bool   `json:"auto_create_prompt"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
@@ -943,6 +980,14 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		logger.Error("failed to create governance user username=%s: %v", payload.Username, err)
 		SendError(ctx, fasthttp.StatusInternalServerError, userCreateFailureMessage(err))
 		return
+	}
+
+	autoCreatePrompt := false
+	if payload.AutoCreatePrompt != nil {
+		autoCreatePrompt = *payload.AutoCreatePrompt
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserCreated(ctx, user, autoCreatePrompt)
 	}
 
 	user.Password = ""
@@ -1643,6 +1688,10 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 				_ = ws.RemoveTeamMember(ctx, m.TeamID, id)
 			}
 		}
+	}
+
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserDeleted(ctx, existing)
 	}
 
 	if err := h.configStore.DeleteUser(ctx, id); err != nil {

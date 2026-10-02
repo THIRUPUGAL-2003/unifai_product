@@ -269,7 +269,7 @@ export const governanceApi = baseApi.injectEndpoints({
 			],
 		}),
 
-		getUserTeams: builder.query<{ teams: { id: string; name: string; team_id: string }[] }, string>({
+		getUserTeams: builder.query<{ teams: { id: string; name: string; team_id?: string; customer_id?: string; customer_name?: string }[] }, string>({
 			query: (userId) => `/governance/users/${encodeURIComponent(userId)}/teams`,
 			providesTags: (result, error, userId) => [{ type: "Teams", id: `user-${userId}-teams` }],
 		}),

@@ -83,7 +83,11 @@ function virtualKeysToCSV(vks: VirtualKey[], accessProfileNames: Record<number, 
 				vk.rate_limit.request_current_usage >= vk.rate_limit.request_max_limit);
 		const isExpired = !!vk.expires_at && Date.now() >= new Date(vk.expires_at).getTime();
 		const status = !vk.is_active ? "Inactive" : isExpired ? "Expired" : isExhausted ? "Exhausted" : "Active";
-		const assignedTo = vk.team ? `Team: ${vk.team.name}` : vk.customer ? `Customer: ${vk.customer.name}` : "";
+		const teamStr = vk.teams?.length ? `Teams: ${vk.teams.map((t) => t.name).join(", ")}` : vk.team ? `Team: ${vk.team.name}` : "";
+		const custStr = vk.customers?.length ? `Customers: ${vk.customers.map((c) => c.name).join(", ")}` : vk.customer ? `Customer: ${vk.customer.name}` : "";
+		const userStr = vk.users?.length ? `Users: ${vk.users.map((u) => getUserDisplayName(u)).join(", ")}` : "";
+		const assignedParts = [teamStr, custStr, userStr].filter(Boolean);
+		const assignedTo = assignedParts.join(" • ");
 		const budgetLimit = vk.budgets?.length ? vk.budgets.map((b) => formatCurrency(b.max_limit)).join("; ") : "";
 		const budgetSpent = vk.budgets?.length ? vk.budgets.map((b) => formatCurrency(b.current_usage)).join("; ") : "";
 		const budgetReset = vk.budgets?.length ? vk.budgets.map((b) => formatResetDuration(b.reset_duration)).join("; ") : "";
@@ -107,20 +111,39 @@ function VKBudgetCell({ vk }: { vk: VirtualKey }) {
 	return <BudgetDisplay budgets={displayBudgets} calendarAligned={vk.calendar_aligned} />;
 }
 
+function getUserDisplayName(u: any): string {
+	return u?.name || u?.username || u?.email || "";
+}
+
 function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
 	const { assignedUsers } = useVirtualKeyUsage(vk);
 
 	const parts: string[] = [];
-	if (vk.team) {
+	if (vk.teams && vk.teams.length > 0) {
+		if (vk.teams.length === 1) {
+			parts.push(`Team: ${vk.teams[0].name}`);
+		} else {
+			parts.push(`Teams (${vk.teams.length}): ${vk.teams.map((t) => t.name).join(", ")}`);
+		}
+	} else if (vk.team) {
 		parts.push(`Team: ${vk.team.name}`);
 	}
-	if (vk.customer) {
+
+	if (vk.customers && vk.customers.length > 0) {
+		if (vk.customers.length === 1) {
+			parts.push(`Customer: ${vk.customers[0].name}`);
+		} else {
+			parts.push(`Customers (${vk.customers.length}): ${vk.customers.map((c) => c.name).join(", ")}`);
+		}
+	} else if (vk.customer) {
 		parts.push(`Customer: ${vk.customer.name}`);
 	}
-	if (assignedUsers.length > 1) {
-		parts.push(`Users (${assignedUsers.length}): ${assignedUsers.map((u) => u.name || u.email).join(", ")}`);
-	} else if (assignedUsers.length === 1) {
-		parts.push(`User: ${assignedUsers[0].name || assignedUsers[0].email}`);
+
+	const allUsers = vk.users && vk.users.length > 0 ? vk.users : assignedUsers;
+	if (allUsers.length > 1) {
+		parts.push(`Users (${allUsers.length}): ${allUsers.map((u) => getUserDisplayName(u)).join(", ")}`);
+	} else if (allUsers.length === 1) {
+		parts.push(`User: ${getUserDisplayName(allUsers[0])}`);
 	}
 
 	if (parts.length === 0) {

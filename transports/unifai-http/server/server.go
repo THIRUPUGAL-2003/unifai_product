@@ -797,6 +797,19 @@ func (s *UnifAIHTTPServer) DeleteUserGovernance(ctx context.Context, userID stri
 	governancePlugin.GetGovernanceStore().DeleteUserGovernanceInMemory(ctx, userID)
 }
 
+// GetBudgetUsage returns the live, real-time in-memory budget usage for a budget ID.
+func (s *UnifAIHTTPServer) GetBudgetUsage(ctx context.Context, budgetID string) (float64, bool) {
+	governancePlugin, err := s.getGovernancePlugin()
+	if err != nil {
+		return 0, false
+	}
+	store := governancePlugin.GetGovernanceStore()
+	if b := store.LoadBudget(ctx, budgetID); b != nil {
+		return b.CurrentUsage, true
+	}
+	return 0, false
+}
+
 // ReloadComplexityAnalyzerConfig reloads the complexity analyzer config into the governance plugin.
 func (s *UnifAIHTTPServer) ReloadComplexityAnalyzerConfig(ctx context.Context, config *complexity.AnalyzerConfig) error {
 	governancePlugin, err := s.getGovernancePlugin()

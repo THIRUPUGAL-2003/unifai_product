@@ -79,8 +79,8 @@ interface PromptContextValue {
 	requiredHeaders: string[];
 
 	// Sheet states
-	folderSheet: { open: boolean; folder?: Folder };
-	setFolderSheet: React.Dispatch<React.SetStateAction<{ open: boolean; folder?: Folder }>>;
+	folderSheet: { open: boolean; folder?: Folder; parentId?: string };
+	setFolderSheet: React.Dispatch<React.SetStateAction<{ open: boolean; folder?: Folder; parentId?: string }>>;
 	promptSheet: { open: boolean; prompt?: Prompt; folderId?: string };
 	setPromptSheet: React.Dispatch<React.SetStateAction<{ open: boolean; prompt?: Prompt; folderId?: string }>>;
 	commitSheet: { open: boolean; session?: PromptSession };
@@ -173,7 +173,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	);
 
 	// Sheet states
-	const [folderSheet, setFolderSheet] = useState<{ open: boolean; folder?: Folder }>({ open: false });
+	const [folderSheet, setFolderSheet] = useState<{ open: boolean; folder?: Folder; parentId?: string }>({ open: false });
 	const [promptSheet, setPromptSheet] = useState<{ open: boolean; prompt?: Prompt; folderId?: string }>({ open: false });
 	const [commitSheet, setCommitSheet] = useState<{ open: boolean; session?: PromptSession }>({ open: false });
 
@@ -370,6 +370,25 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		isSessionsLoading,
 		sessions.length,
 	]);
+
+	// Auto-select user's personal prompt if none is selected
+	useEffect(() => {
+		if (selectedPromptId || promptsLoading || prompts.length === 0) return;
+		const userEmail = authStatus?.email?.trim().toLowerCase();
+		const username = authStatus?.username?.trim().toLowerCase();
+
+		let targetPrompt = prompts.find(
+			(p) =>
+				(userEmail && p.name.trim().toLowerCase() === userEmail) ||
+				(username && p.name.trim().toLowerCase() === username),
+		);
+		if (!targetPrompt && prompts.length > 0) {
+			targetPrompt = prompts[0];
+		}
+		if (targetPrompt) {
+			setUrlState({ promptId: targetPrompt.id });
+		}
+	}, [selectedPromptId, prompts, promptsLoading, authStatus, setUrlState]);
 
 	// Auto-select the most recent session when sessions load and none is selected
 	// Sessions take priority over versions for initial loading

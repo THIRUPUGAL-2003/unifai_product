@@ -43,6 +43,8 @@ export interface TeamMember {
 	username: string;
 	email?: string;
 	role?: string;
+	budget?: number;
+	budget_current_usage?: number;
 	created_at?: string;
 	updated_at?: string;
 }
@@ -82,6 +84,9 @@ export interface VirtualKey {
 	mcp_configs?: VirtualKeyMCPConfig[];
 	team_id?: string;
 	customer_id?: string;
+	team_ids?: string[];
+	customer_ids?: string[];
+	user_ids?: string[];
 	rate_limit_id?: string;
 	is_active: boolean;
 	expires_at?: string | null; // ISO 8601 UTC timestamp; null or absent means never expires
@@ -91,6 +96,9 @@ export interface VirtualKey {
 	// Populated relationships
 	team?: Team;
 	customer?: Customer;
+	teams?: Team[];
+	customers?: Customer[];
+	users?: TeamMember[];
 	budgets?: Budget[];
 	rate_limit?: RateLimit;
 	config_hash?: string; // Present when config is synced from config.json
@@ -171,6 +179,9 @@ export interface CreateVirtualKeyRequest {
 	mcp_configs?: VirtualKeyMCPConfigRequest[];
 	team_id?: string;
 	customer_id?: string;
+	team_ids?: string[];
+	customer_ids?: string[];
+	user_ids?: string[];
 	budgets?: CreateBudgetRequest[];
 	rate_limit?: CreateRateLimitRequest;
 	is_active?: boolean;
@@ -185,6 +196,9 @@ export interface UpdateVirtualKeyRequest {
 	mcp_configs?: VirtualKeyMCPConfigRequest[];
 	team_id?: string | null;
 	customer_id?: string | null;
+	team_ids?: string[];
+	customer_ids?: string[];
+	user_ids?: string[];
 	budgets?: CreateBudgetRequest[];
 	rate_limit?: UpdateRateLimitRequest;
 	is_active?: boolean;

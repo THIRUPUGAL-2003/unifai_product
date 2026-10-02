@@ -53,6 +53,7 @@ import {
 	useGetUserVirtualKeysQuery,
 	useSetVirtualKeyUserMutation,
 } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
+import { cn } from "@/lib/utils";
 
 function IndeterminateCheckbox({
 	checked,
@@ -82,8 +83,20 @@ function IndeterminateCheckbox({
 
 function UserTeamCell({ userId }: { userId: string }) {
 	const { data } = useGetUserTeamsQuery(userId);
-	const teamName = data?.teams?.[0]?.name;
-	return <span className="text-sm">{teamName || "—"}</span>;
+	const team = data?.teams?.[0];
+	if (!team) {
+		return <span className="text-muted-foreground text-xs italic">No Team (Standalone)</span>;
+	}
+	return (
+		<div className="flex flex-col">
+			<span className="text-sm font-medium">{team.name}</span>
+			{team.customer_name ? (
+				<span className="text-muted-foreground text-xs">Customer: {team.customer_name}</span>
+			) : (
+				<span className="text-muted-foreground text-[11px]">Direct Team</span>
+			)}
+		</div>
+	);
 }
 
 export default function UsersView() {
@@ -139,6 +152,7 @@ export default function UsersView() {
 	const [allowedPromptRepos, setAllowedPromptRepos] = useState("");
 	const [allowedSections, setAllowedSections] = useState<Set<WorkspaceGrantKey>>(new Set());
 	const [expandedSections, setExpandedSections] = useState<Set<WorkspaceSectionKey>>(new Set());
+	const [autoCreatePrompt, setAutoCreatePrompt] = useState(false);
 
 	const { data: editUserTeams } = useGetUserTeamsQuery(selectedUser?.id || "", {
 		skip: !selectedUser?.id || !isEditOpen,
@@ -368,9 +382,9 @@ export default function UsersView() {
 	const promptReposPicker =
 		role !== "admin" ? (
 			<div className="space-y-2">
-				<label className="text-muted-foreground text-sm font-medium">Allowed Prompt Repositories</label>
+				<label className="text-muted-foreground text-sm font-medium">Allowed Prompt Repositories (Optional)</label>
 				<p className="text-muted-foreground text-xs">
-					Non-admin members only see Prompt Repository — pick which repos they may use.
+					Optional: Pick which prompt repositories this member may access. Leave unselected if not needed.
 				</p>
 				<div className="border-border/50 bg-muted/10 max-h-40 space-y-2 overflow-y-auto rounded-lg border p-3">
 					{allPrompts.map((p) => {
@@ -435,6 +449,7 @@ export default function UsersView() {
 		rate_limit: rateLimit,
 		allowed_prompt_repos: role === "user" ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
 		allowed_sections: role === "admin" || role === "sub_admin" ? allowedSectionsToString(allowedSections) : "",
+		auto_create_prompt: autoCreatePrompt,
 	});
 
 	const handleCreateUser = async (e: React.FormEvent) => {
@@ -626,6 +641,7 @@ export default function UsersView() {
 		setAllowedPromptRepos("");
 		setAllowedSections(new Set());
 		setExpandedSections(new Set());
+		setAutoCreatePrompt(false);
 		setSelectedUser(null);
 	};
 
@@ -937,11 +953,37 @@ export default function UsersView() {
 													)}
 												</TableCell>
 												<TableCell className="font-mono text-xs">
-													{user.budget > 0
-														? user.budget_current_usage != null
-															? `$${user.budget_current_usage.toFixed(2)} / $${user.budget.toFixed(2)}`
-															: `$${user.budget.toFixed(2)}`
-														: "Unlimited"}
+													{user.budget > 0 ? (
+														<div className="flex min-w-[110px] flex-col gap-1">
+															<div className="flex justify-between text-xs">
+																<span className="font-semibold text-foreground">
+																	${(user.budget_current_usage ?? 0).toFixed(2)}
+																</span>
+																<span className="text-muted-foreground">/ ${user.budget.toFixed(2)}</span>
+															</div>
+															<div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+																<div
+																	className={cn(
+																		"h-full rounded-full transition-all",
+																		(user.budget_current_usage ?? 0) >= user.budget
+																			? "bg-red-500"
+																			: (user.budget_current_usage ?? 0) / user.budget > 0.8
+																				? "bg-amber-500"
+																				: "bg-teal-500",
+																	)}
+																	style={{
+																		width: `${Math.min(100, Math.max(0, ((user.budget_current_usage ?? 0) / user.budget) * 100))}%`,
+																	}}
+																/>
+															</div>
+														</div>
+													) : (
+														<span className="text-muted-foreground">
+															{user.budget_current_usage != null && user.budget_current_usage > 0
+																? `$${user.budget_current_usage.toFixed(2)} (Spent) / Unlimited`
+																: "Unlimited"}
+														</span>
+													)}
 												</TableCell>
 												<TableCell className="font-mono text-xs">{user.rate_limit > 0 ? `${user.rate_limit} RPM` : "Unlimited"}</TableCell>
 												<TableCell className="max-w-[200px] truncate text-xs" title={resolveAllowedPromptNames(user.allowed_prompt_repos)}>
@@ -1107,6 +1149,23 @@ export default function UsersView() {
 									placeholder="RPM Limit"
 									className="bg-muted/20 border-border/50 focus:border-teal-500/50"
 								/>
+							</div>
+						</div>
+						<div className="border-border/50 bg-muted/10 flex items-center gap-2 rounded-lg border p-3">
+							<input
+								id="auto-create-prompt"
+								type="checkbox"
+								checked={autoCreatePrompt}
+								onChange={(e) => setAutoCreatePrompt(e.target.checked)}
+								className="border-border rounded text-teal-500 focus:ring-teal-500/50"
+							/>
+							<div className="flex flex-col">
+								<label htmlFor="auto-create-prompt" className="text-foreground cursor-pointer text-sm font-medium">
+									Auto-create Prompt Repository workspace (Optional)
+								</label>
+								<span className="text-muted-foreground text-xs">
+									Optionally generates a personal prompt repository for this user with pre-configured model parameters.
+								</span>
 							</div>
 						</div>
 						<DialogFooter className="pt-4">

@@ -88,12 +88,15 @@ func (h *PromptsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 // CreateFolderRequest represents the request body for creating a folder
 type CreateFolderRequest struct {
 	Name        string  `json:"name"`
+	ParentID    *string `json:"parent_id,omitempty"`
 	Description *string `json:"description,omitempty"`
 }
 
 // UpdateFolderRequest represents the request body for updating a folder
 type UpdateFolderRequest struct {
 	Name              string  `json:"name"`
+	ParentID          *string `json:"parent_id,omitempty"`
+	ParentIDExists    bool    `json:"-"`
 	Description       *string `json:"description,omitempty"`
 	DescriptionExists bool    `json:"-"` // true when description key is present in JSON (even if null)
 }
@@ -108,6 +111,12 @@ func (r *UpdateFolderRequest) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(v, &r.Name); err != nil {
 			return err
 		}
+	}
+	if v, ok := raw["parent_id"]; ok {
+		if err := json.Unmarshal(v, &r.ParentID); err != nil {
+			return err
+		}
+		r.ParentIDExists = true
 	}
 	if v, ok := raw["description"]; ok {
 		if err := json.Unmarshal(v, &r.Description); err != nil {
@@ -236,6 +245,7 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 	folder := &tables.TableFolder{
 		ID:          uuid.New().String(),
 		Name:        req.Name,
+		ParentID:    req.ParentID,
 		Description: req.Description,
 	}
 
@@ -282,6 +292,9 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 
 	if req.Name != "" {
 		folder.Name = req.Name
+	}
+	if req.ParentIDExists {
+		folder.ParentID = req.ParentID
 	}
 	if req.DescriptionExists {
 		folder.Description = req.Description

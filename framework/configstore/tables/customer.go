@@ -19,7 +19,7 @@ type TableCustomer struct {
 	Budgets     []TableBudget     `gorm:"foreignKey:CustomerID;constraint:OnDelete:CASCADE" json:"budgets,omitempty"`
 	RateLimit   *TableRateLimit   `gorm:"foreignKey:RateLimitID" json:"rate_limit,omitempty"`
 	Teams       []TableTeam       `gorm:"foreignKey:CustomerID" json:"teams"`
-	VirtualKeys []TableVirtualKey `gorm:"foreignKey:CustomerID" json:"virtual_keys"`
+	VirtualKeys []TableVirtualKey `gorm:"many2many:governance_virtual_key_customers;foreignKey:ID;joinForeignKey:CustomerID;references:ID;joinReferences:VirtualKeyID" json:"virtual_keys"`
 
 	CalendarAligned bool `gorm:"default:false" json:"calendar_aligned"`
 

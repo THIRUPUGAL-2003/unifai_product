@@ -12,6 +12,9 @@ export type { MessageContent, MessageFile, MessageImageURL, MessageInputAudio, S
 export interface Folder {
 	id: string;
 	name: string;
+	parent_id?: string;
+	type?: string;
+	entity_id?: string;
 	description?: string;
 	created_by_id?: number;
 	created_by?: PromptUser;
@@ -113,6 +116,7 @@ export interface GetFolderResponse {
 
 export interface CreateFolderRequest {
 	name: string;
+	parent_id?: string | null;
 	description?: string;
 }
 
@@ -122,6 +126,7 @@ export interface CreateFolderResponse {
 
 export interface UpdateFolderRequest {
 	name?: string;
+	parent_id?: string | null;
 	description?: string;
 }
 

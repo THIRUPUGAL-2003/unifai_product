@@ -27,6 +27,7 @@ export interface SessionUserPayload {
 	rate_limit?: number;
 	allowed_prompt_repos?: string;
 	allowed_sections?: string;
+	auto_create_prompt?: boolean;
 }
 
 export const sessionUsersApi = baseApi.injectEndpoints({
