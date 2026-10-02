@@ -542,6 +542,18 @@ func (h *PromptsHandler) createPrompt(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	var creatorUsername string
+	tokenVal := ctx.UserValue(schemas.UnifAIContextKeySessionToken)
+	if token, ok := tokenVal.(string); ok && token != "" {
+		if session, err := h.store.GetSession(ctx, token); err == nil && session != nil {
+			creatorUsername = session.Username
+		}
+	}
+
+	if h.lifecycle != nil {
+		_ = h.lifecycle.OnPromptCreated(ctx, prompt, creatorUsername)
+	}
+
 	h.reloadCache(ctx)
 	SendJSON(ctx, map[string]any{
 		"prompt": prompt,
@@ -619,6 +631,12 @@ func (h *PromptsHandler) updatePrompt(ctx *fasthttp.RequestCtx) {
 		logger.Error("failed to update prompt: %v", err)
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
+	}
+
+	if req.FolderIDExists && prompt.FolderID != nil && *prompt.FolderID != "" {
+		if h.lifecycle != nil {
+			h.lifecycle.OnPromptFolderChanged(ctx, prompt.ID, *prompt.FolderID)
+		}
 	}
 
 	h.reloadCache(ctx)

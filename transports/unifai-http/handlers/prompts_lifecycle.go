@@ -524,39 +524,47 @@ func (m *PromptLifecycleManager) OnTeamMemberAdded(ctx context.Context, teamID s
 	err = db.Where("name = ? AND folder_id = ?", promptName, teamFolder.ID).First(&existing).Error
 	if err == nil {
 		m.ensureUserAllowedPrompt(ctx, user, existing.ID)
-		return nil
+	} else {
+		now := time.Now()
+		prompt := &tables.TablePrompt{
+			ID:        uuid.New().String(),
+			Name:      promptName,
+			FolderID:  &teamFolder.ID,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+
+		if err := m.store.CreatePrompt(ctx, prompt); err != nil {
+			return err
+		}
+
+		// Default session for this prompt
+		session := &tables.TablePromptSession{
+			PromptID: prompt.ID,
+			Name:     team.Name + " Session",
+			UserID:   user.ID,
+			ModelParams: tables.ModelParams{
+				"temperature": 0.7,
+				"max_tokens":  2048,
+				"top_p":       1.0,
+				"stream":      true,
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		_ = m.store.CreatePromptSession(ctx, session)
+
+		m.ensureUserAllowedPrompt(ctx, user, prompt.ID)
 	}
 
-	now := time.Now()
-	prompt := &tables.TablePrompt{
-		ID:        uuid.New().String(),
-		Name:      promptName,
-		FolderID:  &teamFolder.ID,
-		CreatedAt: now,
-		UpdatedAt: now,
+	// Also assign any already existing prompts in this team folder to the new member
+	var folderPrompts []tables.TablePrompt
+	if err := db.Where("folder_id = ?", teamFolder.ID).Find(&folderPrompts).Error; err == nil {
+		for _, fp := range folderPrompts {
+			m.ensureUserAllowedPrompt(ctx, user, fp.ID)
+		}
 	}
 
-	if err := m.store.CreatePrompt(ctx, prompt); err != nil {
-		return err
-	}
-
-	// Default session for this prompt
-	session := &tables.TablePromptSession{
-		PromptID: prompt.ID,
-		Name:     team.Name + " Session",
-		UserID:   user.ID,
-		ModelParams: tables.ModelParams{
-			"temperature": 0.7,
-			"max_tokens":  2048,
-			"top_p":       1.0,
-			"stream":      true,
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	_ = m.store.CreatePromptSession(ctx, session)
-
-	m.ensureUserAllowedPrompt(ctx, user, prompt.ID)
 	return nil
 }
 
@@ -649,4 +657,111 @@ func (m *PromptLifecycleManager) removeUserAllowedPrompt(ctx context.Context, us
 	}
 	user.AllowedPromptRepos = strings.Join(filtered, ",")
 	_ = m.store.UpdateUser(ctx, user)
+}
+
+// OnPromptCreated handles lifecycle sync when a prompt is created manually or via API:
+// 1. If created inside a team folder, automatically assigns it to all current members of that team.
+// 2. If created inside a customer folder, assigns it to all members of teams under that customer.
+// 3. If created by a non-admin user, automatically assigns it to that user.
+// 4. Ensures an initial default session exists for playground execution.
+func (m *PromptLifecycleManager) OnPromptCreated(ctx context.Context, prompt *tables.TablePrompt, creatorUsername string) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || prompt == nil {
+		return nil
+	}
+
+	db := m.store.DB().WithContext(ctx)
+
+	// 1. Assign to creator if specified
+	if creatorUsername != "" {
+		creator, err := m.store.GetUserByUsername(ctx, creatorUsername)
+		if err == nil && creator != nil {
+			m.ensureUserAllowedPrompt(ctx, creator, prompt.ID)
+		}
+	}
+
+	// 2. If inside a folder, assign to all members of that team/customer
+	if prompt.FolderID != nil && *prompt.FolderID != "" {
+		m.assignPromptToFolderMembers(ctx, prompt.ID, *prompt.FolderID)
+	}
+
+	// 3. Ensure a default session exists so playground works out of the box
+	var count int64
+	_ = db.Model(&tables.TablePromptSession{}).Where("prompt_id = ?", prompt.ID).Count(&count).Error
+	if count == 0 {
+		var creatorID string
+		if creatorUsername != "" {
+			if u, err := m.store.GetUserByUsername(ctx, creatorUsername); err == nil && u != nil {
+				creatorID = u.ID
+			}
+		}
+		now := time.Now()
+		session := &tables.TablePromptSession{
+			PromptID: prompt.ID,
+			Name:     prompt.Name + " Default Session",
+			UserID:   creatorID,
+			ModelParams: tables.ModelParams{
+				"temperature": 0.7,
+				"max_tokens":  2048,
+				"top_p":       1.0,
+				"stream":      true,
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		_ = m.store.CreatePromptSession(ctx, session)
+	}
+
+	return nil
+}
+
+// OnPromptFolderChanged assigns the prompt to all members if moved into a team or customer folder.
+func (m *PromptLifecycleManager) OnPromptFolderChanged(ctx context.Context, promptID string, newFolderID string) {
+	if m == nil || m.store == nil || m.store.DB() == nil || promptID == "" || newFolderID == "" {
+		return
+	}
+	m.assignPromptToFolderMembers(ctx, promptID, newFolderID)
+}
+
+func (m *PromptLifecycleManager) assignPromptToFolderMembers(ctx context.Context, promptID string, folderID string) {
+	db := m.store.DB().WithContext(ctx)
+	var folder tables.TableFolder
+	if err := db.Where("id = ?", folderID).First(&folder).Error; err != nil {
+		return
+	}
+
+	// Direct team folder
+	if folder.Type == "team" && folder.EntityID != nil && *folder.EntityID != "" {
+		m.assignPromptToTeamMembers(ctx, promptID, *folder.EntityID)
+		return
+	}
+
+	// Direct customer folder
+	if folder.Type == "customer" && folder.EntityID != nil && *folder.EntityID != "" {
+		var teams []tables.TableTeam
+		if err := db.Where("customer_id = ?", *folder.EntityID).Find(&teams).Error; err == nil {
+			for _, t := range teams {
+				m.assignPromptToTeamMembers(ctx, promptID, t.ID)
+			}
+		}
+		return
+	}
+
+	// If subfolder, check parent
+	if folder.ParentID != nil && *folder.ParentID != "" {
+		m.assignPromptToFolderMembers(ctx, promptID, *folder.ParentID)
+	}
+}
+
+func (m *PromptLifecycleManager) assignPromptToTeamMembers(ctx context.Context, promptID string, teamID string) {
+	db := m.store.DB().WithContext(ctx)
+	var members []tables.TableTeamMember
+	if err := db.Where("team_id = ?", teamID).Find(&members).Error; err != nil {
+		return
+	}
+	for _, member := range members {
+		user, err := m.store.GetUserByID(ctx, member.UserID)
+		if err == nil && user != nil {
+			m.ensureUserAllowedPrompt(ctx, user, promptID)
+		}
+	}
 }
