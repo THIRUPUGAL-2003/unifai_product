@@ -541,10 +541,11 @@ export default function AppSidebar() {
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isAuthEnabled = authStatus?.is_auth_enabled || authStatus?.has_valid_token || false;
 	const scopedSidebarSections = useMemo(() => {
-		// Only admins and sub-admins get workspace section scopes.
-		if (authStatus?.role === "admin" || authStatus?.role === "sub_admin") {
+		// Workspace section scopes apply whenever allowed_sections is set — for ALL roles.
+		if (authStatus?.allowed_sections) {
 			return parseAdminAllowedSections(authStatus.allowed_sections);
 		}
+		// Admin / sub_admin without explicit section scopes → show everything (return null = no filter).
 		return null;
 	}, [authStatus?.role, authStatus?.allowed_sections]);
 	const pathname = useLocation({ select: (l) => l.pathname });
@@ -1073,8 +1074,9 @@ export default function AppSidebar() {
 				],
 			},
 		];
-		// User role is locked to Prompt Repository. Other roles (admin, sub_admin) are filtered by RBAC / scopes.
-		if (authStatus?.role && authStatus.role === "user") {
+		// Plain "user" role without custom section scopes defaults to Prompt Repository.
+		// When section scopes are granted via RBAC / teams, filter dynamically by those scopes.
+		if (authStatus?.role && authStatus.role === "user" && !scopedSidebarSections) {
 			return allItems.filter((item) => item.title === "Prompt Repository");
 		}
 		if (scopedSidebarSections) {
@@ -1196,9 +1198,9 @@ export default function AppSidebar() {
 	}, []);
 
 	useEffect(() => {
-		// Plain "user" role is confined to Prompt Repository (URL hard-lock).
-		// admin / sub_admin use workspace section grants (allowed_sections).
-		if (authStatus?.role === "user") {
+		// Plain "user" role without custom section grants is confined to Prompt Repository.
+		// If section grants are present (from RBAC / teams), respect them.
+		if (authStatus?.role === "user" && !scopedSidebarSections) {
 			if (!pathname.startsWith("/workspace/prompt-repo")) {
 				navigate("/workspace/prompt-repo");
 			}

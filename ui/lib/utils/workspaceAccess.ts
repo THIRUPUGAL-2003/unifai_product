@@ -58,14 +58,18 @@ export async function fetchSessionAuth(forceRefresh = false): Promise<SessionAut
 }
 
 export function getDefaultWorkspacePath(auth: SessionAuth | null | undefined): string {
-	if (auth?.role === "user") {
-		return "/workspace/prompt-repo";
-	}
-	if (auth?.role === "admin" || auth?.role === "sub_admin") {
+	// All roles: if allowed_sections is set, route to the first allowed section.
+	if (auth?.allowed_sections) {
 		const limited = parseAdminAllowedSections(auth.allowed_sections);
 		if (limited) {
 			return getDefaultPathForSections(limited);
 		}
+	}
+	if (auth?.role === "user") {
+		return "/workspace/prompt-repo";
+	}
+	if (auth?.role === "admin" || auth?.role === "sub_admin") {
+		return "/workspace/dashboard";
 	}
 	return "/workspace/dashboard";
 }
@@ -79,6 +83,17 @@ export function resolvePostLoginPath(
 
 	if (!safeGoto || safeGoto === "/workspace" || safeGoto === "/workspace/") {
 		return defaultPath;
+	}
+
+	// Check allowed_sections first (applies to all roles including "user")
+	if (auth?.allowed_sections) {
+		const limited = parseAdminAllowedSections(auth.allowed_sections);
+		if (limited) {
+			if (isPathAllowedForUser(safeGoto, limited)) {
+				return safeGoto;
+			}
+			return defaultPath;
+		}
 	}
 
 	if (auth?.role === "user") {
@@ -106,6 +121,16 @@ export function getWorkspaceAccessRedirect(
 	auth: SessionAuth | null | undefined,
 	pathname: string,
 ): string | null {
+	// If allowed_sections is set, use section-based access control for ALL roles.
+	if (auth?.allowed_sections) {
+		const limited = parseAdminAllowedSections(auth.allowed_sections);
+		if (limited && !isPathAllowedForUser(pathname, limited)) {
+			return getDefaultPathForSections(limited);
+		}
+		// Within allowed sections — no redirect needed
+		return null;
+	}
+
 	if (auth?.role === "user") {
 		if (!pathname.startsWith("/workspace/prompt-repo")) {
 			return "/workspace/prompt-repo";

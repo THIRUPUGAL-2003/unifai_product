@@ -9,7 +9,7 @@ import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
 import { useCreateSessionMutation, useGetSessionsQuery, useGetVersionsQuery, useRenameSessionMutation, useUpdateSessionMutation } from "@/lib/store/apis/promptsApi";
 import { ModelParams, PromptSession } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
-import { Check, GitCommit, MoreHorizontal, PencilIcon, Save, Trash2 } from "lucide-react";
+import { Check, Eye, GitCommit, MoreHorizontal, PencilIcon, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { parseAsInteger, useQueryStates } from "nuqs";
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -219,6 +219,12 @@ export default function PromptsViewHeader() {
 						{displayVersion && <Badge variant={"secondary"}>v{displayVersion.version_number}</Badge>}
 						{hasVersionChanges && versions.length > 0 && <Badge variant="outline">Unpublished Changes</Badge>}
 					</>
+				)}
+				{!canUpdate && (
+					<Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1 text-xs">
+						<Eye className="h-3 w-3" />
+						View Only
+					</Badge>
 				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-4">
