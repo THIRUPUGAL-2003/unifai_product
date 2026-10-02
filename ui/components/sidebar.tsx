@@ -79,6 +79,7 @@ import {
 	SECTION_KEY_BY_TITLE,
 	isPathAllowedForUser,
 	getDefaultPathForSections,
+	hasAnyWorkspaceSection,
 	isSectionGranted,
 	isSidebarItemGranted,
 	type WorkspaceSectionKey,
@@ -1198,7 +1199,7 @@ export default function AppSidebar() {
 			}
 			return;
 		}
-		if (scopedSidebarSections) {
+		if (scopedSidebarSections && hasAnyWorkspaceSection(scopedSidebarSections)) {
 			const pathWithTab =
 				pathname === "/workspace/browser-ai" && search
 					? `${pathname}${search.startsWith("?") ? search : `?${search}`}`

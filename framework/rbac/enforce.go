@@ -216,6 +216,19 @@ func governanceRequirement(path, op string) *PathRequirement {
 	return &PathRequirement{Resource: dedicated, Operation: op, AnyOfResources: []string{dedicated, "Governance"}}
 }
 
+// isBrowserAILogDelete matches prompt-log / search-log clears, single deletes and bulk deletes.
+func isBrowserAILogDelete(method, path string) bool {
+	for _, base := range []string{"/api/browser-ai/logs", "/api/browser-ai/search-logs"} {
+		if method == "DELETE" && (path == base || strings.HasPrefix(path, base+"/")) {
+			return true
+		}
+		if method == "POST" && path == base+"/bulk-delete" {
+			return true
+		}
+	}
+	return false
+}
+
 func writeRequirement(method, path string) *PathRequirement {
 	op := "Update"
 	switch method {
@@ -228,6 +241,8 @@ func writeRequirement(method, path string) *PathRequirement {
 	case strings.HasPrefix(path, "/api/mcp-logs"):
 		return &PathRequirement{Resource: "MCPLogs", Operation: "Delete", AnyOfResources: []string{"MCPLogs", "Logs"}}
 	case strings.HasPrefix(path, "/api/logs"):
+		return &PathRequirement{Resource: "Logs", Operation: "Delete"}
+	case isBrowserAILogDelete(method, path):
 		return &PathRequirement{Resource: "Logs", Operation: "Delete"}
 	case strings.HasPrefix(path, "/api/browser-ai"):
 		return &PathRequirement{Resource: "Logs", Operation: "Update"}

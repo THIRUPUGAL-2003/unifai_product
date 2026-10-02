@@ -67,7 +67,7 @@ func TestSearchLogs_DeleteSearchLogs_Periods(t *testing.T) {
 		searchLogsMu.Unlock()
 	}
 
-	// 1. Delete last 1 day (should remove log-1 which is 2 hours old)
+	// 1. Delete older than 1 day (keeps only log-1, which is 2 hours old)
 	resetEntries()
 	ctx1d := &fasthttp.RequestCtx{}
 	ctx1d.Request.Header.SetMethod("DELETE")
@@ -78,12 +78,12 @@ func TestSearchLogs_DeleteSearchLogs_Periods(t *testing.T) {
 		t.Fatalf("Expected 200 OK, got %d: %s", ctx1d.Response.StatusCode(), string(ctx1d.Response.Body()))
 	}
 	searchLogsMu.RLock()
-	if len(searchLogsList) != 3 {
-		t.Errorf("Expected 3 entries remaining after deleting 1d, got %d", len(searchLogsList))
+	if len(searchLogsList) != 1 || searchLogsList[0].ID != "log-1" {
+		t.Errorf("Expected only log-1 to remain after deleting older than 1d, got %+v", searchLogsList)
 	}
 	searchLogsMu.RUnlock()
 
-	// 2. Delete last 7 days (should remove log-1 and log-2)
+	// 2. Delete older than 7 days (removes log-3 and log-4, keeps the recent ones)
 	resetEntries()
 	ctx7d := &fasthttp.RequestCtx{}
 	ctx7d.Request.Header.SetMethod("DELETE")
@@ -95,7 +95,12 @@ func TestSearchLogs_DeleteSearchLogs_Periods(t *testing.T) {
 	}
 	searchLogsMu.RLock()
 	if len(searchLogsList) != 2 {
-		t.Errorf("Expected 2 entries remaining after deleting 7d, got %d", len(searchLogsList))
+		t.Errorf("Expected 2 entries remaining after deleting older than 7d, got %d", len(searchLogsList))
+	}
+	for _, e := range searchLogsList {
+		if e.ID == "log-3" || e.ID == "log-4" {
+			t.Errorf("%s is older than 7 days and should have been deleted", e.ID)
+		}
 	}
 	searchLogsMu.RUnlock()
 
@@ -213,10 +218,60 @@ func TestSearchLogs_DeleteResponseMessages(t *testing.T) {
 		}
 	}
 
-	testMessage("/api/browser-ai/search-logs?period=1d", "last 1 day")
-	testMessage("/api/browser-ai/search-logs?period=7d", "last 7 days")
-	testMessage("/api/browser-ai/search-logs?period=30d", "last 30 days")
+	testMessage("/api/browser-ai/search-logs?period=1d", "older than 1 day")
+	testMessage("/api/browser-ai/search-logs?period=7d", "older than 7 days")
+	testMessage("/api/browser-ai/search-logs?period=30d", "older than 30 days")
 	testMessage("/api/browser-ai/search-logs?period=all", "Search logs cleared")
+}
+
+func TestSearchLogs_DeleteByIDs(t *testing.T) {
+	handler := &BrowserAIHandler{}
+	now := time.Now()
+	searchLogsMu.Lock()
+	searchLogsList = []BrowserAISearchLogEntry{
+		{ID: "a", Timestamp: now},
+		{ID: "b", Timestamp: now},
+		{ID: "c", Timestamp: now},
+	}
+	searchLogsMu.Unlock()
+
+	bulk := &fasthttp.RequestCtx{}
+	bulk.Request.Header.SetMethod("POST")
+	bulk.Request.SetRequestURI("/api/browser-ai/search-logs/bulk-delete")
+	bulk.Request.SetBodyString(`{"ids":["a","c","a"," "]}`)
+	handler.bulkDeleteSearchLogs(bulk)
+	if bulk.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("bulk delete: expected 200, got %d: %s", bulk.Response.StatusCode(), bulk.Response.Body())
+	}
+	searchLogsMu.RLock()
+	if len(searchLogsList) != 1 || searchLogsList[0].ID != "b" {
+		t.Errorf("expected only b to remain, got %+v", searchLogsList)
+	}
+	searchLogsMu.RUnlock()
+
+	empty := &fasthttp.RequestCtx{}
+	empty.Request.Header.SetMethod("POST")
+	empty.Request.SetBodyString(`{"ids":[]}`)
+	handler.bulkDeleteSearchLogs(empty)
+	if empty.Response.StatusCode() != fasthttp.StatusBadRequest {
+		t.Errorf("empty ids: expected 400, got %d", empty.Response.StatusCode())
+	}
+
+	single := &fasthttp.RequestCtx{}
+	single.Request.Header.SetMethod("DELETE")
+	single.SetUserValue("id", "b")
+	handler.deleteSearchLog(single)
+	if single.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("single delete: expected 200, got %d", single.Response.StatusCode())
+	}
+
+	missing := &fasthttp.RequestCtx{}
+	missing.Request.Header.SetMethod("DELETE")
+	missing.SetUserValue("id", "b")
+	handler.deleteSearchLog(missing)
+	if missing.Response.StatusCode() != fasthttp.StatusNotFound {
+		t.Errorf("deleting a missing log: expected 404, got %d", missing.Response.StatusCode())
+	}
 }
 
 func containsSubstr(s, substr string) bool {

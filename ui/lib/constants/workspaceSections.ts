@@ -165,8 +165,6 @@ export const WORKSPACE_SECTIONS: readonly WorkspaceSection[] = [
 /** Sections shown in the Workspace Access picker (hide legacy duplicate cluster-config row). */
 export const WORKSPACE_ACCESS_SECTIONS = WORKSPACE_SECTIONS.filter((s) => s.key !== "cluster-config");
 
-export const DEFAULT_USER_SECTIONS = "prompt-repository";
-
 export const SECTION_KEY_BY_TITLE: Record<string, WorkspaceSectionKey> = Object.fromEntries(
 	WORKSPACE_SECTIONS.map((s) => [s.label, s.key]),
 ) as Record<string, WorkspaceSectionKey>;
@@ -221,32 +219,21 @@ export function expandGrantsToPaths(grants: Set<WorkspaceGrantKey>): string[] {
 	return Array.from(paths).sort((a, b) => b.length - a.length);
 }
 
-export function parseAllowedSections(raw?: string | null): Set<WorkspaceGrantKey> {
-	const trimmed = (raw || "").trim();
-	if (!trimmed) {
-		return new Set([DEFAULT_USER_SECTIONS]);
-	}
-	const keys = trimmed
+/** Sub-admin / custom role grants. Nothing is granted by default: empty stored value = no sections. */
+export function parseAdminAllowedSections(raw?: string | null): Set<WorkspaceGrantKey> {
+	const keys = (raw || "")
 		.split(",")
 		.map((s) => s.trim())
 		.filter(Boolean);
-	return normalizeGrants(new Set(keys.length > 0 ? keys : [DEFAULT_USER_SECTIONS]));
+	return normalizeGrants(new Set(keys));
 }
 
-/** Sub-admin: empty/null stored value = full workspace access. Non-empty = limited grants. */
-export function parseAdminAllowedSections(raw?: string | null): Set<WorkspaceGrantKey> | null {
-	const trimmed = (raw || "").trim();
-	if (!trimmed) {
-		return null;
-	}
-	const keys = trimmed
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean);
-	return keys.length > 0 ? normalizeGrants(new Set(keys)) : null;
+/** True when the grants unlock at least one workspace page. */
+export function hasAnyWorkspaceSection(grants: Set<WorkspaceGrantKey>): boolean {
+	return expandGrantsToPaths(grants).length > 0;
 }
 
-/** Form state when editing an admin — unchecked = full access. */
+/** Form state when editing a sub-admin — unchecked = no access to that section. */
 export function adminSectionsFromStorage(raw?: string | null): Set<WorkspaceGrantKey> {
 	const trimmed = (raw || "").trim();
 	if (!trimmed) {

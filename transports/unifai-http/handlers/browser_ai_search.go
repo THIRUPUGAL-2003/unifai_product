@@ -332,47 +332,19 @@ func (h *BrowserAIHandler) recordSearchLog(ctx *fasthttp.RequestCtx) {
 }
 
 // deleteSearchLogs clears search logs in PostgreSQL and in-memory buffer.
-// Query params (optional):
-//   period=1d|7d|30d|all  — delete logs from the last N period (or all)
-//   date=YYYY-MM-DD       — delete logs for that calendar day (local server day)
-// With no params, clears all (legacy).
+// See logDeleteWindow for query params.
 func (h *BrowserAIHandler) deleteSearchLogs(ctx *fasthttp.RequestCtx) {
-	h.ensureDB(ctx)
-
-	period := strings.ToLower(strings.TrimSpace(string(ctx.QueryArgs().Peek("period"))))
-	dateStr := strings.TrimSpace(string(ctx.QueryArgs().Peek("date")))
-
-	var since, until *time.Time
-	now := time.Now()
-
-	switch {
-	case dateStr != "":
-		day, err := time.ParseInLocation("2006-01-02", dateStr, now.Location())
-		if err != nil {
-			SendError(ctx, fasthttp.StatusBadRequest, "Invalid date (use YYYY-MM-DD)")
-			return
-		}
-		start := day
-		end := day.Add(24 * time.Hour)
-		since, until = &start, &end
-	case period == "1d" || period == "day":
-		start := now.Add(-24 * time.Hour)
-		since, until = &start, &now
-	case period == "7d" || period == "week" || period == "weekly":
-		start := now.Add(-7 * 24 * time.Hour)
-		since, until = &start, &now
-	case period == "30d" || period == "month" || period == "monthly":
-		start := now.Add(-30 * 24 * time.Hour)
-		since, until = &start, &now
-	case period == "" || period == "all":
-		since, until = nil, nil
-	default:
-		SendError(ctx, fasthttp.StatusBadRequest, "Invalid period (use 1d, 7d, 30d, or all)")
+	since, until, label, ok := logDeleteWindow(ctx)
+	if !ok {
 		return
 	}
+	h.ensureDB(ctx)
 
 	if h.manager != nil && h.manager.GetDB() != nil {
-		_ = h.manager.ClearSearchLogsInRange(ctx, since, until)
+		if err := h.manager.ClearSearchLogsInRange(ctx, since, until); err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to delete search logs: "+err.Error())
+			return
+		}
 	}
 
 	searchLogsMu.Lock()
@@ -402,18 +374,72 @@ func (h *BrowserAIHandler) deleteSearchLogs(ctx *fasthttp.RequestCtx) {
 	searchLogsMu.Unlock()
 
 	msg := "Search logs cleared"
-	if dateStr != "" {
-		msg = "Search logs deleted for " + dateStr
-	} else if period == "1d" || period == "day" {
-		msg = "Search logs deleted for the last 1 day"
-	} else if period == "7d" || period == "week" || period == "weekly" {
-		msg = "Search logs deleted for the last 7 days"
-	} else if period == "30d" || period == "month" || period == "monthly" {
-		msg = "Search logs deleted for the last 30 days"
+	if label != "" {
+		msg = "Search logs deleted " + label
 	}
 
 	SendJSON(ctx, map[string]any{
 		"status":  "success",
 		"message": msg,
 	})
+}
+
+// bulkDeleteSearchLogs deletes selected search logs by ID. Body: {"ids": ["..."]}.
+func (h *BrowserAIHandler) bulkDeleteSearchLogs(ctx *fasthttp.RequestCtx) {
+	ids, ok := parseLogIDs(ctx)
+	if !ok {
+		return
+	}
+	h.deleteSearchLogIDs(ctx, ids)
+}
+
+// deleteSearchLog deletes a single search log.
+func (h *BrowserAIHandler) deleteSearchLog(ctx *fasthttp.RequestCtx) {
+	id, _ := ctx.UserValue("id").(string)
+	id = strings.TrimSpace(id)
+	if id == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "id is required")
+		return
+	}
+	h.deleteSearchLogIDs(ctx, []string{id})
+}
+
+func (h *BrowserAIHandler) deleteSearchLogIDs(ctx *fasthttp.RequestCtx, ids []string) {
+	h.ensureDB(ctx)
+
+	var deleted int64
+	if h.manager != nil && h.manager.GetDB() != nil {
+		n, err := h.manager.DeleteSearchLogsByIDs(ctx, ids)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to delete search logs: "+err.Error())
+			return
+		}
+		deleted = n
+	}
+
+	want := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		want[id] = struct{}{}
+	}
+	var memDeleted int64
+	searchLogsMu.Lock()
+	kept := searchLogsList[:0]
+	for _, e := range searchLogsList {
+		if _, drop := want[e.ID]; drop {
+			memDeleted++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	searchLogsList = kept
+	searchLogsMu.Unlock()
+
+	if h.manager == nil || h.manager.GetDB() == nil {
+		deleted = memDeleted
+	}
+	if deleted == 0 && len(ids) == 1 {
+		SendError(ctx, fasthttp.StatusNotFound, "Search log not found")
+		return
+	}
+	SendJSON(ctx, map[string]any{"status": "success", "deleted": deleted})
 }

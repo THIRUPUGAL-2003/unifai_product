@@ -1,5 +1,6 @@
 import {
 	getDefaultPathForSections,
+	hasAnyWorkspaceSection,
 	isPathAllowedForUser,
 	parseAdminAllowedSections,
 } from "@/lib/constants/workspaceSections";
@@ -64,16 +65,24 @@ export const USER_ROLE_HOME_PATH = "/workspace/prompt-repo";
 
 /**
  * Section grants that apply to this session, or null for "no section filter".
+ * Admins (and sessions without a role, e.g. auth disabled) are unrestricted.
  * The built-in "user" role is server-locked to Prompt Repository (any other /api
  * path is rejected), so its stored allowed_sections are ignored here.
+ * Every other role sees only the sections it was granted — none by default.
  */
 export function getScopedWorkspaceSections(
 	auth: Pick<SessionAuth, "role" | "allowed_sections"> | null | undefined,
 ): Set<string> | null {
-	if (!auth || auth.role === "user") {
+	if (!auth || !auth.role || auth.role === "admin" || auth.role === "user") {
 		return null;
 	}
 	return parseAdminAllowedSections(auth.allowed_sections);
+}
+
+/** True for a scoped session whose grants unlock no workspace page at all. */
+export function hasNoWorkspaceSections(auth: Pick<SessionAuth, "role" | "allowed_sections"> | null | undefined): boolean {
+	const limited = getScopedWorkspaceSections(auth);
+	return !!limited && !hasAnyWorkspaceSection(limited);
 }
 
 export function getDefaultWorkspacePath(auth: SessionAuth | null | undefined): string {
@@ -81,7 +90,7 @@ export function getDefaultWorkspacePath(auth: SessionAuth | null | undefined): s
 		return USER_ROLE_HOME_PATH;
 	}
 	const limited = getScopedWorkspaceSections(auth);
-	if (limited) {
+	if (limited && hasAnyWorkspaceSection(limited)) {
 		return getDefaultPathForSections(limited);
 	}
 	return "/workspace/dashboard";
@@ -104,7 +113,7 @@ export function resolvePostLoginPath(
 
 	const limited = getScopedWorkspaceSections(auth);
 	if (limited) {
-		return isPathAllowedForUser(safeGoto, limited) ? safeGoto : defaultPath;
+		return hasAnyWorkspaceSection(limited) && isPathAllowedForUser(safeGoto, limited) ? safeGoto : defaultPath;
 	}
 
 	return safeGoto;
@@ -121,6 +130,9 @@ export function getWorkspaceAccessRedirect(
 		if (!pathname.startsWith(USER_ROLE_HOME_PATH)) {
 			target = USER_ROLE_HOME_PATH;
 		}
+	} else if (hasNoWorkspaceSections(auth)) {
+		// The workspace layout renders a "No sections assigned" panel instead.
+		return null;
 	} else {
 		const limited = getScopedWorkspaceSections(auth);
 		if (limited && !isPathAllowedForUser(pathname, limited)) {

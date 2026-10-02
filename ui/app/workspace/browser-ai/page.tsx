@@ -107,8 +107,10 @@ import { useToast } from "@/hooks/use-toast";
 import {
 	useGetBrowserAiLogsQuery,
 	useClearBrowserAiLogsMutation,
+	useDeleteBrowserAiLogsMutation,
 	useGetBrowserAiSearchLogsQuery,
 	useClearBrowserAiSearchLogsMutation,
+	useDeleteBrowserAiSearchLogsMutation,
 	useGetBrowserAiRulesQuery,
 	useCreateBrowserAiRuleMutation,
 	useUpdateBrowserAiRuleMutation,
@@ -585,6 +587,71 @@ export default function BrowserAiPage() {
 	const [clearLogsRetention, setClearLogsRetention] = useState<"all" | "1d" | "7d" | "30d">("all");
 	const [clearSearchLogsRetention, setClearSearchLogsRetention] = useState<"all" | "1d" | "7d" | "30d">("all");
 
+	const [deleteBrowserAiLogs, { isLoading: isDeletingSelectedLogs }] = useDeleteBrowserAiLogsMutation();
+	const [deleteBrowserAiSearchLogs, { isLoading: isDeletingSelectedSearchLogs }] = useDeleteBrowserAiSearchLogsMutation();
+	const [selectedLogIds, setSelectedLogIds] = useState<Set<string>>(() => new Set());
+	const [selectedSearchLogIds, setSelectedSearchLogIds] = useState<Set<string>>(() => new Set());
+	const [deleteSelectedTarget, setDeleteSelectedTarget] = useState<"logs" | "search-logs" | null>(null);
+
+	// Selection only spans the visible page; drop IDs that scrolled away or were deleted.
+	useEffect(() => {
+		setSelectedLogIds((prev) => {
+			if (prev.size === 0) return prev;
+			const visible = new Set((logsData?.logs || []).map((l) => l.id));
+			const next = new Set([...prev].filter((id) => visible.has(id)));
+			return next.size === prev.size ? prev : next;
+		});
+	}, [logsData?.logs]);
+	useEffect(() => {
+		setSelectedSearchLogIds((prev) => {
+			if (prev.size === 0) return prev;
+			const visible = new Set((searchLogsData?.logs || []).map((l) => l.id));
+			const next = new Set([...prev].filter((id) => visible.has(id)));
+			return next.size === prev.size ? prev : next;
+		});
+	}, [searchLogsData?.logs]);
+
+	const toggleId = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string, on: boolean) => {
+		setter((prev) => {
+			const next = new Set(prev);
+			if (on) next.add(id);
+			else next.delete(id);
+			return next;
+		});
+	};
+
+	const handleDeleteSelected = async () => {
+		const target = deleteSelectedTarget;
+		if (!target) return;
+		const ids = [...(target === "logs" ? selectedLogIds : selectedSearchLogIds)];
+		if (ids.length === 0) {
+			setDeleteSelectedTarget(null);
+			return;
+		}
+		try {
+			const res =
+				target === "logs" ? await deleteBrowserAiLogs({ ids }).unwrap() : await deleteBrowserAiSearchLogs({ ids }).unwrap();
+			const label = target === "logs" ? "prompt" : "search";
+			toast({
+				title: `Deleted ${res?.deleted ?? ids.length} ${label} log${(res?.deleted ?? ids.length) === 1 ? "" : "s"}`,
+			});
+			if (target === "logs") {
+				setSelectedLogIds(new Set());
+				setPageOffset(0);
+			} else {
+				setSelectedSearchLogIds(new Set());
+				setSearchLogPageOffset(0);
+			}
+			setDeleteSelectedTarget(null);
+		} catch (err) {
+			toast({
+				title: "Failed to delete logs",
+				description: getErrorMessage(err),
+				variant: "destructive",
+			});
+		}
+	};
+
 	const handleClearLogs = async () => {
 		try {
 			await clearBrowserAiLogs({ period: clearLogsRetention }).unwrap();
@@ -596,6 +663,8 @@ export default function BrowserAiPage() {
 						: `Prompt logs older than ${clearLogsRetention} have been cleared.`,
 			});
 			setClearLogsDialogOpen(false);
+			setSelectedLogIds(new Set());
+			setPageOffset(0);
 			refetchLogs();
 		} catch (err) {
 			toast({
@@ -617,6 +686,8 @@ export default function BrowserAiPage() {
 						: `Search logs older than ${clearSearchLogsRetention} have been cleared.`,
 			});
 			setClearSearchLogsDialogOpen(false);
+			setSelectedSearchLogIds(new Set());
+			setSearchLogPageOffset(0);
 			refetchSearchLogs();
 		} catch (err) {
 			toast({
@@ -2184,6 +2255,28 @@ export default function BrowserAiPage() {
 									</Select>
 								) : null}
 							</div>
+							{selectedLogIds.size > 0 ? (
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => setDeleteSelectedTarget("logs")}
+									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+									data-testid="browser-ai-delete-selected-logs"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Delete selected ({selectedLogIds.size})
+								</Button>
+							) : null}
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => setClearLogsDialogOpen(true)}
+								className="h-8 gap-2 text-xs border-border text-destructive hover:bg-destructive/10"
+								data-testid="browser-ai-clear-logs"
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+								Clear logs
+							</Button>
 						</div>
 					) : null}
 
@@ -2235,6 +2328,28 @@ export default function BrowserAiPage() {
 									</Select>
 								) : null}
 							</div>
+							{selectedSearchLogIds.size > 0 ? (
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => setDeleteSelectedTarget("search-logs")}
+									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+									data-testid="browser-ai-delete-selected-search-logs"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Delete selected ({selectedSearchLogIds.size})
+								</Button>
+							) : null}
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => setClearSearchLogsDialogOpen(true)}
+								className="h-8 gap-2 text-xs border-border text-destructive hover:bg-destructive/10"
+								data-testid="browser-ai-clear-search-logs"
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+								Clear logs
+							</Button>
 						</div>
 					) : null}
 
@@ -2483,6 +2598,15 @@ export default function BrowserAiPage() {
 								<Table className="table-fixed w-full min-w-[960px]">
 									<TableHeader>
 										<TableRow className="border-border hover:bg-transparent">
+											<TableHead className="w-[40px]">
+												<Checkbox
+													aria-label="Select all prompt logs on this page"
+													checked={logs.length > 0 && logs.every((l) => selectedLogIds.has(l.id))}
+													onCheckedChange={(on) =>
+														setSelectedLogIds(on === true ? new Set(logs.map((l) => l.id)) : new Set())
+													}
+												/>
+											</TableHead>
 											<TableHead className="w-[100px]">Date</TableHead>
 											<TableHead className="w-[100px]">Time</TableHead>
 											<TableHead className="w-[110px]">Desktop Name</TableHead>
@@ -2500,6 +2624,13 @@ export default function BrowserAiPage() {
 												onClick={() => setSelectedLog(log)}
 												className="min-h-12 cursor-pointer border-border hover:bg-accent/50 transition-colors"
 											>
+												<TableCell className="py-0" onClick={(e) => e.stopPropagation()}>
+													<Checkbox
+														aria-label="Select prompt log"
+														checked={selectedLogIds.has(log.id)}
+														onCheckedChange={(on) => toggleId(setSelectedLogIds, log.id, on === true)}
+													/>
+												</TableCell>
 												<TableCell className="max-w-0 py-0">
 													<div className="truncate font-mono text-xs text-muted-foreground" title={formatLogDate(log.timestamp)}>
 														{formatLogDate(log.timestamp)}
@@ -2554,7 +2685,7 @@ export default function BrowserAiPage() {
 										))}
 										{logs.length === 0 && (
 											<TableRow>
-												<TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+												<TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
 													No prompt logs match your filter criteria.
 												</TableCell>
 											</TableRow>
@@ -2692,11 +2823,20 @@ export default function BrowserAiPage() {
 									<Input
 										placeholder="Filter query, URL, host..."
 										value={searchLogQuery}
-										onChange={(e) => setSearchLogQuery(e.target.value)}
+										onChange={(e) => {
+											setSearchLogQuery(e.target.value);
+											setSearchLogPageOffset(0);
+										}}
 										className="pl-9 bg-background border-border text-xs"
 									/>
 								</div>
-								<Select value={searchEngineFilter} onValueChange={setSearchEngineFilter}>
+								<Select
+									value={searchEngineFilter}
+									onValueChange={(v) => {
+										setSearchEngineFilter(v);
+										setSearchLogPageOffset(0);
+									}}
+								>
 									<SelectTrigger className="bg-background border-border text-xs">
 										<SelectValue placeholder="All Engines" />
 									</SelectTrigger>
@@ -2710,7 +2850,13 @@ export default function BrowserAiPage() {
 										<SelectItem value="yahoo">Yahoo</SelectItem>
 									</SelectContent>
 								</Select>
-								<Select value={searchBrowserFilter} onValueChange={setSearchBrowserFilter}>
+								<Select
+									value={searchBrowserFilter}
+									onValueChange={(v) => {
+										setSearchBrowserFilter(v);
+										setSearchLogPageOffset(0);
+									}}
+								>
 									<SelectTrigger className="bg-background border-border text-xs">
 										<SelectValue placeholder="All Browsers" />
 									</SelectTrigger>
@@ -2725,7 +2871,13 @@ export default function BrowserAiPage() {
 										<SelectItem value="vivaldi">Vivaldi</SelectItem>
 									</SelectContent>
 								</Select>
-								<Select value={searchIncognitoFilter} onValueChange={setSearchIncognitoFilter}>
+								<Select
+									value={searchIncognitoFilter}
+									onValueChange={(v) => {
+										setSearchIncognitoFilter(v);
+										setSearchLogPageOffset(0);
+									}}
+								>
 									<SelectTrigger className="bg-background border-border text-xs">
 										<SelectValue placeholder="All Privacy Modes" />
 									</SelectTrigger>
@@ -2743,6 +2895,15 @@ export default function BrowserAiPage() {
 								<Table className="w-full min-w-[980px]">
 									<TableHeader>
 										<TableRow className="border-border hover:bg-transparent">
+											<TableHead className="w-[40px]">
+												<Checkbox
+													aria-label="Select all search logs on this page"
+													checked={searchLogs.length > 0 && searchLogs.every((l) => selectedSearchLogIds.has(l.id))}
+													onCheckedChange={(on) =>
+														setSelectedSearchLogIds(on === true ? new Set(searchLogs.map((l) => l.id)) : new Set())
+													}
+												/>
+											</TableHead>
 											<TableHead className="w-[100px]">Date</TableHead>
 											<TableHead className="w-[100px]">Time</TableHead>
 											<TableHead className="w-[140px]">Desktop Name</TableHead>
@@ -2757,7 +2918,7 @@ export default function BrowserAiPage() {
 									<TableBody>
 										{searchLogs.length === 0 ? (
 											<TableRow>
-												<TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+												<TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
 													<div className="flex flex-col items-center justify-center gap-2">
 														<Search className="h-6 w-6 text-muted-foreground/50" />
 														<p>No search events logged yet.</p>
@@ -2776,6 +2937,13 @@ export default function BrowserAiPage() {
 														className="border-border hover:bg-muted/30 cursor-pointer"
 														onClick={() => setSelectedSearchLog(log)}
 													>
+														<TableCell onClick={(ev) => ev.stopPropagation()}>
+															<Checkbox
+																aria-label="Select search log"
+																checked={selectedSearchLogIds.has(log.id)}
+																onCheckedChange={(on) => toggleId(setSelectedSearchLogIds, log.id, on === true)}
+															/>
+														</TableCell>
 														<TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
 															{formatLogDate(log.timestamp)}
 														</TableCell>
@@ -6657,7 +6825,10 @@ export default function BrowserAiPage() {
 					<AlertDialogFooter>
 						<AlertDialogCancel disabled={isClearingLogs}>Cancel</AlertDialogCancel>
 						<AlertDialogAction
-							onClick={handleClearLogs}
+							onClick={(e) => {
+								e.preventDefault();
+								void handleClearLogs();
+							}}
 							disabled={isClearingLogs}
 							className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium"
 						>
@@ -6702,7 +6873,10 @@ export default function BrowserAiPage() {
 					<AlertDialogFooter>
 						<AlertDialogCancel disabled={isClearingSearchLogs}>Cancel</AlertDialogCancel>
 						<AlertDialogAction
-							onClick={handleClearSearchLogs}
+							onClick={(e) => {
+								e.preventDefault();
+								void handleClearSearchLogs();
+							}}
 							disabled={isClearingSearchLogs}
 							className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium"
 						>
@@ -6713,6 +6887,48 @@ export default function BrowserAiPage() {
 								</>
 							) : (
 								"Clear Search Logs"
+							)}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			{/* Delete Selected Logs Dialog */}
+			<AlertDialog
+				open={deleteSelectedTarget !== null}
+				onOpenChange={(open) => {
+					if (!open && !isDeletingSelectedLogs && !isDeletingSelectedSearchLogs) setDeleteSelectedTarget(null);
+				}}
+			>
+				<AlertDialogContent className="bg-card border-border text-foreground">
+					<AlertDialogHeader>
+						<AlertDialogTitle className="flex items-center gap-2 text-destructive">
+							<Trash2 className="h-5 w-5" /> Delete selected {deleteSelectedTarget === "search-logs" ? "search" : "prompt"} logs
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							{(deleteSelectedTarget === "search-logs" ? selectedSearchLogIds.size : selectedLogIds.size)} selected log
+							{(deleteSelectedTarget === "search-logs" ? selectedSearchLogIds.size : selectedLogIds.size) === 1 ? "" : "s"} will be permanently
+							removed from the database. This action cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={isDeletingSelectedLogs || isDeletingSelectedSearchLogs}>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={(e) => {
+								e.preventDefault();
+								void handleDeleteSelected();
+							}}
+							disabled={isDeletingSelectedLogs || isDeletingSelectedSearchLogs}
+							className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium"
+							data-testid="browser-ai-delete-selected-confirm"
+						>
+							{isDeletingSelectedLogs || isDeletingSelectedSearchLogs ? (
+								<>
+									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+									Deleting...
+								</>
+							) : (
+								"Delete"
 							)}
 						</AlertDialogAction>
 					</AlertDialogFooter>

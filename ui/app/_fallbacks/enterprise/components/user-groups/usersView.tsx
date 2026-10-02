@@ -331,8 +331,8 @@ export default function UsersView() {
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">Workspace Access</label>
 				<p className="text-muted-foreground text-xs">
-					Expand a section to pick pages. Parent tick = whole section. Leave all unchecked for full
-					access.
+					Expand a section to pick pages. Parent tick = whole section. Nothing is granted by default —
+					unchecked sections stay hidden for this user.
 				</p>
 				<div className="border-border/50 bg-muted/10 max-h-64 space-y-1 overflow-y-auto rounded-lg border p-2">
 					{WORKSPACE_ACCESS_SECTIONS.map((section) => {

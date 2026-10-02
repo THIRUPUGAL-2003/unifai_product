@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
 	unifai "github.com/unifai/unifai/core"
 	"github.com/unifai/unifai/core/schemas"
@@ -88,10 +89,14 @@ func (h *BrowserAIHandler) ensureDB(ctx *fasthttp.RequestCtx) {
 func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.UnifAIHTTPMiddleware) {
 	r.GET("/api/browser-ai/logs", lib.ChainMiddlewares(h.getLogs, middlewares...))
 	r.DELETE("/api/browser-ai/logs", lib.ChainMiddlewares(h.deleteLogs, middlewares...))
+	r.POST("/api/browser-ai/logs/bulk-delete", lib.ChainMiddlewares(h.bulkDeleteLogs, middlewares...))
+	r.DELETE("/api/browser-ai/logs/{id}", lib.ChainMiddlewares(h.deleteLog, middlewares...))
 
 	r.GET("/api/browser-ai/search-logs", lib.ChainMiddlewares(h.getSearchLogs, middlewares...))
 	r.POST("/api/browser-ai/search-logs", lib.ChainMiddlewares(h.recordSearchLog, middlewares...))
 	r.DELETE("/api/browser-ai/search-logs", lib.ChainMiddlewares(h.deleteSearchLogs, middlewares...))
+	r.POST("/api/browser-ai/search-logs/bulk-delete", lib.ChainMiddlewares(h.bulkDeleteSearchLogs, middlewares...))
+	r.DELETE("/api/browser-ai/search-logs/{id}", lib.ChainMiddlewares(h.deleteSearchLog, middlewares...))
 
 	r.GET("/api/browser-ai/rules", lib.ChainMiddlewares(h.getRules, middlewares...))
 	r.POST("/api/browser-ai/rules", lib.ChainMiddlewares(h.createRule, middlewares...))
@@ -182,45 +187,89 @@ func (h *BrowserAIHandler) getLogs(ctx *fasthttp.RequestCtx) {
 	})
 }
 
-// deleteLogs clears prompt logs in PostgreSQL.
-// Query params (optional) — same contract as search-logs delete:
+// logDeleteWindow resolves the delete range shared by prompt-log and search-log clears.
 //
-//	period=1d|7d|30d|all  — delete logs from the last N period (or all)
-//	date=YYYY-MM-DD       — delete logs for that calendar day (server local day)
+//	period=1d|7d|30d  — delete logs OLDER than N days (keeps the most recent N days)
+//	period=all or ""  — delete everything
+//	date=YYYY-MM-DD   — delete logs for that calendar day (server local day)
 //
-// With no params, clears all (legacy).
-func (h *BrowserAIHandler) deleteLogs(ctx *fasthttp.RequestCtx) {
-	h.ensureDB(ctx)
-
+// label describes what was removed, e.g. "older than 7 days".
+func logDeleteWindow(ctx *fasthttp.RequestCtx) (since, until *time.Time, label string, ok bool) {
 	period := strings.ToLower(strings.TrimSpace(string(ctx.QueryArgs().Peek("period"))))
 	dateStr := strings.TrimSpace(string(ctx.QueryArgs().Peek("date")))
-
-	var since, until *time.Time
 	now := time.Now()
+
+	olderThan := func(days int, text string) (*time.Time, *time.Time, string, bool) {
+		cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
+		return nil, &cutoff, text, true
+	}
 
 	switch {
 	case dateStr != "":
 		day, err := time.ParseInLocation("2006-01-02", dateStr, now.Location())
 		if err != nil {
 			SendError(ctx, fasthttp.StatusBadRequest, "Invalid date (use YYYY-MM-DD)")
-			return
+			return nil, nil, "", false
 		}
 		start := day
 		end := day.Add(24 * time.Hour)
-		since, until = &start, &end
+		return &start, &end, "for " + dateStr, true
 	case period == "1d" || period == "day":
-		start := now.Add(-24 * time.Hour)
-		since, until = &start, &now
+		return olderThan(1, "older than 1 day")
 	case period == "7d" || period == "week" || period == "weekly":
-		start := now.Add(-7 * 24 * time.Hour)
-		since, until = &start, &now
+		return olderThan(7, "older than 7 days")
 	case period == "30d" || period == "month" || period == "monthly":
-		start := now.Add(-30 * 24 * time.Hour)
-		since, until = &start, &now
+		return olderThan(30, "older than 30 days")
 	case period == "" || period == "all":
-		since, until = nil, nil
+		return nil, nil, "", true
 	default:
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid period (use 1d, 7d, 30d, or all)")
+		return nil, nil, "", false
+	}
+}
+
+// parseLogIDs reads {"ids": [...]} and returns the trimmed, de-duplicated IDs.
+func parseLogIDs(ctx *fasthttp.RequestCtx) ([]string, bool) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := sonic.Unmarshal(ctx.PostBody(), &body); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON payload")
+		return nil, false
+	}
+	seen := make(map[string]struct{}, len(body.IDs))
+	ids := make([]string, 0, len(body.IDs))
+	for _, id := range body.IDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "ids is required")
+		return nil, false
+	}
+	if len(ids) > 1000 {
+		SendError(ctx, fasthttp.StatusBadRequest, "Too many ids (max 1000 per request)")
+		return nil, false
+	}
+	return ids, true
+}
+
+// deleteLogs clears prompt logs in PostgreSQL. See logDeleteWindow for query params.
+func (h *BrowserAIHandler) deleteLogs(ctx *fasthttp.RequestCtx) {
+	since, until, label, ok := logDeleteWindow(ctx)
+	if !ok {
+		return
+	}
+	h.ensureDB(ctx)
+	if h.manager == nil || h.manager.GetDB() == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Log database is not available")
 		return
 	}
 
@@ -230,15 +279,46 @@ func (h *BrowserAIHandler) deleteLogs(ctx *fasthttp.RequestCtx) {
 	}
 
 	msg := "Browser AI logs cleared"
-	if dateStr != "" {
-		msg = "Prompt logs deleted for " + dateStr
-	} else if period == "1d" || period == "day" {
-		msg = "Prompt logs deleted for the last 1 day"
-	} else if period == "7d" || period == "week" || period == "weekly" {
-		msg = "Prompt logs deleted for the last 7 days"
-	} else if period == "30d" || period == "month" || period == "monthly" {
-		msg = "Prompt logs deleted for the last 30 days"
+	if label != "" {
+		msg = "Prompt logs deleted " + label
 	}
-
 	SendJSON(ctx, map[string]any{"status": "success", "message": msg})
+}
+
+// bulkDeleteLogs deletes selected prompt logs by ID. Body: {"ids": ["..."]}.
+func (h *BrowserAIHandler) bulkDeleteLogs(ctx *fasthttp.RequestCtx) {
+	ids, ok := parseLogIDs(ctx)
+	if !ok {
+		return
+	}
+	h.deletePromptLogIDs(ctx, ids)
+}
+
+// deleteLog deletes a single prompt log.
+func (h *BrowserAIHandler) deleteLog(ctx *fasthttp.RequestCtx) {
+	id, _ := ctx.UserValue("id").(string)
+	id = strings.TrimSpace(id)
+	if id == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "id is required")
+		return
+	}
+	h.deletePromptLogIDs(ctx, []string{id})
+}
+
+func (h *BrowserAIHandler) deletePromptLogIDs(ctx *fasthttp.RequestCtx, ids []string) {
+	h.ensureDB(ctx)
+	if h.manager == nil || h.manager.GetDB() == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Log database is not available")
+		return
+	}
+	deleted, err := h.manager.DeleteLogsByIDs(ctx, ids)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	if deleted == 0 && len(ids) == 1 {
+		SendError(ctx, fasthttp.StatusNotFound, "Prompt log not found")
+		return
+	}
+	SendJSON(ctx, map[string]any{"status": "success", "deleted": deleted})
 }

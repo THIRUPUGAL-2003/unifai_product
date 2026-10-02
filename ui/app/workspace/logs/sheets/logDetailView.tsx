@@ -760,6 +760,26 @@ export function LogDetailView({
 								</Link>
 							</div>
 						)}
+						{(log.user_id || log.user_name) && (
+							<div className="mt-1 flex items-center gap-2">
+								<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">User</div>
+								{log.user_id ? (
+									<Link
+										to="/workspace/logs"
+										search={{ user_ids: [log.user_id] }}
+										className="truncate text-[13px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+										title={log.user_name ? log.user_id : undefined}
+										data-testid="logdetails-header-user-link"
+									>
+										{log.user_name || log.user_id}
+									</Link>
+								) : (
+									<span className="text-foreground truncate text-[13px] font-medium" data-testid="logdetails-header-user-text">
+										{log.user_name}
+									</span>
+								)}
+							</div>
+						)}
 					</div>
 					<div className="flex shrink-0 items-center gap-1.5 rounded-sm border bg-white px-2 py-1 text-[12px] font-medium dark:bg-zinc-900">
 						<RenderProviderIcon provider={log.provider as ProviderIconType} size="xs" />

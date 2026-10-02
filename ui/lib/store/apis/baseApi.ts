@@ -198,6 +198,8 @@ export const baseApi = createApi({
 		"AlertChannels",
 		"Connectors",
 		"BrowserAiLogs",
+		"BrowserAiSearchLogs",
+		"BrowserAiInsightStats",
 		"BrowserAiRules",
 		"BrowserAiTargets",
 		"BrowserAiControls",

@@ -208,55 +208,16 @@
 	}
 }
 
+/* Scrollable, but the scrollbar itself stays hidden (same as the global rule below). */
 @utility custom-scrollbar {
 	overflow: auto !important;
-	scrollbar-width: thin; /* Firefox */
-	scrollbar-color: rgba(228, 228, 231, 1) transparent; /* Firefox */
+	-ms-overflow-style: none;
+	scrollbar-width: none; /* Firefox */
 
 	&::-webkit-scrollbar {
-		--custom-scrollbar-width: 8px;
-		--custom-scrollbar-height: 8px;
-		width: var(--custom-scrollbar-width, 8px);
-		height: var(--custom-scrollbar-height, 8px);
-	}
-
-	&::-webkit-scrollbar-track {
-		background-color: transparent;
-	}
-
-	&::-webkit-scrollbar-thumb {
-		--tw-bg-opacity: 1 !important;
-		background-color: rgba(228, 228, 231, var(--tw-bg-opacity)) !important;
-		border-radius: 8px;
-		opacity: 0;
-		visibility: hidden;
-	}
-
-	&:hover::-webkit-scrollbar-thumb {
-		opacity: 1;
-		visibility: visible;
-	}
-
-	&::-webkit-scrollbar-thumb:hover {
-		--tw-bg-opacity: 1 !important;
-		background-color: rgba(82, 82, 91, var(--tw-bg-opacity)) !important;
-	}
-
-	/* For older WebKit browsers */
-	&::-webkit-scrollbar-thumb:horizontal {
-		background-color: rgba(228, 228, 231, var(--tw-bg-opacity)) !important;
-	}
-
-	&::-webkit-scrollbar-thumb:vertical {
-		background-color: rgba(228, 228, 231, var(--tw-bg-opacity)) !important;
-	}
-
-	&:hover::-webkit-scrollbar-thumb:horizontal {
-		background-color: rgba(82, 82, 91, var(--tw-bg-opacity)) !important;
-	}
-
-	&:hover::-webkit-scrollbar-thumb:vertical {
-		background-color: rgba(82, 82, 91, var(--tw-bg-opacity)) !important;
+		display: none; /* Chrome, Safari, Edge */
+		width: 0;
+		height: 0;
 	}
 }
 
@@ -286,8 +247,6 @@ html {
 	overflow-y: auto !important;
 	overflow-x: hidden;
 	scroll-behavior: smooth;
-	scrollbar-width: thin;
-	scrollbar-color: #1e293b #07090e;
 }
 
 body {
@@ -296,24 +255,22 @@ body {
 	min-height: 100vh;
 }
 
-/* Elegant custom dark scrollbar for the page - only when NOT .no-scrollbar */
-:not(.no-scrollbar)::-webkit-scrollbar {
-	width: 8px;
-	height: 8px;
+/* Scrollbars are hidden app-wide (page, sidebar, sheets, popovers, selects, tables);
+   content still scrolls with wheel, touch, keyboard and trackpad. */
+html,
+body,
+* {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
 }
 
-:not(.no-scrollbar)::-webkit-scrollbar-track {
-	background: #07090e;
-}
-
-:not(.no-scrollbar)::-webkit-scrollbar-thumb {
-	background: #1e293b;
-	border-radius: 5px;
-	border: 2px solid #07090e;
-}
-
-:not(.no-scrollbar)::-webkit-scrollbar-thumb:hover {
-	background: #38bdf8;
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+	background: transparent;
 }
 
 /* ─── Complete Scrollbar Hiding ─── */
@@ -658,4 +615,4 @@ body {
 font {
 	background-color: transparent !important;
 	box-shadow: none !important;
-}
+}

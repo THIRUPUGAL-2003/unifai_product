@@ -802,6 +802,28 @@ func (m *BrowserAIManager) ClearSearchLogsInRange(ctx context.Context, since, un
 	return db.Delete(&BrowserAISearchLog{}).Error
 }
 
+// DeleteLogsByIDs deletes the given prompt log rows and returns how many were removed.
+func (m *BrowserAIManager) DeleteLogsByIDs(ctx context.Context, ids []string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.db == nil || len(ids) == 0 {
+		return 0, nil
+	}
+	res := m.db.WithContext(ctx).Where("id IN ?", ids).Delete(&BrowserAILog{})
+	return res.RowsAffected, res.Error
+}
+
+// DeleteSearchLogsByIDs deletes the given search log rows and returns how many were removed.
+func (m *BrowserAIManager) DeleteSearchLogsByIDs(ctx context.Context, ids []string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.db == nil || len(ids) == 0 {
+		return 0, nil
+	}
+	res := m.db.WithContext(ctx).Where("id IN ?", ids).Delete(&BrowserAISearchLog{})
+	return res.RowsAffected, res.Error
+}
+
 func parseRetentionDuration(retention string) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(retention)) {
 	case "1d":

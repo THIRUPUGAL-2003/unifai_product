@@ -1,18 +1,38 @@
 import FullPageLoader from "@/components/fullPageLoader";
-import { fetchSessionAuth, getWorkspaceAccessRedirect } from "@/lib/utils/workspaceAccess";
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { useIsAuthEnabledQuery } from "@/lib/store";
+import { fetchSessionAuth, getWorkspaceAccessRedirect, hasNoWorkspaceSections } from "@/lib/utils/workspaceAccess";
+import { createFileRoute, Outlet, redirect, useLocation } from "@tanstack/react-router";
+import { ShieldOff } from "lucide-react";
 import { ClientLayout } from "../clientLayout";
 
 function WorkspaceLayout({ children }: { children: React.ReactNode }) {
 	return <ClientLayout>{children}</ClientLayout>;
 }
 
-function RouteComponent() {
+function isPublicScopedPath(pathname: string): boolean {
+	return pathname.startsWith("/workspace/mcp-sessions/auth") || pathname.startsWith("/workspace/oauth");
+}
+
+function NoSectionsAssigned() {
 	return (
-		<WorkspaceLayout>
-			<Outlet />
-		</WorkspaceLayout>
+		<div className="flex h-full min-h-[60vh] items-center justify-center p-6" data-testid="workspace-no-sections">
+			<div className="border-border bg-card max-w-md space-y-3 rounded-lg border p-6 text-center">
+				<ShieldOff className="text-muted-foreground mx-auto h-8 w-8" />
+				<h2 className="text-foreground text-lg font-semibold">No sections assigned</h2>
+				<p className="text-muted-foreground text-sm">
+					Your account does not have access to any workspace section yet. Ask an admin to grant you access under Users or
+					Roles &amp; Permissions.
+				</p>
+			</div>
+		</div>
 	);
+}
+
+function RouteComponent() {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const pathname = useLocation({ select: (l) => l.pathname });
+	const blocked = hasNoWorkspaceSections(authStatus) && !isPublicScopedPath(pathname);
+	return <WorkspaceLayout>{blocked ? <NoSectionsAssigned /> : <Outlet />}</WorkspaceLayout>;
 }
 
 function PendingComponent() {
@@ -23,10 +43,7 @@ export const Route = createFileRoute("/workspace")({
 	beforeLoad: async ({ location }) => {
 		const auth = await fetchSessionAuth(false);
 		if (auth && auth.is_auth_enabled && !auth.has_valid_token) {
-			const isPublicScoped =
-				location.pathname.startsWith("/workspace/mcp-sessions/auth") ||
-				location.pathname.startsWith("/workspace/oauth");
-			if (!isPublicScoped) {
+			if (!isPublicScopedPath(location.pathname)) {
 				const goto = location.pathname + (location.searchStr ?? "");
 				throw redirect({
 					href: `/login?goto=${encodeURIComponent(goto)}`,

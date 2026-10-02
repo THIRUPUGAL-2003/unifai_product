@@ -187,10 +187,11 @@ export default function RBACView() {
 		}
 		if (rolePermData?.permissions) {
 			let granted = rolePermData.permissions;
-			// A scoped user sees their role's permissions narrowed to the sections saved for them.
-			if (target.type === "user" && sectionScopeApplies(targetUser?.role) && targetUser?.allowed_sections?.trim()) {
+			// A scoped user sees their role's permissions narrowed to the sections saved for them
+			// (nothing saved = no sections granted).
+			if (target.type === "user" && targetUser && sectionScopeApplies(targetUser.role)) {
 				const allowed = new Set(
-					targetUser.allowed_sections
+					(targetUser.allowed_sections || "")
 						.split(",")
 						.map((s) => s.trim())
 						.filter(Boolean),

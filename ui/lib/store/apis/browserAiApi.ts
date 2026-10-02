@@ -241,7 +241,16 @@ export const browserAiApi = baseApi.injectEndpoints({
 				method: "DELETE",
 				params: params || {},
 			}),
-			invalidatesTags: ["BrowserAiLogs" as any],
+			invalidatesTags: ["BrowserAiLogs" as any, "BrowserAiInsightStats" as any],
+		}),
+
+		deleteBrowserAiLogs: builder.mutation<{ status: string; deleted: number }, { ids: string[] }>({
+			query: (body) => ({
+				url: "/browser-ai/logs/bulk-delete",
+				method: "POST",
+				body,
+			}),
+			invalidatesTags: ["BrowserAiLogs" as any, "BrowserAiInsightStats" as any],
 		}),
 
 		getBrowserAiSearchLogs: builder.query<
@@ -272,7 +281,16 @@ export const browserAiApi = baseApi.injectEndpoints({
 				method: "DELETE",
 				params: params || {},
 			}),
-			invalidatesTags: ["BrowserAiSearchLogs" as any],
+			invalidatesTags: ["BrowserAiSearchLogs" as any, "BrowserAiInsightStats" as any],
+		}),
+
+		deleteBrowserAiSearchLogs: builder.mutation<{ status: string; deleted: number }, { ids: string[] }>({
+			query: (body) => ({
+				url: "/browser-ai/search-logs/bulk-delete",
+				method: "POST",
+				body,
+			}),
+			invalidatesTags: ["BrowserAiSearchLogs" as any, "BrowserAiInsightStats" as any],
 		}),
 
 		recordBrowserAiSearchLog: builder.mutation<{ status: string; log: BrowserAISearchLogEntry }, Partial<BrowserAISearchLogEntry>>({
@@ -846,8 +864,10 @@ export const browserAiApi = baseApi.injectEndpoints({
 export const {
 	useGetBrowserAiLogsQuery,
 	useClearBrowserAiLogsMutation,
+	useDeleteBrowserAiLogsMutation,
 	useGetBrowserAiSearchLogsQuery,
 	useClearBrowserAiSearchLogsMutation,
+	useDeleteBrowserAiSearchLogsMutation,
 	useRecordBrowserAiSearchLogMutation,
 	useGetBrowserAiRulesQuery,
 	useGetBrowserAiOllamaModelsQuery,

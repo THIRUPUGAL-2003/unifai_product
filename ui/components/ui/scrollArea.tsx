@@ -43,8 +43,9 @@ function ScrollBar({
 		<ScrollAreaPrimitive.ScrollAreaScrollbar
 			data-slot="scroll-area-scrollbar"
 			orientation={orientation}
+			// Radix only enables viewport scrolling while a scrollbar is mounted, so keep it mounted but invisible.
 			className={cn(
-				"flex touch-none p-px transition-colors select-none",
+				"pointer-events-none flex touch-none p-px opacity-0 transition-colors select-none",
 				orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent",
 				orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent",
 				className,

@@ -13,18 +13,20 @@ import (
 
 // Paths that must not flood Audit Logs (agent heartbeats, intercept stream, etc.).
 // Login/logout keep dedicated action names via SessionHandler.recordAuthAudit.
-func shouldSkipWorkspaceAudit(path string) bool {
+func shouldSkipWorkspaceAudit(method, path string) bool {
 	p := strings.ToLower(path)
 	switch {
 	case strings.HasPrefix(p, "/api/browser-ai/intercept"):
 		return true
+	case p == "/api/browser-ai/search-logs":
+		// Guard records every search via POST; admin clears (DELETE) must stay audited.
+		return method == fasthttp.MethodPost
 	case p == "/api/browser-ai/agents/heartbeat",
 		p == "/api/browser-ai/agents/uninstall-ack",
 		p == "/api/browser-ai/agents/uninstall-verify",
 		p == "/api/browser-ai/agents/uninstall-status",
 		p == "/api/browser-ai/setup/proxy-bundle.json",
 		p == "/api/browser-ai/setup/proxy-bundle.zip",
-		p == "/api/browser-ai/search-logs",
 		p == "/api/session/login",
 		p == "/api/session/logout",
 		p == "/api/session/ws-ticket":
@@ -97,7 +99,7 @@ func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.UnifAIHTTPM
 			if !strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/scim/") {
 				return
 			}
-			if shouldSkipWorkspaceAudit(path) {
+			if shouldSkipWorkspaceAudit(method, path) {
 				return
 			}
 			status := ctx.Response.StatusCode()

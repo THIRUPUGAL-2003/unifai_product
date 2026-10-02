@@ -152,7 +152,9 @@ func (p *GovernancePlugin) stampUserFromVKAssignment(ctx *schemas.UnifAIContext,
 	if ctx == nil || vk == nil || p.configStore == nil {
 		return
 	}
-	if unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyUserID) != "" {
+	// A named requester without a user row (env bootstrap admin) must not be charged as the VK's user.
+	if unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyUserID) != "" ||
+		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyUserName) != "" {
 		return
 	}
 	ws, ok := configstore.AsWorkspaceStore(p.configStore)
@@ -170,8 +172,14 @@ func (p *GovernancePlugin) stampUserFromVKAssignment(ctx *schemas.UnifAIContext,
 		return
 	}
 	ctx.SetValue(schemas.UnifAIContextKeyUserID, uid)
-	if user, gerr := p.configStore.GetUserByID(ctx, uid); gerr == nil && user != nil && user.Username != "" {
-		ctx.SetValue(schemas.UnifAIContextKeyUserName, user.Username)
+	if user, gerr := p.configStore.GetUserByID(ctx, uid); gerr == nil && user != nil {
+		name := user.Username
+		if name == "" {
+			name = user.Email
+		}
+		if name != "" {
+			ctx.SetValue(schemas.UnifAIContextKeyUserName, name)
+		}
 	}
 }
 
