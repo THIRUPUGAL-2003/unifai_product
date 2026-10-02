@@ -2,9 +2,11 @@ package configstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/unifai/unifai/framework/configstore/tables"
 	"gorm.io/gorm"
@@ -591,4 +593,92 @@ func (s *RDBConfigStore) DeletePromptSession(ctx context.Context, id uint) error
 
 		return tx.Delete(&session).Error
 	})
+}
+
+// GetPromptHistorySettings retrieves the prompt history retention configuration.
+func (s *RDBConfigStore) GetPromptHistorySettings(ctx context.Context) (*tables.PromptHistoryRetentionSettings, error) {
+	var configEntry tables.TableGovernanceConfig
+	if err := s.DB().WithContext(ctx).First(&configEntry, "key = ?", tables.ConfigPromptHistorySettingsKey).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &tables.PromptHistoryRetentionSettings{
+				AutoDelete: false,
+				Retention:  "7d",
+			}, nil
+		}
+		return nil, err
+	}
+	if configEntry.Value == "" {
+		return &tables.PromptHistoryRetentionSettings{
+			AutoDelete: false,
+			Retention:  "7d",
+		}, nil
+	}
+	var settings tables.PromptHistoryRetentionSettings
+	if err := json.Unmarshal([]byte(configEntry.Value), &settings); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal prompt history settings: %w", err)
+	}
+	if settings.Retention == "" {
+		settings.Retention = "7d"
+	}
+	return &settings, nil
+}
+
+// SetPromptHistorySettings saves the prompt history retention configuration.
+func (s *RDBConfigStore) SetPromptHistorySettings(ctx context.Context, settings *tables.PromptHistoryRetentionSettings) error {
+	if settings == nil {
+		settings = &tables.PromptHistoryRetentionSettings{
+			AutoDelete: false,
+			Retention:  "7d",
+		}
+	}
+	if settings.Retention == "" {
+		settings.Retention = "7d"
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("failed to marshal prompt history settings: %w", err)
+	}
+	return s.DB().WithContext(ctx).Save(&tables.TableGovernanceConfig{
+		Key:   tables.ConfigPromptHistorySettingsKey,
+		Value: string(data),
+	}).Error
+}
+
+// DeletePromptSessionsBefore purges sessions updated before cutoff time.
+func (s *RDBConfigStore) DeletePromptSessionsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	var deletedCount int64
+	err := s.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sessionIDs []uint
+		if err := tx.Model(&tables.TablePromptSession{}).Where("updated_at < ?", cutoff).Pluck("id", &sessionIDs).Error; err != nil {
+			return err
+		}
+		if len(sessionIDs) == 0 {
+			return nil
+		}
+		if tx.Dialector.Name() != "postgres" {
+			if err := tx.Where("session_id IN ?", sessionIDs).Delete(&tables.TablePromptSessionMessage{}).Error; err != nil {
+				return err
+			}
+		}
+		res := tx.Where("id IN ?", sessionIDs).Delete(&tables.TablePromptSession{})
+		deletedCount = res.RowsAffected
+		return res.Error
+	})
+	return deletedCount, err
+}
+
+// ClearAllPromptSessions deletes all prompt sessions and their messages.
+func (s *RDBConfigStore) ClearAllPromptSessions(ctx context.Context) (int64, error) {
+	var deletedCount int64
+	err := s.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() != "postgres" {
+			if err := tx.Where("1 = 1").Delete(&tables.TablePromptSessionMessage{}).Error; err != nil {
+				return err
+			}
+		}
+		res := tx.Where("1 = 1").Delete(&tables.TablePromptSession{})
+		deletedCount = res.RowsAffected
+		return res.Error
+	})
+	return deletedCount, err
 }

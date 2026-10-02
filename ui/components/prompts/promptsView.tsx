@@ -12,6 +12,7 @@ import { EmptyState, PromptsEmptyState } from "./components/emptyState";
 import PromptsViewHeader from "./components/promptsViewHeader";
 import { usePromptContext } from "./context";
 import { isPromptMemberRole } from "./utils/memberRole";
+import PromptHistoryControls from "./components/promptHistoryControls";
 
 export default function PromptsView() {
 	const { folders, prompts, foldersLoading, promptsLoading, foldersError, promptsError, isLoadingPlayground, selectedPromptId } =
@@ -83,7 +84,16 @@ export default function PromptsView() {
 							)}
 						</div>
 					) : (
-						<EmptyState />
+						<div className="flex h-full flex-col">
+							{!isUserRole && (
+								<div className="flex items-center justify-end border-b px-4 py-3">
+									<PromptHistoryControls />
+								</div>
+							)}
+							<div className="flex-1">
+								<EmptyState />
+							</div>
+						</div>
 					)}
 				</ResizablePanel>
 			</ResizablePanelGroup>

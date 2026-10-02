@@ -708,6 +708,10 @@ type ConfigStore interface {
 	UpdatePromptSession(ctx context.Context, session *tables.TablePromptSession) error
 	RenamePromptSession(ctx context.Context, id uint, name string) error
 	DeletePromptSession(ctx context.Context, id uint) error
+	GetPromptHistorySettings(ctx context.Context) (*tables.PromptHistoryRetentionSettings, error)
+	SetPromptHistorySettings(ctx context.Context, settings *tables.PromptHistoryRetentionSettings) error
+	DeletePromptSessionsBefore(ctx context.Context, cutoff time.Time) (int64, error)
+	ClearAllPromptSessions(ctx context.Context) (int64, error)
 
 	// DB returns the underlying database connection.
 	DB() *gorm.DB

@@ -2184,15 +2184,6 @@ export default function BrowserAiPage() {
 									</Select>
 								) : null}
 							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setClearLogsDialogOpen(true)}
-								className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive border-border"
-							>
-								<Trash2 className="h-3.5 w-3.5" />
-								Clear Logs
-							</Button>
 						</div>
 					) : null}
 
@@ -2244,15 +2235,6 @@ export default function BrowserAiPage() {
 									</Select>
 								) : null}
 							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setClearSearchLogsDialogOpen(true)}
-								className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive border-border"
-							>
-								<Trash2 className="h-3.5 w-3.5" />
-								Clear Search Logs
-							</Button>
 						</div>
 					) : null}
 

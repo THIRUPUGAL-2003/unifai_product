@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fasthttp/router"
 	"github.com/google/uuid"
@@ -84,6 +85,11 @@ func (h *PromptsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.DELETE("/api/prompt-repo/sessions/{id}", lib.ChainMiddlewares(h.deleteSession, middlewares...))
 	r.PUT("/api/prompt-repo/sessions/{id}/rename", lib.ChainMiddlewares(h.renameSession, middlewares...))
 	r.POST("/api/prompt-repo/sessions/{id}/commit", lib.ChainMiddlewares(h.commitSession, middlewares...))
+
+	// History Auto-delete & Retention Settings (Admin)
+	r.GET("/api/prompt-repo/settings", lib.ChainMiddlewares(h.getPromptSettings, middlewares...))
+	r.PUT("/api/prompt-repo/settings", lib.ChainMiddlewares(h.updatePromptSettings, middlewares...))
+	r.POST("/api/prompt-repo/history/clear", lib.ChainMiddlewares(h.clearAllPromptHistory, middlewares...))
 }
 
 // ============================================================================
@@ -1103,6 +1109,8 @@ func (h *PromptsHandler) getPromptSessions(ctx *fasthttp.RequestCtx) {
 		filterUserID = strings.TrimSpace(queryUser)
 	}
 
+	_, _ = h.applyPromptHistoryAutoDelete(ctx)
+
 	sessions, err := h.store.GetPromptSessions(ctx, promptID, filterUserID)
 	if err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {
@@ -1265,6 +1273,8 @@ func (h *PromptsHandler) createSession(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	session.UserID = callerID
+
+	_, _ = h.applyPromptHistoryAutoDelete(ctx)
 
 	if err := h.store.CreatePromptSession(ctx, session); err != nil {
 		logger.Error("failed to create session: %v", err)
@@ -1574,3 +1584,93 @@ func (h *PromptsHandler) commitSession(ctx *fasthttp.RequestCtx) {
 		"version": version,
 	})
 }
+
+func parsePromptHistoryRetentionDuration(retention string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(retention)) {
+	case "24h", "1d":
+		return 24 * time.Hour
+	case "7d":
+		return 7 * 24 * time.Hour
+	case "30d":
+		return 30 * 24 * time.Hour
+	case "90d":
+		return 90 * 24 * time.Hour
+	case "180d":
+		return 180 * 24 * time.Hour
+	case "365d":
+		return 365 * 24 * time.Hour
+	default:
+		return 7 * 24 * time.Hour
+	}
+}
+
+func (h *PromptsHandler) applyPromptHistoryAutoDelete(ctx context.Context) (int64, error) {
+	if h.store == nil {
+		return 0, nil
+	}
+	settings, err := h.store.GetPromptHistorySettings(ctx)
+	if err != nil || settings == nil || !settings.AutoDelete {
+		return 0, nil
+	}
+	dur := parsePromptHistoryRetentionDuration(settings.Retention)
+	cutoff := time.Now().Add(-dur)
+	return h.store.DeletePromptSessionsBefore(ctx, cutoff)
+}
+
+// getPromptSettings handles GET /api/prompt-repo/settings
+func (h *PromptsHandler) getPromptSettings(ctx *fasthttp.RequestCtx) {
+	_, _ = h.applyPromptHistoryAutoDelete(ctx)
+
+	settings, err := h.store.GetPromptHistorySettings(ctx)
+	if err != nil {
+		logger.Error("failed to get prompt history settings: %v", err)
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	SendJSON(ctx, settings)
+}
+
+// updatePromptSettings handles PUT /api/prompt-repo/settings
+func (h *PromptsHandler) updatePromptSettings(ctx *fasthttp.RequestCtx) {
+	_, role := h.promptCallerIdentity(ctx)
+	if role != "" && role != "admin" && role != "super_admin" {
+		SendError(ctx, fasthttp.StatusForbidden, "Forbidden: admin access required")
+		return
+	}
+
+	var settings tables.PromptHistoryRetentionSettings
+	if err := json.Unmarshal(ctx.PostBody(), &settings); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.store.SetPromptHistorySettings(ctx, &settings); err != nil {
+		logger.Error("failed to update prompt history settings: %v", err)
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	if settings.AutoDelete {
+		_, _ = h.applyPromptHistoryAutoDelete(ctx)
+	}
+	SendJSON(ctx, settings)
+}
+
+// clearAllPromptHistory handles POST /api/prompt-repo/history/clear
+func (h *PromptsHandler) clearAllPromptHistory(ctx *fasthttp.RequestCtx) {
+	_, role := h.promptCallerIdentity(ctx)
+	if role != "" && role != "admin" && role != "super_admin" {
+		SendError(ctx, fasthttp.StatusForbidden, "Forbidden: admin access required")
+		return
+	}
+
+	count, err := h.store.ClearAllPromptSessions(ctx)
+	if err != nil {
+		logger.Error("failed to clear prompt history: %v", err)
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	SendJSON(ctx, map[string]any{
+		"message":       "All prompt chat history cleared successfully",
+		"deleted_count": count,
+	})
+}
+

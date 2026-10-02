@@ -16,6 +16,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { usePromptContext } from "../context";
 import { isPromptMemberRole } from "../utils/memberRole";
+import PromptHistoryControls from "./promptHistoryControls";
 
 export default function PromptsViewHeader() {
 	const {
@@ -229,6 +230,7 @@ export default function PromptsViewHeader() {
 				)}
 				{!isUserRole && (
 					<>
+						<PromptHistoryControls />
 						<SplitButton
 							onClick={handleSaveSession}
 							disabled={isCreatingSession || isUpdatingSession || isStreaming}

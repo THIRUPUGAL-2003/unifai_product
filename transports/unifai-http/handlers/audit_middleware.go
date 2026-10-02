@@ -50,6 +50,9 @@ func auditActionForMethod(method string) string {
 }
 
 func auditInitiator(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) string {
+	if strings.HasPrefix(string(ctx.Path()), "/scim/") {
+		return "scim:idp"
+	}
 	if store == nil {
 		return "system"
 	}
@@ -91,7 +94,7 @@ func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.UnifAIHTTPM
 				return
 			}
 			path := string(ctx.Path())
-			if !strings.HasPrefix(path, "/api/") {
+			if !strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/scim/") {
 				return
 			}
 			if shouldSkipWorkspaceAudit(path) {

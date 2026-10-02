@@ -50,6 +50,54 @@ func (h *WorkspaceHandler) scimDefaultRole(ctx *fasthttp.RequestCtx) string {
 	return ""
 }
 
+func (h *WorkspaceHandler) scimDefaultTeam(ctx *fasthttp.RequestCtx) string {
+	store := h.scimWorkspaceStore()
+	if store == nil {
+		return ""
+	}
+	row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingSCIM)
+	if err != nil || row == nil || strings.TrimSpace(row.Data) == "" {
+		return ""
+	}
+	var cfg scimConfigPayload
+	if err := json.Unmarshal([]byte(row.Data), &cfg); err != nil || cfg.Config == nil {
+		return ""
+	}
+	for _, key := range []string{"defaultTeam", "default_team", "defaultTeamID", "default_team_id"} {
+		if raw, ok := cfg.Config[key]; ok {
+			switch v := raw.(type) {
+			case string:
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	return ""
+}
+
+// scimAssignDefaultTeam adds the user to the default SCIM team (if configured)
+// and fires the lifecycle hook so audit logs and budget limits are applied.
+func (h *WorkspaceHandler) scimAssignDefaultTeam(ctx *fasthttp.RequestCtx, userID string) {
+	teamID := h.scimDefaultTeam(ctx)
+	if teamID == "" {
+		return
+	}
+	ws := h.scimWorkspaceStore()
+	if ws == nil {
+		return
+	}
+	// Skip if already a member
+	if members, err := ws.ListTeamMembers(ctx, teamID); err == nil {
+		for _, m := range members {
+			if m.UserID == userID {
+				return
+			}
+		}
+	}
+	if err := ws.AddTeamMember(ctx, teamID, userID); err == nil && h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnTeamMemberAdded(ctx, teamID, userID)
+	}
+}
+
 func (h *WorkspaceHandler) scimServiceProviderConfig(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, map[string]any{
 		"schemas": []string{"urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"},
@@ -297,6 +345,8 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		if h.promptLifecycle != nil {
 			_ = h.promptLifecycle.OnUserCreated(ctx, existing, true)
 		}
+		// Auto-assign to default team configured in SCIM settings
+		h.scimAssignDefaultTeam(ctx, existing.ID)
 		SendJSONWithStatus(ctx, scimUserResource(existing), fasthttp.StatusOK)
 		return
 	}
@@ -319,6 +369,8 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	if h.promptLifecycle != nil {
 		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
 	}
+	// Auto-assign to default team configured in SCIM settings
+	h.scimAssignDefaultTeam(ctx, user.ID)
 	SendJSONWithStatus(ctx, scimUserResource(user), fasthttp.StatusCreated)
 }
 

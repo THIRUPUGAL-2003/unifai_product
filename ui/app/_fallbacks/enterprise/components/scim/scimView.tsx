@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getErrorMessage } from "@/lib/store";
+import { useGetTeamsQuery } from "@/lib/store/apis/governanceApi";
 import { useGetRolesQuery } from "@enterprise/lib/store/apis/rbacApi";
 import { useGetSCIMConfigQuery, useUpdateSCIMConfigMutation } from "@enterprise/lib/store/apis/scimApi";
 import { SCIMConfig } from "@enterprise/lib/types/workspace";
@@ -16,10 +17,12 @@ import { getExampleBaseUrl } from "@/lib/utils/port";
 export default function SCIMView() {
 	const { data, isLoading: loading } = useGetSCIMConfigQuery();
 	const { data: rolesData } = useGetRolesQuery();
+	const { data: teamsData } = useGetTeamsQuery();
 	const [updateConfig, { isLoading: saving }] = useUpdateSCIMConfigMutation();
 	const [config, setConfig] = useState<SCIMConfig>({ enabled: false, provider: "okta", config: {} });
 	const { copy: copyToClipboard } = useCopyToClipboard();
 	const roleNames = useMemo(() => (rolesData?.roles || []).map((r) => r.name), [rolesData]);
+	const teams = useMemo(() => teamsData?.teams || [], [teamsData]);
 	const scimBase = useMemo(() => {
 		const origin = getExampleBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
 		return origin ? `${origin}/scim/v2` : "/scim/v2";
@@ -152,6 +155,25 @@ export default function SCIMView() {
 									<option value="admin">admin</option>
 								</>
 							) : null}
+						</select>
+					</div>
+					<div className="space-y-1">
+						<Label>Default team for provisioned users</Label>
+						<p className="text-muted-foreground text-xs">
+							New SCIM users will be automatically added to this team. Leave blank to skip auto-assignment.
+						</p>
+						<select
+							value={config.config.defaultTeam || ""}
+							onChange={(e) => setField("defaultTeam", e.target.value)}
+							className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+							data-testid="scim-default-team"
+						>
+							<option value="">— None —</option>
+							{teams.map((t) => (
+								<option key={t.id} value={t.id}>
+									{t.name}
+								</option>
+							))}
 						</select>
 					</div>
 					<div className="space-y-1">

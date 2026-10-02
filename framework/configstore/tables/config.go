@@ -12,7 +12,14 @@ const (
 	ConfigComplexityAnalyzerConfigKey = "complexity_analyzer_config"
 	ConfigRestartRequiredKey          = "restart_required"
 	ConfigHeaderFilterKey             = "header_filter_config"
+	ConfigPromptHistorySettingsKey    = "prompt_history_settings"
 )
+
+// PromptHistoryRetentionSettings stores auto-delete and retention settings for prompt chat history.
+type PromptHistoryRetentionSettings struct {
+	AutoDelete bool   `json:"auto_delete"`
+	Retention  string `json:"retention"` // "1d" | "7d" | "30d" | "90d" | "180d" | "365d"
+}
 
 // Keys for the ClientConfig.MetadataJSON blob.
 // These live inside the metadata JSON map on config_client, not as governance_config rows.

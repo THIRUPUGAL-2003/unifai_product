@@ -243,8 +243,43 @@ export const promptsApi = baseApi.injectEndpoints({
 			}),
 			invalidatesTags: (result, error, { promptId }) => ["Prompts", { type: "Prompts", id: promptId }, { type: "Versions", id: promptId }],
 		}),
+
+		// Get prompt history retention settings
+		getPromptHistorySettings: builder.query<PromptHistorySettings, void>({
+			query: () => "/prompt-repo/settings",
+			providesTags: ["PromptHistorySettings"],
+		}),
+
+		// Update prompt history retention settings
+		updatePromptHistorySettings: builder.mutation<PromptHistorySettings, PromptHistorySettings>({
+			query: (data) => ({
+				url: "/prompt-repo/settings",
+				method: "PUT",
+				body: data,
+			}),
+			invalidatesTags: ["PromptHistorySettings", "Sessions"],
+		}),
+
+		// Clear all prompt chat history across all users
+		clearAllPromptHistory: builder.mutation<ClearPromptHistoryResponse, void>({
+			query: () => ({
+				url: "/prompt-repo/history/clear",
+				method: "POST",
+			}),
+			invalidatesTags: ["Sessions"],
+		}),
 	}),
 });
+
+export interface PromptHistorySettings {
+	auto_delete: boolean;
+	retention: string;
+}
+
+export interface ClearPromptHistoryResponse {
+	message: string;
+	deleted_count: number;
+}
 
 export const {
 	// Folders
@@ -273,4 +308,8 @@ export const {
 	useDeleteSessionMutation,
 	useRenameSessionMutation,
 	useCommitSessionMutation,
+	// History Retention & Clear
+	useGetPromptHistorySettingsQuery,
+	useUpdatePromptHistorySettingsMutation,
+	useClearAllPromptHistoryMutation,
 } = promptsApi;
