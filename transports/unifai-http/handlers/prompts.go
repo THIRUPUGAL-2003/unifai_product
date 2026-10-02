@@ -665,10 +665,12 @@ func (h *PromptsHandler) updatePrompt(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if req.FolderIDExists && prompt.FolderID != nil && *prompt.FolderID != "" {
-		if h.lifecycle != nil {
-			h.lifecycle.OnPromptFolderChanged(ctx, prompt.ID, *prompt.FolderID)
+	if req.FolderIDExists && h.lifecycle != nil {
+		targetFolder := ""
+		if prompt.FolderID != nil {
+			targetFolder = *prompt.FolderID
 		}
+		h.lifecycle.OnPromptFolderChanged(ctx, prompt.ID, targetFolder)
 	}
 
 	h.reloadCache(ctx)

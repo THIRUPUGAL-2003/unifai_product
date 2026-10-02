@@ -414,4 +414,117 @@ func TestPromptDeletion_UnassignsFromUsers(t *testing.T) {
 	}
 }
 
+func TestPromptDrag_UpdatesUserTeamMembership(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	// 1. Create Customer A and Team A
+	custA := &tables.TableCustomer{
+		ID:   "cust_a_" + uuid.New().String()[:8],
+		Name: "Customer Alpha",
+	}
+	_ = store.DB().Create(custA).Error
+
+	teamA := &tables.TableTeam{
+		ID:         "team_a_" + uuid.New().String()[:8],
+		Name:       "Alpha Support Team",
+		CustomerID: &custA.ID,
+	}
+	_ = store.CreateTeam(ctx, teamA)
+
+	teamAFolder := &tables.TableFolder{
+		ID:       uuid.New().String(),
+		Name:     teamA.Name,
+		Type:     "team",
+		EntityID: &teamA.ID,
+	}
+	_ = store.CreateFolder(ctx, teamAFolder)
+
+	// 2. Create Customer B and Team B
+	custB := &tables.TableCustomer{
+		ID:   "cust_b_" + uuid.New().String()[:8],
+		Name: "Customer Beta",
+	}
+	_ = store.DB().Create(custB).Error
+
+	teamB := &tables.TableTeam{
+		ID:         "team_b_" + uuid.New().String()[:8],
+		Name:       "Beta Engineering Team",
+		CustomerID: &custB.ID,
+	}
+	_ = store.CreateTeam(ctx, teamB)
+
+	teamBFolder := &tables.TableFolder{
+		ID:       uuid.New().String(),
+		Name:     teamB.Name,
+		Type:     "team",
+		EntityID: &teamB.ID,
+	}
+	_ = store.CreateFolder(ctx, teamBFolder)
+
+	// Subfolder under Team B
+	teamBSubfolder := &tables.TableFolder{
+		ID:       uuid.New().String(),
+		Name:     "Project Phoenix",
+		Type:     "custom",
+		ParentID: &teamBFolder.ID,
+	}
+	_ = store.CreateFolder(ctx, teamBSubfolder)
+
+	// 3. Create User Eve
+	eve := &tables.TableUser{
+		ID:       "user_eve_" + uuid.New().String()[:8],
+		Username: "eve",
+		Email:    "eve@example.com",
+	}
+	_ = store.CreateUser(ctx, eve)
+
+	// Initially Eve is member of Team A
+	now := time.Now().UTC()
+	_ = store.DB().Create(&tables.TableTeamMember{
+		TeamID:    teamA.ID,
+		UserID:    eve.ID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error
+
+	// Create Eve's prompt inside Team A's folder
+	evePrompt := &tables.TablePrompt{
+		ID:       "prompt_eve_" + uuid.New().String()[:8],
+		Name:     eve.Email,
+		FolderID: &teamAFolder.ID,
+	}
+	_ = store.CreatePrompt(ctx, evePrompt)
+
+	// Verify Eve is currently in Team A
+	var memberCount int64
+	store.DB().Model(&tables.TableTeamMember{}).Where("team_id = ? AND user_id = ?", teamA.ID, eve.ID).Count(&memberCount)
+	if memberCount != 1 {
+		t.Fatalf("expected Eve to be in Team A, got count %d", memberCount)
+	}
+
+	// 4. Drag Eve's prompt into Team B Subfolder (nested inside Team B)
+	lifecycle.OnPromptFolderChanged(ctx, evePrompt.ID, teamBSubfolder.ID)
+
+	// Verify Eve is moved from Team A to Team B
+	store.DB().Model(&tables.TableTeamMember{}).Where("team_id = ? AND user_id = ?", teamA.ID, eve.ID).Count(&memberCount)
+	if memberCount != 0 {
+		t.Fatalf("expected Eve to be removed from Team A, got count %d", memberCount)
+	}
+	store.DB().Model(&tables.TableTeamMember{}).Where("team_id = ? AND user_id = ?", teamB.ID, eve.ID).Count(&memberCount)
+	if memberCount != 1 {
+		t.Fatalf("expected Eve to be added to Team B, got count %d", memberCount)
+	}
+
+	// 5. Drag Eve's prompt to Root (empty folder / out of teams)
+	lifecycle.OnPromptFolderChanged(ctx, evePrompt.ID, "")
+
+	// Verify Eve is now standalone (no team memberships)
+	store.DB().Model(&tables.TableTeamMember{}).Where("user_id = ?", eve.ID).Count(&memberCount)
+	if memberCount != 0 {
+		t.Fatalf("expected Eve to have no team memberships after moving to root, got count %d", memberCount)
+	}
+}
+
 

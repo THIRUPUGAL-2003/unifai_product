@@ -109,7 +109,7 @@ export const promptsApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: data,
 			}),
-			invalidatesTags: (result, error, { id }) => ["Prompts", { type: "Prompts", id }],
+			invalidatesTags: (result, error, { id }) => ["Prompts", { type: "Prompts", id }, "Folders", "Teams", "Users"],
 			async onQueryStarted({ id, data }, { dispatch, queryFulfilled }) {
 				// Optimistic update on the prompts list cache
 				const patchResult = dispatch(

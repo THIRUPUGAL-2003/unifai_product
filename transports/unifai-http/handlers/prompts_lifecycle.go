@@ -723,12 +723,138 @@ func (m *PromptLifecycleManager) OnPromptCreated(ctx context.Context, prompt *ta
 	return nil
 }
 
-// OnPromptFolderChanged assigns the prompt to all members if moved into a team or customer folder.
+// OnPromptFolderChanged assigns the prompt to all members if moved into a team or customer folder,
+// and synchronizes the user's team membership in governance_team_members if the prompt represents a user.
 func (m *PromptLifecycleManager) OnPromptFolderChanged(ctx context.Context, promptID string, newFolderID string) {
-	if m == nil || m.store == nil || m.store.DB() == nil || promptID == "" || newFolderID == "" {
+	if m == nil || m.store == nil || m.store.DB() == nil || promptID == "" {
 		return
 	}
-	m.assignPromptToFolderMembers(ctx, promptID, newFolderID)
+	m.syncUserTeamOnPromptMove(ctx, promptID, newFolderID)
+	if newFolderID != "" {
+		m.assignPromptToFolderMembers(ctx, promptID, newFolderID)
+	}
+}
+
+// syncUserTeamOnPromptMove updates the user's team membership when their prompt is moved in Prompt Repository.
+func (m *PromptLifecycleManager) syncUserTeamOnPromptMove(ctx context.Context, promptID string, newFolderID string) {
+	db := m.store.DB().WithContext(ctx)
+
+	var prompt tables.TablePrompt
+	if err := db.Where("id = ?", promptID).First(&prompt).Error; err != nil {
+		return
+	}
+
+	var user tables.TableUser
+	foundUser := false
+
+	// A. Check if prompt Name matches a User's email or username
+	promptName := strings.TrimSpace(prompt.Name)
+	if promptName != "" {
+		if err := db.Where("LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)", promptName, promptName).First(&user).Error; err == nil && user.ID != "" {
+			foundUser = true
+		}
+	}
+
+	// B. If not found by name, check prompt session creator
+	if !foundUser {
+		var sess tables.TablePromptSession
+		if err := db.Where("prompt_id = ? AND user_id != ''", promptID).Order("created_at asc").First(&sess).Error; err == nil && sess.UserID != "" {
+			if err := db.Where("id = ?", sess.UserID).First(&user).Error; err == nil && user.ID != "" {
+				foundUser = true
+			}
+		}
+	}
+
+	// C. If not found, check who has this prompt assigned in allowed_prompt_repos (single user match)
+	if !foundUser {
+		var matchingUsers []tables.TableUser
+		if err := db.Where("allowed_prompt_repos LIKE ?", "%"+promptID+"%").Find(&matchingUsers).Error; err == nil {
+			if len(matchingUsers) == 1 {
+				user = matchingUsers[0]
+				foundUser = true
+			}
+		}
+	}
+
+	if !foundUser || user.ID == "" {
+		return
+	}
+
+	// Resolve target team from newFolderID
+	targetTeamID := ""
+	if newFolderID != "" {
+		targetTeamID = m.resolveTeamIDFromFolder(ctx, newFolderID)
+	}
+
+	now := time.Now().UTC()
+	if targetTeamID != "" {
+		var currentMember tables.TableTeamMember
+		err := db.Where("team_id = ? AND user_id = ?", targetTeamID, user.ID).First(&currentMember).Error
+		if err != nil {
+			// Remove from old teams and add to new target team
+			_ = db.Where("user_id = ?", user.ID).Delete(&tables.TableTeamMember{}).Error
+			_ = db.Create(&tables.TableTeamMember{
+				TeamID:    targetTeamID,
+				UserID:    user.ID,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}).Error
+		}
+		m.ensureUserAllowedPrompt(ctx, &user, promptID)
+	} else {
+		// Moved out of team (to root or Users root) -> remove team membership so user is standalone
+		_ = db.Where("user_id = ?", user.ID).Delete(&tables.TableTeamMember{}).Error
+	}
+}
+
+// resolveTeamIDFromFolder walks up the folder tree to find the enclosing team ID or customer's team.
+func (m *PromptLifecycleManager) resolveTeamIDFromFolder(ctx context.Context, folderID string) string {
+	if m == nil || m.store == nil || m.store.DB() == nil || folderID == "" {
+		return ""
+	}
+	db := m.store.DB().WithContext(ctx)
+
+	currID := folderID
+	for i := 0; i < 10; i++ {
+		if currID == "" {
+			break
+		}
+		var currentFolder tables.TableFolder
+		if err := db.Model(&tables.TableFolder{}).Where("id = ?", currID).First(&currentFolder).Error; err != nil {
+			break
+		}
+
+		if currentFolder.Type == "team" && currentFolder.EntityID != nil && *currentFolder.EntityID != "" {
+			return *currentFolder.EntityID
+		}
+		if currentFolder.Type == "team" {
+			var team tables.TableTeam
+			if err := db.Where("name = ?", currentFolder.Name).First(&team).Error; err == nil && team.ID != "" {
+				return team.ID
+			}
+		}
+		if currentFolder.Type == "customer" {
+			if currentFolder.EntityID != nil && *currentFolder.EntityID != "" {
+				var team tables.TableTeam
+				if err := db.Where("customer_id = ?", *currentFolder.EntityID).Order("created_at asc").First(&team).Error; err == nil && team.ID != "" {
+					return team.ID
+				}
+			}
+			var cust tables.TableCustomer
+			if err := db.Where("name = ?", currentFolder.Name).First(&cust).Error; err == nil && cust.ID != "" {
+				var team tables.TableTeam
+				if err := db.Where("customer_id = ?", cust.ID).Order("created_at asc").First(&team).Error; err == nil && team.ID != "" {
+					return team.ID
+				}
+			}
+		}
+
+		if currentFolder.ParentID == nil || *currentFolder.ParentID == "" {
+			break
+		}
+		currID = *currentFolder.ParentID
+	}
+	return ""
 }
 
 func (m *PromptLifecycleManager) assignPromptToFolderMembers(ctx context.Context, promptID string, folderID string) {
