@@ -11,6 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useIsAuthEnabledQuery } from "@/lib/store/apis/sessionApi";
 import type { DBKey, VirtualKey } from "@/lib/types/governance";
+import { AlertTriangle } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 export function ApiKeySelectorView({
@@ -143,6 +144,18 @@ export function ApiKeySelectorView({
 							</div>
 						) : null,
 					)}
+					{selectedVK.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit) && (
+						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1">
+							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+							<span>Virtual Key budget limit reached — calls will be blocked</span>
+						</div>
+					)}
+					{selectedVK.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) < b.max_limit && (b.current_usage ?? 0) / b.max_limit > 0.8) && (
+						<div className="flex items-center gap-1.5 text-amber-500 font-medium text-[11px] pt-1">
+							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+							<span>Warning: Virtual Key budget exceeds 80%</span>
+						</div>
+					)}
 				</div>
 			)}
 
@@ -177,6 +190,18 @@ export function ApiKeySelectorView({
 							</div>
 						</div>
 					) : null}
+					{userBudget && userBudget > 0 && userUsage >= userBudget && (
+						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1">
+							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+							<span>Personal budget limit reached</span>
+						</div>
+					)}
+					{userBudget && userBudget > 0 && userUsage < userBudget && userUsage / userBudget > 0.8 && (
+						<div className="flex items-center gap-1.5 text-amber-500 font-medium text-[11px] pt-1">
+							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+							<span>Warning: Personal budget exceeds 80%</span>
+						</div>
+					)}
 				</div>
 			)}
 		</div>

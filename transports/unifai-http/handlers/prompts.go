@@ -25,8 +25,9 @@ type PromptCacheReloader interface {
 
 // PromptsHandler handles prompt repository endpoints
 type PromptsHandler struct {
-	store    configstore.ConfigStore
-	reloader PromptCacheReloader // optional; nil when the prompts plugin is not loaded
+	store     configstore.ConfigStore
+	reloader  PromptCacheReloader // optional; nil when the prompts plugin is not loaded
+	lifecycle *PromptLifecycleManager
 }
 
 // NewPromptsHandler creates a new PromptsHandler.
@@ -35,7 +36,11 @@ func NewPromptsHandler(store configstore.ConfigStore, reloader PromptCacheReload
 	if store == nil {
 		return nil
 	}
-	return &PromptsHandler{store: store, reloader: reloader}
+	return &PromptsHandler{
+		store:     store,
+		reloader:  reloader,
+		lifecycle: NewPromptLifecycleManager(store),
+	}
 }
 
 // reloadCache triggers a cache refresh if a reloader is configured.
@@ -324,6 +329,68 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	folder, err := h.store.GetFolderByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, configstore.ErrNotFound) {
+			SendError(ctx, fasthttp.StatusNotFound, "folder not found")
+			return
+		}
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// 1. Prevent deleting system root folders
+	if strings.HasPrefix(folder.Type, "system_") ||
+		folder.Name == "Customers" || folder.Name == "Teams" || folder.Name == "Users" ||
+		folder.Name == "Removed Customers" || folder.Name == "Removed Teams" || folder.Name == "Removed Users" {
+		SendError(ctx, fasthttp.StatusBadRequest, "System root folders cannot be deleted")
+		return
+	}
+
+	// 2. Check if folder is already inside one of the Removed roots or marked archived
+	isAlreadyArchived := strings.HasPrefix(folder.Type, "archived_") || strings.HasSuffix(folder.Name, " (Archived)")
+	if !isAlreadyArchived && folder.ParentID != nil {
+		parent, pErr := h.store.GetFolderByID(ctx, *folder.ParentID)
+		if pErr == nil && parent != nil && (strings.HasPrefix(parent.Type, "system_removed_") || strings.HasPrefix(parent.Name, "Removed ")) {
+			isAlreadyArchived = true
+		}
+	}
+
+	if !isAlreadyArchived && h.lifecycle != nil {
+		// Non-destructive soft-archive: move folder to appropriate Removed root!
+		var targetRootType, targetRootName string
+		switch folder.Type {
+		case "customer":
+			targetRootType = "system_removed_customers_root"
+			targetRootName = "Removed Customers"
+		case "team":
+			targetRootType = "system_removed_teams_root"
+			targetRootName = "Removed Teams"
+		default:
+			targetRootType = "system_removed_users_root"
+			targetRootName = "Removed Users"
+		}
+
+		removedRoot, err := h.lifecycle.EnsureSystemFolder(ctx, targetRootName, targetRootType, nil)
+		if err == nil && removedRoot != nil {
+			archivedName := folder.Name
+			if !strings.HasSuffix(archivedName, " (Archived)") {
+				archivedName += " (Archived)"
+			}
+			folder.ParentID = &removedRoot.ID
+			folder.Name = archivedName
+			if folder.Type != "" {
+				folder.Type = "archived_" + folder.Type
+			}
+			_ = h.store.UpdateFolder(ctx, folder)
+			h.reloadCache(ctx)
+			SendJSON(ctx, map[string]any{
+				"message": "folder safely moved to " + targetRootName,
+			})
+			return
+		}
+	}
+
 	if err := h.store.DeleteFolder(ctx, id); err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {
 			SendError(ctx, fasthttp.StatusNotFound, "folder not found")
@@ -336,7 +403,7 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 
 	h.reloadCache(ctx)
 	SendJSON(ctx, map[string]any{
-		"message": "folder deleted successfully",
+		"message": "folder deleted permanently",
 	})
 }
 
@@ -574,6 +641,38 @@ func (h *PromptsHandler) deletePrompt(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	prompt, err := h.store.GetPromptByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, configstore.ErrNotFound) {
+			SendError(ctx, fasthttp.StatusNotFound, "prompt not found")
+			return
+		}
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Check if prompt is already inside Removed Users or an archived folder
+	isAlreadyInTrash := false
+	if prompt.FolderID != nil {
+		parent, pErr := h.store.GetFolderByID(ctx, *prompt.FolderID)
+		if pErr == nil && parent != nil && (strings.HasPrefix(parent.Type, "system_removed_") || strings.HasPrefix(parent.Name, "Removed ") || strings.HasPrefix(parent.Type, "archived_")) {
+			isAlreadyInTrash = true
+		}
+	}
+
+	if !isAlreadyInTrash && h.lifecycle != nil {
+		removedUsersRoot, rErr := h.lifecycle.EnsureSystemFolder(ctx, "Removed Users", "system_removed_users_root", nil)
+		if rErr == nil && removedUsersRoot != nil {
+			prompt.FolderID = &removedUsersRoot.ID
+			_ = h.store.UpdatePrompt(ctx, prompt)
+			h.reloadCache(ctx)
+			SendJSON(ctx, map[string]any{
+				"message": "prompt moved to Removed Users",
+			})
+			return
+		}
+	}
+
 	if err := h.store.DeletePrompt(ctx, id); err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {
 			SendError(ctx, fasthttp.StatusNotFound, "prompt not found")
@@ -586,7 +685,7 @@ func (h *PromptsHandler) deletePrompt(ctx *fasthttp.RequestCtx) {
 
 	h.reloadCache(ctx)
 	SendJSON(ctx, map[string]any{
-		"message": "prompt deleted successfully",
+		"message": "prompt deleted permanently",
 	})
 }
 

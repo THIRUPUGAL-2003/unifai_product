@@ -2442,6 +2442,10 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 500, "Failed to retrieve team")
 		return
 	}
+
+	oldTeamName := team.Name
+	oldCustomerID := team.CustomerID
+
 	// Updating team in database
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
 		// Track rate-limit ID to delete after updating the team (to avoid FK constraint)
@@ -2654,6 +2658,9 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		logger.Error("failed to reload team: %v", err)
 		preloadedTeam = team
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldTeamName, oldCustomerID)
 	}
 	SendJSON(ctx, map[string]interface{}{
 		"message": "Team updated successfully",
@@ -2891,6 +2898,9 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 500, "Failed to retrieve customer")
 		return
 	}
+
+	oldCustomerName := customer.Name
+
 	// Updating customer in database
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
 		var rateLimitIDToDelete string
@@ -3034,6 +3044,9 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		logger.Error("failed to reload customer: %v", err)
 		preloadedCustomer = customer
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnCustomerUpdated(ctx, customer, oldCustomerName)
 	}
 
 	SendJSON(ctx, map[string]interface{}{

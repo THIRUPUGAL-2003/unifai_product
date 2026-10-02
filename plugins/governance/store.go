@@ -2195,8 +2195,13 @@ func (gs *LocalGovernanceStore) DumpBudgets(ctx context.Context, baselines map[s
 		}
 		sort.Strings(budgetIDs)
 		if err := gs.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
-			// Update each budget atomically using direct UPDATE to avoid deadlocks
-			// (SELECT + Save pattern causes deadlocks when multiple instances run concurrently)
+			gs.LastDBUsagesBudgetsMu.Lock()
+			if gs.LastDBUsagesBudgets == nil {
+				gs.LastDBUsagesBudgets = make(map[string]float64)
+			}
+			defer gs.LastDBUsagesBudgetsMu.Unlock()
+
+			// Update each budget atomically using direct delta UPDATE to avoid multi-pod race conditions and deadlocks
 			for _, budgetID := range budgetIDs {
 				inMemoryBudget := budgets[budgetID]
 				// Calculate the new usage value
@@ -2205,19 +2210,40 @@ func (gs *LocalGovernanceStore) DumpBudgets(ctx context.Context, baselines map[s
 					newUsage += baseline
 				}
 
-				// Direct UPDATE avoids read-then-write lock escalation that causes deadlocks
-				// Use Session with SkipHooks to avoid triggering BeforeSave hook validation
-				result := tx.WithContext(ctx).
-					Session(&gorm.Session{SkipHooks: true}).
-					Model(&configstoreTables.TableBudget{}).
-					Where("id = ?", inMemoryBudget.ID).
-					Updates(map[string]interface{}{
-						"current_usage": newUsage,
-						"last_reset":    inMemoryBudget.LastReset,
-					})
+				lastFlushed, exists := gs.LastDBUsagesBudgets[inMemoryBudget.ID]
+				if !exists || newUsage < lastFlushed {
+					// First sync or budget reset occurred: set absolute baseline
+					result := tx.WithContext(ctx).
+						Session(&gorm.Session{SkipHooks: true}).
+						Model(&configstoreTables.TableBudget{}).
+						Where("id = ?", inMemoryBudget.ID).
+						Updates(map[string]interface{}{
+							"current_usage": newUsage,
+							"last_reset":    inMemoryBudget.LastReset,
+						})
 
-				if result.Error != nil {
-					return fmt.Errorf("failed to update budget %s: %w", inMemoryBudget.ID, result.Error)
+					if result.Error != nil {
+						return fmt.Errorf("failed to update budget %s: %w", inMemoryBudget.ID, result.Error)
+					}
+					gs.LastDBUsagesBudgets[inMemoryBudget.ID] = newUsage
+				} else {
+					delta := newUsage - lastFlushed
+					if delta > 0.000001 {
+						// Atomic SQL increment: prevents multi-node overwrite and race conditions
+						result := tx.WithContext(ctx).
+							Session(&gorm.Session{SkipHooks: true}).
+							Model(&configstoreTables.TableBudget{}).
+							Where("id = ?", inMemoryBudget.ID).
+							Updates(map[string]interface{}{
+								"current_usage": gorm.Expr("current_usage + ?", delta),
+								"last_reset":    inMemoryBudget.LastReset,
+							})
+
+						if result.Error != nil {
+							return fmt.Errorf("failed to atomically update budget %s: %w", inMemoryBudget.ID, result.Error)
+						}
+						gs.LastDBUsagesBudgets[inMemoryBudget.ID] = newUsage
+					}
 				}
 			}
 			return nil

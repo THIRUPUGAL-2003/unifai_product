@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Message, type MessageContent, extractVariablesFromMessages, mergeVariables } from "@/lib/message";
-import { Paperclip, Play, Plus, Square } from "lucide-react";
+import { useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
+import { AlertTriangle, Paperclip, Play, Plus, Square } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { usePromptContext } from "../context";
@@ -25,11 +26,63 @@ export function NewMessageInputView() {
 		customHeaders,
 		setVariables,
 		selectedPrompt,
+		apiKeyId,
 	} = usePromptContext();
 	const [userInput, setUserInput] = useState("");
 	const [inputRole, setInputRole] = useState<string>("user");
 	const [attachments, setAttachments] = useState<MessageContent[]>([]);
 	const userInputRef = useRef<HTMLTextAreaElement>(null);
+
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const { data: virtualKeysData } = useGetVirtualKeysQuery();
+
+	const budgetAlert = useMemo(() => {
+		// 1. Check User Personal Budget
+		const userLimit = authStatus?.budget;
+		const userUsage = authStatus?.budget_current_usage ?? 0;
+		if (userLimit && userLimit > 0) {
+			if (userUsage >= userLimit) {
+				return {
+					isExhausted: true,
+					message: `User Budget Limit Reached: $${userUsage.toFixed(2)} / $${userLimit.toFixed(2)} (100% used). Running prompts will be blocked until reset.`,
+				};
+			}
+			if (userUsage / userLimit >= 0.8) {
+				const pct = Math.round((userUsage / userLimit) * 100);
+				return {
+					isExhausted: false,
+					message: `User Budget Warning: ${pct}% used ($${userUsage.toFixed(2)} / $${userLimit.toFixed(2)}). Approaching maximum limit.`,
+				};
+			}
+		}
+
+		// 2. Check Selected Virtual Key Budget
+		if (apiKeyId && apiKeyId !== "__auto__" && apiKeyId.startsWith("sk-uf-")) {
+			const vks = virtualKeysData?.virtual_keys ?? [];
+			const currentVk = vks.find((v) => v.value === apiKeyId);
+			if (currentVk?.budgets && currentVk.budgets.length > 0) {
+				for (const b of currentVk.budgets) {
+					if (b.max_limit > 0) {
+						const usage = b.current_usage ?? 0;
+						if (usage >= b.max_limit) {
+							return {
+								isExhausted: true,
+								message: `Virtual Key "${currentVk.name}" Budget Limit Reached: $${usage.toFixed(2)} / $${b.max_limit.toFixed(2)} (${b.reset_duration || "monthly"}). Calls blocked.`,
+							};
+						}
+						if (usage / b.max_limit >= 0.8) {
+							const pct = Math.round((usage / b.max_limit) * 100);
+							return {
+								isExhausted: false,
+								message: `Virtual Key "${currentVk.name}" Budget Warning: ${pct}% used ($${usage.toFixed(2)} / $${b.max_limit.toFixed(2)}).`,
+							};
+						}
+					}
+				}
+			}
+		}
+		return null;
+	}, [authStatus, apiKeyId, virtualKeysData]);
 
 	const missingRequiredHeaders = useMemo(
 		() => requiredHeaders.filter((name) => !(customHeaders[name] ?? "").trim()),
@@ -77,6 +130,12 @@ export function NewMessageInputView() {
 	}, [userInput, attachments, isStreaming, inputRole, onUpdateMessages, setVariables]);
 
 	const handleRun = useCallback(async () => {
+		if (budgetAlert?.isExhausted) {
+			toast.error("Budget Limit Reached", {
+				description: budgetAlert.message,
+			});
+			return;
+		}
 		const effectiveProvider = provider || committed?.provider;
 		const effectiveModel = model || committed?.model;
 		if (isStreaming || !effectiveProvider || !effectiveModel) return;
@@ -106,7 +165,7 @@ export function NewMessageInputView() {
 		setTimeout(() => {
 			userInputRef.current?.focus();
 		}, 100);
-	}, [userInput, attachments, isStreaming, inputRole, onSendMessage, provider, model, committed, missingRequiredHeaders]);
+	}, [userInput, attachments, isStreaming, inputRole, onSendMessage, provider, model, committed, missingRequiredHeaders, budgetAlert]);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent) => {
@@ -245,6 +304,19 @@ export function NewMessageInputView() {
 					{attachments.map((att, index) => (
 						<AttachmentBadge key={index} attachment={att} onRemove={() => handleRemoveAttachment(index)} />
 					))}
+				</div>
+			)}
+			{budgetAlert && (
+				<div
+					data-testid="prompt-budget-alert-banner"
+					className={`mb-2 flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors ${
+						budgetAlert.isExhausted
+							? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 font-medium"
+							: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+					}`}
+				>
+					<AlertTriangle className={`h-4 w-4 shrink-0 ${budgetAlert.isExhausted ? "text-rose-500" : "text-amber-500"}`} />
+					<span className="flex-1">{budgetAlert.message}</span>
 				</div>
 			)}
 			<div className="relative">

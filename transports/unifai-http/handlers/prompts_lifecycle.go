@@ -224,6 +224,37 @@ func (m *PromptLifecycleManager) OnUserDeleted(ctx context.Context, user *tables
 	return nil
 }
 
+// OnUserUpdated renames the user's prompt when their email or username is modified.
+func (m *PromptLifecycleManager) OnUserUpdated(ctx context.Context, user *tables.TableUser, oldEmail string, oldUsername string) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || user == nil {
+		return nil
+	}
+	newPromptName := strings.TrimSpace(user.Email)
+	if newPromptName == "" {
+		newPromptName = strings.TrimSpace(user.Username)
+	}
+	if newPromptName == "" {
+		return nil
+	}
+
+	db := m.store.DB().WithContext(ctx)
+
+	oldIdentifiers := []string{}
+	if oldEmail != "" && oldEmail != newPromptName {
+		oldIdentifiers = append(oldIdentifiers, oldEmail)
+	}
+	if oldUsername != "" && oldUsername != newPromptName {
+		oldIdentifiers = append(oldIdentifiers, oldUsername)
+	}
+
+	if len(oldIdentifiers) > 0 {
+		_ = db.Model(&tables.TablePrompt{}).
+			Where("name IN ?", oldIdentifiers).
+			Update("name", newPromptName).Error
+	}
+	return nil
+}
+
 // OnCustomerCreated creates a folder under "Customers/<customer_name>"
 func (m *PromptLifecycleManager) OnCustomerCreated(ctx context.Context, customer *tables.TableCustomer) error {
 	if m == nil || m.store == nil || m.store.DB() == nil || customer == nil {
@@ -284,6 +315,29 @@ func (m *PromptLifecycleManager) OnCustomerDeleted(ctx context.Context, customer
 			"name":      customer.Name + " (Archived)",
 		}).Error
 
+	return nil
+}
+
+// OnCustomerUpdated renames the customer folder if the customer's name was changed.
+func (m *PromptLifecycleManager) OnCustomerUpdated(ctx context.Context, customer *tables.TableCustomer, oldName string) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || customer == nil {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+
+	var folder tables.TableFolder
+	err := db.Where("entity_id = ? OR (name = ? AND type = 'customer')", customer.ID, oldName).First(&folder).Error
+	if err != nil {
+		return m.OnCustomerCreated(ctx, customer)
+	}
+
+	if folder.Name != customer.Name {
+		return db.Model(&folder).Updates(map[string]any{
+			"name":      customer.Name,
+			"entity_id": customer.ID,
+			"type":      "customer",
+		}).Error
+	}
 	return nil
 }
 
@@ -374,6 +428,57 @@ func (m *PromptLifecycleManager) OnTeamDeleted(ctx context.Context, team *tables
 		}).Error
 
 	return nil
+}
+
+// OnTeamUpdated updates the team folder name and reparents the folder if team was moved to a new Customer or made Standalone.
+func (m *PromptLifecycleManager) OnTeamUpdated(ctx context.Context, team *tables.TableTeam, oldName string, oldCustomerID *string) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || team == nil {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+
+	// Determine new parent folder
+	var newParentFolderID *string
+	if team.CustomerID != nil && *team.CustomerID != "" {
+		var custFolder tables.TableFolder
+		err := db.Where("entity_id = ? OR (type = 'customer' AND entity_id = ?)", *team.CustomerID, *team.CustomerID).First(&custFolder).Error
+		if err != nil {
+			customer, getErr := m.store.GetCustomer(ctx, *team.CustomerID)
+			if getErr == nil && customer != nil {
+				_ = m.OnCustomerCreated(ctx, customer)
+				_ = db.Where("entity_id = ?", customer.ID).First(&custFolder).Error
+			}
+		}
+		if custFolder.ID != "" {
+			newParentFolderID = &custFolder.ID
+		}
+	}
+
+	// Standalone team (no customer) -> place under root "Teams" folder
+	if newParentFolderID == nil {
+		teamsRoot, err := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
+		if err == nil && teamsRoot != nil {
+			newParentFolderID = &teamsRoot.ID
+		}
+	}
+
+	// Find the team folder by entity_id or oldName
+	var teamFolder tables.TableFolder
+	err := db.Where("entity_id = ? OR (name = ? AND type = 'team')", team.ID, oldName).First(&teamFolder).Error
+	if err != nil {
+		return m.OnTeamCreated(ctx, team)
+	}
+
+	updates := map[string]any{
+		"name":      team.Name,
+		"entity_id": team.ID,
+		"type":      "team",
+	}
+	if newParentFolderID != nil && (teamFolder.ParentID == nil || *teamFolder.ParentID != *newParentFolderID) {
+		updates["parent_id"] = *newParentFolderID
+	}
+
+	return db.Model(&teamFolder).Updates(updates).Error
 }
 
 // OnTeamMemberAdded creates a user prompt inside the team folder when a member is added to a team.

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -101,6 +102,27 @@ func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.UnifAIHTTPM
 			if status >= 400 {
 				outcome = "failure"
 			}
+
+			// Sanitize request body if JSON to record non-sensitive audit details (SOC-2 compliance)
+			var detail string
+			if body := ctx.PostBody(); len(body) > 0 {
+				var payload map[string]any
+				if err := json.Unmarshal(body, &payload); err == nil {
+					delete(payload, "password")
+					delete(payload, "value")
+					delete(payload, "secret")
+					delete(payload, "token")
+					delete(payload, "admin_password")
+					delete(payload, "api_key")
+					if sanitizedBytes, err := json.Marshal(payload); err == nil && len(sanitizedBytes) > 2 {
+						detail = string(sanitizedBytes)
+						if len(detail) > 1024 {
+							detail = detail[:1024]
+						}
+					}
+				}
+			}
+
 			_ = ws.CreateAuditLog(ctx, &tables.TableAuditLog{
 				Action:     auditActionForMethod(method),
 				Outcome:    outcome,
@@ -110,6 +132,7 @@ func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.UnifAIHTTPM
 				Path:       path,
 				IP:         ctx.RemoteIP().String(),
 				DurationMs: time.Since(start).Milliseconds(),
+				Detail:     detail,
 				CreatedAt:  time.Now().UTC(),
 			})
 		}

@@ -1521,6 +1521,7 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 
 	prevRole := existingUser.Role
 	prevUsername := existingUser.Username
+	prevEmail := existingUser.Email
 	roleChanged := false
 
 	var payload struct {
@@ -1633,6 +1634,10 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		if prevUsername != "" && prevUsername != existingUser.Username {
 			_ = h.configStore.UpdateSessionsRoleByUsername(ctx, prevUsername, existingUser.Role)
 		}
+	}
+
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserUpdated(ctx, existingUser, prevEmail, prevUsername)
 	}
 
 	existingUser.Password = ""
