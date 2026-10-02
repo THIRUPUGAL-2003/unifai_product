@@ -805,6 +805,21 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		return ""
 	}
 
+	// Double-lock: enforce user personal budget limit at the gateway level
+	if dbUser.Budget > 0 {
+		var currentUsage float64
+		hasBudgetRow := false
+		if dbUser.BudgetID != nil && *dbUser.BudgetID != "" {
+			if b, bErr := m.store.GetBudget(context.Background(), *dbUser.BudgetID); bErr == nil && b != nil {
+				currentUsage = b.CurrentUsage
+				hasBudgetRow = true
+			}
+		}
+		if hasBudgetRow && currentUsage >= dbUser.Budget {
+			return fmt.Sprintf("User personal budget limit reached ($%.2f / $%.2f). Prompt execution blocked.", currentUsage, dbUser.Budget)
+		}
+	}
+
 	allowedIDs, err := ResolveAllowedVirtualKeyIDsForUser(context.Background(), m.store, dbUser.ID)
 	if err != nil {
 		return "Failed to resolve assigned Virtual Key. Contact your admin."
