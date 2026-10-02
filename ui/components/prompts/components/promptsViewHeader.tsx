@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdownMenu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
 import { Input } from "@/components/ui/input";
 import { SplitButton } from "@/components/ui/splitButton";
 import { Message, MessageRole } from "@/lib/message";
@@ -9,7 +9,7 @@ import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
 import { useCreateSessionMutation, useGetSessionsQuery, useGetVersionsQuery, useRenameSessionMutation, useUpdateSessionMutation } from "@/lib/store/apis/promptsApi";
 import { ModelParams, PromptSession } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
-import { Check, GitCommit, PencilIcon, Save, Trash2 } from "lucide-react";
+import { Check, GitCommit, MoreHorizontal, PencilIcon, Save, Trash2 } from "lucide-react";
 import { parseAsInteger, useQueryStates } from "nuqs";
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -23,6 +23,7 @@ export default function PromptsViewHeader() {
 		messages,
 		setMessages: onMessagesChange,
 		setCommitSheet,
+		setDeletePromptDialog,
 		apiKeyId,
 		modelParams,
 		provider,
@@ -33,6 +34,7 @@ export default function PromptsViewHeader() {
 		hasSessionChanges,
 		isStreaming,
 		canUpdate,
+		canDelete,
 	} = usePromptContext();
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
@@ -317,6 +319,32 @@ export default function PromptsViewHeader() {
 							<GitCommit className="h-4 w-4" />
 							Commit Version
 						</SplitButton>
+						{canDelete && selectedPrompt && (
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button
+										variant="outline"
+										size="icon"
+										className="h-8 w-8 bg-transparent"
+										data-testid="header-prompt-actions"
+										aria-label="Prompt actions"
+									>
+										<MoreHorizontal className="h-4 w-4" />
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end">
+									<DropdownMenuItem
+										variant="destructive"
+										className="cursor-pointer text-destructive focus:text-destructive"
+										data-testid="header-prompt-delete"
+										onClick={() => setDeletePromptDialog({ open: true, prompt: selectedPrompt })}
+									>
+										<Trash2 className="mr-2 h-4 w-4" />
+										Delete Prompt
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						)}
 					</>
 				)}
 			</div>

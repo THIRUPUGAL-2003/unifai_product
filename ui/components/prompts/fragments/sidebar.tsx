@@ -618,7 +618,7 @@ function DroppableFolder({
 	const isCustomersFolder = folder.type === "system_customers_root" || folder.name === "Customers";
 	const isUsersFolder = folder.type === "system_users_root" || folder.name === "Users";
 
-	const showActions = canCreate || ((canUpdate || canDelete) && !isSystemFolder);
+	const showActions = canCreate || canUpdate || canDelete;
 	const totalCount = getRecursivePromptCount(folder.id, allPromptsByFolder, allChildFoldersByParent);
 
 	return (
@@ -698,8 +698,8 @@ function DroppableFolder({
 									</DropdownMenuItem>
 								</>
 							)}
-							{canCreate && !isArchiveFolder && !isSystemFolder && (canUpdate || canDelete) && <DropdownMenuSeparator />}
-							{!isSystemFolder && canUpdate && (
+							{(canUpdate || canDelete) && <DropdownMenuSeparator />}
+							{canUpdate && (
 								<DropdownMenuItem
 									data-testid="folder-action-edit"
 									onClick={(e) => {
@@ -711,7 +711,7 @@ function DroppableFolder({
 									Edit Folder
 								</DropdownMenuItem>
 							)}
-							{!isSystemFolder && canDelete && (
+							{canDelete && (
 								<DropdownMenuItem
 									variant="destructive"
 									data-testid="folder-action-delete"

@@ -376,3 +376,42 @@ func TestPromptLifecycle_PromptFolderChanged(t *testing.T) {
 	}
 }
 
+func TestPromptDeletion_UnassignsFromUsers(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	h := &PromptsHandler{store: store}
+	ctx := context.Background()
+
+	// 1. Create prompt
+	promptID := "prompt_del_" + uuid.New().String()[:8]
+	prompt := &tables.TablePrompt{
+		ID:   promptID,
+		Name: "Confidential Prompt",
+	}
+	_ = store.CreatePrompt(ctx, prompt)
+
+	// 2. User Dave with promptID assigned
+	dave := &tables.TableUser{
+		ID:                 "user_dave_" + uuid.New().String()[:8],
+		Username:           "dave",
+		Email:              "dave@example.com",
+		AllowedPromptRepos: promptID + ",other_prompt_123",
+	}
+	_ = store.CreateUser(ctx, dave)
+
+	// 3. Unassign on deletion
+	h.unassignPromptFromAllUsers(ctx, promptID)
+
+	// 4. Verify Dave no longer has promptID assigned
+	refreshedDave, err := store.GetUserByID(ctx, dave.ID)
+	if err != nil {
+		t.Fatalf("failed to get dave: %v", err)
+	}
+	if strings.Contains(refreshedDave.AllowedPromptRepos, promptID) {
+		t.Fatalf("expected prompt %s to be removed from Dave's AllowedPromptRepos, got %s", promptID, refreshedDave.AllowedPromptRepos)
+	}
+	if !strings.Contains(refreshedDave.AllowedPromptRepos, "other_prompt_123") {
+		t.Fatalf("expected Dave to retain other_prompt_123, got %s", refreshedDave.AllowedPromptRepos)
+	}
+}
+
+

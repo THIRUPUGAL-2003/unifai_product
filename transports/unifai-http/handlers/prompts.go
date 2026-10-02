@@ -343,12 +343,31 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// 1. Prevent deleting system root folders
-	if strings.HasPrefix(folder.Type, "system_") ||
-		folder.Name == "Customers" || folder.Name == "Teams" || folder.Name == "Users" ||
-		folder.Name == "Removed Customers" || folder.Name == "Removed Teams" || folder.Name == "Removed Users" {
-		SendError(ctx, fasthttp.StatusBadRequest, "System root folders cannot be deleted")
-		return
+	// 1. Prevent deleting the primary system root folder unless it is a duplicate
+	if (folder.ParentID == nil || *folder.ParentID == "") && strings.HasPrefix(folder.Type, "system_") {
+		if h.store != nil && h.store.DB() != nil {
+			var count int64
+			_ = h.store.DB().WithContext(ctx).Model(&tables.TableFolder{}).
+				Where("type = ? AND (parent_id IS NULL OR parent_id = '')", folder.Type).
+				Count(&count).Error
+			if count <= 1 {
+				SendError(ctx, fasthttp.StatusBadRequest, "Primary system root folder cannot be deleted")
+				return
+			}
+		} else {
+			SendError(ctx, fasthttp.StatusBadRequest, "Primary system root folder cannot be deleted")
+			return
+		}
+	}
+
+	// Unassign any prompts inside this folder from all users immediately
+	if h.store != nil && h.store.DB() != nil {
+		var childPrompts []tables.TablePrompt
+		if err := h.store.DB().WithContext(ctx).Where("folder_id = ?", folder.ID).Find(&childPrompts).Error; err == nil {
+			for _, cp := range childPrompts {
+				h.unassignPromptFromAllUsers(ctx, cp.ID)
+			}
+		}
 	}
 
 	// 2. Check if folder is already inside one of the Removed roots or marked archived
@@ -455,9 +474,22 @@ func (h *PromptsHandler) getPrompts(ctx *fasthttp.RequestCtx) {
 		}
 		var filteredPrompts []tables.TablePrompt
 		for _, p := range prompts {
-			if allowedMap[p.ID] {
-				filteredPrompts = append(filteredPrompts, p)
+			if !allowedMap[p.ID] {
+				continue
 			}
+			// Exclude any prompt that is in a Removed or archived folder
+			if p.FolderID != nil && h.store != nil && h.store.DB() != nil {
+				var folder tables.TableFolder
+				if err := h.store.DB().WithContext(ctx).Where("id = ?", *p.FolderID).First(&folder).Error; err == nil {
+					if strings.HasPrefix(folder.Type, "system_removed_") ||
+						strings.HasPrefix(folder.Type, "archived_") ||
+						strings.HasPrefix(folder.Name, "Removed ") ||
+						strings.HasSuffix(folder.Name, " (Archived)") {
+						continue
+					}
+				}
+			}
+			filteredPrompts = append(filteredPrompts, p)
 		}
 		prompts = filteredPrompts
 	}
@@ -682,6 +714,9 @@ func (h *PromptsHandler) deletePrompt(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
+	// Always unassign prompt from all users immediately so they cannot see or access it
+	h.unassignPromptFromAllUsers(ctx, prompt.ID)
+
 	if !isAlreadyInTrash && h.lifecycle != nil {
 		removedUsersRoot, rErr := h.lifecycle.EnsureSystemFolder(ctx, "Removed Users", "system_removed_users_root", nil)
 		if rErr == nil && removedUsersRoot != nil {
@@ -884,6 +919,20 @@ func (h *PromptsHandler) checkPromptAccess(ctx *fasthttp.RequestCtx, promptID st
 	if dbUser.AllowedPromptRepos == "" {
 		return false
 	}
+	// Check if prompt is in an archived/trash folder - regular users cannot access deleted prompts
+	if h.store != nil && h.store.DB() != nil {
+		if p, pErr := h.store.GetPromptByID(ctx, promptID); pErr == nil && p != nil && p.FolderID != nil {
+			var f tables.TableFolder
+			if fErr := h.store.DB().WithContext(ctx).Where("id = ?", *p.FolderID).First(&f).Error; fErr == nil {
+				if strings.HasPrefix(f.Type, "system_removed_") ||
+					strings.HasPrefix(f.Type, "archived_") ||
+					strings.HasPrefix(f.Name, "Removed ") ||
+					strings.HasSuffix(f.Name, " (Archived)") {
+					return false
+				}
+			}
+		}
+	}
 	allowedRepos := strings.Split(dbUser.AllowedPromptRepos, ",")
 	for _, id := range allowedRepos {
 		if strings.TrimSpace(id) == promptID {
@@ -891,6 +940,29 @@ func (h *PromptsHandler) checkPromptAccess(ctx *fasthttp.RequestCtx, promptID st
 		}
 	}
 	return false
+}
+
+// unassignPromptFromAllUsers removes promptID from allowed_prompt_repos across all users in the DB.
+func (h *PromptsHandler) unassignPromptFromAllUsers(ctx context.Context, promptID string) {
+	if h == nil || h.store == nil || h.store.DB() == nil || strings.TrimSpace(promptID) == "" {
+		return
+	}
+	db := h.store.DB().WithContext(ctx)
+	var users []tables.TableUser
+	if err := db.Where("allowed_prompt_repos LIKE ?", "%"+promptID+"%").Find(&users).Error; err == nil {
+		for _, u := range users {
+			repos := strings.Split(u.AllowedPromptRepos, ",")
+			var updated []string
+			for _, r := range repos {
+				trimmed := strings.TrimSpace(r)
+				if trimmed != "" && trimmed != promptID {
+					updated = append(updated, trimmed)
+				}
+			}
+			newAllowed := strings.Join(updated, ",")
+			_ = db.Model(&tables.TableUser{}).Where("id = ?", u.ID).Update("allowed_prompt_repos", newAllowed).Error
+		}
+	}
 }
 
 // promptCallerIdentity returns a stable owner id + role for prompt session history.
