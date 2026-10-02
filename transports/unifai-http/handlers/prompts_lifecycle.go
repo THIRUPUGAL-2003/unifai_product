@@ -306,14 +306,23 @@ func (m *PromptLifecycleManager) OnCustomerDeleted(ctx context.Context, customer
 	}
 
 	db := m.store.DB().WithContext(ctx)
+	var custFolder tables.TableFolder
+	if err := db.Where("entity_id = ? OR (name = ? AND type = 'customer')", customer.ID, customer.Name).First(&custFolder).Error; err == nil {
+		// Reparent active child teams to root "Teams" folder so active teams aren't trapped in Removed Customers
+		teamsRoot, tErr := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
+		if tErr == nil && teamsRoot != nil {
+			_ = db.Model(&tables.TableFolder{}).
+				Where("parent_id = ? AND type = 'team'", custFolder.ID).
+				Update("parent_id", teamsRoot.ID).Error
+		}
 
-	_ = db.Model(&tables.TableFolder{}).
-		Where("entity_id = ? OR (name = ? AND type = 'customer')", customer.ID, customer.Name).
-		Updates(map[string]any{
-			"parent_id": removedCustRoot.ID,
-			"type":      "archived_customer",
-			"name":      customer.Name + " (Archived)",
-		}).Error
+		_ = db.Model(&custFolder).
+			Updates(map[string]any{
+				"parent_id": removedCustRoot.ID,
+				"type":      "archived_customer",
+				"name":      customer.Name + " (Archived)",
+			}).Error
+	}
 
 	return nil
 }

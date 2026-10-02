@@ -1680,6 +1680,9 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 		if tx == nil {
 			return nil
 		}
+		if tx.Migrator().HasTable(&tables.TableVirtualKeyUser{}) {
+			_ = tx.Where("user_id = ?", id).Delete(&tables.TableVirtualKeyUser{}).Error
+		}
 		return tx.Where("user_id = ?", id).Delete(&tables.TableBudget{}).Error
 	})
 	if existing.RateLimitID != nil && *existing.RateLimitID != "" {

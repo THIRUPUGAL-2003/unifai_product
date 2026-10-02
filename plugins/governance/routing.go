@@ -364,6 +364,7 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel
 		})
 
 		// Team level
+		seenTeams := make(map[string]bool)
 		teamID := ""
 		switch {
 		case virtualKey.Team != nil && virtualKey.Team.ID != "":
@@ -372,13 +373,24 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel
 			teamID = *virtualKey.TeamID
 		}
 		if teamID != "" {
+			seenTeams[teamID] = true
 			chain = append(chain, ScopeLevel{
 				ScopeName: "team",
 				ScopeID:   teamID,
 			})
 		}
+		for _, t := range virtualKey.Teams {
+			if t.ID != "" && !seenTeams[t.ID] {
+				seenTeams[t.ID] = true
+				chain = append(chain, ScopeLevel{
+					ScopeName: "team",
+					ScopeID:   t.ID,
+				})
+			}
+		}
 
 		// Customer level (VK→customer, or via team FK / nested relation)
+		seenCustomers := make(map[string]bool)
 		customerID := ""
 		switch {
 		case virtualKey.Customer != nil && virtualKey.Customer.ID != "":
@@ -391,10 +403,20 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel
 			customerID = *virtualKey.Team.CustomerID
 		}
 		if customerID != "" {
+			seenCustomers[customerID] = true
 			chain = append(chain, ScopeLevel{
 				ScopeName: "customer",
 				ScopeID:   customerID,
 			})
+		}
+		for _, c := range virtualKey.Customers {
+			if c.ID != "" && !seenCustomers[c.ID] {
+				seenCustomers[c.ID] = true
+				chain = append(chain, ScopeLevel{
+					ScopeName: "customer",
+					ScopeID:   c.ID,
+				})
+			}
 		}
 	}
 

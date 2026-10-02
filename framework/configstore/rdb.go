@@ -4433,6 +4433,13 @@ func (s *RDBConfigStore) DeleteTeam(ctx context.Context, id string, tx ...*gorm.
 	if err := txDB.WithContext(ctx).Model(&tables.TableVirtualKey{}).Where("team_id = ?", id).Update("team_id", nil).Error; err != nil {
 		return err
 	}
+	// Explicitly clean up junction table entries for teams and team members
+	if txDB.Migrator().HasTable(&tables.TableVirtualKeyTeam{}) {
+		_ = txDB.WithContext(ctx).Where("team_id = ?", id).Delete(&tables.TableVirtualKeyTeam{}).Error
+	}
+	if txDB.Migrator().HasTable(&tables.TableTeamMember{}) {
+		_ = txDB.WithContext(ctx).Where("team_id = ?", id).Delete(&tables.TableTeamMember{}).Error
+	}
 	rateLimitID := team.RateLimitID
 	// Delete the team - owned budgets cascade via FK on governance_budgets.team_id
 	if err := txDB.WithContext(ctx).Delete(&tables.TableTeam{}, "id = ?", id).Error; err != nil {
@@ -4568,6 +4575,10 @@ func (s *RDBConfigStore) DeleteCustomer(ctx context.Context, id string, tx ...*g
 	// Set customer_id to null for all teams associated with the customer
 	if err := txDB.WithContext(ctx).Model(&tables.TableTeam{}).Where("customer_id = ?", id).Update("customer_id", nil).Error; err != nil {
 		return err
+	}
+	// Explicitly clean up junction table entries for customer virtual keys
+	if txDB.Migrator().HasTable(&tables.TableVirtualKeyCustomer{}) {
+		_ = txDB.WithContext(ctx).Where("customer_id = ?", id).Delete(&tables.TableVirtualKeyCustomer{}).Error
 	}
 	rateLimitID := customer.RateLimitID
 	// Explicitly delete owned budgets before the customer row. FK cascades cannot
