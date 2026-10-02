@@ -21,7 +21,7 @@ function PendingComponent() {
 
 export const Route = createFileRoute("/workspace")({
 	beforeLoad: async ({ location }) => {
-		const auth = await fetchSessionAuth(true);
+		const auth = await fetchSessionAuth(false);
 		if (auth && auth.is_auth_enabled && !auth.has_valid_token) {
 			const isPublicScoped =
 				location.pathname.startsWith("/workspace/mcp-sessions/auth") ||

@@ -296,24 +296,56 @@ body {
 	min-height: 100vh;
 }
 
-/* Elegant custom dark scrollbar for the page */
-::-webkit-scrollbar {
-	width: 10px;
-	height: 10px;
+/* Elegant custom dark scrollbar for the page - only when NOT .no-scrollbar */
+:not(.no-scrollbar)::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
 }
 
-::-webkit-scrollbar-track {
+:not(.no-scrollbar)::-webkit-scrollbar-track {
 	background: #07090e;
 }
 
-::-webkit-scrollbar-thumb {
+:not(.no-scrollbar)::-webkit-scrollbar-thumb {
 	background: #1e293b;
 	border-radius: 5px;
 	border: 2px solid #07090e;
 }
 
-::-webkit-scrollbar-thumb:hover {
+:not(.no-scrollbar)::-webkit-scrollbar-thumb:hover {
 	background: #38bdf8;
+}
+
+/* ─── Complete Scrollbar Hiding ─── */
+.no-scrollbar,
+.no-scrollbar *,
+[data-slot="dialog-content"],
+[data-slot="dialog-content"] * {
+	-ms-overflow-style: none !important;
+	scrollbar-width: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar,
+.no-scrollbar *::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar-button,
+.no-scrollbar *::-webkit-scrollbar-button,
+.no-scrollbar::-webkit-scrollbar-thumb,
+.no-scrollbar *::-webkit-scrollbar-thumb,
+.no-scrollbar::-webkit-scrollbar-track,
+.no-scrollbar *::-webkit-scrollbar-track,
+[data-slot="dialog-content"]::-webkit-scrollbar,
+[data-slot="dialog-content"] *::-webkit-scrollbar,
+[data-slot="dialog-content"]::-webkit-scrollbar-button,
+[data-slot="dialog-content"] *::-webkit-scrollbar-button,
+[data-slot="dialog-content"]::-webkit-scrollbar-thumb,
+[data-slot="dialog-content"] *::-webkit-scrollbar-thumb,
+[data-slot="dialog-content"]::-webkit-scrollbar-track,
+[data-slot="dialog-content"] *::-webkit-scrollbar-track {
+	display: none !important;
+	width: 0px !important;
+	height: 0px !important;
+	background: transparent !important;
+	opacity: 0 !important;
 }
 
 [data-slot="sidebar-wrapper"] {

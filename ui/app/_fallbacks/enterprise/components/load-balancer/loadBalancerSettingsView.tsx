@@ -36,8 +36,19 @@ export default function LoadBalancerSettingsView() {
 		}
 	};
 
-	const toggle = (key: keyof LoadBalancerConfig) => {
-		setConfig((current) => ({ ...current, [key]: !current[key] }));
+	const toggle = async (key: keyof LoadBalancerConfig) => {
+		const nextVal = !config[key];
+		const updated = { ...config, [key]: nextVal };
+		setConfig(updated);
+		try {
+			const next = await updateConfig(updated).unwrap();
+			setConfig({ ...defaults, ...next });
+			const row = rows.find((r) => r.key === key);
+			toast.success(`${row?.title || "Setting"} ${nextVal ? "enabled" : "disabled"}`);
+		} catch (err) {
+			setConfig(config);
+			toast.error(getErrorMessage(err));
+		}
 	};
 
 	if (loading) {

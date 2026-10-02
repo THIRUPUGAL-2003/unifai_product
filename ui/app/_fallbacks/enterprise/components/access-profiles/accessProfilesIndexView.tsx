@@ -227,7 +227,10 @@ export default function AccessProfilesIndexView() {
 	};
 
 	const formFields = (
-		<div className="max-h-[70vh] space-y-3 overflow-y-auto py-2 no-scrollbar pr-1">
+		<div
+			className="max-h-[70vh] space-y-3 overflow-y-auto py-2 no-scrollbar pr-1"
+			style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+		>
 			<div className="space-y-1">
 				<Label>Name</Label>
 				<Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
@@ -322,7 +325,10 @@ export default function AccessProfilesIndexView() {
 			<div className="space-y-1">
 				<Label>MCP servers to grant</Label>
 				<p className="text-muted-foreground text-xs">Selected servers are added to the chosen virtual keys on save.</p>
-				<div className="border-input max-h-36 space-y-1 overflow-y-auto rounded-md border p-2 no-scrollbar">
+				<div
+					className="border-input max-h-36 space-y-1 overflow-y-auto rounded-md border p-2 no-scrollbar"
+					style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+				>
 					{isLoadingMCP ? (
 						<p className="text-muted-foreground text-xs">Loading MCP servers…</p>
 					) : mcpClients.length === 0 ? (
@@ -346,7 +352,10 @@ export default function AccessProfilesIndexView() {
 				<p className="text-muted-foreground text-xs">
 					Selected keys receive provider, MCP, budget, and rate-limit settings on save.
 				</p>
-				<div className="border-input max-h-36 space-y-1 overflow-y-auto rounded-md border p-2 no-scrollbar">
+				<div
+					className="border-input max-h-36 space-y-1 overflow-y-auto rounded-md border p-2 no-scrollbar"
+					style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+				>
 					{isLoadingVK ? (
 						<p className="text-muted-foreground text-xs">Loading virtual keys…</p>
 					) : virtualKeys.length === 0 ? (

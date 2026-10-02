@@ -46,6 +46,24 @@ export default function SCIMView() {
 		}
 	};
 
+	const handleToggleScim = async (enabled: boolean) => {
+		if (!enabled) {
+			const nextConfig = { ...config, enabled: false };
+			setConfig(nextConfig);
+			try {
+				const next = await updateConfig(nextConfig).unwrap();
+				setConfig({ ...next, config: next.config || {} });
+				toast.success("SCIM provisioning disabled and saved");
+			} catch (err) {
+				setConfig(config);
+				toast.error(getErrorMessage(err));
+			}
+			return;
+		}
+		setConfig({ ...config, enabled: true });
+		toast.info("SCIM enabled. Configure credentials and click Save to persist.");
+	};
+
 	if (loading) {
 		return <div className="text-muted-foreground p-6 text-sm">Loading SCIM config…</div>;
 	}
@@ -93,7 +111,7 @@ export default function SCIMView() {
 							<Label>Enable SCIM</Label>
 							<p className="text-muted-foreground text-xs">Turns on the provisioning configuration for this workspace.</p>
 						</div>
-						<Switch checked={config.enabled} onCheckedChange={(enabled) => setConfig({ ...config, enabled })} />
+						<Switch checked={config.enabled} disabled={saving} onCheckedChange={(enabled) => void handleToggleScim(enabled)} />
 					</div>
 					<div className="space-y-1">
 						<Label>Identity provider</Label>

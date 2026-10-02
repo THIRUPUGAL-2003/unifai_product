@@ -50,6 +50,9 @@ export async function fetchSessionAuth(forceRefresh = false): Promise<SessionAut
 		} finally {
 			pendingAuthPromise = null;
 		}
+		if (cachedAuth?.data) {
+			return cachedAuth.data;
+		}
 		cachedAuth = { data: null, timestamp: Date.now() };
 		return null;
 	})();

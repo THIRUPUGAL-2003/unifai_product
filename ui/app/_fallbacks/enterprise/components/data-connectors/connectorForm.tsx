@@ -47,6 +47,19 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 		}
 	};
 
+	const handleToggle = async (checked: boolean) => {
+		setEnabled(checked);
+		if (!checked && data) {
+			try {
+				await updateConnector({ name, enabled: false, config }).unwrap();
+				toast.success(`${title} disabled and saved`);
+			} catch (err) {
+				setEnabled(true);
+				toast.error(getErrorMessage(err));
+			}
+		}
+	};
+
 	return (
 		<div className="flex w-full flex-col gap-4">
 			<div>
@@ -58,7 +71,7 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 			</div>
 			<div className="flex items-center justify-between rounded-lg border p-3">
 				<Label>Enable connector</Label>
-				<Switch checked={enabled} onCheckedChange={setEnabled} />
+				<Switch checked={enabled} disabled={saving} onCheckedChange={(checked) => void handleToggle(checked)} />
 			</div>
 			{fields.map((field) => (
 				<div key={field.key} className="space-y-1">

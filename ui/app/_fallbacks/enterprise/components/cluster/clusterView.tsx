@@ -62,6 +62,50 @@ export default function ClusterPage() {
 		}
 	};
 
+	const handleToggleCluster = async (enabled: boolean) => {
+		const peers = peerText
+			.split(/\n|,/)
+			.map((peer) => peer.trim())
+			.filter(Boolean);
+		if (!enabled) {
+			// Immediately save disabled state to database
+			const nextConfig = { ...config, enabled: false, peers };
+			setConfig(nextConfig);
+			setPeerErrors([]);
+			try {
+				const next = await updateCluster(nextConfig).unwrap();
+				setConfig({ ...config, ...next, node: config.node });
+				toast.success("Cluster mode disabled and saved");
+			} catch (err) {
+				setConfig(config);
+				toast.error(getErrorMessage(err));
+			}
+			return;
+		}
+		// When enabling
+		if (peers.length === 0) {
+			setConfig({ ...config, enabled: true });
+			setPeerErrors(["Add at least one peer when cluster mode is enabled."]);
+			toast.info("Cluster mode turned on. Add at least one peer (host:port) and click Save.");
+			return;
+		}
+		if (!validatePeers(peers)) {
+			setConfig({ ...config, enabled: true });
+			toast.error("Please fix peer addresses before saving.");
+			return;
+		}
+		const nextConfig = { ...config, enabled: true, peers };
+		setConfig(nextConfig);
+		try {
+			const next = await updateCluster(nextConfig).unwrap();
+			setConfig({ ...config, ...next, node: config.node });
+			toast.success("Cluster mode enabled and saved");
+		} catch (err) {
+			setConfig(config);
+			toast.error(getErrorMessage(err));
+		}
+	};
+
 	if (loading) {
 		return <div className="text-muted-foreground p-6 text-sm">Loading cluster config…</div>;
 	}
@@ -103,7 +147,7 @@ export default function ClusterPage() {
 							<Label>Enable cluster mode</Label>
 							<p className="text-muted-foreground text-xs">Persists cluster_config for this workspace.</p>
 						</div>
-						<Switch checked={config.enabled} onCheckedChange={(enabled) => setConfig({ ...config, enabled })} />
+						<Switch checked={config.enabled} disabled={saving} onCheckedChange={(enabled) => void handleToggleCluster(enabled)} />
 					</div>
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1">
