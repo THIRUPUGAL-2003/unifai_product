@@ -254,21 +254,35 @@ export function PromptSidebar() {
 								No prompts assigned. Ask your admin to allow prompt repositories on your user.
 							</div>
 						) : (
-							prompts.map((prompt) => (
-								<button
-									key={prompt.id}
-									type="button"
-									onClick={() => onSelectPrompt(prompt.id)}
-									data-testid={`user-prompt-${prompt.id}`}
-									className={cn(
-										"flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-all hover:bg-accent",
-										selectedPromptId === prompt.id ? "bg-accent font-medium text-foreground" : "text-muted-foreground",
-									)}
-								>
-									<FileText className="size-4 shrink-0" />
-									<span className="truncate">{prompt.name}</span>
-								</button>
-							))
+							prompts.map((prompt) => {
+								const folder = prompt.folder_id ? folderMap.get(prompt.folder_id) : undefined;
+								const parentFolder = folder?.parent_id ? folderMap.get(folder.parent_id) : undefined;
+								const folderPath = parentFolder && !parentFolder.type?.startsWith("system_")
+									? `${parentFolder.name} / ${folder?.name}`
+									: folder?.name;
+								return (
+									<button
+										key={prompt.id}
+										type="button"
+										onClick={() => onSelectPrompt(prompt.id)}
+										data-testid={`user-prompt-${prompt.id}`}
+										className={cn(
+											"flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm transition-all hover:bg-accent",
+											selectedPromptId === prompt.id ? "bg-accent font-medium text-foreground" : "text-muted-foreground",
+										)}
+									>
+										<div className="flex min-w-0 items-center gap-2">
+											<FileText className="size-4 shrink-0" />
+											<span className="truncate">{prompt.name}</span>
+										</div>
+										{folderPath && (
+											<span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium max-w-[120px] truncate" title={folderPath}>
+												{folderPath}
+											</span>
+										)}
+									</button>
+								);
+							})
 						)}
 					</div>
 				</ScrollArea>
