@@ -527,4 +527,89 @@ func TestPromptDrag_UpdatesUserTeamMembership(t *testing.T) {
 	}
 }
 
+func TestUserTeamChange_MovesPromptToNewTeamFolder(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	// 1. Create Team A and Team B
+	teamA := &tables.TableTeam{
+		ID:   "team_a_" + uuid.New().String()[:8],
+		Name: "Frontend Team",
+	}
+	_ = store.CreateTeam(ctx, teamA)
+	teamAFolder := &tables.TableFolder{
+		ID:       uuid.New().String(),
+		Name:     teamA.Name,
+		Type:     "team",
+		EntityID: &teamA.ID,
+	}
+	_ = store.CreateFolder(ctx, teamAFolder)
+
+	teamB := &tables.TableTeam{
+		ID:   "team_b_" + uuid.New().String()[:8],
+		Name: "Backend Team",
+	}
+	_ = store.CreateTeam(ctx, teamB)
+	teamBFolder := &tables.TableFolder{
+		ID:       uuid.New().String(),
+		Name:     teamB.Name,
+		Type:     "team",
+		EntityID: &teamB.ID,
+	}
+	_ = store.CreateFolder(ctx, teamBFolder)
+
+	// Users root folder
+	usersFolder, _ := lifecycle.EnsureSystemFolder(ctx, "Users", "system_users_root", nil)
+
+	// 2. Create User Frank with prompt in Users folder
+	frank := &tables.TableUser{
+		ID:       "user_frank_" + uuid.New().String()[:8],
+		Username: "frank",
+		Email:    "frank@example.com",
+	}
+	_ = store.CreateUser(ctx, frank)
+
+	frankPrompt := &tables.TablePrompt{
+		ID:       "prompt_frank_" + uuid.New().String()[:8],
+		Name:     frank.Email,
+		FolderID: &usersFolder.ID,
+	}
+	_ = store.CreatePrompt(ctx, frankPrompt)
+
+	// 3. Admin assigns Frank to Team A in Users page
+	err := lifecycle.OnTeamMemberAdded(ctx, teamA.ID, frank.ID)
+	if err != nil {
+		t.Fatalf("unexpected error adding Frank to Team A: %v", err)
+	}
+
+	// Verify Frank's prompt moved to Team A folder
+	var promptAfterA tables.TablePrompt
+	_ = store.DB().Where("id = ?", frankPrompt.ID).First(&promptAfterA)
+	if promptAfterA.FolderID == nil || *promptAfterA.FolderID != teamAFolder.ID {
+		t.Fatalf("expected Frank's prompt to move to Team A folder %s, got %v", teamAFolder.ID, promptAfterA.FolderID)
+	}
+
+	// 4. Admin moves Frank to Team B in Users page
+	_ = lifecycle.OnTeamMemberRemoved(ctx, teamA.ID, frank.ID)
+	_ = lifecycle.OnTeamMemberAdded(ctx, teamB.ID, frank.ID)
+
+	// Verify Frank's prompt moved to Team B folder
+	var promptAfterB tables.TablePrompt
+	_ = store.DB().Where("id = ?", frankPrompt.ID).First(&promptAfterB)
+	if promptAfterB.FolderID == nil || *promptAfterB.FolderID != teamBFolder.ID {
+		t.Fatalf("expected Frank's prompt to move to Team B folder %s, got %v", teamBFolder.ID, promptAfterB.FolderID)
+	}
+
+	// 5. Admin unassigns Frank to standalone in Users page
+	_ = lifecycle.OnTeamMemberRemoved(ctx, teamB.ID, frank.ID)
+
+	// Verify Frank's prompt moved back to Users root folder
+	var promptAfterStandalone tables.TablePrompt
+	_ = store.DB().Where("id = ?", frankPrompt.ID).First(&promptAfterStandalone)
+	if promptAfterStandalone.FolderID == nil || *promptAfterStandalone.FolderID != usersFolder.ID {
+		t.Fatalf("expected Frank's prompt to move to Users folder %s, got %v", usersFolder.ID, promptAfterStandalone.FolderID)
+	}
+}
+
 

@@ -534,36 +534,44 @@ func (m *PromptLifecycleManager) OnTeamMemberAdded(ctx context.Context, teamID s
 	if err == nil {
 		m.ensureUserAllowedPrompt(ctx, user, existing.ID)
 	} else {
-		now := time.Now()
-		prompt := &tables.TablePrompt{
-			ID:        uuid.New().String(),
-			Name:      promptName,
-			FolderID:  &teamFolder.ID,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
+		// Check if user already has an existing prompt in any other folder (e.g. Users folder or old team)
+		var userPrompt tables.TablePrompt
+		if errPrompt := db.Where("name = ?", promptName).First(&userPrompt).Error; errPrompt == nil && userPrompt.ID != "" {
+			// Move the user's existing prompt into the team folder!
+			_ = db.Model(&userPrompt).Update("folder_id", teamFolder.ID).Error
+			m.ensureUserAllowedPrompt(ctx, user, userPrompt.ID)
+		} else {
+			now := time.Now()
+			prompt := &tables.TablePrompt{
+				ID:        uuid.New().String(),
+				Name:      promptName,
+				FolderID:  &teamFolder.ID,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
 
-		if err := m.store.CreatePrompt(ctx, prompt); err != nil {
-			return err
-		}
+			if err := m.store.CreatePrompt(ctx, prompt); err != nil {
+				return err
+			}
 
-		// Default session for this prompt
-		session := &tables.TablePromptSession{
-			PromptID: prompt.ID,
-			Name:     team.Name + " Session",
-			UserID:   user.ID,
-			ModelParams: tables.ModelParams{
-				"temperature": 0.7,
-				"max_tokens":  2048,
-				"top_p":       1.0,
-				"stream":      true,
-			},
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-		_ = m.store.CreatePromptSession(ctx, session)
+			// Default session for this prompt
+			session := &tables.TablePromptSession{
+				PromptID: prompt.ID,
+				Name:     team.Name + " Session",
+				UserID:   user.ID,
+				ModelParams: tables.ModelParams{
+					"temperature": 0.7,
+					"max_tokens":  2048,
+					"top_p":       1.0,
+					"stream":      true,
+				},
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			_ = m.store.CreatePromptSession(ctx, session)
 
-		m.ensureUserAllowedPrompt(ctx, user, prompt.ID)
+			m.ensureUserAllowedPrompt(ctx, user, prompt.ID)
+		}
 	}
 
 	// Also assign any already existing prompts in this team folder to the new member
@@ -577,8 +585,7 @@ func (m *PromptLifecycleManager) OnTeamMemberAdded(ctx context.Context, teamID s
 	return nil
 }
 
-// OnTeamMemberRemoved moves the member's prompt from the team folder to "Removed Users/"
-// and revokes prompt repo access for this user.
+// OnTeamMemberRemoved moves the member's prompt to "Users/" (standalone) or to their other active team folder.
 func (m *PromptLifecycleManager) OnTeamMemberRemoved(ctx context.Context, teamID string, userID string) error {
 	if m == nil || m.store == nil || m.store.DB() == nil || teamID == "" || userID == "" {
 		return nil
@@ -591,11 +598,6 @@ func (m *PromptLifecycleManager) OnTeamMemberRemoved(ctx context.Context, teamID
 
 	user, err := m.store.GetUserByID(ctx, userID)
 	if err != nil || user == nil {
-		return err
-	}
-
-	removedUsersFolder, err := m.EnsureSystemFolder(ctx, "Removed Users", "system_removed_users_root", nil)
-	if err != nil {
 		return err
 	}
 
@@ -619,9 +621,27 @@ func (m *PromptLifecycleManager) OnTeamMemberRemoved(ctx context.Context, teamID
 		var memberPrompts []tables.TablePrompt
 		_ = db.Where("name IN ? AND folder_id = ?", userIdentifiers, teamFolder.ID).Find(&memberPrompts).Error
 
+		// Determine fallback target folder: either user's remaining team, or system "Users" root folder (standalone)
+		var targetFolderID string
+		var remainingMember tables.TableTeamMember
+		if errOther := db.Where("user_id = ? AND team_id != ?", user.ID, teamID).First(&remainingMember).Error; errOther == nil && remainingMember.TeamID != "" {
+			var otherTeamFolder tables.TableFolder
+			if errTF := db.Where("entity_id = ?", remainingMember.TeamID).First(&otherTeamFolder).Error; errTF == nil {
+				targetFolderID = otherTeamFolder.ID
+			}
+		}
+
+		if targetFolderID == "" {
+			usersFolder, _ := m.EnsureSystemFolder(ctx, "Users", "system_users_root", nil)
+			if usersFolder != nil {
+				targetFolderID = usersFolder.ID
+			}
+		}
+
 		for _, p := range memberPrompts {
-			_ = db.Model(&p).Update("folder_id", removedUsersFolder.ID).Error
-			m.removeUserAllowedPrompt(ctx, user, p.ID)
+			if targetFolderID != "" {
+				_ = db.Model(&p).Update("folder_id", targetFolderID).Error
+			}
 		}
 	}
 
