@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,9 +11,16 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+func safeCtx(ctx *fasthttp.RequestCtx) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.Background()
+}
+
 func (h *BrowserAIHandler) getTargets(ctx *fasthttp.RequestCtx) {
 	h.ensureDB(ctx)
-	targets, err := h.manager.GetTargets(ctx)
+	targets, err := h.manager.GetTargets(safeCtx(ctx))
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
@@ -53,7 +61,7 @@ func (h *BrowserAIHandler) createTarget(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
-	if err := h.manager.CreateTarget(ctx, &target); err != nil {
+	if err := h.manager.CreateTarget(safeCtx(ctx), &target); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
@@ -85,7 +93,7 @@ func (h *BrowserAIHandler) updateTarget(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
-	if err := h.manager.UpdateTarget(ctx, id, updates); err != nil {
+	if err := h.manager.UpdateTarget(safeCtx(ctx), id, updates); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
@@ -103,7 +111,7 @@ func (h *BrowserAIHandler) deleteTarget(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid target ID")
 		return
 	}
-	if err := h.manager.DeleteTarget(ctx, id); err != nil {
+	if err := h.manager.DeleteTarget(safeCtx(ctx), id); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
@@ -136,7 +144,7 @@ func (h *BrowserAIHandler) importTargets(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	existingTargets, err := h.manager.GetTargets(ctx)
+	existingTargets, err := h.manager.GetTargets(safeCtx(ctx))
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
@@ -246,7 +254,7 @@ func (h *BrowserAIHandler) importTargets(ctx *fasthttp.RequestCtx) {
 				if relinkTo != "" {
 					updateFields["parent_id"] = relinkTo
 				}
-				if err := h.manager.UpdateTarget(ctx, existing.ID, updateFields); err != nil {
+				if err := h.manager.UpdateTarget(safeCtx(ctx), existing.ID, updateFields); err != nil {
 					failed++
 					errorDetails = append(errorDetails, fmt.Sprintf("Failed to update '%s': %v", domain, err))
 					continue
@@ -256,7 +264,7 @@ func (h *BrowserAIHandler) importTargets(ctx *fasthttp.RequestCtx) {
 				skipped++
 				alreadyExists++
 				if relinkTo != "" {
-					if err := h.manager.UpdateTarget(ctx, existing.ID, map[string]any{"parent_id": relinkTo}); err != nil {
+					if err := h.manager.UpdateTarget(safeCtx(ctx), existing.ID, map[string]any{"parent_id": relinkTo}); err != nil {
 						errorDetails = append(errorDetails, fmt.Sprintf("'%s' already exists but could not be moved under its main domain: %v", domain, err))
 						relinkTo = ""
 					}
@@ -278,7 +286,7 @@ func (h *BrowserAIHandler) importTargets(ctx *fasthttp.RequestCtx) {
 				Status:       status,
 				ParentID:     importParentID(domainKey, platformName, hostRole, existingByDomain),
 			}
-			if err := h.manager.CreateTarget(ctx, &newTarget); err != nil {
+			if err := h.manager.CreateTarget(safeCtx(ctx), &newTarget); err != nil {
 				failed++
 				errorDetails = append(errorDetails, fmt.Sprintf("Failed to create '%s': %v", domain, err))
 				continue
@@ -289,7 +297,7 @@ func (h *BrowserAIHandler) importTargets(ctx *fasthttp.RequestCtx) {
 				if !newTarget.BlockSite {
 					pause["status"] = "PAUSED"
 				}
-				if err := h.manager.UpdateTarget(ctx, newTarget.ID, pause); err != nil {
+				if err := h.manager.UpdateTarget(safeCtx(ctx), newTarget.ID, pause); err != nil {
 					errorDetails = append(errorDetails, fmt.Sprintf("Imported '%s' but could not pause it: %v", domain, err))
 				} else {
 					newTarget.Monitored = false

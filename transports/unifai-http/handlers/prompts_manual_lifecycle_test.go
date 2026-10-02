@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/configstore/tables"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -244,3 +244,135 @@ func TestPromptLifecycle_NewTeamMember_GetsAlreadyExistingPrompts(t *testing.T) 
 		t.Fatalf("expected Bob to have pre-existing prompt %s in AllowedPromptRepos, got %s", preExistingPrompt.ID, refreshedBob.AllowedPromptRepos)
 	}
 }
+
+func TestPromptLifecycle_CustomerDeleted_PreservesActiveTeams(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	// 1. Create Customer
+	customer := &tables.TableCustomer{
+		ID:        "cust_" + uuid.New().String()[:8],
+		Name:      "Acme Corp",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := store.DB().Create(customer).Error; err != nil {
+		t.Fatalf("failed to create customer: %v", err)
+	}
+
+	if err := lifecycle.OnCustomerCreated(ctx, customer); err != nil {
+		t.Fatalf("OnCustomerCreated failed: %v", err)
+	}
+
+	var custFolder tables.TableFolder
+	if err := store.DB().Where("entity_id = ? OR (name = ? AND type = 'customer')", customer.ID, customer.Name).First(&custFolder).Error; err != nil {
+		t.Fatalf("failed to locate customer folder: %v", err)
+	}
+
+	// 2. Create child team folder inside customer folder
+	teamFolder := &tables.TableFolder{
+		ID:        uuid.New().String(),
+		Name:      "Engineering",
+		Type:      "team",
+		ParentID:  &custFolder.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := store.CreateFolder(ctx, teamFolder); err != nil {
+		t.Fatalf("failed to create child team folder: %v", err)
+	}
+
+	// 3. Delete customer
+	if err := lifecycle.OnCustomerDeleted(ctx, customer); err != nil {
+		t.Fatalf("OnCustomerDeleted failed: %v", err)
+	}
+
+	// 4. Verify Customer folder was moved to Removed Customers and renamed
+	var updatedCustFolder tables.TableFolder
+	if err := store.DB().Where("id = ?", custFolder.ID).First(&updatedCustFolder).Error; err != nil {
+		t.Fatalf("failed to find updated customer folder: %v", err)
+	}
+	if updatedCustFolder.Type != "archived_customer" {
+		t.Errorf("expected customer folder type 'archived_customer', got %s", updatedCustFolder.Type)
+	}
+	if updatedCustFolder.Name != "Acme Corp (Archived)" {
+		t.Errorf("expected customer folder name 'Acme Corp (Archived)', got %s", updatedCustFolder.Name)
+	}
+
+	// 5. Verify child team folder was reparented to root Teams folder
+	teamsRoot, err := lifecycle.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
+	if err != nil {
+		t.Fatalf("failed to get Teams root: %v", err)
+	}
+
+	var updatedTeamFolder tables.TableFolder
+	if err := store.DB().Where("id = ?", teamFolder.ID).First(&updatedTeamFolder).Error; err != nil {
+		t.Fatalf("failed to find updated team folder: %v", err)
+	}
+	if updatedTeamFolder.ParentID == nil || *updatedTeamFolder.ParentID != teamsRoot.ID {
+		t.Errorf("expected child team folder to be reparented to Teams root (%s), got %v", teamsRoot.ID, updatedTeamFolder.ParentID)
+	}
+}
+
+func TestPromptLifecycle_PromptFolderChanged(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	// 1. Create Team
+	team := &tables.TableTeam{
+		ID:        "team_dev_" + uuid.New().String()[:8],
+		Name:      "DevOps",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_ = store.CreateTeam(ctx, team)
+	_ = lifecycle.OnTeamCreated(ctx, team)
+
+	var teamFolder tables.TableFolder
+	_ = store.DB().Where("entity_id = ?", team.ID).First(&teamFolder)
+
+	// 2. Member Charlie in DevOps
+	charlie := &tables.TableUser{
+		ID:       "user_charlie_" + uuid.New().String()[:8],
+		Username: "charlie",
+		Email:    "charlie@example.com",
+	}
+	_ = store.CreateUser(ctx, charlie)
+	member := &tables.TableTeamMember{
+		TeamID:    team.ID,
+		UserID:    charlie.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_ = store.DB().Create(member)
+
+	// 3. Prompt starts in general folder
+	genFolder := &tables.TableFolder{
+		ID:   uuid.New().String(),
+		Name: "General",
+		Type: "custom",
+	}
+	_ = store.CreateFolder(ctx, genFolder)
+
+	prompt := &tables.TablePrompt{
+		ID:       "prompt_k8s_" + uuid.New().String()[:8],
+		Name:     "K8s Helper",
+		FolderID: &genFolder.ID,
+	}
+	_ = store.CreatePrompt(ctx, prompt)
+
+	// 4. Move prompt to DevOps team folder
+	lifecycle.OnPromptFolderChanged(ctx, prompt.ID, teamFolder.ID)
+
+	// 5. Verify Charlie gets allowed prompt repo updated
+	refreshedCharlie, err := store.GetUserByID(ctx, charlie.ID)
+	if err != nil {
+		t.Fatalf("failed to get charlie: %v", err)
+	}
+	if !strings.Contains(refreshedCharlie.AllowedPromptRepos, prompt.ID) {
+		t.Fatalf("expected charlie to have prompt %s in AllowedPromptRepos, got %s", prompt.ID, refreshedCharlie.AllowedPromptRepos)
+	}
+}
+

@@ -2,12 +2,13 @@ package handlers
 
 import (
 	"context"
+	"net"
 	"testing"
 
 	"github.com/bytedance/sonic"
 	"github.com/unifai/unifai/framework/logstore"
 	"github.com/valyala/fasthttp"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -56,7 +57,7 @@ func TestImportParentID_SamePlatformMainSite(t *testing.T) {
 }
 
 func TestImportTargets_PausedRowsAndSubdomainNesting(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&_import="+t.Name()), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Skipf("sqlite unavailable: %v", err)
 	}
@@ -72,6 +73,7 @@ func TestImportTargets_PausedRowsAndSubdomainNesting(t *testing.T) {
 		{"domain":"deepseek.com","platform_name":"DeepSeek","monitored":true,"block_site":true}
 	]}`
 	var rc fasthttp.RequestCtx
+	rc.Init(&fasthttp.Request{}, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}, nil)
 	rc.Request.SetBody([]byte(body))
 	h.importTargets(&rc)
 	if rc.Response.StatusCode() != fasthttp.StatusOK {
@@ -113,7 +115,7 @@ func TestImportTargets_PausedRowsAndSubdomainNesting(t *testing.T) {
 }
 
 func TestImportTargets_SkipsFileDuplicatesAndNestsOldTopLevelRows(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&_import="+t.Name()), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Skipf("sqlite unavailable: %v", err)
 	}
@@ -138,6 +140,7 @@ func TestImportTargets_SkipsFileDuplicatesAndNestsOldTopLevelRows(t *testing.T) 
 		{"domain":"CHAT.OPENAI.COM","platform_name":"ChatGPT","host_role":"chat"}
 	]}`
 	var rc fasthttp.RequestCtx
+	rc.Init(&fasthttp.Request{}, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}, nil)
 	rc.Request.SetBody([]byte(body))
 	h.importTargets(&rc)
 	var res map[string]any
