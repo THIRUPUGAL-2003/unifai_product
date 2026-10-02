@@ -33,8 +33,16 @@ export function ApiKeySelectorView({
 	const { data: authStatus } = useIsAuthEnabledQuery();
 
 	const allOptions = useMemo(() => {
+		const now = Date.now();
 		const apiKeyOpts = providerKeys.map((k) => ({ label: k.name, value: k.key_id, group: "api" as const }));
-		const vkOpts = virtualKeys.map((vk) => ({ label: vk.name, value: vk.value, group: "virtual" as const }));
+		const vkOpts = virtualKeys.map((vk) => {
+			const isInactive = vk.is_active === false;
+			const isExpired = vk.expires_at ? new Date(vk.expires_at).getTime() < now : false;
+			let suffix = "";
+			if (isInactive) suffix = " (Inactive)";
+			else if (isExpired) suffix = " (Expired)";
+			return { label: `${vk.name}${suffix}`, value: vk.value, group: "virtual" as const };
+		});
 		return [{ label: "Auto (default)", value: "__auto__", group: "api" as const }, ...apiKeyOpts, ...vkOpts];
 	}, [providerKeys, virtualKeys]);
 
@@ -143,6 +151,18 @@ export function ApiKeySelectorView({
 								</div>
 							</div>
 						) : null,
+					)}
+					{selectedVK.is_active === false && (
+						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1">
+							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+							<span>Virtual Key is inactive — prompt executions will be rejected</span>
+						</div>
+					)}
+					{selectedVK.expires_at && new Date(selectedVK.expires_at).getTime() < Date.now() && (
+						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1">
+							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+							<span>Virtual Key has expired — prompt executions will be rejected</span>
+						</div>
 					)}
 					{selectedVK.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit) && (
 						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1">

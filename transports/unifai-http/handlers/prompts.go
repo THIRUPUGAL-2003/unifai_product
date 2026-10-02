@@ -299,6 +299,10 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 		folder.Name = req.Name
 	}
 	if req.ParentIDExists {
+		if req.ParentID != nil && *req.ParentID != "" && *req.ParentID == folder.ID {
+			SendError(ctx, fasthttp.StatusBadRequest, "a folder cannot be its own parent")
+			return
+		}
 		folder.ParentID = req.ParentID
 	}
 	if req.DescriptionExists {

@@ -158,8 +158,17 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const assignedMemberVkValue = useMemo(() => {
 		if (!isUserRole) return "";
 		const vks = virtualKeysData?.virtual_keys ?? [];
-		const first = vks.find((vk) => vk.is_active !== false && typeof vk.value === "string" && vk.value.startsWith("sk-uf-"));
-		return first?.value ?? "";
+		const now = Date.now();
+		const validKeys = vks.filter((vk) => {
+			if (vk.is_active === false) return false;
+			if (vk.expires_at && new Date(vk.expires_at).getTime() < now) return false;
+			return typeof vk.value === "string" && vk.value.startsWith("sk-uf-");
+		});
+		const withBudget = validKeys.find((vk) => {
+			if (!vk.budgets || vk.budgets.length === 0) return true;
+			return !vk.budgets.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit);
+		});
+		return withBudget?.value ?? validKeys[0]?.value ?? "";
 	}, [isUserRole, virtualKeysData]);
 
 	// UI state — persisted in URL query params
