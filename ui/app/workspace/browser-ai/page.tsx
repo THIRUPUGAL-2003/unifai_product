@@ -2137,100 +2137,122 @@ export default function BrowserAiPage() {
 					) : null}
 
 					{activeTab === "logs" ? (
-						<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
-							<Switch
-								checked={!!controls.prompt_log_auto_delete}
-								onCheckedChange={(on) => {
-									void patchControl({
-										prompt_log_auto_delete: on,
-										prompt_log_retention: controls.prompt_log_retention || "7d",
-									});
-									if (on) {
-										void refetchLogs();
-									}
-								}}
-								id="prompt-log-auto-delete"
-							/>
-							<Label htmlFor="prompt-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
-								Auto-delete
-							</Label>
-							{controls.prompt_log_auto_delete ? (
-								<Select
-									value={
-										["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.prompt_log_retention || "")
-											? controls.prompt_log_retention
-											: "7d"
-									}
-									onValueChange={(v) => {
+						<div className="flex items-center gap-2">
+							<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
+								<Switch
+									checked={!!controls.prompt_log_auto_delete}
+									onCheckedChange={(on) => {
 										void patchControl({
-											prompt_log_auto_delete: true,
-											prompt_log_retention: v,
+											prompt_log_auto_delete: on,
+											prompt_log_retention: controls.prompt_log_retention || "7d",
 										});
-										void refetchLogs();
+										if (on) {
+											void refetchLogs();
+										}
 									}}
-								>
-									<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="1d">1 day</SelectItem>
-										<SelectItem value="7d">7 days (1w)</SelectItem>
-										<SelectItem value="30d">30 days (1m)</SelectItem>
-										<SelectItem value="90d">90 days (3m)</SelectItem>
-										<SelectItem value="180d">180 days (6m)</SelectItem>
-										<SelectItem value="365d">365 days (1y)</SelectItem>
-									</SelectContent>
-								</Select>
-							) : null}
+									id="prompt-log-auto-delete"
+								/>
+								<Label htmlFor="prompt-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
+									Auto-delete
+								</Label>
+								{controls.prompt_log_auto_delete ? (
+									<Select
+										value={
+											["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.prompt_log_retention || "")
+												? controls.prompt_log_retention
+												: "7d"
+										}
+										onValueChange={(v) => {
+											void patchControl({
+												prompt_log_auto_delete: true,
+												prompt_log_retention: v,
+											});
+											void refetchLogs();
+										}}
+									>
+										<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="1d">1 day</SelectItem>
+											<SelectItem value="7d">7 days (1w)</SelectItem>
+											<SelectItem value="30d">30 days (1m)</SelectItem>
+											<SelectItem value="90d">90 days (3m)</SelectItem>
+											<SelectItem value="180d">180 days (6m)</SelectItem>
+											<SelectItem value="365d">365 days (1y)</SelectItem>
+										</SelectContent>
+									</Select>
+								) : null}
+							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => setClearLogsDialogOpen(true)}
+								className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive border-border"
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+								Clear Logs
+							</Button>
 						</div>
 					) : null}
 
 					{activeTab === "search-logs" ? (
-						<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
-							<Switch
-								checked={!!controls.search_log_auto_delete}
-								onCheckedChange={(on) => {
-									void patchControl({
-										search_log_auto_delete: on,
-										search_log_retention: controls.search_log_retention || "7d",
-									});
-									if (on) {
-										void refetchSearchLogs();
-									}
-								}}
-								id="search-log-auto-delete"
-							/>
-							<Label htmlFor="search-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
-								Auto-delete
-							</Label>
-							{controls.search_log_auto_delete ? (
-								<Select
-									value={
-										["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.search_log_retention || "")
-											? controls.search_log_retention
-											: "7d"
-									}
-									onValueChange={(v) => {
+						<div className="flex items-center gap-2">
+							<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
+								<Switch
+									checked={!!controls.search_log_auto_delete}
+									onCheckedChange={(on) => {
 										void patchControl({
-											search_log_auto_delete: true,
-											search_log_retention: v,
+											search_log_auto_delete: on,
+											search_log_retention: controls.search_log_retention || "7d",
 										});
-										void refetchSearchLogs();
+										if (on) {
+											void refetchSearchLogs();
+										}
 									}}
-								>
-									<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="1d">1 day</SelectItem>
-										<SelectItem value="7d">7 days (1w)</SelectItem>
-										<SelectItem value="30d">30 days (1m)</SelectItem>
-										<SelectItem value="90d">90 days (3m)</SelectItem>
-										<SelectItem value="180d">180 days (6m)</SelectItem>
-										<SelectItem value="365d">365 days (1y)</SelectItem>
-									</SelectContent>
-								</Select>
-							) : null}
+									id="search-log-auto-delete"
+								/>
+								<Label htmlFor="search-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
+									Auto-delete
+								</Label>
+								{controls.search_log_auto_delete ? (
+									<Select
+										value={
+											["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.search_log_retention || "")
+												? controls.search_log_retention
+												: "7d"
+										}
+										onValueChange={(v) => {
+											void patchControl({
+												search_log_auto_delete: true,
+												search_log_retention: v,
+											});
+											void refetchSearchLogs();
+										}}
+									>
+										<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="1d">1 day</SelectItem>
+											<SelectItem value="7d">7 days (1w)</SelectItem>
+											<SelectItem value="30d">30 days (1m)</SelectItem>
+											<SelectItem value="90d">90 days (3m)</SelectItem>
+											<SelectItem value="180d">180 days (6m)</SelectItem>
+											<SelectItem value="365d">365 days (1y)</SelectItem>
+										</SelectContent>
+									</Select>
+								) : null}
+							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => setClearSearchLogsDialogOpen(true)}
+								className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive border-border"
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+								Clear Search Logs
+							</Button>
 						</div>
 					) : null}
 
@@ -2413,22 +2435,9 @@ export default function BrowserAiPage() {
 				<TabsContent value="logs" className="space-y-4">
 					<Card className="bg-card border-border">
 						<CardHeader className="pb-4">
-							<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-								<div>
-									<CardTitle className="text-lg">Prompt & Chat History</CardTitle>
-									<CardDescription>Live intercepted requests passing through the proxy</CardDescription>
-								</div>
-								<div className="flex items-center gap-2">
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={() => setClearLogsDialogOpen(true)}
-										className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive border-border"
-									>
-										<Trash2 className="h-3.5 w-3.5" />
-										Clear Logs
-									</Button>
-								</div>
+							<div>
+								<CardTitle className="text-lg">Prompt & Chat History</CardTitle>
+								<CardDescription>Live intercepted requests passing through the proxy</CardDescription>
 							</div>
 
 							{/* Search & Filter Toolbar */}
@@ -2684,27 +2693,14 @@ export default function BrowserAiPage() {
 					{/* Main Search Logs Card */}
 					<Card className="bg-card border-border">
 						<CardHeader className="pb-4">
-							<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-								<div>
-									<CardTitle className="text-lg flex items-center gap-2">
-										<Search className="h-5 w-5 text-emerald-400" />
-										Search Engine Activity &amp; Privacy Audit
-									</CardTitle>
-									<CardDescription>
-										Real-time search queries and clicked links from any Guard browser (Chrome, Edge, Firefox, Brave, Opera, Safari) — Google, Bing/MSN, DuckDuckGo, Yahoo — including Incognito/InPrivate. Saved to Postgres.
-									</CardDescription>
-								</div>
-								<div className="flex items-center gap-2">
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={() => setClearSearchLogsDialogOpen(true)}
-										className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive border-border"
-									>
-										<Trash2 className="h-3.5 w-3.5" />
-										Clear Search Logs
-									</Button>
-								</div>
+							<div>
+								<CardTitle className="text-lg flex items-center gap-2">
+									<Search className="h-5 w-5 text-emerald-400" />
+									Search Engine Activity &amp; Privacy Audit
+								</CardTitle>
+								<CardDescription>
+									Real-time search queries and clicked links from any Guard browser (Chrome, Edge, Firefox, Brave, Opera, Safari) — Google, Bing/MSN, DuckDuckGo, Yahoo — including Incognito/InPrivate. Saved to Postgres.
+								</CardDescription>
 							</div>
 
 							{/* Search & Filter Toolbar */}
