@@ -992,17 +992,30 @@ func (h *PromptsHandler) promptCallerIdentity(ctx *fasthttp.RequestCtx) (userID,
 	return username, role
 }
 
-// checkSessionOwnership: each login only accesses their own playground history
-// (admin and user alike). Prompt library ACL is separate via checkPromptAccess.
+// checkSessionOwnership: admins have full oversight across sessions; users access their own sessions or legacy unassigned sessions.
 func (h *PromptsHandler) checkSessionOwnership(ctx *fasthttp.RequestCtx, session *tables.TablePromptSession) bool {
 	if session == nil {
 		return false
 	}
-	userID, _ := h.promptCallerIdentity(ctx)
+	userID, role := h.promptCallerIdentity(ctx)
+	if role == "admin" || role == "super_admin" {
+		return true
+	}
 	if userID == "" {
 		return false
 	}
-	return session.UserID == userID
+	if session.UserID == userID || session.UserID == "" {
+		return true
+	}
+	if h.store != nil && h.store.DB() != nil {
+		var user tables.TableUser
+		if err := h.store.DB().WithContext(ctx).Where("id = ? OR username = ? OR email = ?", userID, userID, userID).First(&user).Error; err == nil {
+			if session.UserID == user.ID || session.UserID == user.Username || session.UserID == user.Email {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // deleteVersion handles DELETE /api/prompt-repo/versions/{id}
@@ -1077,14 +1090,20 @@ func (h *PromptsHandler) getPromptSessions(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// User-based history: admin sees only admin's sessions; user sees only that user's.
-	callerID, _ := h.promptCallerIdentity(ctx)
+	callerID, role := h.promptCallerIdentity(ctx)
 	if callerID == "" {
 		SendError(ctx, fasthttp.StatusUnauthorized, "authentication required")
 		return
 	}
 
-	sessions, err := h.store.GetPromptSessions(ctx, promptID, callerID)
+	filterUserID := callerID
+	if role == "admin" || role == "super_admin" {
+		// Admins can see all user chat sessions for this prompt, or filter by specific ?user_id= query arg if provided
+		queryUser := string(ctx.QueryArgs().Peek("user_id"))
+		filterUserID = strings.TrimSpace(queryUser)
+	}
+
+	sessions, err := h.store.GetPromptSessions(ctx, promptID, filterUserID)
 	if err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {
 			SendError(ctx, fasthttp.StatusNotFound, "prompt not found")

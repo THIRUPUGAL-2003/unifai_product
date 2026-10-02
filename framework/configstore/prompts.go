@@ -423,7 +423,8 @@ func (s *RDBConfigStore) DeletePromptVersion(ctx context.Context, id uint) error
 // ============================================================================
 
 // GetPromptSessions gets sessions for a prompt.
-// When userID is non-empty, only that user's sessions are returned (user-based history).
+// When userID is non-empty, only that user's sessions are returned (matching user ID, username, email, or legacy unassigned).
+// When userID is empty, all sessions for the prompt are returned.
 func (s *RDBConfigStore) GetPromptSessions(ctx context.Context, promptID string, userID string) ([]tables.TablePromptSession, error) {
 	var sessions []tables.TablePromptSession
 	q := s.DB().WithContext(ctx).
@@ -431,7 +432,12 @@ func (s *RDBConfigStore) GetPromptSessions(ctx context.Context, promptID string,
 		Preload("Version").
 		Where("prompt_id = ?", promptID)
 	if userID != "" {
-		q = q.Where("user_id = ?", userID)
+		var user tables.TableUser
+		if err := s.DB().WithContext(ctx).Where("id = ? OR username = ? OR email = ?", userID, userID, userID).First(&user).Error; err == nil {
+			q = q.Where("user_id = ? OR user_id = ? OR user_id = ? OR user_id = ''", user.ID, user.Username, user.Email)
+		} else {
+			q = q.Where("user_id = ? OR user_id = ''", userID)
+		}
 	}
 	if err := q.Order("created_at DESC").Find(&sessions).Error; err != nil {
 		return nil, err

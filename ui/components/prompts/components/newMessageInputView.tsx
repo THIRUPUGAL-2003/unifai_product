@@ -7,7 +7,7 @@ import { AlertTriangle, Paperclip, Play, Plus, Square } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { usePromptContext } from "../context";
-import { filesToAttachments, attachmentNeedsAudio, attachmentNeedsVision } from "../utils/attachment";
+import { filesToAttachments, isImageFile, attachmentNeedsAudio, attachmentNeedsVision } from "../utils/attachment";
 import { AttachmentBadge } from "./messagesView/attachmentViews";
 import MessageRoleSwitcher from "./messagesView/messageRoleSwitcher";
 import { PromptFileImportBar } from "./promptFileImportBar";
@@ -191,6 +191,11 @@ export function NewMessageInputView() {
 			if (item.type.startsWith("image/")) {
 				const file = item.getAsFile();
 				if (file) imageFiles.push(file);
+			} else if (item.kind === "file") {
+				const file = item.getAsFile();
+				if (file && isImageFile(file)) {
+					imageFiles.push(file);
+				}
 			}
 		}
 		if (imageFiles.length === 0) return;

@@ -411,14 +411,22 @@ function SessionItem({
 
 	return (
 		<CommandItem
-			value={`${session.id}-${dateLabel}-${session.name}`}
+			value={`${session.id}-${dateLabel}-${session.name}-${session.user_id || ""}`}
 			onSelect={onSelect}
 			className="group/item flex items-center justify-between gap-2 py-1"
 		>
 			<div className="flex min-w-0 flex-col">
-				<span className="truncate text-sm">
+				<span className="truncate text-sm flex items-center gap-1.5">
 					<span className="text-muted-foreground">{dateLabel}</span>
-					{session.name && <span className="ml-1.5">{session.name}</span>}
+					{session.name && <span className="font-medium">{session.name}</span>}
+					{session.user_id && (
+						<span
+							className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground max-w-[120px] truncate"
+							title={`User: ${session.user_id}`}
+						>
+							{session.user_id}
+						</span>
+					)}
 				</span>
 			</div>
 			<div className="flex shrink-0 items-center gap-1">

@@ -8,10 +8,10 @@ import { transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudi
 
 /** Accepted file types for prompt repository attachments */
 export const PROMPT_FILE_ACCEPT =
-	"image/*,audio/*,.pdf,.txt,.csv,.json,.xml,.md,.html,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.mp3,.wav,.m4a,.webm,.ogg";
+	"image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.tiff,.tif,.avif,.heic,.heif,.ico,audio/*,.pdf,.txt,.csv,.json,.xml,.md,.html,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.mp3,.wav,.m4a,.webm,.ogg";
 
 export const PROMPT_FILE_ACCEPT_LABEL =
-	"Images (OCR), PDF (OCR), Zip, Excel, Word, audio, voice, and more";
+	"Images (PNG, JPG, WEBP, GIF, SVG, etc.), PDF, Zip, Excel, Word, audio, voice, and more";
 
 export const MAX_PROMPT_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB
 
@@ -35,6 +35,19 @@ const EXTENSION_MIME: Record<string, string> = {
 	m4a: "audio/mp4",
 	webm: "audio/webm",
 	ogg: "audio/ogg",
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	webp: "image/webp",
+	gif: "image/gif",
+	bmp: "image/bmp",
+	svg: "image/svg+xml",
+	tiff: "image/tiff",
+	tif: "image/tiff",
+	avif: "image/avif",
+	heic: "image/heic",
+	heif: "image/heif",
+	ico: "image/x-icon",
 };
 
 export function resolveFileMimeType(file: File): string {
@@ -43,6 +56,27 @@ export function resolveFileMimeType(file: File): string {
 	}
 	const ext = file.name.split(".").pop()?.toLowerCase() || "";
 	return EXTENSION_MIME[ext] || "application/octet-stream";
+}
+
+export function isImageFile(file: File, mimeType?: string): boolean {
+	const effectiveMime = mimeType || resolveFileMimeType(file);
+	if (effectiveMime.startsWith("image/")) return true;
+	const ext = file.name.split(".").pop()?.toLowerCase() || "";
+	return [
+		"png",
+		"jpg",
+		"jpeg",
+		"webp",
+		"gif",
+		"bmp",
+		"svg",
+		"tiff",
+		"tif",
+		"avif",
+		"heic",
+		"heif",
+		"ico",
+	].includes(ext);
 }
 
 export function validatePromptAttachmentFile(file: File): string | null {
@@ -178,19 +212,10 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 		};
 	}
 
-	if (mimeType.startsWith("image/")) {
+	if (isImageFile(file, mimeType)) {
 		const dataUrl = await fileToBase64(file);
-		// Prefer OCR text so non-vision models can still use the image content.
-		// Fall back to raw image_url when OCR is unavailable (vision models).
-		toast.message("Running OCR on image…");
-		const ocr = await ocrImageFile(dataUrl);
-		if (ocr?.text) {
-			toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
-			return ocrTextAttachment(file.name, ocr.text);
-		}
-		toast.message("OCR unavailable — attaching image", {
-			description: "Configure a Mistral OCR key/model, or use a vision-capable chat model.",
-		});
+		// Native multimodal attachment like ChatGPT — preserves full visual content for vision models.
+		toast.success(`Image attached: ${file.name}`);
 		return {
 			type: "image_url",
 			image_url: { url: dataUrl, detail: "auto" },
