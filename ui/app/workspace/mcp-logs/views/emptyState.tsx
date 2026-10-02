@@ -1,11 +1,10 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { CodeEditor } from "@/components/ui/codeEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getExampleBaseUrl } from "@/lib/utils/port";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { AlertTriangle, Copy } from "lucide-react";
+import { AlertTriangle, Check, Copy } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type Language = "python" | "typescript";
@@ -19,17 +18,6 @@ type Examples = {
 	};
 };
 
-// Common editor options to reduce duplication
-const EditorOptions = {
-	scrollBeyondLastLine: false,
-	minimap: { enabled: false },
-	lineNumbers: "off",
-	folding: false,
-	lineDecorationsWidth: 0,
-	lineNumbersMinChars: 0,
-	glyphMargin: false,
-} as const;
-
 interface CodeBlockProps {
 	code: string;
 	language: string;
@@ -38,32 +26,57 @@ interface CodeBlockProps {
 	readonly?: boolean;
 }
 
-function CodeBlock({ code, language, onLanguageChange, showLanguageSelect = false, readonly = true }: CodeBlockProps) {
+function CodeBlock({ code, language, onLanguageChange, showLanguageSelect = false }: CodeBlockProps) {
 	const { copy: copyToClipboard } = useCopyToClipboard();
+	const [copied, setCopied] = useState(false);
+
+	const handleCopy = () => {
+		copyToClipboard(code);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
 
 	return (
-		<div className="relative">
-			<div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-				{showLanguageSelect && onLanguageChange && (
-					<Select value={language} onValueChange={onLanguageChange}>
-						<SelectTrigger className="h-8 w-fit text-xs">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem className="text-xs" value="python">
-								Python
-							</SelectItem>
-							<SelectItem className="text-xs" value="typescript">
-								TypeScript
-							</SelectItem>
-						</SelectContent>
-					</Select>
-				)}
-				<Button variant="ghost" size="icon" onClick={() => copyToClipboard(code)} aria-label="Copy to clipboard">
-					<Copy className="size-4" />
-				</Button>
+		<div className="relative overflow-hidden rounded-lg border border-border/80 bg-zinc-950/95 dark:bg-zinc-950/90 shadow-sm">
+			<div className="flex items-center justify-between border-b border-border/40 bg-zinc-900/60 px-4 py-2">
+				<div className="flex items-center gap-2">
+					<div className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
+					<div className="h-2.5 w-2.5 rounded-full bg-amber-500/70" />
+					<div className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
+					<span className="ml-2 font-mono text-xs text-zinc-400 capitalize">{language}</span>
+				</div>
+				<div className="flex items-center gap-2">
+					{showLanguageSelect && onLanguageChange && (
+						<Select value={language} onValueChange={onLanguageChange}>
+							<SelectTrigger className="h-7 w-fit bg-zinc-800/80 border-zinc-700/60 text-zinc-200 text-xs hover:bg-zinc-800">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem className="text-xs" value="python">
+									Python
+								</SelectItem>
+								<SelectItem className="text-xs" value="typescript">
+									TypeScript
+								</SelectItem>
+							</SelectContent>
+						</Select>
+					)}
+					<Button
+						variant="ghost"
+						size="icon"
+						onClick={handleCopy}
+						className="h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60"
+						aria-label="Copy to clipboard"
+					>
+						{copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+					</Button>
+				</div>
 			</div>
-			<CodeEditor className="w-full" code={code} lang={language} readonly={readonly} height={300} fontSize={14} options={EditorOptions} />
+			<div className="h-[300px] overflow-auto p-4 font-mono text-xs leading-relaxed text-zinc-200 selection:bg-primary/40">
+				<pre className="whitespace-pre font-mono">
+					<code>{code}</code>
+				</pre>
+			</div>
 		</div>
 	);
 }

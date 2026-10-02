@@ -7,8 +7,47 @@ import { Suspense, lazy, useEffect, useRef, useState } from "react";
 // Lazy-loaded Monaco Editor (SSR isn't a concern in SPA mode).
 const MonacoEditorLazy = lazy(() => import("@monaco-editor/react").then((mod) => ({ default: mod.default })));
 
-const MonacoEditor = (props: React.ComponentProps<typeof MonacoEditorLazy>) => (
-	<Suspense fallback={<Loader2 className="h-4 w-4 animate-spin p-4" />}>
+function CodeFallback({
+	code,
+	height,
+	readonly,
+	onChange,
+	className,
+}: {
+	code?: string;
+	height?: string | number;
+	readonly?: boolean;
+	onChange?: (val: string) => void;
+	className?: string;
+}) {
+	if (readonly) {
+		return (
+			<pre
+				style={{ height }}
+				className={cn(
+					"w-full overflow-auto rounded-md bg-muted/20 p-3 font-mono text-xs leading-relaxed text-foreground select-text whitespace-pre",
+					className,
+				)}
+			>
+				<code>{code || ""}</code>
+			</pre>
+		);
+	}
+	return (
+		<textarea
+			style={{ height }}
+			value={code || ""}
+			onChange={(e) => onChange?.(e.target.value)}
+			className={cn(
+				"w-full overflow-auto rounded-md bg-muted/10 p-3 font-mono text-xs leading-relaxed text-foreground resize-none border-none outline-none focus:ring-0",
+				className,
+			)}
+		/>
+	);
+}
+
+const MonacoEditor = (props: React.ComponentProps<typeof MonacoEditorLazy> & { fallback?: React.ReactNode }) => (
+	<Suspense fallback={props.fallback || <Loader2 className="h-4 w-4 animate-spin p-4" />}>
 		<MonacoEditorLazy {...props} />
 	</Suspense>
 );
@@ -96,6 +135,16 @@ export function CodeEditor(props: CodeEditorProps) {
 		setIsClient(true);
 	}, []);
 
+	const [monacoFailed, setMonacoFailed] = useState(false);
+
+	useEffect(() => {
+		// If Monaco CDN does not load within 2.5s, fall back to native viewer/editor
+		const timer = setTimeout(() => {
+			setMonacoFailed(true);
+		}, 2500);
+		return () => clearTimeout(timer);
+	}, []);
+
 	const { theme, systemTheme } = useTheme();
 
 	// Calculate theme
@@ -107,6 +156,7 @@ export function CodeEditor(props: CodeEditorProps) {
 
 	// Handle editor mount
 	const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: any) => {
+		setMonacoFailed(false);
 		if (props.autoFocus) {
 			editor.focus();
 		}
@@ -238,8 +288,16 @@ export function CodeEditor(props: CodeEditorProps) {
 
 	if (!isClient) {
 		return (
-			<div className={cn("group relative flex h-24 w-full items-center justify-center", props.containerClassName)}>
-				<Loader2 className="h-4 w-4 animate-spin" />
+			<div className={cn("group relative flex w-full", props.containerClassName)}>
+				<CodeFallback code={code} height={editorHeight} readonly={props.readonly} onChange={onChange} className={className} />
+			</div>
+		);
+	}
+
+	if (monacoFailed) {
+		return (
+			<div id={props.id} ref={editorContainer} className={cn("group relative h-full w-full", props.containerClassName)} onBlur={props.onBlur}>
+				<CodeFallback code={code} height={editorHeight} readonly={props.readonly} onChange={onChange} className={className} />
 			</div>
 		);
 	}
@@ -253,7 +311,8 @@ export function CodeEditor(props: CodeEditorProps) {
 				value={code || ""}
 				theme={getTheme()}
 				options={editorOptions}
-				loading={<Loader2 className="h-4 w-4 animate-spin" />}
+				loading={<CodeFallback code={code} height={editorHeight} readonly={props.readonly} onChange={onChange} className={className} />}
+				fallback={<CodeFallback code={code} height={editorHeight} readonly={props.readonly} onChange={onChange} className={className} />}
 				onChange={(value) => {
 					if (onChange) {
 						onChange(value || "");
