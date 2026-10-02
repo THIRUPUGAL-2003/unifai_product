@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/unifai/unifai/core/schemas"
@@ -51,6 +53,12 @@ func propagateAccessProfile(ctx context.Context, configStore configstore.ConfigS
 		if len(budgets) > 0 {
 			if err := applyAccessProfileBudgets(ctx, configStore, vk.ID, budgets); err != nil {
 				return fmt.Errorf("update virtual key %s budgets: %w", vkID, err)
+			}
+			if vk.CalendarAligned != profile.CalendarAligned {
+				vk.CalendarAligned = profile.CalendarAligned
+				if err := configStore.UpdateVirtualKey(ctx, vk); err != nil {
+					return fmt.Errorf("update virtual key %s calendar alignment: %w", vkID, err)
+				}
 			}
 		}
 	}
@@ -299,12 +307,17 @@ func budgetsFromSpec(items []map[string]any, vkID string) []tables.TableBudget {
 		b := tables.TableBudget{
 			ID:           uuid.NewString(),
 			VirtualKeyID: &vkID,
+			LastReset:    time.Now().UTC(),
 		}
 		if v, ok := item["max_limit"].(float64); ok {
 			b.MaxLimit = v
 		}
 		if v, ok := item["reset_duration"].(string); ok {
-			b.ResetDuration = v
+			b.ResetDuration = strings.TrimSpace(v)
+		}
+		// A budget without a limit or period cannot be enforced or reset.
+		if b.MaxLimit <= 0 || b.ResetDuration == "" {
+			continue
 		}
 		out = append(out, b)
 	}

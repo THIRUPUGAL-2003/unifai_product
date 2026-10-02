@@ -12,7 +12,7 @@ export interface AccessProfile {
 		request_reset_duration?: string;
 		token_max_limit?: number;
 		token_reset_duration?: string;
-	};
+	} | null;
 	calendar_aligned?: boolean;
 	virtual_key_ids?: string[];
 	mcp_servers?: Record<string, unknown>[];

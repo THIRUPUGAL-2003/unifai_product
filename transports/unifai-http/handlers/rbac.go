@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
@@ -71,6 +72,17 @@ func (h *WorkspaceHandler) createRole(ctx *fasthttp.RequestCtx) {
 	if payload.DAC == "" {
 		payload.DAC = "all-data"
 	}
+	existingRoles, err := store.ListRBACRoles(ctx)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to list roles")
+		return
+	}
+	for _, r := range existingRoles {
+		if strings.EqualFold(r.Name, payload.Name) {
+			SendError(ctx, fasthttp.StatusConflict, "a role with this name already exists")
+			return
+		}
+	}
 	now := time.Now().UTC()
 	row := tables.TableRBACRole{
 		Name: payload.Name, Description: payload.Description, IsSystemRole: false,
@@ -133,8 +145,29 @@ func (h *WorkspaceHandler) updateRole(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
-	if patch.Name != "" {
-		existing.Name = strings.ToLower(strings.TrimSpace(patch.Name))
+	prevName := existing.Name
+	if newName := strings.ToLower(strings.TrimSpace(patch.Name)); newName != "" && !strings.EqualFold(newName, prevName) {
+		// Users and sessions reference roles by name; admin/sub_admin/user are wired into auth.
+		if existing.IsSystemRole || isBuiltinRoleName(prevName) {
+			SendError(ctx, fasthttp.StatusForbidden, "system roles cannot be renamed")
+			return
+		}
+		if isBuiltinRoleName(newName) {
+			SendError(ctx, fasthttp.StatusConflict, "a role with this name already exists")
+			return
+		}
+		others, err := store.ListRBACRoles(ctx)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "failed to list roles")
+			return
+		}
+		for _, r := range others {
+			if r.ID != existing.ID && strings.EqualFold(r.Name, newName) {
+				SendError(ctx, fasthttp.StatusConflict, "a role with this name already exists")
+				return
+			}
+		}
+		existing.Name = newName
 	}
 	if strings.Contains(string(ctx.PostBody()), `"description"`) {
 		existing.Description = patch.Description
@@ -147,7 +180,59 @@ func (h *WorkspaceHandler) updateRole(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update role")
 		return
 	}
+	if existing.Name != prevName {
+		if err := h.reassignUsersRole(ctx, prevName, existing.Name); err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "role renamed but failed to update its users: "+err.Error())
+			return
+		}
+	}
 	SendJSON(ctx, map[string]any{"role": roleFromRow(*existing)})
+}
+
+func isBuiltinRoleName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "admin", "sub_admin", "user":
+		return true
+	}
+	return false
+}
+
+// reassignUsersRole moves every user (and their live sessions) from one role name to another.
+func (h *WorkspaceHandler) reassignUsersRole(ctx *fasthttp.RequestCtx, from, to string) error {
+	if h.store == nil || h.store.ConfigStore == nil {
+		return nil
+	}
+	users, err := h.store.ConfigStore.GetUsers(ctx)
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		if u == nil || !strings.EqualFold(u.Role, from) {
+			continue
+		}
+		u.Role = to
+		u.UpdatedAt = time.Now()
+		if err := h.store.ConfigStore.UpdateUser(ctx, u); err != nil {
+			return err
+		}
+		_ = h.store.ConfigStore.UpdateSessionsRoleByUsername(ctx, u.Username, to)
+	}
+	return nil
+}
+
+// callerRole returns the dashboard session role of the request, "admin" when auth is disabled.
+func (h *WorkspaceHandler) callerRole(ctx *fasthttp.RequestCtx) string {
+	if h.store != nil && h.store.ConfigStore != nil {
+		if token := sessionToken(ctx); token != "" {
+			if session, err := h.store.ConfigStore.GetSession(ctx, token); err == nil && session != nil {
+				return session.Role
+			}
+		}
+	}
+	if isLocalAdmin, _ := ctx.UserValue(schemas.IsLocalAdminContextKey).(bool); isLocalAdmin {
+		return "admin"
+	}
+	return ""
 }
 
 func (h *WorkspaceHandler) deleteRole(ctx *fasthttp.RequestCtx) {
@@ -175,6 +260,11 @@ func (h *WorkspaceHandler) deleteRole(ctx *fasthttp.RequestCtx) {
 	}
 	if err := store.DeleteRBACRole(ctx, id); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete role")
+		return
+	}
+	// Users left on a deleted role would resolve to no permissions at all.
+	if err := h.reassignUsersRole(ctx, role.Name, "user"); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "role deleted but failed to move its users to the user role: "+err.Error())
 		return
 	}
 	SendJSON(ctx, map[string]string{"message": "deleted"})
@@ -235,6 +325,10 @@ func (h *WorkspaceHandler) updateRolePermissions(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to load role")
 		return
 	}
+	if strings.EqualFold(role.Name, "admin") {
+		SendError(ctx, fasthttp.StatusForbidden, "admin role always has full permissions")
+		return
+	}
 	var body struct {
 		PermissionIDs []uint `json:"permission_ids"`
 	}
@@ -242,11 +336,29 @@ func (h *WorkspaceHandler) updateRolePermissions(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
-	role.ParsedPermissionIDs = body.PermissionIDs
+	known := map[uint]bool{}
+	for _, perm := range configstore.RBACPermissions() {
+		known[perm.ID] = true
+	}
+	ids := make([]uint, 0, len(body.PermissionIDs))
+	seen := map[uint]bool{}
+	for _, id := range body.PermissionIDs {
+		if known[id] && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	role.ParsedPermissionIDs = ids
 	role.UpdatedAt = time.Now().UTC()
 	if err := store.UpdateRBACRole(ctx, role); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update permissions")
 		return
+	}
+	if role.IsSystemRole {
+		if err := configstore.MarkRBACRoleCustomized(ctx, store, role.Name); err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "permissions saved but defaults may be re-applied: "+err.Error())
+			return
+		}
 	}
 	SendJSON(ctx, map[string]string{"message": "updated"})
 }
@@ -286,25 +398,52 @@ func (h *WorkspaceHandler) assignUserRole(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	roleName := strings.TrimSpace(body.RoleName)
-	if roleName == "" && body.RoleID != 0 {
-		store := h.requireStore(ctx)
-		if store == nil {
-			return
-		}
+	if roleName == "" && body.RoleID == 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "role_id or role_name is required")
+		return
+	}
+	store := h.requireStore(ctx)
+	if store == nil {
+		return
+	}
+	if err := store.EnsureRBACRoles(ctx); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to seed roles")
+		return
+	}
+	if roleName == "" {
 		role, err := store.GetRBACRole(ctx, body.RoleID)
-		if err != nil {
+		if err != nil || role == nil {
 			SendError(ctx, fasthttp.StatusNotFound, "role not found")
 			return
 		}
 		roleName = role.Name
-	}
-	if roleName == "" {
-		SendError(ctx, fasthttp.StatusBadRequest, "role_id or role_name is required")
-		return
+	} else {
+		roles, err := store.ListRBACRoles(ctx)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "failed to list roles")
+			return
+		}
+		found := false
+		for _, r := range roles {
+			if strings.EqualFold(r.Name, roleName) {
+				roleName = r.Name
+				found = true
+				break
+			}
+		}
+		if !found {
+			SendError(ctx, fasthttp.StatusNotFound, "role not found")
+			return
+		}
 	}
 	user, err := h.store.ConfigStore.GetUserByID(ctx, userID)
 	if err != nil || user == nil {
 		SendError(ctx, fasthttp.StatusNotFound, "user not found")
+		return
+	}
+	// RBAC:Update alone must not allow granting or removing admin (privilege escalation).
+	if (strings.EqualFold(roleName, "admin") || strings.EqualFold(user.Role, "admin")) && h.callerRole(ctx) != "admin" {
+		SendError(ctx, fasthttp.StatusForbidden, "only an admin can change admin role assignments")
 		return
 	}
 	user.Role = roleName

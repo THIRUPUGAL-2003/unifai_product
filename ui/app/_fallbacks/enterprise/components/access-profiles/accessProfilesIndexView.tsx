@@ -80,14 +80,14 @@ function buildPayload(form: ProfileFormState) {
 							}
 						: {}),
 				}
-			: undefined;
+			: null; // null (not undefined) so a PUT clears a previously saved rate limit
 
 	const allowAll =
 		form.allowedModels.length === 0 || form.allowedModels.includes("*");
 	const allowedModels = allowAll ? [] : form.allowedModels.filter((m) => m && m !== "*");
 
 	return {
-		name: form.name,
+		name: form.name.trim(),
 		description: form.description,
 		tags: form.tags
 			.split(",")

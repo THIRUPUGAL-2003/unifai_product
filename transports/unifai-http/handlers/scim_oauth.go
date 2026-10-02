@@ -189,6 +189,9 @@ func (h *WorkspaceHandler) scimOAuthCallback(ctx *fasthttp.RequestCtx) {
 		if cfg.Config["bearer_token"] == nil || strings.TrimSpace(fmt.Sprint(cfg.Config["bearer_token"])) == "" {
 			cfg.Config["bearer_token"] = access
 		}
+		if cfg.BearerToken == "" {
+			cfg.BearerToken = fmt.Sprint(cfg.Config["bearer_token"])
+		}
 	}
 	if refresh, ok := tok["refresh_token"].(string); ok && refresh != "" {
 		oauth["refresh_token"] = refresh
@@ -257,8 +260,9 @@ func (h *WorkspaceHandler) scimOAuthRefresh(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if access, ok := tok["access_token"].(string); ok && access != "" {
+		// The inbound /scim/v2 bearer is what the IdP was configured to send; rotating the
+		// OAuth access token must not change it.
 		oauth["access_token"] = access
-		cfg.Config["bearer_token"] = access
 	}
 	if newRefresh, ok := tok["refresh_token"].(string); ok && newRefresh != "" {
 		oauth["refresh_token"] = newRefresh

@@ -60,19 +60,29 @@ export async function fetchSessionAuth(forceRefresh = false): Promise<SessionAut
 	return pendingAuthPromise;
 }
 
+export const USER_ROLE_HOME_PATH = "/workspace/prompt-repo";
+
+/**
+ * Section grants that apply to this session, or null for "no section filter".
+ * The built-in "user" role is server-locked to Prompt Repository (any other /api
+ * path is rejected), so its stored allowed_sections are ignored here.
+ */
+export function getScopedWorkspaceSections(
+	auth: Pick<SessionAuth, "role" | "allowed_sections"> | null | undefined,
+): Set<string> | null {
+	if (!auth || auth.role === "user") {
+		return null;
+	}
+	return parseAdminAllowedSections(auth.allowed_sections);
+}
+
 export function getDefaultWorkspacePath(auth: SessionAuth | null | undefined): string {
-	// All roles: if allowed_sections is set, route to the first allowed section.
-	if (auth?.allowed_sections) {
-		const limited = parseAdminAllowedSections(auth.allowed_sections);
-		if (limited) {
-			return getDefaultPathForSections(limited);
-		}
-	}
 	if (auth?.role === "user") {
-		return "/workspace/prompt-repo";
+		return USER_ROLE_HOME_PATH;
 	}
-	if (auth?.role === "admin" || auth?.role === "sub_admin") {
-		return "/workspace/dashboard";
+	const limited = getScopedWorkspaceSections(auth);
+	if (limited) {
+		return getDefaultPathForSections(limited);
 	}
 	return "/workspace/dashboard";
 }
@@ -88,32 +98,13 @@ export function resolvePostLoginPath(
 		return defaultPath;
 	}
 
-	// Check allowed_sections first (applies to all roles including "user")
-	if (auth?.allowed_sections) {
-		const limited = parseAdminAllowedSections(auth.allowed_sections);
-		if (limited) {
-			if (isPathAllowedForUser(safeGoto, limited)) {
-				return safeGoto;
-			}
-			return defaultPath;
-		}
-	}
-
 	if (auth?.role === "user") {
-		if (safeGoto.startsWith("/workspace/prompt-repo")) {
-			return safeGoto;
-		}
-		return defaultPath;
+		return safeGoto.startsWith(USER_ROLE_HOME_PATH) ? safeGoto : defaultPath;
 	}
 
-	if (auth?.role === "admin" || auth?.role === "sub_admin") {
-		const limited = parseAdminAllowedSections(auth.allowed_sections);
-		if (limited) {
-			if (isPathAllowedForUser(safeGoto, limited)) {
-				return safeGoto;
-			}
-			return defaultPath;
-		}
+	const limited = getScopedWorkspaceSections(auth);
+	if (limited) {
+		return isPathAllowedForUser(safeGoto, limited) ? safeGoto : defaultPath;
 	}
 
 	return safeGoto;
@@ -124,33 +115,25 @@ export function getWorkspaceAccessRedirect(
 	auth: SessionAuth | null | undefined,
 	pathname: string,
 ): string | null {
-	// If allowed_sections is set, use section-based access control for ALL roles.
-	if (auth?.allowed_sections) {
-		const limited = parseAdminAllowedSections(auth.allowed_sections);
-		if (limited && !isPathAllowedForUser(pathname, limited)) {
-			return getDefaultPathForSections(limited);
-		}
-		// Within allowed sections — no redirect needed
-		return null;
-	}
+	let target: string | null = null;
 
 	if (auth?.role === "user") {
-		if (!pathname.startsWith("/workspace/prompt-repo")) {
-			return "/workspace/prompt-repo";
+		if (!pathname.startsWith(USER_ROLE_HOME_PATH)) {
+			target = USER_ROLE_HOME_PATH;
 		}
+	} else {
+		const limited = getScopedWorkspaceSections(auth);
+		if (limited && !isPathAllowedForUser(pathname, limited)) {
+			target = getDefaultPathForSections(limited);
+		} else if (pathname === "/workspace" || pathname === "/workspace/") {
+			target = getDefaultWorkspacePath(auth);
+		}
+	}
+
+	// Grants with no recognised keys resolve to a fallback path that may itself be
+	// disallowed; redirecting to the current path would loop forever.
+	if (target && target.split("?")[0] === pathname) {
 		return null;
 	}
-
-	if (auth?.role === "admin" || auth?.role === "sub_admin") {
-		const limited = parseAdminAllowedSections(auth.allowed_sections);
-		if (limited && !isPathAllowedForUser(pathname, limited)) {
-			return getDefaultPathForSections(limited);
-		}
-	}
-
-	if (pathname === "/workspace" || pathname === "/workspace/") {
-		return getDefaultWorkspacePath(auth);
-	}
-
-	return null;
+	return target;
 }

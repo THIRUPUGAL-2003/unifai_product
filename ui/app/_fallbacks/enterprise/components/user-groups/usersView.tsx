@@ -47,7 +47,7 @@ import {
 	useGetVirtualKeysQuery,
 	type SessionUser,
 } from "@/lib/store";
-import { useAssignUserRoleMutation, useGetRolesQuery } from "@enterprise/lib/store/apis/rbacApi";
+import { useGetRolesQuery } from "@enterprise/lib/store/apis/rbacApi";
 import {
 	useDeleteVirtualKeyUserMutation,
 	useGetUserVirtualKeysQuery,
@@ -79,6 +79,16 @@ function IndeterminateCheckbox({
 			className="border-border rounded text-teal-500 focus:ring-teal-500/50"
 		/>
 	);
+}
+
+// Server-side: admin/sub_admin see every prompt; all other roles are filtered by allowed_prompt_repos.
+function isWorkspaceAdminRole(role: string): boolean {
+	return role === "admin" || role === "sub_admin";
+}
+
+// Built-in "user" is server-locked to Prompt Repository, so section grants never apply to it.
+function sectionGrantsApply(role: string): boolean {
+	return role !== "user";
 }
 
 function UserTeamCell({ userId }: { userId: string }) {
@@ -120,7 +130,6 @@ export default function UsersView() {
 	const [updateUser] = useUpdateSessionUserMutation();
 	const [deleteUser] = useDeleteSessionUserMutation();
 	const [approveUser] = useApproveSessionUserMutation();
-	const [assignUserRole] = useAssignUserRoleMutation();
 	const [rejectUser] = useRejectSessionUserMutation();
 	const [addTeamMember] = useAddTeamMemberMutation();
 	const [removeTeamMember] = useRemoveTeamMemberMutation();
@@ -318,7 +327,7 @@ export default function UsersView() {
 		) : null;
 
 	const workspaceAccessPicker =
-		role === "admin" || role === "sub_admin" ? (
+		sectionGrantsApply(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">Workspace Access</label>
 				<p className="text-muted-foreground text-xs">
@@ -380,7 +389,7 @@ export default function UsersView() {
 		) : null;
 
 	const promptReposPicker =
-		role !== "admin" ? (
+		!isWorkspaceAdminRole(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">Allowed Prompt Repositories (Optional)</label>
 				<p className="text-muted-foreground text-xs">
@@ -432,12 +441,15 @@ export default function UsersView() {
 	};
 
 	const sanitizeAllowedPromptRepos = (raw?: string) => {
-		const validIds = new Set(allPrompts.map((p) => p.id));
-		return (raw || "")
+		const ids = (raw || "")
 			.split(",")
 			.map((id) => id.trim())
-			.filter((id) => id && validIds.has(id))
-			.join(",");
+			.filter(Boolean);
+		// Until the prompt list has loaded every id would look stale; keep them instead of
+		// wiping the user's prompt access on save.
+		if (!promptsData) return ids.join(",");
+		const validIds = new Set(allPrompts.map((p) => p.id));
+		return ids.filter((id) => validIds.has(id)).join(",");
 	};
 
 	const userPayload = () => ({
@@ -447,8 +459,8 @@ export default function UsersView() {
 		role,
 		budget,
 		rate_limit: rateLimit,
-		allowed_prompt_repos: role === "user" ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
-		allowed_sections: role === "admin" || role === "sub_admin" ? allowedSectionsToString(allowedSections) : "",
+		allowed_prompt_repos: !isWorkspaceAdminRole(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
+		allowed_sections: sectionGrantsApply(role) ? allowedSectionsToString(allowedSections) : "",
 		auto_create_prompt: autoCreatePrompt,
 	});
 
@@ -483,17 +495,8 @@ export default function UsersView() {
 		}
 		setIsCreating(true);
 		try {
+			// The create endpoint validates and stores the role (incl. admin-only checks).
 			const created = await createUser({ ...userPayload(), password }).unwrap();
-			if (created?.id && role) {
-				try {
-					await assignUserRole({ id: created.id, role_name: role }).unwrap();
-				} catch (roleErr) {
-					toast.warning(`User created, but role assign failed: ${getErrorMessage(roleErr)}`);
-					setIsCreateOpen(false);
-					resetForm();
-					return;
-				}
-			}
 			if (created?.id && role !== "admin") {
 				try {
 					await syncUserTeam(created.id, teamId, "");
@@ -548,8 +551,7 @@ export default function UsersView() {
 		setIsUpdating(true);
 		try {
 			await updateUser({ id: selectedUser.id, updates: userPayload() }).unwrap();
-			await assignUserRole({ id: selectedUser.id, role_name: role }).unwrap();
-			if (role === "user" || role === "sub_admin") {
+			if (role !== "admin") {
 				await syncUserTeam(selectedUser.id, teamId, initialTeamId);
 				await syncUserVirtualKey(selectedUser.id, virtualKeyId, initialVirtualKeyId);
 				if (!virtualKeyId && role === "user") {
@@ -659,7 +661,7 @@ export default function UsersView() {
 		setBudget(user.budget);
 		setRateLimit(user.rate_limit);
 		setAllowedPromptRepos(sanitizeAllowedPromptRepos(user.allowed_prompt_repos || ""));
-		const grants = (nextRole === "admin" || nextRole === "sub_admin") ? adminSectionsFromStorage(user.allowed_sections) : new Set<WorkspaceGrantKey>();
+		const grants = sectionGrantsApply(nextRole) ? adminSectionsFromStorage(user.allowed_sections) : new Set<WorkspaceGrantKey>();
 		setAllowedSections(grants);
 		setExpandedSections(
 			new Set(
@@ -987,7 +989,7 @@ export default function UsersView() {
 												</TableCell>
 												<TableCell className="font-mono text-xs">{user.rate_limit > 0 ? `${user.rate_limit} RPM` : "Unlimited"}</TableCell>
 												<TableCell className="max-w-[200px] truncate text-xs" title={resolveAllowedPromptNames(user.allowed_prompt_repos)}>
-													{resolveAllowedPromptNames(user.allowed_prompt_repos)}
+													{isWorkspaceAdminRole(user.role) ? "All" : resolveAllowedPromptNames(user.allowed_prompt_repos)}
 												</TableCell>
 												<TableCell className="text-muted-foreground text-xs">{new Date(user.created_at).toLocaleDateString()}</TableCell>
 												<TableCell className="text-right">
@@ -1091,7 +1093,7 @@ export default function UsersView() {
 										setVirtualKeyId("");
 									} else if (nextRole === "sub_admin") {
 										setAllowedPromptRepos("");
-									} else {
+									} else if (!sectionGrantsApply(nextRole)) {
 										setAllowedSections(new Set());
 										setExpandedSections(new Set());
 									}
@@ -1256,7 +1258,7 @@ export default function UsersView() {
 										setVirtualKeyId("");
 									} else if (nextRole === "sub_admin") {
 										setAllowedPromptRepos("");
-									} else {
+									} else if (!sectionGrantsApply(nextRole)) {
 										setAllowedSections(new Set());
 										setExpandedSections(new Set());
 									}

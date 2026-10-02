@@ -1052,7 +1052,19 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.UnifAIContext,
 	// Step 2: Customer-level budget (customer attached directly to VK, or via the VK's team).
 	// Fall back to the loaded relation IDs so VKs populated via joins without FK
 	// pointer columns still participate in customer-level enforcement.
-	if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil {
+	local, hasLocalStore := p.store.(*LocalGovernanceStore)
+	var billedTeam string
+	var billedCustomers []string
+	if hasLocalStore && hierarchyVK != nil {
+		billedTeam, billedCustomers = local.BilledEntities(ctx, hierarchyVK)
+	}
+	if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil && hasLocalStore {
+		for _, customerID := range billedCustomers {
+			if result = p.resolver.EvaluateCustomerRequest(ctx, customerID, evaluationRequest); result.Decision != DecisionAllow {
+				break
+			}
+		}
+	} else if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil {
 		var customerID string
 		customerFromTeam := false
 		switch {
@@ -1081,12 +1093,9 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.UnifAIContext,
 	// Step 3: Team-level budget. Fall back to vk.Team.ID when the FK pointer is nil
 	// but the relation is populated.
 	if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil {
-		var teamID string
-		switch {
-		case hierarchyVK.TeamID != nil:
-			teamID = *hierarchyVK.TeamID
-		case hierarchyVK.Team != nil:
-			teamID = hierarchyVK.Team.ID
+		teamID := billedTeam
+		if !hasLocalStore {
+			teamID = teamIDFromVK(hierarchyVK)
 		}
 		if teamID != "" {
 			result = p.resolver.EvaluateTeamRequest(ctx, teamID, evaluationRequest)
@@ -1456,6 +1465,8 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 		// logical request so each token-consuming attempt bills exactly once.
 		// Set by core on every retry iteration.
 		attemptNumber := unifai.GetIntFromContext(ctx, schemas.UnifAIContextKeyNumberOfRetries)
+		var attribution UsageUpdate
+		captureRequestAttribution(ctx, &attribution)
 
 		p.wg.Add(1)
 		go func() {
@@ -1468,7 +1479,7 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 				}
 			}()
 			// Use the requested model for usage tracking
-			p.postHookWorker(result, err, provider, requestedModel, requestType, effectiveVK, requestID, userID, isFinalChunk, attemptNumber, pricingScopes)
+			p.postHookWorker(result, err, provider, requestedModel, requestType, effectiveVK, requestID, userID, isFinalChunk, attemptNumber, pricingScopes, &attribution)
 		}()
 	}
 
@@ -1662,6 +1673,7 @@ func (p *GovernancePlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas
 		IsFinalChunk: true,
 		HasUsageData: toolCost > 0, // Has usage data if we have a cost
 	}
+	captureRequestAttribution(ctx, usageUpdate)
 
 	// Queue usage update asynchronously using tracker
 	p.wg.Add(1)
@@ -1748,7 +1760,8 @@ func (p *GovernancePlugin) Cleanup() error {
 //   - isBatch: Whether the request is a batch request
 //   - isFinalChunk: Whether the request is the final chunk
 //   - pricingScopes: Prebuilt pricing lookup scopes using governance VK ID (nil if not applicable)
-func (p *GovernancePlugin) postHookWorker(result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError, provider schemas.ModelProvider, model string, requestType schemas.RequestType, virtualKey, requestID, userID string, isFinalChunk bool, attemptNumber int, pricingScopes *modelcatalog.PricingLookupScopes) {
+//   - attribution: Request attribution captured via captureRequestAttribution (may be nil)
+func (p *GovernancePlugin) postHookWorker(result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError, provider schemas.ModelProvider, model string, requestType schemas.RequestType, virtualKey, requestID, userID string, isFinalChunk bool, attemptNumber int, pricingScopes *modelcatalog.PricingLookupScopes, attribution *UsageUpdate) {
 	// Determine if request was successful
 	success := (result != nil)
 	billedReason := "success"
@@ -1815,6 +1828,10 @@ func (p *GovernancePlugin) postHookWorker(result *schemas.UnifAIResponse, unifai
 			HasUsageData:  tokensUsed > 0 || cost > 0,
 			AttemptNumber: attemptNumber,
 			BilledReason:  billedReason,
+		}
+		if attribution != nil {
+			usageUpdate.UserTeamIDs = attribution.UserTeamIDs
+			usageUpdate.ScopedCustomerID = attribution.ScopedCustomerID
 		}
 
 		// Queue usage update asynchronously using tracker

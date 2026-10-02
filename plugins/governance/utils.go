@@ -115,10 +115,39 @@ func (p *GovernancePlugin) stampGovernanceCtx(ctx *schemas.UnifAIContext, vk *co
 	}
 	p.stampUserFromVKAssignment(ctx, vk)
 	p.stampUserOrgMembership(ctx)
+	if local, ok := p.store.(*LocalGovernanceStore); ok {
+		local.stampBilledTeam(ctx, vk)
+	}
+}
+
+// stampBilledTeam re-points the request's team/customer context at the team the request is
+// billed to (see billedTeamID) when that differs from the VK's primary team, so logs, rankings
+// and the pre-request team/customer checks match what is charged afterwards.
+func (gs *LocalGovernanceStore) stampBilledTeam(ctx *schemas.UnifAIContext, vk *configstoreTables.TableVirtualKey) {
+	if ctx == nil || vk == nil {
+		return
+	}
+	teamID := billedTeamID(ctx, vk)
+	if teamID == "" || teamID == teamIDFromVK(vk) {
+		return
+	}
+	ctx.SetValue(schemas.UnifAIContextKeyGovernanceTeamID, teamID)
+	if v, ok := gs.teams.Load(teamID); ok && v != nil {
+		if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil {
+			ctx.SetValue(schemas.UnifAIContextKeyGovernanceTeamName, team.Name)
+			if team.CustomerID != nil && *team.CustomerID != "" {
+				ctx.SetValue(schemas.UnifAIContextKeyGovernanceCustomerID, *team.CustomerID)
+				if team.Customer != nil {
+					ctx.SetValue(schemas.UnifAIContextKeyGovernanceCustomerName, team.Customer.Name)
+				}
+			}
+		}
+	}
+	gs.stampBusinessUnitsForTeam(ctx, teamID)
 }
 
 // stampUserFromVKAssignment sets user_id/user_name from governance_virtual_key_users when
-// the request has a VK but no session/header user — so User rankings are never empty for assigned VKs.
+// the request has a VK but no session/header user and the VK is assigned to exactly one user.
 func (p *GovernancePlugin) stampUserFromVKAssignment(ctx *schemas.UnifAIContext, vk *configstoreTables.TableVirtualKey) {
 	if ctx == nil || vk == nil || p.configStore == nil {
 		return
@@ -131,7 +160,9 @@ func (p *GovernancePlugin) stampUserFromVKAssignment(ctx *schemas.UnifAIContext,
 		return
 	}
 	links, err := ws.ListVirtualKeyUsers(ctx, vk.ID)
-	if err != nil || len(links) == 0 {
+	// Only infer the user for single-user keys: the inferred user's personal budget and rate
+	// limit are enforced and charged, and a shared key cannot tell which of its users called.
+	if err != nil || len(links) != 1 {
 		return
 	}
 	uid := links[0].UserID
@@ -162,6 +193,14 @@ func (p *GovernancePlugin) stampUserOrgMembership(ctx *schemas.UnifAIContext) {
 	if err != nil || len(links) == 0 {
 		return
 	}
+
+	memberTeamIDs := make([]string, 0, len(links))
+	for _, link := range links {
+		if link.TeamID != "" {
+			memberTeamIDs = append(memberTeamIDs, link.TeamID)
+		}
+	}
+	ctx.SetValue(governanceUserTeamIDsContextKey, memberTeamIDs)
 
 	teamIDs := make([]string, 0, len(links)+1)
 	teamNames := make([]string, 0, len(links)+1)

@@ -218,6 +218,31 @@ func optionalJSONStringHasValue(value schemas.OptionalJSON[string]) bool {
 }
 
 // applyVirtualKeyOwnershipUpdate applies presence-aware team/customer ownership changes.
+func uniqueIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return ids
+	}
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+func uniqueIDsPtr(ids *[]string) *[]string {
+	if ids == nil {
+		return nil
+	}
+	out := uniqueIDs(*ids)
+	return &out
+}
+
 func applyVirtualKeyOwnershipUpdate(vk *configstoreTables.TableVirtualKey, req *UpdateVirtualKeyRequest) error {
 	if req.TeamID.Set {
 		if req.TeamID.Null || req.TeamID.Value == "" {
@@ -1376,6 +1401,9 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	// Synchronize legacy and multi-entity fields
+	req.TeamIDs = uniqueIDs(req.TeamIDs)
+	req.CustomerIDs = uniqueIDs(req.CustomerIDs)
+	req.UserIDs = uniqueIDs(req.UserIDs)
 	if len(req.TeamIDs) > 0 && req.TeamID == nil {
 		req.TeamID = &req.TeamIDs[0]
 	} else if req.TeamID != nil && len(req.TeamIDs) == 0 {
@@ -1447,13 +1475,19 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 		// Synchronize multi-entity join table rows
 		if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
 			if len(req.TeamIDs) > 0 {
-				_ = ws.SetVirtualKeyTeams(ctx, vk.ID, req.TeamIDs)
+				if err := ws.SetVirtualKeyTeams(ctx, vk.ID, req.TeamIDs, tx); err != nil {
+					return err
+				}
 			}
 			if len(req.CustomerIDs) > 0 {
-				_ = ws.SetVirtualKeyCustomers(ctx, vk.ID, req.CustomerIDs)
+				if err := ws.SetVirtualKeyCustomers(ctx, vk.ID, req.CustomerIDs, tx); err != nil {
+					return err
+				}
 			}
 			if len(req.UserIDs) > 0 {
-				_ = ws.SetVirtualKeyUsers(ctx, vk.ID, req.UserIDs)
+				if err := ws.SetVirtualKeyUsers(ctx, vk.ID, req.UserIDs, tx); err != nil {
+					return err
+				}
 			}
 		}
 		// VK top-level and per-provider budgets/rate-limits are stored in VK-scoped model configs,
@@ -1714,30 +1748,50 @@ func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 		if err := applyVirtualKeyOwnershipUpdate(vk, &req); err != nil {
 			return err
 		}
-		// Synchronize multi-entity join table rows if provided
+		// Synchronize multi-entity join table rows if provided. A legacy single team_id /
+		// customer_id update (no *_ids list) also rewrites the join table, otherwise the
+		// stale links keep feeding Teams/Customers (budgets, access, UI) for the old entity.
 		if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
-			if req.TeamIDs != nil {
-				if err := ws.SetVirtualKeyTeams(ctx, vk.ID, *req.TeamIDs); err != nil {
+			teamIDs := uniqueIDsPtr(req.TeamIDs)
+			if teamIDs == nil && req.TeamID.Set {
+				legacy := []string{}
+				if vk.TeamID != nil {
+					legacy = []string{*vk.TeamID}
+				}
+				teamIDs = &legacy
+			}
+			if teamIDs != nil {
+				if err := ws.SetVirtualKeyTeams(ctx, vk.ID, *teamIDs, tx); err != nil {
 					return err
 				}
-				if len(*req.TeamIDs) > 0 {
-					vk.TeamID = &(*req.TeamIDs)[0]
+				if len(*teamIDs) > 0 {
+					vk.TeamID = &(*teamIDs)[0]
 				} else {
 					vk.TeamID = nil
+					vk.Team = nil
 				}
 			}
-			if req.CustomerIDs != nil {
-				if err := ws.SetVirtualKeyCustomers(ctx, vk.ID, *req.CustomerIDs); err != nil {
+			customerIDs := uniqueIDsPtr(req.CustomerIDs)
+			if customerIDs == nil && req.CustomerID.Set {
+				legacy := []string{}
+				if vk.CustomerID != nil {
+					legacy = []string{*vk.CustomerID}
+				}
+				customerIDs = &legacy
+			}
+			if customerIDs != nil {
+				if err := ws.SetVirtualKeyCustomers(ctx, vk.ID, *customerIDs, tx); err != nil {
 					return err
 				}
-				if len(*req.CustomerIDs) > 0 {
-					vk.CustomerID = &(*req.CustomerIDs)[0]
+				if len(*customerIDs) > 0 {
+					vk.CustomerID = &(*customerIDs)[0]
 				} else {
 					vk.CustomerID = nil
+					vk.Customer = nil
 				}
 			}
-			if req.UserIDs != nil {
-				if err := ws.SetVirtualKeyUsers(ctx, vk.ID, *req.UserIDs); err != nil {
+			if userIDs := uniqueIDsPtr(req.UserIDs); userIDs != nil {
+				if err := ws.SetVirtualKeyUsers(ctx, vk.ID, *userIDs, tx); err != nil {
 					return err
 				}
 			}

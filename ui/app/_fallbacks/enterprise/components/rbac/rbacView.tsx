@@ -77,7 +77,20 @@ const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
 	GuardrailsProviders: ["guardrails/providers", "guardrails"],
 	Cluster: ["guardrails/cluster-config", "cluster-config"],
 	Settings: ["settings"],
+	FeatureFlags: ["settings/feature-flags"],
+	APIKeys: ["settings/api-keys"],
+	AdaptiveRouter: ["adaptive-routing"],
+	PromptRepository: ["prompt-repository"],
+	PromptDeploymentStrategy: ["prompt-repository"],
+	SkillsRepository: ["skills-repository"],
 };
+
+// allowed_sections only scopes sub_admin and custom roles: admin is unrestricted and the
+// built-in "user" role is server-locked to Prompt Repository.
+function sectionScopeApplies(role?: string): boolean {
+	const r = (role || "user").toLowerCase();
+	return r !== "admin" && r !== "user";
+}
 
 export default function RBACView() {
 	// Navigation Tree Accordion States
@@ -124,6 +137,13 @@ export default function RBACView() {
 	const teams = teamsData?.teams || [];
 	const customers = customersData?.customers || [];
 
+	// The tree hands us a snapshot; read role / allowed_sections from the live list so role
+	// changes and saved sections are reflected without re-selecting the user.
+	const targetUser = useMemo(
+		() => (target.type === "user" ? sessionUsers.find((u) => u.id === target.user.id) ?? target.user : null),
+		[target, sessionUsers],
+	);
+
 	// Determine active role ID for fetching role permissions query
 	const activeRoleId = useMemo(() => {
 		if (target.type === "role") return target.role.id;
@@ -132,7 +152,7 @@ export default function RBACView() {
 			return userRole?.id ?? 0;
 		}
 		if (target.type === "user") {
-			const matchingRole = roles.find((r) => r.name.toLowerCase() === target.user.role?.toLowerCase());
+			const matchingRole = roles.find((r) => r.name.toLowerCase() === (targetUser?.role || "user").toLowerCase());
 			return matchingRole?.id ?? 0;
 		}
 		if (target.type === "all_teams" || target.type === "team") {
@@ -140,9 +160,9 @@ export default function RBACView() {
 			return subAdminRole?.id ?? 0;
 		}
 		return 0;
-	}, [target, roles]);
+	}, [target, roles, targetUser]);
 
-	const { data: rolePermData } = useGetRolePermissionsQuery(activeRoleId, { skip: activeRoleId === 0 });
+	const { currentData: rolePermData } = useGetRolePermissionsQuery(activeRoleId, { skip: activeRoleId === 0 });
 
 	// Mutations
 	const [createRole, { isLoading: isCreatingRole }] = useCreateRoleMutation();
@@ -166,9 +186,25 @@ export default function RBACView() {
 			return;
 		}
 		if (rolePermData?.permissions) {
-			setSelectedPerms(rolePermData.permissions.map((p) => p.id));
+			let granted = rolePermData.permissions;
+			// A scoped user sees their role's permissions narrowed to the sections saved for them.
+			if (target.type === "user" && sectionScopeApplies(targetUser?.role) && targetUser?.allowed_sections?.trim()) {
+				const allowed = new Set(
+					targetUser.allowed_sections
+						.split(",")
+						.map((s) => s.trim())
+						.filter(Boolean),
+				);
+				granted = granted.filter((p) => {
+					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
+					return sections.length === 0 || sections.some((s) => allowed.has(s));
+				});
+			}
+			setSelectedPerms(granted.map((p) => p.id));
+		} else if (activeRoleId === 0) {
+			setSelectedPerms([]);
 		}
-	}, [target, rolePermData, permissions]);
+	}, [target, targetUser, rolePermData, permissions, activeRoleId]);
 
 	// Toggle accordion
 	const toggleSection = (section: keyof typeof expandedSections) => {
@@ -237,6 +273,19 @@ export default function RBACView() {
 		return Array.from(sections).join(",");
 	};
 
+	/** Returns how many user updates failed. */
+	const applySectionsToUsers = async (users: SessionUser[], sectionsStr: string): Promise<number> => {
+		const results = await Promise.allSettled(
+			users.map((u) =>
+				updateSessionUser({
+					id: u.id,
+					updates: { username: u.username, role: u.role, allowed_sections: sectionsStr },
+				}).unwrap(),
+			),
+		);
+		return results.filter((r) => r.status === "rejected").length;
+	};
+
 	// Save Action for current Target
 	const handleSaveCurrentMatrix = async () => {
 		try {
@@ -252,21 +301,35 @@ export default function RBACView() {
 
 			if (target.type === "all_users") {
 				const userRole = roles.find((r) => r.name.toLowerCase() === "user");
-				if (userRole) {
-					await updatePerms({ id: userRole.id, permission_ids: selectedPerms }).unwrap();
+				if (!userRole) {
+					toast.error("The built-in 'user' role was not found.");
+					return;
 				}
-				const sectionsStr = computeAllowedSections(selectedPerms);
-				const regularUsers = sessionUsers.filter((u) => u.role?.toLowerCase() === "user");
-				for (const u of regularUsers) {
-					void updateSessionUser({ id: u.id, updates: { username: u.username, role: u.role, allowed_sections: sectionsStr } });
-				}
-				toast.success(`Permissions updated for All Users (${regularUsers.length} users updated)`);
+				await updatePerms({ id: userRole.id, permission_ids: selectedPerms }).unwrap();
+				toast.success("Permissions updated for the 'user' role (applies to all users)");
 				return;
 			}
 
 			if (target.type === "user") {
-				const user = target.user;
-				const sectionsStr = computeAllowedSections(selectedPerms);
+				const user = targetUser ?? target.user;
+				if (!sectionScopeApplies(user.role)) {
+					toast.info(
+						user.role?.toLowerCase() === "admin"
+							? "Admins always have full access."
+							: "The 'user' role is limited to Prompt Repository. Assign sub_admin or a custom role to grant more sections.",
+					);
+					return;
+				}
+				// Per-user scoping can only narrow the role: a section whose API the role cannot
+				// call would show in the sidebar and then fail with "insufficient permissions".
+				const rolePermIds = new Set((rolePermData?.permissions || []).map((p) => p.id));
+				const effective = selectedPerms.filter((id) => rolePermIds.has(id));
+				if (effective.length < selectedPerms.length) {
+					toast.warning(
+						`${selectedPerms.length - effective.length} permission(s) are not granted by role '${user.role}' and were skipped. Grant them on the role first.`,
+					);
+				}
+				const sectionsStr = computeAllowedSections(effective);
 				await updateSessionUser({
 					id: user.id,
 					updates: {
@@ -281,22 +344,23 @@ export default function RBACView() {
 
 			if (target.type === "all_teams") {
 				const sectionsStr = computeAllowedSections(selectedPerms);
-				for (const u of sessionUsers) {
-					void updateSessionUser({ id: u.id, updates: { username: u.username, role: u.role, allowed_sections: sectionsStr } });
+				const scopedUsers = sessionUsers.filter((u) => sectionScopeApplies(u.role));
+				const failed = await applySectionsToUsers(scopedUsers, sectionsStr);
+				if (failed > 0) {
+					toast.error(`${failed} of ${scopedUsers.length} users could not be updated`);
+				} else {
+					toast.success(`Sidebar sections updated for ${scopedUsers.length} sub-admin / custom-role users`);
 				}
-				toast.success(`Permissions granted to All Teams and members`);
 				return;
 			}
 
 			if (target.type === "team") {
-				const team = target.team;
-				const sectionsStr = computeAllowedSections(selectedPerms);
-				toast.success(`Team '${team.name}' permissions updated. Members inherit these granted sections.`);
+				toast.info("Per-team permissions are not stored yet. Use All Teams, a role, or an individual user.");
 				return;
 			}
 
 			if (target.type === "all_customers" || target.type === "customer") {
-				toast.success("Customer scope permissions saved successfully.");
+				toast.info("Customer-scoped permissions are not stored yet. Use a role or an individual user.");
 				return;
 			}
 		} catch (err) {
@@ -361,9 +425,6 @@ export default function RBACView() {
 		try {
 			await assignUserRole({ id: userId, role_name: newRole }).unwrap();
 			toast.success(`Role updated to '${newRole}'`);
-			if (target.type === "user" && target.user.id === userId) {
-				setTarget({ type: "user", user: { ...target.user, role: newRole } });
-			}
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
@@ -689,12 +750,12 @@ export default function RBACView() {
 
 								{/* Target Metadata & User Role Quick Switch */}
 								<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-									{target.type === "user" && (
+									{target.type === "user" && targetUser && (
 										<>
 											<span>Current Role:</span>
 											<select
-												value={target.user.role || "user"}
-												onChange={(e) => void handleAssignUserRole(target.user.id, e.target.value)}
+												value={targetUser.role || "user"}
+												onChange={(e) => void handleAssignUserRole(targetUser.id, e.target.value)}
 												className="bg-background border-input h-7 rounded border px-2 text-xs font-semibold text-foreground"
 											>
 												{roles.map((r) => (
@@ -703,7 +764,7 @@ export default function RBACView() {
 													</option>
 												))}
 											</select>
-											<span>• Email: {target.user.email || "No email"}</span>
+											<span>• Email: {targetUser.email || "No email"}</span>
 										</>
 									)}
 

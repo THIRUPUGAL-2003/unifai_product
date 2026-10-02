@@ -23,6 +23,12 @@ type UsageUpdate struct {
 	RequestID  string                `json:"request_id"`
 	UserID     string                `json:"user_id,omitempty"` // User ID for enterprise user-level governance
 
+	// Request attribution captured from the request context. Usage is applied on the
+	// plugin's background context, so these are re-applied before the team/customer
+	// budgets are resolved; otherwise charging would not match the pre-request checks.
+	UserTeamIDs      []string `json:"user_team_ids,omitempty"`
+	ScopedCustomerID string   `json:"scoped_customer_id,omitempty"`
+
 	// Streaming optimization fields
 	IsStreaming  bool `json:"is_streaming"`   // Whether this is a streaming response
 	IsFinalChunk bool `json:"is_final_chunk"` // Whether this is the final chunk
@@ -182,6 +188,7 @@ func (t *UsageTracker) UpdateUsage(ctx context.Context, update *UsageUpdate) {
 		t.logger.Debug(fmt.Sprintf("Virtual key not found: %s", update.VirtualKey))
 		return
 	}
+	ctx = withRequestAttribution(ctx, update)
 
 	// Update per-VK-scoped model config usage (counterpart to the global model updates above).
 	// Without this, per-VK model limits never increment and so never trip.
@@ -196,12 +203,10 @@ func (t *UsageTracker) UpdateUsage(ctx context.Context, update *UsageUpdate) {
 		}
 	}
 
-	// Update rate limit usage (VK-level, provider-config-level, team-level, customer-level) if applicable
-	// Include TeamID and CustomerID checks since rate limits can be configured at those levels
-	if vk.RateLimit != nil || len(vk.ProviderConfigs) > 0 || vk.TeamID != nil || vk.CustomerID != nil {
-		if err := t.store.UpdateVirtualKeyRateLimitUsageInMemory(ctx, vk, update.Provider, update.TokensUsed, shouldUpdateTokens, shouldUpdateRequests); err != nil {
-			t.logger.Error("failed to update rate limit usage for VK %s: %v", vk.ID, err)
-		}
+	// Update rate limit usage (VK-level, provider-config-level, team-level, customer-level).
+	// The collector returns nothing when no level has a rate limit, so no pre-filter is needed.
+	if err := t.store.UpdateVirtualKeyRateLimitUsageInMemory(ctx, vk, update.Provider, update.TokensUsed, shouldUpdateTokens, shouldUpdateRequests); err != nil {
+		t.logger.Error("failed to update rate limit usage for VK %s: %v", vk.ID, err)
 	}
 
 	// Update budget usage in hierarchy (VK → Team → Customer) only if we have usage data
@@ -212,6 +217,30 @@ func (t *UsageTracker) UpdateUsage(ctx context.Context, update *UsageUpdate) {
 			t.logger.Error("failed to update budget hierarchy atomically for VK %s: %v", vk.ID, err)
 		}
 	}
+}
+
+// captureRequestAttribution copies the request-scoped attribution onto the update while
+// the request context is still available.
+func captureRequestAttribution(ctx context.Context, update *UsageUpdate) {
+	if ctx == nil || update == nil {
+		return
+	}
+	if ids, ok := ctx.Value(governanceUserTeamIDsContextKey).([]string); ok && len(ids) > 0 {
+		update.UserTeamIDs = append([]string(nil), ids...)
+	}
+	if scoped, ok := ctx.Value(schemas.UnifAIContextKeyGovernanceScopedCustomerID).(string); ok {
+		update.ScopedCustomerID = scoped
+	}
+}
+
+func withRequestAttribution(ctx context.Context, update *UsageUpdate) context.Context {
+	if len(update.UserTeamIDs) > 0 {
+		ctx = context.WithValue(ctx, governanceUserTeamIDsContextKey, update.UserTeamIDs)
+	}
+	if update.ScopedCustomerID != "" {
+		ctx = context.WithValue(ctx, schemas.UnifAIContextKeyGovernanceScopedCustomerID, update.ScopedCustomerID)
+	}
+	return ctx
 }
 
 // startWorkers starts all background workers for business logic

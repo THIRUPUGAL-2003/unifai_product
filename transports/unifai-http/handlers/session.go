@@ -551,7 +551,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 	h.recordAuthAudit(ctx, "login", "success", sessionUsername, "/api/session/login", start)
 
 	if activeDBUser != nil && h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserCreated(ctx, activeDBUser, true)
+		h.promptLifecycle.OnUserLogin(ctx, activeDBUser)
 	}
 
 	resp := map[string]any{
@@ -1539,11 +1539,11 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		Password           string  `json:"password"`
 		Role               string  `json:"role"`
 		Email              *string `json:"email"`
-		Status             *string `json:"status"`
-		Budget             float64 `json:"budget"`
-		RateLimit          int     `json:"rate_limit"`
-		AllowedPromptRepos *string `json:"allowed_prompt_repos"`
-		AllowedSections    *string `json:"allowed_sections"`
+		Status             *string  `json:"status"`
+		Budget             *float64 `json:"budget"`
+		RateLimit          *int     `json:"rate_limit"`
+		AllowedPromptRepos *string  `json:"allowed_prompt_repos"`
+		AllowedSections    *string  `json:"allowed_sections"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
@@ -1617,8 +1617,14 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		existingUser.Role = role
 		roleChanged = role != prevRole
 	}
-	existingUser.Budget = payload.Budget
-	existingUser.RateLimit = payload.RateLimit
+	// Partial updates (e.g. Roles & Permissions only sends role/allowed_sections)
+	// must not reset budget or rate limit to zero.
+	if payload.Budget != nil {
+		existingUser.Budget = *payload.Budget
+	}
+	if payload.RateLimit != nil {
+		existingUser.RateLimit = *payload.RateLimit
+	}
 	if payload.AllowedPromptRepos != nil {
 		existingUser.AllowedPromptRepos = *payload.AllowedPromptRepos
 	}
@@ -1633,7 +1639,7 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Terminate sessions on password change / reject; sync or revoke on role change.
-	if payload.Password != "" || (payload.Status != nil && *payload.Status == tables.UserStatusRejected) {
+	if payload.Password != "" || (payload.Status != nil && (*payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusPending)) {
 		_ = h.configStore.DeleteSessionsByUsername(ctx, existingUser.Username)
 		if prevUsername != "" && prevUsername != existingUser.Username {
 			_ = h.configStore.DeleteSessionsByUsername(ctx, prevUsername)
@@ -1681,36 +1687,7 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Clean related governance rows before deleting the user so DB stays consistent.
-	if existing.BudgetID != nil && *existing.BudgetID != "" {
-		if err := h.configStore.DeleteBudget(ctx, *existing.BudgetID); err != nil && !errors.Is(err, configstore.ErrNotFound) {
-			logger.Error("failed to delete user budget id=%s: %v", *existing.BudgetID, err)
-		}
-	}
-	_ = h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
-		if tx == nil {
-			return nil
-		}
-		if tx.Migrator().HasTable(&tables.TableVirtualKeyUser{}) {
-			_ = tx.Where("user_id = ?", id).Delete(&tables.TableVirtualKeyUser{}).Error
-		}
-		return tx.Where("user_id = ?", id).Delete(&tables.TableBudget{}).Error
-	})
-	if existing.RateLimitID != nil && *existing.RateLimitID != "" {
-		if err := h.configStore.DeleteRateLimit(ctx, *existing.RateLimitID); err != nil && !errors.Is(err, configstore.ErrNotFound) {
-			logger.Error("failed to delete user rate limit id=%s: %v", *existing.RateLimitID, err)
-		}
-	}
-	if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
-		if memberships, err := ws.ListTeamsForUser(ctx, id); err == nil {
-			for _, m := range memberships {
-				_ = ws.RemoveTeamMember(ctx, m.TeamID, id)
-			}
-		}
-	}
-
-	if h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserDeleted(ctx, existing)
-	}
+	purgeUserRelations(ctx, h.configStore, h.promptLifecycle, existing)
 
 	if err := h.configStore.DeleteUser(ctx, id); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to delete user: "+err.Error())

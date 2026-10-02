@@ -758,6 +758,16 @@ func markLocalAdminIfSessionAdmin(ctx *fasthttp.RequestCtx, store configstore.Co
 	}
 }
 
+// isBootstrapAdmin reports whether username is the env/config super admin, which has no
+// governance_users row. When the auth config cannot be read the session is trusted.
+func (m *AuthMiddleware) isBootstrapAdmin(username string) bool {
+	authConfig, err := m.store.GetAuthConfig(context.Background())
+	if err != nil || authConfig == nil || authConfig.AdminUserName == nil {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(username), strings.TrimSpace(authConfig.AdminUserName.GetValue()))
+}
+
 // enrichInferenceFromDashboardSession stamps user_id/user_name and, when a member
 // has an assigned Virtual Key, binds it onto /v1 requests that arrive with a
 // dashboard session cookie. External API callers without a session cookie are unchanged.
@@ -784,14 +794,18 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 
 	dbUser, err := m.store.GetUserByUsername(context.Background(), session.Username)
 	if err != nil || dbUser == nil {
-		// Bootstrap env admin may have no governance_users row — allow through.
-		if isWorkspaceAdminRole(session.Role) {
+		// Bootstrap env admin may have no governance_users row — allow through. A deleted
+		// admin whose session is still alive must not.
+		if isWorkspaceAdminRole(session.Role) && m.isBootstrapAdmin(session.Username) {
 			if session.Username != "" {
 				ctx.SetUserValue(schemas.UnifAIContextKeyUserName, session.Username)
 			}
 			return ""
 		}
 		return "User account not found. Contact your admin."
+	}
+	if !dbUser.IsApproved() {
+		return "Your account is not active. Contact your admin."
 	}
 	if dbUser.ID != "" {
 		ctx.SetUserValue(schemas.UnifAIContextKeyUserID, dbUser.ID)
@@ -949,14 +963,28 @@ func (m *AuthMiddleware) enforceCommittedPromptModelForMember(ctx *fasthttp.Requ
 	return ""
 }
 
+type sessionCheckResult int
+
+const (
+	sessionInvalid sessionCheckResult = iota
+	// sessionForbidden: the session is valid but its role may not call this path.
+	// Must map to 403, not 401 — the dashboard treats 401 as "logged out".
+	sessionForbidden
+	sessionOK
+)
+
 // validateSession checks if a session token is valid and user is actively approved
 func validateSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token string) bool {
+	return checkSession(ctx, store, token) == sessionOK
+}
+
+func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token string) sessionCheckResult {
 	session, err := store.GetSession(context.Background(), token)
 	if err != nil || session == nil {
-		return false
+		return sessionInvalid
 	}
 	if session.ExpiresAt.Before(time.Now()) {
-		return false
+		return sessionInvalid
 	}
 
 	// Verify user account still exists and is approved (unless bootstrap admin)
@@ -967,7 +995,7 @@ func validateSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, to
 		if err != nil || dbUser == nil || !dbUser.IsApproved() {
 			// Invalidate ghost session immediately (CWE-613)
 			_ = store.DeleteSession(context.Background(), token)
-			return false
+			return sessionInvalid
 		}
 	}
 
@@ -988,10 +1016,10 @@ func validateSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, to
 			(strings.HasPrefix(path, "/api/models") && string(ctx.Method()) == "GET") ||
 			(path == "/api/rbac/me/permissions" && string(ctx.Method()) == "GET")
 		if !isAllowed && !customRoleMayReach(store, session.Role, string(ctx.Method()), path) {
-			return false
+			return sessionForbidden
 		}
 	}
-	return true
+	return sessionOK
 }
 
 // customRoleMayReach lets custom-role sessions through to RBAC-gated routes, where
@@ -1201,10 +1229,9 @@ func (m *AuthMiddleware) APIMiddleware() schemas.UnifAIHTTPMiddleware {
 		"/login",
 		"/favicon.ico",
 		"/assets/*",
+		// SCIM OAuth callback/refresh/logout change stored IdP tokens: they need a dashboard
+		// session (the callback page sends its cookie).
 		"/api/scim/oauth/config",
-		"/api/scim/oauth/callback",
-		"/api/scim/oauth/refresh",
-		"/api/scim/oauth/logout",
 		"/health",
 		"/api/version",
 	}
@@ -1384,11 +1411,17 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 				// Cookie-based auth fallback: if no Authorization header, check for the HTTPOnly session cookie.
 				// This supports the dashboard which relies on cookies instead of localStorage tokens.
 				cookieToken := string(ctx.Request.Header.Cookie("token"))
-				if cookieToken != "" && validateSession(ctx, m.store, cookieToken) {
-					ctx.SetUserValue(schemas.UnifAIContextKeySessionToken, cookieToken)
-					markLocalAdminIfSessionAdmin(ctx, m.store, cookieToken)
-					next(ctx)
-					return
+				if cookieToken != "" {
+					switch checkSession(ctx, m.store, cookieToken) {
+					case sessionOK:
+						ctx.SetUserValue(schemas.UnifAIContextKeySessionToken, cookieToken)
+						markLocalAdminIfSessionAdmin(ctx, m.store, cookieToken)
+						next(ctx)
+						return
+					case sessionForbidden:
+						SendError(ctx, fasthttp.StatusForbidden, "Forbidden: your role does not have access to this resource")
+						return
+					}
 				}
 				// Last-resort: a scoped temp token (e.g. for the MCP per-user
 				// OAuth auth page accessed by a non-admin browser) can rescue
@@ -1413,8 +1446,12 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 			// Password-as-Bearer (base64 user:pass) is intentionally removed: it
 			// bypassed session revoke/logout and put credentials on every request.
 			if scheme == "Bearer" {
-				if !validateSession(ctx, m.store, token) {
+				switch checkSession(ctx, m.store, token) {
+				case sessionInvalid:
 					SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
+					return
+				case sessionForbidden:
+					SendError(ctx, fasthttp.StatusForbidden, "Forbidden: your role does not have access to this resource")
 					return
 				}
 				ctx.SetUserValue(schemas.UnifAIContextKeySessionToken, token)

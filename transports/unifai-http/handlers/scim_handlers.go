@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/unifai/unifai/framework/configstore"
+	"github.com/unifai/unifai/framework/encrypt"
 	"github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
@@ -146,18 +148,25 @@ func (h *WorkspaceHandler) scimSchemas(ctx *fasthttp.RequestCtx) {
 
 func (h *WorkspaceHandler) scimListUsers(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	users, err := h.store.ConfigStore.GetUsers(ctx)
 	if err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to list users")
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to list users")
 		return
 	}
 	filter := string(ctx.QueryArgs().Peek("filter"))
 	if filter != "" {
 		users = scimFilterUsers(users, filter)
 	}
+	// startIndex paging needs a stable order.
+	sort.SliceStable(users, func(i, j int) bool {
+		if !users[i].CreatedAt.Equal(users[j].CreatedAt) {
+			return users[i].CreatedAt.Before(users[j].CreatedAt)
+		}
+		return users[i].ID < users[j].ID
+	})
 	startIndex := queryInt(ctx, "startIndex", 1)
 	if startIndex < 1 {
 		startIndex = 1
@@ -247,13 +256,13 @@ func scimFilterUsers(users []*tables.TableUser, filter string) []*tables.TableUs
 
 func (h *WorkspaceHandler) scimGetUser(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	user, err := h.store.ConfigStore.GetUserByID(ctx, id)
 	if err != nil || user == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "user not found")
+		scimError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
 	}
 	SendJSON(ctx, scimUserResource(user))
@@ -275,7 +284,7 @@ func scimNormalizeRole(raw string) string {
 
 func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	var body struct {
@@ -285,7 +294,8 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 			Value   string `json:"value"`
 			Primary bool   `json:"primary"`
 		} `json:"emails"`
-		Active bool `json:"active"`
+		// Pointer: an omitted "active" means active (RFC 7643 default), not disabled.
+		Active *bool `json:"active"`
 		Roles  []struct {
 			Value string `json:"value"`
 		} `json:"roles"`
@@ -296,13 +306,14 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		} `json:"name"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil {
-		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim payload")
+		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim payload", "invalidSyntax")
 		return
 	}
-	email := scimEmailFromBody(body.Emails)
+	email := strings.ToLower(scimEmailFromBody(body.Emails))
 	username := strings.TrimSpace(body.UserName)
+	externalID := strings.TrimSpace(body.ExternalID)
 	if email == "" && strings.Contains(username, "@") {
-		email = username
+		email = strings.ToLower(username)
 	}
 	if username == "" {
 		if formatted := strings.TrimSpace(body.Name.Formatted); formatted != "" {
@@ -312,107 +323,203 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	if username == "" {
-		SendError(ctx, fasthttp.StatusBadRequest, "userName is required")
+		scimError(ctx, fasthttp.StatusBadRequest, "userName is required", "invalidValue")
 		return
 	}
 
-	role := "user"
-	if len(body.Roles) > 0 && body.Roles[0].Value != "" {
-		role = scimNormalizeRole(body.Roles[0].Value)
-	} else if def := h.scimDefaultRole(ctx); def != "" {
-		role = scimNormalizeRole(def)
+	requestedRole := ""
+	if len(body.Roles) > 0 {
+		requestedRole = strings.TrimSpace(body.Roles[0].Value)
 	}
 
-	// Gracefully adopt or link existing user if username or email is already present in UnifAI
-	var existing *tables.TableUser
-	if u, _ := h.store.ConfigStore.GetUserByUsername(ctx, username); u != nil {
-		existing = u
-	} else if email != "" {
-		if u, _ := h.store.ConfigStore.GetUserByEmail(ctx, email); u != nil {
-			existing = u
+	// Link a local account that already has this username / email (case-insensitive) instead
+	// of creating a duplicate. An account already bound to a different IdP identity is a
+	// conflict, never a silent re-link.
+	if existing := h.scimFindUser(ctx, username, email, externalID); existing != nil {
+		if externalID != "" && existing.ExternalID != "" && !strings.EqualFold(existing.ExternalID, externalID) {
+			scimError(ctx, fasthttp.StatusConflict, "a user with this userName or email is linked to a different externalId", "uniqueness")
+			return
 		}
-	}
-	if existing != nil {
-		if body.ExternalID != "" && (existing.ExternalID == "" || existing.ExternalID != body.ExternalID) {
-			existing.ExternalID = body.ExternalID
+		prev := *existing
+		if externalID != "" {
+			existing.ExternalID = externalID
 		}
-		existing.Status = scimStatusFromActive(body.Active)
-		if role != "" && (existing.Role == "" || existing.Role == "user") {
-			existing.Role = role
+		if body.Active != nil {
+			existing.Status = scimStatusFromActive(*body.Active)
+		}
+		if requestedRole != "" {
+			existing.Role = h.scimValidRole(ctx, requestedRole, existing.Role)
 		}
 		existing.UpdatedAt = time.Now().UTC()
-		_ = h.store.ConfigStore.UpdateUser(ctx, existing)
-		if h.promptLifecycle != nil {
-			_ = h.promptLifecycle.OnUserCreated(ctx, existing, true)
+		if err := h.store.ConfigStore.UpdateUser(ctx, existing); err != nil {
+			scimError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
+			return
 		}
-		// Auto-assign to default team configured in SCIM settings
-		h.scimAssignDefaultTeam(ctx, existing.ID)
+		h.scimAfterUserChange(ctx, &prev, existing)
+		if existing.IsApproved() {
+			h.scimAssignDefaultTeam(ctx, existing.ID)
+		}
 		SendJSONWithStatus(ctx, scimUserResource(existing), fasthttp.StatusOK)
 		return
 	}
 
-	user := &tables.TableUser{
-		ID:       uuid.NewString(),
-		Username: username,
-		Email:    email,
-		Password: uuid.NewString(),
-		Role:     role,
-		Status:   scimStatusFromActive(body.Active),
-	}
-	if body.ExternalID != "" {
-		user.ExternalID = body.ExternalID
-	}
-	if err := h.store.ConfigStore.CreateUser(ctx, user); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to create user")
+	role := h.scimValidRole(ctx, requestedRole, "")
+	// SCIM users sign in through the IdP / password reset; store a random hashed secret so the
+	// column never holds a usable plain-text password.
+	secret, err := encrypt.Hash(uuid.NewString())
+	if err != nil {
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to create user")
 		return
 	}
-	if h.promptLifecycle != nil {
+	active := body.Active == nil || *body.Active
+	now := time.Now().UTC()
+	user := &tables.TableUser{
+		ID:         uuid.NewString(),
+		Username:   username,
+		Email:      email,
+		Password:   secret,
+		Role:       role,
+		Status:     scimStatusFromActive(active),
+		ExternalID: externalID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := h.store.ConfigStore.CreateUser(ctx, user); err != nil {
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to create user")
+		return
+	}
+	if h.promptLifecycle != nil && user.IsApproved() {
 		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
 	}
-	// Auto-assign to default team configured in SCIM settings
-	h.scimAssignDefaultTeam(ctx, user.ID)
+	if user.IsApproved() {
+		h.scimAssignDefaultTeam(ctx, user.ID)
+	}
 	SendJSONWithStatus(ctx, scimUserResource(user), fasthttp.StatusCreated)
+}
+
+// scimFindUser matches an existing user by externalId, username or email, case-insensitively.
+func (h *WorkspaceHandler) scimFindUser(ctx context.Context, username, email, externalID string) *tables.TableUser {
+	users, err := h.store.ConfigStore.GetUsers(ctx)
+	if err != nil {
+		return nil
+	}
+	if externalID != "" {
+		for _, u := range users {
+			if u != nil && u.ExternalID != "" && strings.EqualFold(u.ExternalID, externalID) {
+				return u
+			}
+		}
+	}
+	for _, u := range users {
+		if u != nil && username != "" && strings.EqualFold(u.Username, username) {
+			return u
+		}
+	}
+	for _, u := range users {
+		if u != nil && email != "" && u.Email != "" && strings.EqualFold(u.Email, email) {
+			return u
+		}
+	}
+	return nil
+}
+
+// scimValidRole maps an IdP role value onto an existing workspace role. Unknown values
+// (e.g. Entra's "msiam_access") fall back to the current role, then the configured default,
+// then "user".
+func (h *WorkspaceHandler) scimValidRole(ctx *fasthttp.RequestCtx, requested, current string) string {
+	known := map[string]string{"admin": "admin", "user": "user"}
+	if ws := h.scimWorkspaceStore(); ws != nil {
+		_ = ws.EnsureRBACRoles(ctx)
+		if roles, err := ws.ListRBACRoles(ctx); err == nil {
+			for _, r := range roles {
+				known[strings.ToLower(r.Name)] = r.Name
+			}
+		}
+	}
+	for _, candidate := range []string{requested, current, h.scimDefaultRole(ctx)} {
+		if candidate == "" {
+			continue
+		}
+		if name, ok := known[scimNormalizeRole(candidate)]; ok {
+			return name
+		}
+	}
+	return "user"
+}
+
+// scimUniquenessConflict reports whether another user already owns the username or email.
+func (h *WorkspaceHandler) scimUniquenessConflict(ctx context.Context, user *tables.TableUser) bool {
+	users, err := h.store.ConfigStore.GetUsers(ctx)
+	if err != nil {
+		return false
+	}
+	for _, u := range users {
+		if u == nil || u.ID == user.ID {
+			continue
+		}
+		if strings.EqualFold(u.Username, user.Username) || (user.Email != "" && strings.EqualFold(u.Email, user.Email)) {
+			return true
+		}
+	}
+	return false
+}
+
+// scimAfterUserChange keeps sessions, prompt access and the prompt repository in step with
+// a SCIM update: deactivation signs the user out, role changes apply to live sessions, and
+// reactivation restores prompt access.
+func (h *WorkspaceHandler) scimAfterUserChange(ctx *fasthttp.RequestCtx, prev, user *tables.TableUser) {
+	cs := h.store.ConfigStore
+	wasActive, isActive := prev.IsApproved(), user.IsApproved()
+	if wasActive && !isActive {
+		_ = cs.DeleteSessionsByUsername(ctx, prev.Username)
+		if user.Username != prev.Username {
+			_ = cs.DeleteSessionsByUsername(ctx, user.Username)
+		}
+	} else if isActive && !strings.EqualFold(prev.Role, user.Role) {
+		_ = cs.UpdateSessionsRoleByUsername(ctx, prev.Username, user.Role)
+		if user.Username != prev.Username {
+			_ = cs.UpdateSessionsRoleByUsername(ctx, user.Username, user.Role)
+		}
+	}
+	if h.promptLifecycle == nil {
+		return
+	}
+	_ = h.promptLifecycle.OnUserUpdated(ctx, user, prev.Email, prev.Username)
+	if !wasActive && isActive {
+		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
+	}
 }
 
 func (h *WorkspaceHandler) scimPutUser(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	user, err := h.store.ConfigStore.GetUserByID(ctx, id)
 	if err != nil || user == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "user not found")
+		scimError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
 	}
 	var body map[string]any
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil {
-		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim payload")
+		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim payload", "invalidSyntax")
 		return
 	}
-	oldEmail := user.Email
-	oldUsername := user.Username
+	prev := *user
 	applySCIMUserPatch(user, body)
-	user.UpdatedAt = time.Now().UTC()
-	if err := h.store.ConfigStore.UpdateUser(ctx, user); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
-		return
-	}
-	if h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserUpdated(ctx, user, oldEmail, oldUsername)
-	}
-	SendJSON(ctx, scimUserResource(user))
+	h.scimSaveUser(ctx, &prev, user)
 }
 
 func (h *WorkspaceHandler) scimPatchUser(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	user, err := h.store.ConfigStore.GetUserByID(ctx, id)
 	if err != nil || user == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "user not found")
+		scimError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
 	}
 	var body struct {
@@ -423,11 +530,10 @@ func (h *WorkspaceHandler) scimPatchUser(ctx *fasthttp.RequestCtx) {
 		} `json:"Operations"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil {
-		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim patch payload")
+		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim patch payload", "invalidSyntax")
 		return
 	}
-	oldEmail := user.Email
-	oldUsername := user.Username
+	prev := *user
 	for _, op := range body.Operations {
 		opName := strings.ToLower(strings.TrimSpace(op.Op))
 		switch opName {
@@ -440,37 +546,54 @@ func (h *WorkspaceHandler) scimPatchUser(ctx *fasthttp.RequestCtx) {
 			}
 			applySCIMUserPatch(user, patch)
 		case "remove":
-			// no-op for minimal support
+			if strings.EqualFold(strings.TrimSpace(op.Path), "externalId") {
+				user.ExternalID = ""
+			}
 		}
+	}
+	h.scimSaveUser(ctx, &prev, user)
+}
+
+func (h *WorkspaceHandler) scimSaveUser(ctx *fasthttp.RequestCtx, prev, user *tables.TableUser) {
+	if strings.TrimSpace(user.Username) == "" {
+		scimError(ctx, fasthttp.StatusBadRequest, "userName cannot be empty", "invalidValue")
+		return
+	}
+	if !strings.EqualFold(prev.Role, user.Role) {
+		user.Role = h.scimValidRole(ctx, user.Role, prev.Role)
+	}
+	if (!strings.EqualFold(prev.Username, user.Username) || !strings.EqualFold(prev.Email, user.Email)) && h.scimUniquenessConflict(ctx, user) {
+		scimError(ctx, fasthttp.StatusConflict, "userName or email is already used by another user", "uniqueness")
+		return
 	}
 	user.UpdatedAt = time.Now().UTC()
 	if err := h.store.ConfigStore.UpdateUser(ctx, user); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
 		return
 	}
-	if h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserUpdated(ctx, user, oldEmail, oldUsername)
-	}
+	h.scimAfterUserChange(ctx, prev, user)
 	SendJSON(ctx, scimUserResource(user))
 }
 
 func (h *WorkspaceHandler) scimDeleteUser(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	user, err := h.store.ConfigStore.GetUserByID(ctx, id)
 	if err != nil || user == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "user not found")
+		scimError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
 	}
+	purgeUserRelations(ctx, h.store.ConfigStore, h.promptLifecycle, user)
 	if err := h.store.ConfigStore.DeleteUser(ctx, id); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete user")
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to delete user")
 		return
 	}
-	if h.promptLifecycle != nil {
-		_ = h.promptLifecycle.OnUserDeleted(ctx, user)
+	_ = h.store.ConfigStore.DeleteSessionsByUsername(ctx, user.Username)
+	if syncer, ok := h.governanceManager.(UserGovernanceSyncer); ok && syncer != nil {
+		syncer.DeleteUserGovernance(ctx, id)
 	}
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }
@@ -511,25 +634,32 @@ func applySCIMUserPatch(user *tables.TableUser, patch map[string]any) {
 			}
 		case "email":
 			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				user.Email = strings.TrimSpace(s)
+				user.Email = strings.ToLower(strings.TrimSpace(s))
 			}
 		case "emails":
 			if emails, ok := v.([]any); ok {
 				for _, item := range emails {
 					if m, ok := item.(map[string]any); ok {
-						if email, ok := m["value"].(string); ok && email != "" {
-							user.Email = email
+						if email, ok := m["value"].(string); ok && strings.TrimSpace(email) != "" {
+							user.Email = strings.ToLower(strings.TrimSpace(email))
 							break
 						}
 					}
 				}
 			} else if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				user.Email = strings.TrimSpace(s)
+				user.Email = strings.ToLower(strings.TrimSpace(s))
 			}
 		default:
+			// Entra: roles[primary eq "True"].value = "<role>"
+			if strings.HasPrefix(cleanKey, "roles[") {
+				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+					user.Role = scimNormalizeRole(s)
+				}
+				continue
+			}
 			if strings.HasPrefix(cleanKey, "emails") {
 				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-					user.Email = strings.TrimSpace(s)
+					user.Email = strings.ToLower(strings.TrimSpace(s))
 				}
 			}
 		}
@@ -708,18 +838,24 @@ func (h *WorkspaceHandler) scimGroupResource(ctx context.Context, team *tables.T
 
 func (h *WorkspaceHandler) scimListGroups(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	teams, err := h.store.ConfigStore.GetTeams(ctx, "")
 	if err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to list groups")
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to list groups")
 		return
 	}
 	filter := string(ctx.QueryArgs().Peek("filter"))
 	if filter != "" {
 		teams = scimFilterGroups(teams, filter)
 	}
+	sort.SliceStable(teams, func(i, j int) bool {
+		if !teams[i].CreatedAt.Equal(teams[j].CreatedAt) {
+			return teams[i].CreatedAt.Before(teams[j].CreatedAt)
+		}
+		return teams[i].ID < teams[j].ID
+	})
 	startIndex := queryInt(ctx, "startIndex", 1)
 	if startIndex < 1 {
 		startIndex = 1
@@ -758,13 +894,13 @@ func (h *WorkspaceHandler) scimListGroups(ctx *fasthttp.RequestCtx) {
 
 func (h *WorkspaceHandler) scimGetGroup(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	team, err := h.store.ConfigStore.GetTeam(ctx, id)
 	if err != nil || team == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "group not found")
+		scimError(ctx, fasthttp.StatusNotFound, "group not found")
 		return
 	}
 	ws := h.scimWorkspaceStore()
@@ -775,30 +911,128 @@ func (h *WorkspaceHandler) scimGetGroup(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, h.scimGroupResource(ctx, team, members))
 }
 
+// scimResolveUserID maps a SCIM member value (our id, externalId, username or email) to a
+// user id. Unknown members resolve to "" so no orphan membership rows are written.
 func (h *WorkspaceHandler) scimResolveUserID(ctx context.Context, identifier string) string {
 	raw := strings.TrimSpace(identifier)
 	if raw == "" || h.store == nil || h.store.ConfigStore == nil {
-		return raw
+		return ""
 	}
 	if u, err := h.store.ConfigStore.GetUserByID(ctx, raw); err == nil && u != nil {
 		return u.ID
 	}
-	if u, err := h.store.ConfigStore.GetUserByUsername(ctx, raw); err == nil && u != nil {
-		return u.ID
-	}
 	if users, err := h.store.ConfigStore.GetUsers(ctx); err == nil {
 		for _, u := range users {
-			if (u.ExternalID != "" && strings.EqualFold(u.ExternalID, raw)) || (u.Email != "" && strings.EqualFold(u.Email, raw)) {
+			if u == nil {
+				continue
+			}
+			if strings.EqualFold(u.Username, raw) ||
+				(u.ExternalID != "" && strings.EqualFold(u.ExternalID, raw)) ||
+				(u.Email != "" && strings.EqualFold(u.Email, raw)) {
 				return u.ID
 			}
 		}
 	}
-	return raw
+	return ""
+}
+
+func scimMemberSet(ws configstore.WorkspaceStore, ctx context.Context, teamID string) map[string]bool {
+	set := map[string]bool{}
+	if ws == nil {
+		return set
+	}
+	if members, err := ws.ListTeamMembers(ctx, teamID); err == nil {
+		for _, m := range members {
+			set[m.UserID] = true
+		}
+	}
+	return set
+}
+
+// scimAddMembers adds the given members; prompt hooks fire only for users who actually joined.
+func (h *WorkspaceHandler) scimAddMembers(ctx context.Context, ws configstore.WorkspaceStore, teamID string, rawIDs []string) {
+	if ws == nil {
+		return
+	}
+	current := scimMemberSet(ws, ctx, teamID)
+	for _, raw := range rawIDs {
+		uid := h.scimResolveUserID(ctx, raw)
+		if uid == "" || current[uid] {
+			continue
+		}
+		if err := ws.AddTeamMember(ctx, teamID, uid); err != nil {
+			continue
+		}
+		current[uid] = true
+		if h.promptLifecycle != nil {
+			_ = h.promptLifecycle.OnTeamMemberAdded(ctx, teamID, uid)
+		}
+	}
+}
+
+// scimRemoveMembers removes the given members; hooks fire only for users who were members.
+func (h *WorkspaceHandler) scimRemoveMembers(ctx context.Context, ws configstore.WorkspaceStore, teamID string, userIDs []string) {
+	if ws == nil {
+		return
+	}
+	current := scimMemberSet(ws, ctx, teamID)
+	for _, uid := range userIDs {
+		if uid == "" || !current[uid] {
+			continue
+		}
+		if err := ws.RemoveTeamMember(ctx, teamID, uid); err != nil {
+			continue
+		}
+		delete(current, uid)
+		if h.promptLifecycle != nil {
+			_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, teamID, uid)
+		}
+	}
+}
+
+// scimSetMembers makes the team membership exactly rawIDs, touching only the difference so
+// unchanged members keep their prompt placement.
+func (h *WorkspaceHandler) scimSetMembers(ctx context.Context, ws configstore.WorkspaceStore, teamID string, rawIDs []string) {
+	if ws == nil {
+		return
+	}
+	target := map[string]bool{}
+	for _, raw := range rawIDs {
+		if uid := h.scimResolveUserID(ctx, raw); uid != "" {
+			target[uid] = true
+		}
+	}
+	var leaving []string
+	for uid := range scimMemberSet(ws, ctx, teamID) {
+		if !target[uid] {
+			leaving = append(leaving, uid)
+		}
+	}
+	h.scimRemoveMembers(ctx, ws, teamID, leaving)
+	joining := make([]string, 0, len(target))
+	for uid := range target {
+		joining = append(joining, uid)
+	}
+	h.scimAddMembers(ctx, ws, teamID, joining)
+}
+
+func (h *WorkspaceHandler) scimResolveAll(ctx context.Context, rawIDs []string) []string {
+	out := make([]string, 0, len(rawIDs))
+	for _, raw := range rawIDs {
+		if uid := h.scimResolveUserID(ctx, raw); uid != "" {
+			out = append(out, uid)
+		}
+	}
+	return out
+}
+
+func scimIsMembersPath(path string) bool {
+	return path == "" || strings.EqualFold(path, "members")
 }
 
 func (h *WorkspaceHandler) scimCreateGroup(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	var body struct {
@@ -810,12 +1044,12 @@ func (h *WorkspaceHandler) scimCreateGroup(ctx *fasthttp.RequestCtx) {
 		} `json:"members"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil {
-		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim group payload")
+		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim group payload")
 		return
 	}
 	displayName := strings.TrimSpace(body.DisplayName)
 	if displayName == "" {
-		SendError(ctx, fasthttp.StatusBadRequest, "displayName is required")
+		scimError(ctx, fasthttp.StatusBadRequest, "displayName is required")
 		return
 	}
 	team, _ := h.store.ConfigStore.GetTeamByName(ctx, displayName, "")
@@ -830,7 +1064,7 @@ func (h *WorkspaceHandler) scimCreateGroup(ctx *fasthttp.RequestCtx) {
 			team.SourceID = &body.ExternalID
 		}
 		if err := h.store.ConfigStore.CreateTeam(ctx, team); err != nil {
-			SendError(ctx, fasthttp.StatusInternalServerError, "failed to create group")
+			scimError(ctx, fasthttp.StatusInternalServerError, "failed to create group")
 			return
 		}
 		if h.promptLifecycle != nil {
@@ -841,18 +1075,11 @@ func (h *WorkspaceHandler) scimCreateGroup(ctx *fasthttp.RequestCtx) {
 		_ = h.store.ConfigStore.UpdateTeam(ctx, team)
 	}
 	ws := h.scimWorkspaceStore()
-	if ws != nil {
-		for _, m := range body.Members {
-			rawUID := strings.TrimSpace(m.Value)
-			if rawUID != "" {
-				uid := h.scimResolveUserID(ctx, rawUID)
-				_ = ws.AddTeamMember(ctx, team.ID, uid)
-				if h.promptLifecycle != nil {
-					_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
-				}
-			}
-		}
+	rawIDs := make([]string, 0, len(body.Members))
+	for _, m := range body.Members {
+		rawIDs = append(rawIDs, m.Value)
 	}
+	h.scimAddMembers(ctx, ws, team.ID, rawIDs)
 	var members []tables.TableTeamMember
 	if ws != nil {
 		members, _ = ws.ListTeamMembers(ctx, team.ID)
@@ -862,13 +1089,13 @@ func (h *WorkspaceHandler) scimCreateGroup(ctx *fasthttp.RequestCtx) {
 
 func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	team, err := h.store.ConfigStore.GetTeam(ctx, id)
 	if err != nil || team == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "group not found")
+		scimError(ctx, fasthttp.StatusNotFound, "group not found")
 		return
 	}
 	var body struct {
@@ -879,7 +1106,7 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 		} `json:"members"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil {
-		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim group payload")
+		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim group payload")
 		return
 	}
 	oldName := team.Name
@@ -896,31 +1123,11 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 	}
 
 	ws := h.scimWorkspaceStore()
-	if ws != nil {
-		currentMembers, _ := ws.ListTeamMembers(ctx, team.ID)
-		targetMap := make(map[string]bool)
-		for _, m := range body.Members {
-			rawUID := strings.TrimSpace(m.Value)
-			if rawUID != "" {
-				uid := h.scimResolveUserID(ctx, rawUID)
-				targetMap[uid] = true
-			}
-		}
-		for _, cur := range currentMembers {
-			if !targetMap[cur.UserID] {
-				_ = ws.RemoveTeamMember(ctx, team.ID, cur.UserID)
-				if h.promptLifecycle != nil {
-					_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, cur.UserID)
-				}
-			}
-		}
-		for uid := range targetMap {
-			_ = ws.AddTeamMember(ctx, team.ID, uid)
-			if h.promptLifecycle != nil {
-				_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
-			}
-		}
+	rawIDs := make([]string, 0, len(body.Members))
+	for _, m := range body.Members {
+		rawIDs = append(rawIDs, m.Value)
 	}
+	h.scimSetMembers(ctx, ws, team.ID, rawIDs)
 	var members []tables.TableTeamMember
 	if ws != nil {
 		members, _ = ws.ListTeamMembers(ctx, team.ID)
@@ -930,13 +1137,13 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 
 func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	team, err := h.store.ConfigStore.GetTeam(ctx, id)
 	if err != nil || team == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "group not found")
+		scimError(ctx, fasthttp.StatusNotFound, "group not found")
 		return
 	}
 	var body struct {
@@ -947,7 +1154,7 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 		} `json:"Operations"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil {
-		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim patch payload")
+		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim patch payload")
 		return
 	}
 	ws := h.scimWorkspaceStore()
@@ -972,49 +1179,44 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 					}
 				}
 			}
-			memberIDs := scimExtractMemberIDs(op.Value)
-			if ws != nil {
-				for _, rawUID := range memberIDs {
-					uid := h.scimResolveUserID(ctx, rawUID)
-					_ = ws.AddTeamMember(ctx, team.ID, uid)
-					if h.promptLifecycle != nil {
-						_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
+			// Only a members path (or a path-less value object) carries members; a string value
+			// for displayName/externalId must not be read as a member id.
+			if strings.EqualFold(cleanPath, "members") {
+				h.scimAddMembers(ctx, ws, team.ID, scimExtractMemberIDs(op.Value))
+			} else if cleanPath == "" {
+				if m, ok := op.Value.(map[string]any); ok {
+					if name, ok := m["displayName"].(string); ok && strings.TrimSpace(name) != "" && strings.TrimSpace(name) != team.Name {
+						oldName := team.Name
+						team.Name = strings.TrimSpace(name)
+						_ = h.store.ConfigStore.UpdateTeam(ctx, team)
+						if h.promptLifecycle != nil {
+							_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+						}
+					}
+					if membersVal, ok := m["members"]; ok {
+						h.scimAddMembers(ctx, ws, team.ID, scimExtractMemberIDs(membersVal))
 					}
 				}
 			}
 		case "remove":
 			if cleanPath != "" {
-				filterUID := scimExtractMemberIDFromPath(cleanPath)
-				if filterUID != "" {
-					if ws != nil {
-						uid := h.scimResolveUserID(ctx, filterUID)
-						_ = ws.RemoveTeamMember(ctx, team.ID, uid)
-						if h.promptLifecycle != nil {
-							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, uid)
-						}
-					}
+				if filterUID := scimExtractMemberIDFromPath(cleanPath); filterUID != "" {
+					h.scimRemoveMembers(ctx, ws, team.ID, h.scimResolveAll(ctx, []string{filterUID}))
 					continue
 				}
 			}
+			if !scimIsMembersPath(cleanPath) {
+				continue
+			}
 			memberIDs := scimExtractMemberIDs(op.Value)
-			if ws != nil {
-				if len(memberIDs) > 0 {
-					for _, rawUID := range memberIDs {
-						uid := h.scimResolveUserID(ctx, rawUID)
-						_ = ws.RemoveTeamMember(ctx, team.ID, uid)
-						if h.promptLifecycle != nil {
-							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, uid)
-						}
-					}
-				} else if strings.EqualFold(cleanPath, "members") {
-					all, _ := ws.ListTeamMembers(ctx, team.ID)
-					for _, m := range all {
-						_ = ws.RemoveTeamMember(ctx, team.ID, m.UserID)
-						if h.promptLifecycle != nil {
-							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, m.UserID)
-						}
-					}
+			if len(memberIDs) > 0 {
+				h.scimRemoveMembers(ctx, ws, team.ID, h.scimResolveAll(ctx, memberIDs))
+			} else if strings.EqualFold(cleanPath, "members") {
+				all := make([]string, 0)
+				for uid := range scimMemberSet(ws, ctx, team.ID) {
+					all = append(all, uid)
 				}
+				h.scimRemoveMembers(ctx, ws, team.ID, all)
 			}
 		case "replace":
 			if strings.EqualFold(cleanPath, "displayname") {
@@ -1027,23 +1229,7 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 					}
 				}
 			} else if strings.EqualFold(cleanPath, "members") {
-				if ws != nil {
-					all, _ := ws.ListTeamMembers(ctx, team.ID)
-					for _, m := range all {
-						_ = ws.RemoveTeamMember(ctx, team.ID, m.UserID)
-						if h.promptLifecycle != nil {
-							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, m.UserID)
-						}
-					}
-					memberIDs := scimExtractMemberIDs(op.Value)
-					for _, rawUID := range memberIDs {
-						uid := h.scimResolveUserID(ctx, rawUID)
-						_ = ws.AddTeamMember(ctx, team.ID, uid)
-						if h.promptLifecycle != nil {
-							_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
-						}
-					}
-				}
+				h.scimSetMembers(ctx, ws, team.ID, scimExtractMemberIDs(op.Value))
 			} else if cleanPath == "" {
 				if m, ok := op.Value.(map[string]any); ok {
 					if name, ok := m["displayName"].(string); ok && strings.TrimSpace(name) != "" {
@@ -1054,15 +1240,8 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 							_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
 						}
 					}
-					if membersVal, ok := m["members"]; ok && ws != nil {
-						memberIDs := scimExtractMemberIDs(membersVal)
-						for _, rawUID := range memberIDs {
-							uid := h.scimResolveUserID(ctx, rawUID)
-							_ = ws.AddTeamMember(ctx, team.ID, uid)
-							if h.promptLifecycle != nil {
-								_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
-							}
-						}
+					if membersVal, ok := m["members"]; ok {
+						h.scimSetMembers(ctx, ws, team.ID, scimExtractMemberIDs(membersVal))
 					}
 				}
 			}
@@ -1080,21 +1259,26 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 
 func (h *WorkspaceHandler) scimDeleteGroup(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
-		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 		return
 	}
 	id := pathID(ctx, "id")
 	team, err := h.store.ConfigStore.GetTeam(ctx, id)
 	if err != nil || team == nil {
-		SendError(ctx, fasthttp.StatusNotFound, "group not found")
+		scimError(ctx, fasthttp.StatusNotFound, "group not found")
 		return
 	}
-	if err := h.store.ConfigStore.DeleteTeam(ctx, id); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete group")
-		return
+	// Same order as the governance team delete: the prompt hook needs the memberships,
+	// which DeleteTeam removes.
+	if h.governanceManager != nil {
+		_ = h.governanceManager.RemoveTeam(ctx, team.ID)
 	}
 	if h.promptLifecycle != nil {
 		_ = h.promptLifecycle.OnTeamDeleted(ctx, team)
+	}
+	if err := h.store.ConfigStore.DeleteTeam(ctx, id); err != nil {
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to delete group")
+		return
 	}
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }

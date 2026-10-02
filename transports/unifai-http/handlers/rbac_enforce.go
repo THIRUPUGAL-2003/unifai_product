@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/rbac"
 	"github.com/valyala/fasthttp"
@@ -114,6 +115,13 @@ func (h *WorkspaceHandler) getMyRBACPermissions(ctx *fasthttp.RequestCtx) {
 			if session, err := h.store.ConfigStore.GetSession(ctx, token); err == nil && session != nil && session.Role != "" {
 				role = session.Role
 			}
+		}
+	}
+	if role == "" {
+		// Auth disabled (loopback / ALLOW_OPEN_AUTH): the auth middleware marks the
+		// request as local admin and there is no session to read a role from.
+		if isLocalAdmin, _ := ctx.UserValue(schemas.IsLocalAdminContextKey).(bool); isLocalAdmin {
+			role = "admin"
 		}
 	}
 	if role == "" {

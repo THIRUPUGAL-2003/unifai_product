@@ -304,12 +304,42 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 	if req.Name != "" {
 		folder.Name = req.Name
 	}
+	parentChanged := false
+	var oldAudience []string
 	if req.ParentIDExists {
-		if req.ParentID != nil && *req.ParentID != "" && *req.ParentID == folder.ID {
-			SendError(ctx, fasthttp.StatusBadRequest, "a folder cannot be its own parent")
-			return
+		newParent := ""
+		if req.ParentID != nil {
+			newParent = *req.ParentID
 		}
-		folder.ParentID = req.ParentID
+		oldParent := ""
+		if folder.ParentID != nil {
+			oldParent = *folder.ParentID
+		}
+		if newParent != oldParent {
+			if strings.HasPrefix(folder.Type, "system_") {
+				SendError(ctx, fasthttp.StatusBadRequest, "system folders cannot be moved")
+				return
+			}
+			if newParent != "" {
+				if newParent == folder.ID || h.folderIsDescendant(ctx, newParent, folder.ID) {
+					SendError(ctx, fasthttp.StatusBadRequest, "a folder cannot be moved into itself or one of its subfolders")
+					return
+				}
+				if _, err := h.store.GetFolderByID(ctx, newParent); err != nil {
+					SendError(ctx, fasthttp.StatusBadRequest, "parent folder not found")
+					return
+				}
+			}
+			parentChanged = true
+			if h.lifecycle != nil {
+				oldAudience = h.lifecycle.folderAudienceTeams(ctx, folder.ID)
+			}
+		}
+		if newParent == "" {
+			folder.ParentID = nil
+		} else {
+			folder.ParentID = &newParent
+		}
 	}
 	if req.DescriptionExists {
 		folder.Description = req.Description
@@ -320,10 +350,56 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
+	if parentChanged && h.lifecycle != nil {
+		h.lifecycle.OnFolderMoved(ctx, folder.ID, oldAudience)
+	}
 
 	SendJSON(ctx, map[string]any{
 		"folder": folder,
 	})
+}
+
+// folderIsDescendant reports whether folderID sits somewhere below ancestorID.
+func (h *PromptsHandler) folderIsDescendant(ctx context.Context, folderID, ancestorID string) bool {
+	currID := folderID
+	for i := 0; i < maxFolderDepth && currID != ""; i++ {
+		f, err := h.store.GetFolderByID(ctx, currID)
+		if err != nil || f == nil || f.ParentID == nil {
+			return false
+		}
+		if *f.ParentID == ancestorID {
+			return true
+		}
+		currID = *f.ParentID
+	}
+	// Depth exhausted: treat as a cycle rather than allowing the move.
+	return currID != ""
+}
+
+// folderSubtreeIDs returns rootID and every folder below it.
+func (h *PromptsHandler) folderSubtreeIDs(ctx context.Context, rootID string) []string {
+	ids := []string{rootID}
+	if h.store == nil || h.store.DB() == nil {
+		return ids
+	}
+	db := h.store.DB().WithContext(ctx)
+	seen := map[string]bool{rootID: true}
+	frontier := []string{rootID}
+	for depth := 0; depth < maxFolderDepth && len(frontier) > 0; depth++ {
+		var children []tables.TableFolder
+		if err := db.Select("id").Where("parent_id IN ?", frontier).Find(&children).Error; err != nil {
+			break
+		}
+		frontier = frontier[:0]
+		for _, c := range children {
+			if !seen[c.ID] {
+				seen[c.ID] = true
+				ids = append(ids, c.ID)
+				frontier = append(frontier, c.ID)
+			}
+		}
+	}
+	return ids
 }
 
 // deleteFolder handles DELETE /api/prompt-repo/folders/{id}
@@ -366,10 +442,27 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	// Unassign any prompts inside this folder from all users immediately
+	// Team/customer folders mirror Governance entities; archiving one while the team or
+	// customer still exists would detach its members' prompts from the live team.
+	if folder.EntityID != nil && *folder.EntityID != "" {
+		switch folder.Type {
+		case "team":
+			if team, tErr := h.store.GetTeam(ctx, *folder.EntityID); tErr == nil && team != nil {
+				SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("This folder belongs to team %q. Delete the team under Governance → Teams instead.", team.Name))
+				return
+			}
+		case "customer":
+			if customer, cErr := h.store.GetCustomer(ctx, *folder.EntityID); cErr == nil && customer != nil {
+				SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("This folder belongs to customer %q. Delete the customer under Governance → Customers instead.", customer.Name))
+				return
+			}
+		}
+	}
+
+	// Unassign every prompt in this folder and its subfolders from all users immediately
 	if h.store != nil && h.store.DB() != nil {
 		var childPrompts []tables.TablePrompt
-		if err := h.store.DB().WithContext(ctx).Where("folder_id = ?", folder.ID).Find(&childPrompts).Error; err == nil {
+		if err := h.store.DB().WithContext(ctx).Select("id").Where("folder_id IN ?", h.folderSubtreeIDs(ctx, folder.ID)).Find(&childPrompts).Error; err == nil {
 			for _, cp := range childPrompts {
 				h.unassignPromptFromAllUsers(ctx, cp.ID)
 			}
@@ -641,6 +734,10 @@ func (h *PromptsHandler) updatePrompt(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	oldFolderID := ""
+	if prompt.FolderID != nil {
+		oldFolderID = *prompt.FolderID
+	}
 	if req.Name != "" {
 		prompt.Name = req.Name
 	}
@@ -676,7 +773,7 @@ func (h *PromptsHandler) updatePrompt(ctx *fasthttp.RequestCtx) {
 		if prompt.FolderID != nil {
 			targetFolder = *prompt.FolderID
 		}
-		h.lifecycle.OnPromptFolderChanged(ctx, prompt.ID, targetFolder)
+		h.lifecycle.OnPromptMoved(ctx, prompt.ID, &oldFolderID, targetFolder)
 	}
 
 	h.reloadCache(ctx)

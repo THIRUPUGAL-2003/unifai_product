@@ -150,6 +150,29 @@ func (s *scimTestWorkspaceStore) RemoveTeamMember(ctx context.Context, teamID, u
 	return nil
 }
 
+func (s *scimTestWorkspaceStore) ListTeamsForUser(ctx context.Context, userID string) ([]tables.TableTeamMember, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]tables.TableTeamMember, 0)
+	for teamID, uids := range s.members {
+		if uids[userID] {
+			out = append(out, tables.TableTeamMember{TeamID: teamID, UserID: userID})
+		}
+	}
+	return out, nil
+}
+
+func (s *scimTestWorkspaceStore) EnsureRBACRoles(ctx context.Context) error { return nil }
+
+func (s *scimTestWorkspaceStore) ListRBACRoles(ctx context.Context) ([]tables.TableRBACRole, error) {
+	return []tables.TableRBACRole{
+		{ID: 1, Name: "admin", IsSystemRole: true},
+		{ID: 2, Name: "sub_admin", IsSystemRole: true},
+		{ID: 3, Name: "user", IsSystemRole: true},
+		{ID: 4, Name: "analyst"},
+	}, nil
+}
+
 // TestMicrosoftEntraSCIMFlow simulates Microsoft Entra ID connecting to UnifAI SCIM 2.0.
 func TestMicrosoftEntraSCIMFlow(t *testing.T) {
 	store := newSCIMTestStore()

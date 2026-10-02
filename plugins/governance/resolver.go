@@ -291,6 +291,7 @@ func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.UnifAIContext, v
 	}
 	if local, ok := r.store.(*LocalGovernanceStore); ok {
 		local.stampBusinessUnitsForTeam(ctx, teamIDFromVK(vk))
+		local.stampBilledTeam(ctx, vk)
 	}
 	if !vk.IsActiveValue() {
 		return &EvaluationResult{

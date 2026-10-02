@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/connectors"
@@ -37,7 +38,49 @@ func (h *WorkspaceHandler) getSCIMConfig(ctx *fasthttp.RequestCtx) {
 	if cfg.Config == nil {
 		cfg.Config = map[string]any{}
 	}
+	// The bearer token lets its holder create admin users over SCIM; only admins may read it.
+	if h.callerRole(ctx) != "admin" {
+		redactSCIMSecrets(&cfg)
+	}
 	SendJSON(ctx, cfg)
+}
+
+const scimRedacted = "********"
+
+func redactSCIMSecrets(cfg *scimConfigPayload) {
+	if cfg.BearerToken != "" {
+		cfg.BearerToken = scimRedacted
+	}
+	redactSecretKeys(cfg.Config)
+}
+
+func restoreRedactedKeys(dst, stored map[string]any) {
+	for key, value := range dst {
+		switch v := value.(type) {
+		case map[string]any:
+			if nested, ok := stored[key].(map[string]any); ok {
+				restoreRedactedKeys(v, nested)
+			}
+		case string:
+			if v == scimRedacted {
+				dst[key] = stored[key]
+			}
+		}
+	}
+}
+
+func redactSecretKeys(m map[string]any) {
+	for key, value := range m {
+		lower := strings.ToLower(key)
+		switch v := value.(type) {
+		case map[string]any:
+			redactSecretKeys(v)
+		case string:
+			if v != "" && (strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "password")) {
+				m[key] = scimRedacted
+			}
+		}
+	}
 }
 
 func (h *WorkspaceHandler) updateSCIMConfig(ctx *fasthttp.RequestCtx) {
@@ -62,6 +105,16 @@ func (h *WorkspaceHandler) updateSCIMConfig(ctx *fasthttp.RequestCtx) {
 	}
 	if payload.Config == nil {
 		payload.Config = map[string]any{}
+	}
+	// A config loaded by a non-admin comes back with redacted secrets: keep the stored values.
+	if row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingSCIM); err == nil && row != nil {
+		var stored scimConfigPayload
+		if json.Unmarshal([]byte(row.Data), &stored) == nil {
+			if payload.BearerToken == scimRedacted {
+				payload.BearerToken = stored.BearerToken
+			}
+			restoreRedactedKeys(payload.Config, stored.Config)
+		}
 	}
 	ensureSCIMBearerToken(&payload)
 	raw, err := json.Marshal(payload)

@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -14,30 +16,46 @@ func (h *WorkspaceHandler) scimMiddleware() func(fasthttp.RequestHandler) fastht
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			if h.workspace == nil {
-				SendError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
+				scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
 				return
 			}
 			token := scimBearerTokenFromRequest(ctx)
 			if token == "" {
-				SendError(ctx, fasthttp.StatusUnauthorized, "missing scim bearer token")
+				scimError(ctx, fasthttp.StatusUnauthorized, "missing scim bearer token")
 				return
 			}
 			expected, enabled, err := h.scimProvisioningToken(ctx)
 			if err != nil {
-				SendError(ctx, fasthttp.StatusInternalServerError, "failed to load scim config")
+				scimError(ctx, fasthttp.StatusInternalServerError, "failed to load scim config")
 				return
 			}
 			if !enabled || expected == "" {
-				SendError(ctx, fasthttp.StatusForbidden, "scim provisioning is disabled")
+				scimError(ctx, fasthttp.StatusForbidden, "scim provisioning is disabled")
 				return
 			}
-			if token != expected {
-				SendError(ctx, fasthttp.StatusUnauthorized, "invalid scim bearer token")
+			if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
+				scimError(ctx, fasthttp.StatusUnauthorized, "invalid scim bearer token")
 				return
 			}
 			next(ctx)
 		}
 	}
+}
+
+// scimError writes an RFC 7644 §3.12 error response; IdPs parse status/detail/scimType.
+func scimError(ctx *fasthttp.RequestCtx, status int, detail string, scimType ...string) {
+	body := map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:Error"},
+		"status":  strconv.Itoa(status),
+		"detail":  detail,
+	}
+	if len(scimType) > 0 && scimType[0] != "" {
+		body["scimType"] = scimType[0]
+	}
+	raw, _ := json.Marshal(body)
+	ctx.SetStatusCode(status)
+	ctx.SetContentType("application/scim+json")
+	ctx.SetBody(raw)
 }
 
 func scimBearerTokenFromRequest(ctx *fasthttp.RequestCtx) string {
@@ -81,6 +99,11 @@ func ensureSCIMBearerToken(payload *scimConfigPayload) {
 		return
 	}
 	if payload.BearerToken != "" {
+		// Keep the legacy config copy identical so every reader sees the same token.
+		if payload.Config == nil {
+			payload.Config = map[string]any{}
+		}
+		payload.Config["bearer_token"] = payload.BearerToken
 		return
 	}
 	if payload.Config != nil {

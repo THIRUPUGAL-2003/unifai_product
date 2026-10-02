@@ -289,7 +289,31 @@ func (h *WorkspaceHandler) updateAccessProfile(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
+	updated.Name = strings.TrimSpace(updated.Name)
+	if updated.Name == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "name is required")
+		return
+	}
+	if !strings.EqualFold(updated.Name, existing.Name) {
+		others, err := store.ListAccessProfiles(ctx)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "failed to list access profiles")
+			return
+		}
+		for _, other := range others {
+			if other.ID != existing.ID && strings.EqualFold(other.Name, updated.Name) {
+				SendError(ctx, fasthttp.StatusConflict, "a profile with this name already exists")
+				return
+			}
+		}
+	}
 	row := updated.toRow()
+	// Keep spec keys the payload does not model (user_id, parent_profile_id, ...).
+	for key, value := range existing.Spec() {
+		if _, ok := row.ParsedSpec[key]; !ok {
+			row.ParsedSpec[key] = value
+		}
+	}
 	row.ID = existing.ID
 	row.CreatedAt = existing.CreatedAt
 	row.UpdatedAt = time.Now().UTC()
@@ -298,11 +322,70 @@ func (h *WorkspaceHandler) updateAccessProfile(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update access profile")
 		return
 	}
+	if err := h.rollbackRemovedVirtualKeys(ctx, *existing, row); err != nil {
+		SendError(ctx, fasthttp.StatusBadGateway, "profile updated but failed to roll back MCP grants on removed virtual keys: "+err.Error())
+		return
+	}
 	if err := h.applyAccessProfile(ctx, row); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("profile updated but failed to apply to virtual keys: %v", err))
 		return
 	}
 	SendJSON(ctx, map[string]any{"access_profile": accessProfileFromRow(row)})
+}
+
+// rollbackRemovedVirtualKeys revokes MCP grants the previous version of the profile applied
+// and the new version no longer gives: on virtual keys detached from the profile, servers
+// removed from the profile, or everything when the profile is no longer active.
+func (h *WorkspaceHandler) rollbackRemovedVirtualKeys(ctx context.Context, before, after tables.TableAccessProfile) error {
+	if h.store == nil || h.store.ConfigStore == nil || !before.IsActive {
+		return nil
+	}
+	cs := h.store.ConfigStore
+	beforeServers := specMapSlice(before.Spec(), "mcp_servers")
+	if len(beforeServers) == 0 {
+		return nil
+	}
+	kept := map[string]bool{}
+	afterClients := map[uint]bool{}
+	if after.IsActive {
+		for _, id := range specStringSlice(after.Spec(), "virtual_key_ids") {
+			kept[id] = true
+		}
+		for _, item := range specMapSlice(after.Spec(), "mcp_servers") {
+			if id, err := resolveMCPClientID(ctx, cs, item); err == nil && id > 0 {
+				afterClients[id] = true
+			}
+		}
+	}
+	droppedServers := make([]map[string]any, 0, len(beforeServers))
+	for _, item := range beforeServers {
+		if id, err := resolveMCPClientID(ctx, cs, item); err == nil && id > 0 && !afterClients[id] {
+			droppedServers = append(droppedServers, item)
+		}
+	}
+
+	touched := make([]string, 0)
+	for _, vkID := range specStringSlice(before.Spec(), "virtual_key_ids") {
+		servers := beforeServers
+		if kept[vkID] {
+			servers = droppedServers
+		}
+		if len(servers) == 0 {
+			continue
+		}
+		scoped := before
+		scoped.ParsedSpec = map[string]any{"virtual_key_ids": []string{vkID}, "mcp_servers": servers}
+		if err := rollbackAccessProfileMCP(ctx, cs, scoped); err != nil {
+			return err
+		}
+		touched = append(touched, vkID)
+	}
+	if h.governanceManager != nil {
+		for _, vkID := range touched {
+			_, _ = h.governanceManager.ReloadVirtualKey(ctx, vkID)
+		}
+	}
+	return nil
 }
 
 func (h *WorkspaceHandler) deleteAccessProfile(ctx *fasthttp.RequestCtx) {
@@ -364,11 +447,18 @@ func (h *WorkspaceHandler) setAccessProfileActive(ctx *fasthttp.RequestCtx, acti
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to load access profile")
 		return
 	}
+	before := *row
 	row.IsActive = active
 	row.UpdatedAt = time.Now().UTC()
 	if err := store.UpdateAccessProfile(ctx, row); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update access profile")
 		return
+	}
+	if !active {
+		if err := h.rollbackRemovedVirtualKeys(ctx, before, *row); err != nil {
+			SendError(ctx, fasthttp.StatusBadGateway, "profile deactivated but failed to roll back MCP grants: "+err.Error())
+			return
+		}
 	}
 	if active && h.store != nil && h.store.ConfigStore != nil {
 		if err := h.applyAccessProfile(ctx, *row); err != nil {
@@ -413,8 +503,15 @@ func (h *WorkspaceHandler) cloneAccessProfile(ctx *fasthttp.RequestCtx) {
 	clone := *existing
 	clone.ID = 0
 	now := time.Now().UTC()
-	if body.Name != "" {
-		clone.Name = body.Name
+	if name := strings.TrimSpace(body.Name); name != "" {
+		profiles, _ := store.ListAccessProfiles(ctx)
+		for _, p := range profiles {
+			if strings.EqualFold(p.Name, name) {
+				SendError(ctx, fasthttp.StatusConflict, "a profile with this name already exists")
+				return
+			}
+		}
+		clone.Name = name
 	} else {
 		targetName := existing.Name + " copy"
 		profiles, _ := store.ListAccessProfiles(ctx)

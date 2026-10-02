@@ -2,6 +2,9 @@ import { GetUserAccessProfilesResponse } from "@enterprise/lib/types/accessProfi
 import { AccessProfile, GetAccessProfilesResponse } from "@enterprise/lib/types/workspace";
 import { baseApi } from "@/lib/store/apis/baseApi";
 
+// Profiles write provider/MCP grants, budgets and rate limits onto their virtual keys.
+const profileWriteTags = ["AccessProfiles", "VirtualKeys", "Budgets", "RateLimits"] as const;
+
 export const accessProfilesApi = baseApi.injectEndpoints({
 	endpoints: (builder) => ({
 		getAccessProfiles: builder.query<GetAccessProfilesResponse, { search?: string } | void>({
@@ -14,14 +17,14 @@ export const accessProfilesApi = baseApi.injectEndpoints({
 		createAccessProfile: builder.mutation<AccessProfile, Partial<AccessProfile>>({
 			query: (body) => ({ url: "/access-profiles", method: "POST", body }),
 			transformResponse: (response: { access_profile: AccessProfile }) => response.access_profile,
-			invalidatesTags: ["AccessProfiles"],
+			invalidatesTags: [...profileWriteTags],
 		}),
 		activateAccessProfile: builder.mutation<void, { id: number; activate: boolean }>({
 			query: ({ id, activate }) => ({
 				url: `/access-profiles/${id}/${activate ? "activate" : "deactivate"}`,
 				method: "POST",
 			}),
-			invalidatesTags: ["AccessProfiles"],
+			invalidatesTags: [...profileWriteTags],
 		}),
 		cloneAccessProfile: builder.mutation<AccessProfile, number>({
 			query: (id) => ({ url: `/access-profiles/${id}/clone`, method: "POST", body: {} }),
@@ -30,7 +33,7 @@ export const accessProfilesApi = baseApi.injectEndpoints({
 		}),
 		deleteAccessProfile: builder.mutation<void, number>({
 			query: (id) => ({ url: `/access-profiles/${id}`, method: "DELETE" }),
-			invalidatesTags: ["AccessProfiles"],
+			invalidatesTags: [...profileWriteTags],
 		}),
 		getAccessProfile: builder.query<{ access_profile: AccessProfile }, number>({
 			query: (id) => ({ url: `/access-profiles/${id}` }),
@@ -39,7 +42,7 @@ export const accessProfilesApi = baseApi.injectEndpoints({
 		updateAccessProfile: builder.mutation<AccessProfile, { id: number; updates: Partial<AccessProfile> }>({
 			query: ({ id, updates }) => ({ url: `/access-profiles/${id}`, method: "PUT", body: updates }),
 			transformResponse: (response: { access_profile: AccessProfile }) => response.access_profile,
-			invalidatesTags: ["AccessProfiles"],
+			invalidatesTags: [...profileWriteTags],
 		}),
 		getUserAccessProfiles: builder.query<GetUserAccessProfilesResponse, string>({
 			query: (userId) => ({ url: `/users/${encodeURIComponent(userId)}/access-profiles` }),

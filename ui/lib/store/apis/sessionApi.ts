@@ -121,13 +121,8 @@ export const sessionApi = baseApi.injectEndpoints({
 					}
 				}
 
-				// OAuth logout is best-effort — silently ignore failures since not
-				// all deployments use OAuth sessions.
-				await baseQuery({
-					url: "/scim/oauth/logout",
-					method: "POST",
-				});
-
+				// SCIM OAuth tokens belong to the workspace's IdP connection, not to this
+				// user's sign-in, so dashboard logout must not revoke them.
 				return { data: { message: "Logout successful" } };
 			},
 			// After logout, clear token and all cached data

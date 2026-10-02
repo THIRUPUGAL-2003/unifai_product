@@ -29,7 +29,8 @@ export const rbacApi = baseApi.injectEndpoints({
 		}),
 		deleteRole: builder.mutation<void, number>({
 			query: (id) => ({ url: `/roles/${id}`, method: "DELETE" }),
-			invalidatesTags: ["Roles"],
+			// Users on a deleted role are moved to "user" server-side.
+			invalidatesTags: ["Roles", "Users", "Permissions"],
 		}),
 		getMyRBACPermissions: builder.query<
 			{ role: string; permissions: Record<string, Record<string, boolean>> },

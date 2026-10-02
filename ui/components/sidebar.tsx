@@ -74,9 +74,8 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE, COMPANY_NAME, COMPANY_LOGO, COMPANY_SHORT_NAME } from "@/lib/constants/config";
 import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, useLogoutMutation, useIsAuthEnabledQuery } from "@/lib/store";
 import { clearAuthStorage } from "@/lib/store/apis";
-import { invalidateSessionAuthCache } from "@/lib/utils/workspaceAccess";
+import { getScopedWorkspaceSections, invalidateSessionAuthCache, USER_ROLE_HOME_PATH } from "@/lib/utils/workspaceAccess";
 import {
-	parseAdminAllowedSections,
 	SECTION_KEY_BY_TITLE,
 	isPathAllowedForUser,
 	getDefaultPathForSections,
@@ -540,14 +539,10 @@ const compareVersions = (v1: string, v2: string): number => {
 export default function AppSidebar() {
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isAuthEnabled = authStatus?.is_auth_enabled || authStatus?.has_valid_token || false;
-	const scopedSidebarSections = useMemo(() => {
-		// Workspace section scopes apply whenever allowed_sections is set — for ALL roles.
-		if (authStatus?.allowed_sections) {
-			return parseAdminAllowedSections(authStatus.allowed_sections);
-		}
-		// Admin / sub_admin without explicit section scopes → show everything (return null = no filter).
-		return null;
-	}, [authStatus?.role, authStatus?.allowed_sections]);
+	const scopedSidebarSections = useMemo(
+		() => getScopedWorkspaceSections(authStatus),
+		[authStatus?.role, authStatus?.allowed_sections],
+	);
 	const pathname = useLocation({ select: (l) => l.pathname });
 	const search = useLocation({ select: (l) => l.searchStr ?? "" });
 	const tsNavigate = useNavigate();
@@ -1074,9 +1069,8 @@ export default function AppSidebar() {
 				],
 			},
 		];
-		// Plain "user" role without custom section scopes defaults to Prompt Repository.
-		// When section scopes are granted via RBAC / teams, filter dynamically by those scopes.
-		if (authStatus?.role && authStatus.role === "user" && !scopedSidebarSections) {
+		// The built-in "user" role is server-locked to Prompt Repository.
+		if (authStatus?.role === "user") {
 			return allItems.filter((item) => item.title === "Prompt Repository");
 		}
 		if (scopedSidebarSections) {
@@ -1198,11 +1192,9 @@ export default function AppSidebar() {
 	}, []);
 
 	useEffect(() => {
-		// Plain "user" role without custom section grants is confined to Prompt Repository.
-		// If section grants are present (from RBAC / teams), respect them.
-		if (authStatus?.role === "user" && !scopedSidebarSections) {
-			if (!pathname.startsWith("/workspace/prompt-repo")) {
-				navigate("/workspace/prompt-repo");
+		if (authStatus?.role === "user") {
+			if (!pathname.startsWith(USER_ROLE_HOME_PATH)) {
+				navigate(USER_ROLE_HOME_PATH);
 			}
 			return;
 		}
@@ -1212,7 +1204,10 @@ export default function AppSidebar() {
 					? `${pathname}${search.startsWith("?") ? search : `?${search}`}`
 					: pathname;
 			if (!isPathAllowedForUser(pathWithTab, scopedSidebarSections)) {
-				navigate(getDefaultPathForSections(scopedSidebarSections));
+				const fallback = getDefaultPathForSections(scopedSidebarSections);
+				if (fallback.split("?")[0] !== pathname) {
+					navigate(fallback);
+				}
 			}
 		}
 	}, [authStatus?.role, scopedSidebarSections, pathname, search, navigate]);
