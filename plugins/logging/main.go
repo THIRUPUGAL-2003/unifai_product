@@ -931,6 +931,7 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.U
 			if nodeID, _ := p.clusterNodeID.Load().(string); nodeID != "" {
 				entry.ClusterNodeID = &nodeID
 			}
+			applyOutputFieldsToEntry(entry, selectedKeyID, selectedKeyName, virtualKeyID, virtualKeyName, routingRuleID, routingRuleName, selectedPromptID, selectedPromptName, selectedPromptVersion, teamID, teamName, customerID, customerName, userID, userName, businessUnitID, businessUnitName, numberOfRetries, 0, attemptTrail)
 			applyLargePayloadPreviewsToEntry(ctx, entry, contentLoggingEnabled)
 			p.storeOrEnqueueEntry(ctx, entry, p.makePostWriteCallback(nil))
 		} else {

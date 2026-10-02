@@ -1058,23 +1058,34 @@ export function LogDetailView({
 									}
 								/>
 							)}
-							{log.user_id && (
+							{(log.user_id || log.user_name) && (
 								<LogEntryDetailsView
 									className="w-full"
 									label="User"
 									value={
 										<Tooltip>
 											<TooltipTrigger asChild>
-												<Link
-													to="/workspace/logs"
-													search={{ user_ids: [log.user_id] }}
-													className={`block min-w-0 cursor-pointer text-sm font-normal break-all text-blue-600 underline-offset-2 hover:underline dark:text-blue-400${log.user_name ? "" : " font-mono"}`}
-													data-testid="logdetails-user-link"
-												>
-													{log.user_name || log.user_id}
-												</Link>
+												{log.user_id ? (
+													<Link
+														to="/workspace/logs"
+														search={{ user_ids: [log.user_id] }}
+														className={`block min-w-0 cursor-pointer text-sm font-normal break-all text-blue-600 underline-offset-2 hover:underline dark:text-blue-400${log.user_name ? "" : " font-mono"}`}
+														data-testid="logdetails-user-link"
+													>
+														{log.user_name || log.user_id}
+													</Link>
+												) : (
+													<span
+														className="block min-w-0 text-sm font-normal break-all text-foreground"
+														data-testid="logdetails-user-text"
+													>
+														{log.user_name}
+													</span>
+												)}
 											</TooltipTrigger>
-											<TooltipContent sideOffset={6}>{log.user_name ? log.user_id : "Filter by user"}</TooltipContent>
+											<TooltipContent sideOffset={6}>
+												{log.user_name && log.user_id ? log.user_id : (log.user_name ? "User: " + log.user_name : "Filter by user")}
+											</TooltipContent>
 										</Tooltip>
 									}
 								/>
