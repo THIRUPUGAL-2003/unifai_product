@@ -21,6 +21,7 @@ import {
 	KeyRound,
 	Landmark,
 	LayoutGrid,
+	Home,
 	LogOut,
 	Logs,
 	Network,
@@ -1598,6 +1599,14 @@ export default function AppSidebar() {
 										</div>
 									</a>
 								))}
+							<a
+								href="/"
+								className="hover:text-primary text-muted-foreground flex cursor-pointer items-center space-x-1.5 p-1 text-xs font-medium transition-colors"
+								title="Return to Landing Page"
+							>
+								<Home className="h-4 w-4" size={20} strokeWidth={2} />
+								<span className="group-data-[collapsible=icon]:hidden">Home</span>
+							</a>
 							<ThemeToggle />
 							{IS_ENTERPRISE && userInfo && (userInfo.name || userInfo.email) ? (
 								<Popover open={userPopoverOpen} onOpenChange={setUserPopoverOpen}>

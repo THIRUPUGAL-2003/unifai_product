@@ -269,56 +269,51 @@
 	}
 }
 
-/* ─── Globally eliminate all visible native desktop scrollbars everywhere ─── */
-*,
-*::before,
-*::after,
-html,
-body,
-#root,
-.content-container,
-.content-container *,
-.content-container-inner,
-.content-container-inner *,
-.custom-scrollbar,
-.custom-scrollbar *,
-.no-scrollbar,
-.no-scrollbar * {
-	-ms-overflow-style: none !important; /* IE and Edge */
-	scrollbar-width: none !important; /* Firefox */
+/* ─── Inner element scrollbar styling ─── */
+.no-scrollbar {
+	-ms-overflow-style: none !important;
+	scrollbar-width: none !important;
 }
 
-*::-webkit-scrollbar,
-*::-webkit-scrollbar-thumb,
-*::-webkit-scrollbar-track,
-*::-webkit-scrollbar-button,
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-#root::-webkit-scrollbar,
-.content-container::-webkit-scrollbar,
-.content-container *::-webkit-scrollbar,
-.content-container-inner::-webkit-scrollbar,
-.content-container-inner *::-webkit-scrollbar,
-.custom-scrollbar::-webkit-scrollbar,
-.custom-scrollbar *::-webkit-scrollbar,
-.no-scrollbar::-webkit-scrollbar,
-.no-scrollbar *::-webkit-scrollbar {
-	display: none !important; /* Chrome, Safari, Chromium */
+.no-scrollbar::-webkit-scrollbar {
+	display: none !important;
 	width: 0px !important;
 	height: 0px !important;
-	background: transparent !important;
 }
 
 html {
 	color-scheme: dark;
-	max-width: 100vw;
+	overflow-y: auto !important;
 	overflow-x: hidden;
+	scroll-behavior: smooth;
+	scrollbar-width: thin;
+	scrollbar-color: #1e293b #07090e;
 }
 
 body {
-	overscroll-behavior: none;
-	max-width: 100vw;
+	overflow-y: auto !important;
 	overflow-x: hidden;
+	min-height: 100vh;
+}
+
+/* Elegant custom dark scrollbar for the page */
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+::-webkit-scrollbar-track {
+	background: #07090e;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #1e293b;
+	border-radius: 5px;
+	border: 2px solid #07090e;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: #38bdf8;
 }
 
 [data-slot="sidebar-wrapper"] {
