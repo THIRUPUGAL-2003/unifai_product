@@ -84,6 +84,9 @@ function formatPlaygroundError(raw: string, status?: number): string {
 	if (lower.includes("guardrail")) {
 		return text.startsWith("Guardrail") ? text : `Guardrail blocked this request: ${text}`;
 	}
+	if (status === 402 || lower.includes("budget exceeded") || lower.includes("budget_exceeded")) {
+		return `Virtual Key Budget Exceeded: ${text}`;
+	}
 	if (status === 413 || lower.includes("too large") || lower.includes("payload")) {
 		return "Attachment or request is too large for this gateway/provider. Use a smaller file (max ~20 MB) or extract text and paste it.";
 	}
