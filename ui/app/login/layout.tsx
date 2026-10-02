@@ -9,10 +9,10 @@ import LoginPage from "./page";
 
 function RouteComponent() {
 	return (
-		<ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+		<ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
 			<ReduxProvider>
 				<NuqsAdapter>
-					<div className="bg-background min-h-screen">
+					<div className="min-h-screen bg-[#090b12]">
 						<LoginPage />
 					</div>
 				</NuqsAdapter>
@@ -23,7 +23,7 @@ function RouteComponent() {
 
 function PendingComponent() {
 	return (
-		<ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+		<ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
 			<div className="flex min-h-screen items-center justify-center p-4">
 				<div className="w-full max-w-md">
 					<div className="border-border bg-card w-full space-y-6 rounded-sm border p-8">

@@ -12,7 +12,22 @@ import {
 } from "@/lib/store/apis";
 import { getLoginGotoFromSearch } from "@/lib/utils/loginGoto";
 import { resolvePostLoginPath } from "@/lib/utils/workspaceAccess";
-import { Activity, ArrowLeft, Check, CheckCircle2, Eye, EyeOff, Globe, Lock, Shield, ShieldAlert, Upload } from "lucide-react";
+import {
+	ArrowLeft,
+	ArrowRight,
+	Check,
+	CheckCircle2,
+	Cpu,
+	Eye,
+	EyeOff,
+	KeyRound,
+	Lock,
+	Mail,
+	Shield,
+	ShieldAlert,
+	Sparkles,
+	User,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 type AuthMode = "login" | "forgot" | "reset" | "forgot_username";
@@ -78,7 +93,6 @@ export default function LoginView() {
 	const passwordsMatch = newPassword.length > 0 && newPassword === confirmPassword;
 
 	const handleResendOtp = async () => {
-		// U4: Guard against double-click sending duplicate OTP requests
 		if (isSendingOtp) return;
 		if (!email.trim()) {
 			setErrorMessage("Please enter your email address first");
@@ -127,9 +141,8 @@ export default function LoginView() {
 		setErrorMessage("");
 		setInfoMessage("");
 
-		// Early-return validation (before setting isLoading so button never stays stuck)
 		if (mode === "forgot" && !email.trim()) {
-			setErrorMessage("Email address is required");
+			setErrorMessage("Email address or username is required");
 			return;
 		}
 		if (mode === "forgot_username" && !email.trim()) {
@@ -178,7 +191,6 @@ export default function LoginView() {
 				setInfoMessage(result.message || "If an account matches, your username was sent to your email.");
 				return;
 			}
-			// Reset password mode
 			const cleanInput = email.trim();
 			const result = await resetPassword({
 				email: cleanInput,
@@ -188,7 +200,6 @@ export default function LoginView() {
 			}).unwrap();
 			setInfoMessage(result.message || "Password updated. Sign in with your new password.");
 			setMode("login");
-			// U3: Clear all form state after successful password reset
 			setEmail("");
 			setPassword("");
 			setOtp("");
@@ -210,136 +221,114 @@ export default function LoginView() {
 	};
 
 	return (
-		<div className="relative flex min-h-screen flex-col overflow-hidden bg-[#07080c] font-sans text-[#c5c6c7]">
-			<div className="ug-login-grid pointer-events-none absolute inset-0" />
-			<div className="pointer-events-none absolute -top-32 left-[-8%] h-[520px] w-[520px] rounded-full bg-[#45f3ff]/12 blur-[140px]" />
-			<div className="pointer-events-none absolute right-[-10%] bottom-[-18%] h-[480px] w-[480px] rounded-full bg-[#3b82f6]/16 blur-[150px]" />
+		<div className="relative flex min-h-screen flex-col justify-between overflow-hidden bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
+			{/* Ambient Gradient Glows */}
+			<div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[500px] w-[800px] rounded-full bg-gradient-to-tr from-indigo-500/15 via-[#45f3ff]/15 to-transparent blur-[140px]" />
+			<div className="pointer-events-none absolute right-[-5%] bottom-[-10%] h-[420px] w-[420px] rounded-full bg-blue-600/10 blur-[130px]" />
+			<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px] opacity-70" />
 
-			<div className="relative z-10 mx-auto flex w-full max-w-[1440px] flex-1 flex-col px-5 py-6 lg:px-10 lg:py-8">
-				<header className="flex items-center justify-between">
-					<div className="flex min-w-0 items-center gap-4">
-						<img
-							src={COMPANY_LOGO}
-							alt={COMPANY_NAME}
-							className="h-14 sm:h-[4.25rem] w-auto max-w-[min(56vw,280px)] shrink-0 object-contain object-left"
-						/>
-						<div className="hidden h-10 w-px shrink-0 bg-white/15 sm:block" />
-						<div className="min-w-0">
-							<p className="text-xl font-bold tracking-tight text-white">UnifAI Guard</p>
-							<p className="text-[11px] tracking-[0.16em] text-[#7d8896] uppercase">{COMPANY_NAME}</p>
-						</div>
-					</div>
-					<div className="flex items-center gap-3">
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							onClick={() => window.location.assign("/signup")}
-							className="h-8 border-[#45f3ff]/40 bg-[#45f3ff]/10 px-3.5 text-xs font-semibold text-[#45f3ff] hover:bg-[#45f3ff]/20 hover:border-[#45f3ff] cursor-pointer"
-						>
-							Sign Up
-						</Button>
-						<div className="hidden items-center gap-2 rounded-full border border-[#1f2833] bg-[#12141c]/70 px-3 py-1.5 text-xs text-[#8b949e] sm:flex">
-							<span className="h-1.5 w-1.5 rounded-full bg-[#45f3ff] shadow-[0_0_8px_#45f3ff]" />
-							Live policy sync
-						</div>
-					</div>
-				</header>
+			{/* Floating Top Navigation Header */}
+			<header className="relative z-20 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
+				<div className="flex items-center gap-4">
+					<button
+						type="button"
+						onClick={() => window.location.assign("/")}
+						className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-md transition-all hover:border-white/20 hover:bg-white/10 hover:text-white cursor-pointer shadow-sm"
+						title="Return to Landing Page"
+					>
+						<ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1 text-[#45f3ff]" />
+						<span>Back to Home</span>
+					</button>
 
-				<main className="grid flex-1 items-center gap-10 pt-8 lg:grid-cols-12 lg:gap-8 lg:pt-4">
-					<section className="lg:col-span-7">
-						<div className="mb-8 max-w-xl space-y-4">
-							<div className="inline-flex items-center rounded-full border border-[#45f3ff]/20 bg-[#45f3ff]/10 px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-[#89f7ff] uppercase">
-								Browser AI security
+					<div className="hidden h-5 w-px bg-white/15 sm:block" />
+
+					<div className="hidden sm:flex items-center gap-2.5">
+						<img src={COMPANY_LOGO} alt={COMPANY_NAME} className="h-7 w-auto object-contain" />
+						<span className="text-sm font-bold tracking-tight text-white">{COMPANY_NAME}</span>
+					</div>
+				</div>
+
+				<div className="flex items-center gap-3">
+					<span className="hidden text-xs text-slate-400 md:inline">Don't have an account?</span>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() => window.location.assign("/signup")}
+						className="h-8.5 rounded-lg border-white/15 bg-white/[0.04] px-4 text-xs font-semibold text-white hover:border-[#45f3ff]/60 hover:bg-[#45f3ff]/10 hover:text-[#45f3ff] transition-all cursor-pointer shadow-sm"
+					>
+						Sign Up
+						<ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+					</Button>
+				</div>
+			</header>
+
+			{/* Main Center Content */}
+			<main className="relative z-10 mx-auto flex w-full max-w-[1300px] flex-1 items-center justify-center px-6 py-8">
+				<div className="grid w-full items-center gap-12 lg:grid-cols-12 lg:gap-14">
+					{/* Left Column: Enterprise Highlights */}
+					<section className="hidden flex-col justify-center space-y-8 lg:col-span-6 lg:flex">
+						<div className="space-y-4">
+							<div className="inline-flex items-center gap-2 rounded-full border border-[#45f3ff]/20 bg-[#45f3ff]/10 px-3.5 py-1 text-xs font-semibold tracking-wide text-[#89f7ff]">
+								<span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+								<span>Gateway Active • Zero-Trust Control Plane</span>
 							</div>
-							<h1 className="text-4xl leading-[1.08] font-extrabold text-white sm:text-5xl lg:text-[56px]">
-								See every risk.
-								<br />
-								<span className="bg-gradient-to-r from-[#45f3ff] to-[#7dd3fc] bg-clip-text text-transparent">
-									Block it in real time.
+
+							<h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl leading-[1.12]">
+								Enterprise AI,{" "}
+								<span className="bg-gradient-to-r from-[#45f3ff] via-[#7dd3fc] to-white bg-clip-text text-transparent">
+									Governed & Unified.
 								</span>
 							</h1>
-							<p className="max-w-lg text-sm leading-7 text-[#8b949e] sm:text-base">
-								One dashboard for employee AI chats, website locks, upload policy, and Guard agents — no restart, no extra
-								tools.
+
+							<p className="max-w-lg text-sm text-slate-400 leading-relaxed">
+								Access your centralized AI control plane. Orchestrate 100+ LLMs, manage Prompt Repositories with multimodal image support, enforce token budgets, and monitor live audit logs.
 							</p>
 						</div>
 
-						<div className="ug-login-stage relative mx-auto h-[360px] w-full max-w-[640px] sm:h-[420px] lg:mx-0">
-							<div className="ug-login-glow pointer-events-none absolute inset-x-10 bottom-6 h-24 rounded-full bg-[#45f3ff]/20 blur-3xl" />
-
-							<div className="ug-login-plane relative h-full w-full">
-								<div className="ug-login-glass absolute inset-x-6 top-10 overflow-hidden rounded-3xl sm:inset-x-10">
-									<div className="flex items-center gap-2 border-b border-white/5 px-4 py-3">
-										<span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-										<span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-										<span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-										<span className="ml-3 text-xs font-medium text-white/80">Browser AI Control</span>
-									</div>
-									<div className="grid grid-cols-3 gap-3 p-4">
-										<div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-											<p className="text-[10px] tracking-wider text-[#8b949e] uppercase">Targets</p>
-											<p className="mt-1 text-xl font-bold text-white">Any domain</p>
-										</div>
-										<div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3">
-											<p className="text-[10px] tracking-wider text-rose-300 uppercase">Locks</p>
-											<p className="mt-1 text-xl font-bold text-white">Full site</p>
-										</div>
-										<div className="rounded-2xl border border-[#45f3ff]/20 bg-[#45f3ff]/10 p-3">
-											<p className="text-[10px] tracking-wider text-[#89f7ff] uppercase">Uploads</p>
-											<p className="mt-1 text-xl font-bold text-white">Policy on</p>
-										</div>
-									</div>
-									<div className="space-y-2 px-4 pb-5">
-										<div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#0b0c10]/70 px-3 py-2.5">
-											<div className="flex items-center gap-2 text-sm text-white">
-												<Globe className="h-3.5 w-3.5 text-[#45f3ff]" />
-												chat.example.com
-											</div>
-											<span className="text-[10px] font-semibold tracking-wider text-emerald-400 uppercase">Monitored</span>
-										</div>
-										<div className="flex items-center justify-between rounded-xl border border-rose-500/20 bg-rose-950/40 px-3 py-2.5">
-											<div className="flex items-center gap-2 text-sm text-white">
-												<Lock className="h-3.5 w-3.5 text-rose-400" />
-												social.example.com
-											</div>
-											<span className="text-[10px] font-semibold tracking-wider text-rose-300 uppercase">Blocked</span>
-										</div>
-										<div className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-950/30 px-3 py-2.5">
-											<div className="flex items-center gap-2 text-sm text-white">
-												<Upload className="h-3.5 w-3.5 text-amber-300" />
-												file.pdf
-											</div>
-											<span className="text-[10px] font-semibold tracking-wider text-amber-200 uppercase">Upload block</span>
-										</div>
-									</div>
+						{/* Feature Benefit Cards */}
+						<div className="space-y-3.5 max-w-lg">
+							<div className="flex items-start gap-3.5 rounded-xl border border-white/8 bg-white/[0.02] p-4 backdrop-blur-md transition-colors hover:border-white/15 hover:bg-white/[0.04]">
+								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#45f3ff]/10 text-[#45f3ff]">
+									<Cpu className="h-5 w-5" />
 								</div>
-
-								<div className="ug-login-chip absolute top-4 left-0 rounded-2xl border border-[#45f3ff]/25 bg-[#0b0c10]/80 px-3 py-2 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md">
-									<div className="flex items-center gap-2">
-										<Shield className="h-3.5 w-3.5 text-[#45f3ff]" />
-										<div>
-											<p className="text-[11px] font-semibold text-white">Prompt Guard</p>
-											<p className="text-[10px] text-[#8b949e]">Secrets blocked live</p>
-										</div>
-									</div>
+								<div>
+									<h3 className="text-sm font-semibold text-white">Unified LLM Gateway</h3>
+									<p className="text-xs text-slate-400 leading-relaxed mt-0.5">
+										Route dynamically through OpenAI, Claude, Gemini, DeepSeek, and local models with a single API key.
+									</p>
 								</div>
+							</div>
 
-								<div className="ug-login-chip ug-login-chip-delay absolute top-16 right-0 rounded-2xl border border-white/10 bg-[#0b0c10]/80 px-3 py-2 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md">
-									<div className="flex items-center gap-2">
-										<Activity className="h-3.5 w-3.5 text-[#45f3ff]" />
-										<div>
-											<p className="text-[11px] font-semibold text-white">12 agents online</p>
-											<p className="text-[10px] text-[#8b949e]">No restart required</p>
-										</div>
-									</div>
+							<div className="flex items-start gap-3.5 rounded-xl border border-white/8 bg-white/[0.02] p-4 backdrop-blur-md transition-colors hover:border-white/15 hover:bg-white/[0.04]">
+								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+									<Sparkles className="h-5 w-5" />
+								</div>
+								<div>
+									<h3 className="text-sm font-semibold text-white">Prompt Repository & Vision</h3>
+									<p className="text-xs text-slate-400 leading-relaxed mt-0.5">
+										ChatGPT-style multimodal image support, folder-based team access, and persistent chat sessions.
+									</p>
+								</div>
+							</div>
+
+							<div className="flex items-start gap-3.5 rounded-xl border border-white/8 bg-white/[0.02] p-4 backdrop-blur-md transition-colors hover:border-white/15 hover:bg-white/[0.04]">
+								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+									<Shield className="h-5 w-5" />
+								</div>
+								<div>
+									<h3 className="text-sm font-semibold text-white">Zero-Trust Guardrails & Budgets</h3>
+									<p className="text-xs text-slate-400 leading-relaxed mt-0.5">
+										Enforce personal user and team spending limits, real-time PII redaction, and compliance auditing.
+									</p>
 								</div>
 							</div>
 						</div>
 					</section>
 
-					<section className="flex items-center justify-center lg:col-span-5">
-						<div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#10131c]/80 p-8 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+					{/* Right Column: Sleek Authentication Card */}
+					<section className="flex items-center justify-center lg:col-span-6">
+						<div className="w-full max-w-[440px] rounded-2xl border border-white/10 bg-[#0f121d]/90 p-8 shadow-[0_25px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
 							{mode !== "login" && (
 								<button
 									type="button"
@@ -352,44 +341,45 @@ export default function LoginView() {
 										setErrorMessage("");
 										setInfoMessage("");
 									}}
-									className="inline-flex items-center gap-1.5 text-xs font-medium text-[#8b949e] hover:text-[#45f3ff] transition-colors cursor-pointer mb-3"
+									className="group mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-[#45f3ff] transition-colors cursor-pointer"
 								>
-									<ArrowLeft className="h-3.5 w-3.5" />
-									{mode === "reset" ? "Back to forgot password" : "Back to sign in"}
+									<ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1" />
+									<span>{mode === "reset" ? "Back to forgot password" : "Back to Sign In"}</span>
 								</button>
 							)}
-							<div className="mb-6 space-y-2">
-								<h2 className="text-3xl font-bold text-white">
+
+							<div className="mb-6 space-y-1.5">
+								<h2 className="text-2xl font-bold tracking-tight text-white">
 									{mode === "login"
 										? "Sign In"
 										: mode === "forgot"
-											? "Forgot password"
+											? "Forgot Password"
 											: mode === "forgot_username"
-												? "Forgot username"
-												: "Reset password"}
+												? "Forgot Username"
+												: "Reset Password"}
 								</h2>
-								<p className="text-sm leading-6 text-[#8b949e]">
+								<p className="text-xs leading-relaxed text-slate-400">
 									{mode === "login"
-										? "Access the Guard control plane for your organization."
+										? "Enter your credentials to access your organization's AI control plane."
 										: mode === "forgot"
-											? "Enter your registered email ID or username (e.g. admin). We will email you a one-time verification code."
+											? "Enter your registered email or username. We'll send a one-time verification code."
 											: mode === "forgot_username"
-												? "Enter your registered email ID and we will send your username to your inbox."
-												: "Enter the OTP from your email, verify it, and choose a new password."}
+												? "Enter your registered email address to retrieve your username."
+												: "Enter the OTP sent to your email, verify it, and choose a new password."}
 								</p>
 							</div>
 
 							{errorMessage && (
-								<div className="bg-destructive/10 border-destructive/20 text-destructive mb-4 flex items-center gap-2.5 rounded-lg border p-3 text-sm">
-									<ShieldAlert className="h-4 w-4 shrink-0" />
-									<span>
-										{isLockedOut ? `${lockoutReason} Try again in ${lockoutCountdown}.` : errorMessage}
-									</span>
+								<div className="mb-4 flex items-center gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
+									<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+									<span>{isLockedOut ? `${lockoutReason} Try again in ${lockoutCountdown}.` : errorMessage}</span>
 								</div>
 							)}
+
 							{infoMessage && (
-								<div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
-									{infoMessage}
+								<div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+									<CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+									<span>{infoMessage}</span>
 								</div>
 							)}
 
@@ -397,29 +387,53 @@ export default function LoginView() {
 								{/* Login Mode Fields */}
 								{mode === "login" && (
 									<>
-										<div className="space-y-2">
-											<Label htmlFor="username" className="text-xs font-semibold tracking-wider text-white uppercase">
+										<div className="space-y-1.5">
+											<Label htmlFor="username" className="text-xs font-medium text-slate-200">
 												Username
 											</Label>
-											<Input
-												id="username"
-												type="text"
-												placeholder="Enter your username"
-												value={username}
-												onChange={(e) => {
-													setUsername(e.target.value);
-													setLockoutEndsAt(null);
-												}}
-												required
-												className="h-11 border-[#1f2833]/80 bg-[#07080c]/80 text-sm text-white focus:border-[#45f3ff]"
-												autoComplete="username"
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label htmlFor="password" className="text-xs font-semibold tracking-wider text-white uppercase">
-												Password
-											</Label>
 											<div className="relative">
+												<User className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
+												<Input
+													id="username"
+													type="text"
+													placeholder="Enter your username"
+													value={username}
+													onChange={(e) => {
+														setUsername(e.target.value);
+														setLockoutEndsAt(null);
+													}}
+													required
+													className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
+													autoComplete="username"
+												/>
+											</div>
+										</div>
+
+										<div className="space-y-1.5">
+											<div className="flex items-center justify-between">
+												<Label htmlFor="password" className="text-xs font-medium text-slate-200">
+													Password
+												</Label>
+												<button
+													type="button"
+													className="text-[11px] font-medium text-[#45f3ff] hover:underline cursor-pointer"
+													onClick={() => {
+														setMode("forgot");
+														setEmail("");
+														setNewPassword("");
+														setConfirmPassword("");
+														setOtp("");
+														setIsOtpVerified(false);
+														setResetToken("");
+														setErrorMessage("");
+														setInfoMessage("");
+													}}
+												>
+													Forgot password?
+												</button>
+											</div>
+											<div className="relative">
+												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
 													id="password"
 													type={showPassword ? "text" : "password"}
@@ -427,13 +441,13 @@ export default function LoginView() {
 													value={password}
 													onChange={(e) => setPassword(e.target.value)}
 													required
-													className="h-11 border-[#1f2833]/80 bg-[#07080c]/80 pr-10 text-sm text-white focus:border-[#45f3ff]"
+													className="h-10.5 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
 													autoComplete="current-password"
 												/>
 												<button
 													type="button"
 													onClick={() => setShowPassword(!showPassword)}
-													className="absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-white"
+													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
 												>
 													{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 												</button>
@@ -444,39 +458,45 @@ export default function LoginView() {
 
 								{/* Forgot Password Mode */}
 								{mode === "forgot" && (
-									<div className="space-y-2">
-										<Label htmlFor="email" className="text-xs font-semibold tracking-wider text-white uppercase">
-											Email ID or Username
+									<div className="space-y-1.5">
+										<Label htmlFor="email" className="text-xs font-medium text-slate-200">
+											Email Address or Username
 										</Label>
-										<Input
-											id="email"
-											type="text"
-											placeholder="name@company.com or admin"
-											value={email}
-											onChange={(e) => setEmail(e.target.value)}
-											required
-											className="h-11 border-[#1f2833]/80 bg-[#07080c]/80 text-sm text-white focus:border-[#45f3ff]"
-											autoComplete="username email"
-										/>
+										<div className="relative">
+											<Mail className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
+											<Input
+												id="email"
+												type="text"
+												placeholder="name@company.com or username"
+												value={email}
+												onChange={(e) => setEmail(e.target.value)}
+												required
+												className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
+												autoComplete="email username"
+											/>
+										</div>
 									</div>
 								)}
 
 								{/* Forgot Username Mode */}
 								{mode === "forgot_username" && (
-									<div className="space-y-2">
-										<Label htmlFor="forgot-user-email" className="text-xs font-semibold tracking-wider text-white uppercase">
-											Email ID
+									<div className="space-y-1.5">
+										<Label htmlFor="forgot-user-email" className="text-xs font-medium text-slate-200">
+											Email Address
 										</Label>
-										<Input
-											id="forgot-user-email"
-											type="email"
-											placeholder="name@company.com"
-											value={email}
-											onChange={(e) => setEmail(e.target.value)}
-											required
-											className="h-11 border-[#1f2833]/80 bg-[#07080c]/80 text-sm text-white focus:border-[#45f3ff]"
-											autoComplete="email"
-										/>
+										<div className="relative">
+											<Mail className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
+											<Input
+												id="forgot-user-email"
+												type="email"
+												placeholder="name@company.com"
+												value={email}
+												onChange={(e) => setEmail(e.target.value)}
+												required
+												className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
+												autoComplete="email"
+											/>
+										</div>
 									</div>
 								)}
 
@@ -484,11 +504,9 @@ export default function LoginView() {
 								{mode === "reset" && (
 									<>
 										<div className="space-y-1.5">
-											<Label className="text-xs font-semibold tracking-wider text-white uppercase">
-												Email ID
-											</Label>
-											<div className="flex items-center justify-between rounded-lg border border-[#1f2833]/80 bg-[#07080c]/60 px-3 py-2 text-sm text-slate-300">
-												<span className="truncate">{email || "No email specified"}</span>
+											<Label className="text-xs font-medium text-slate-200">Target Account</Label>
+											<div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3.5 py-2 text-xs text-slate-300">
+												<span className="truncate">{email || "Account"}</span>
 												<button
 													type="button"
 													onClick={() => {
@@ -496,20 +514,20 @@ export default function LoginView() {
 														setErrorMessage("");
 														setInfoMessage("");
 													}}
-													className="text-xs font-medium text-[#45f3ff] hover:underline"
+													className="text-xs font-semibold text-[#45f3ff] hover:underline cursor-pointer"
 												>
 													Change
 												</button>
 											</div>
 										</div>
 
-										<div className="space-y-2">
+										<div className="space-y-1.5">
 											<div className="flex items-center justify-between">
-												<Label htmlFor="otp" className="text-xs font-semibold tracking-wider text-white uppercase">
-													OTP Code
+												<Label htmlFor="otp" className="text-xs font-medium text-slate-200">
+													Verification OTP Code
 												</Label>
 												{isOtpVerified ? (
-													<span className="flex items-center gap-1 text-xs font-semibold text-emerald-400">
+													<span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
 														<CheckCircle2 className="h-3.5 w-3.5" /> Verified
 													</span>
 												) : (
@@ -517,131 +535,108 @@ export default function LoginView() {
 														type="button"
 														disabled={isSendingOtp || resendCooldown > 0}
 														onClick={handleResendOtp}
-														className="text-xs font-medium text-[#45f3ff] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+														className="text-[11px] font-medium text-[#45f3ff] hover:underline disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
 													>
-														{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : isSendingOtp ? "Sending..." : "Resend OTP"}
+														{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
 													</button>
 												)}
 											</div>
 											<div className="flex gap-2">
-												<Input
-													id="otp"
-													type="text"
-													inputMode="numeric"
-													maxLength={6}
-													placeholder="6-digit code"
-													autoComplete="one-time-code"
-													value={otp}
-													onChange={(e) => {
-														setOtp(e.target.value.replace(/\D/g, ""));
-														if (isOtpVerified) setIsOtpVerified(false);
-													}}
-													disabled={isOtpVerified}
-													required
-													className="h-11 flex-1 border-[#1f2833]/80 bg-[#07080c]/80 text-sm font-mono tracking-widest text-white focus:border-[#45f3ff] disabled:opacity-85 disabled:border-emerald-500/50"
-												/>
+												<div className="relative flex-1">
+													<KeyRound className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
+													<Input
+														id="otp"
+														type="text"
+														placeholder="6-digit code"
+														maxLength={6}
+														value={otp}
+														disabled={isOtpVerified}
+														onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+														className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 font-mono tracking-widest text-sm text-white placeholder:tracking-normal focus:border-[#45f3ff] disabled:opacity-50"
+													/>
+												</div>
 												{!isOtpVerified && (
 													<Button
 														type="button"
-														onClick={handleVerifyOtp}
 														disabled={otp.trim().length < 6 || isVerifyingOtp}
-														className="h-11 px-4 bg-[#45f3ff]/20 text-[#45f3ff] border border-[#45f3ff]/40 hover:bg-[#45f3ff]/30 font-semibold cursor-pointer"
+														onClick={handleVerifyOtp}
+														className="h-10.5 px-4 rounded-xl bg-white/10 text-xs font-semibold text-white hover:bg-white/20 border border-white/15 cursor-pointer"
 													>
-														{isVerifyingOtp ? "Verifying..." : "Verify OTP"}
+														{isVerifyingOtp ? "Verifying..." : "Verify Code"}
 													</Button>
 												)}
 											</div>
 										</div>
 
-										<div className="space-y-2">
-											<Label htmlFor="new-password" className="text-xs font-semibold tracking-wider text-white uppercase">
-												New password
+										<div className="space-y-1.5">
+											<Label htmlFor="newPassword" className="text-xs font-medium text-slate-200">
+												New Password
 											</Label>
 											<div className="relative">
+												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
-													id="new-password"
+													id="newPassword"
 													type={showNewPassword ? "text" : "password"}
-													placeholder="New password"
+													placeholder="Enter new password"
 													value={newPassword}
 													onChange={(e) => setNewPassword(e.target.value)}
-													disabled={!isOtpVerified}
 													required
-													className="h-11 border-[#1f2833]/80 bg-[#07080c]/80 pr-10 text-sm text-white focus:border-[#45f3ff] disabled:opacity-50"
-													autoComplete="new-password"
+													className="h-10.5 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff]"
 												/>
 												<button
 													type="button"
 													onClick={() => setShowNewPassword(!showNewPassword)}
-													className="absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-white"
+													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
 												>
 													{showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 												</button>
 											</div>
 										</div>
 
-										<div className="space-y-2">
-											<Label htmlFor="confirm-password" className="text-xs font-semibold tracking-wider text-white uppercase">
-												Confirm password
+										<div className="space-y-1.5">
+											<Label htmlFor="confirmPassword" className="text-xs font-medium text-slate-200">
+												Confirm New Password
 											</Label>
 											<div className="relative">
+												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
-													id="confirm-password"
+													id="confirmPassword"
 													type={showConfirmPassword ? "text" : "password"}
 													placeholder="Re-enter new password"
 													value={confirmPassword}
 													onChange={(e) => setConfirmPassword(e.target.value)}
-													disabled={!isOtpVerified}
 													required
-													className="h-11 border-[#1f2833]/80 bg-[#07080c]/80 pr-10 text-sm text-white focus:border-[#45f3ff] disabled:opacity-50"
-													autoComplete="new-password"
+													className="h-10.5 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff]"
 												/>
 												<button
 													type="button"
 													onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-													className="absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-white"
+													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
 												>
 													{showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 												</button>
 											</div>
 										</div>
 
-										{/* Password requirements checklist — single compact line */}
-										<div className="flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px]">
-											<span
-												title="Minimum 8 characters"
-												className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
-											>
-												<Check className="h-3 w-3 shrink-0" /> 8+ chars
+										{/* Password requirements checklist */}
+										<div className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white/5 bg-black/20 p-2.5 text-[11px]">
+											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+												<Check className="h-3 w-3" /> 8+ chars
 											</span>
-											<span
-												title="At least 1 uppercase letter"
-												className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
-											>
-												<Check className="h-3 w-3 shrink-0" /> A-Z
+											<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+												<Check className="h-3 w-3" /> A-Z
 											</span>
-											<span
-												title="At least 1 lowercase letter"
-												className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
-											>
-												<Check className="h-3 w-3 shrink-0" /> a-z
+											<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+												<Check className="h-3 w-3" /> a-z
 											</span>
-											<span
-												title="At least 1 number"
-												className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
-											>
-												<Check className="h-3 w-3 shrink-0" /> 0-9
+											<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+												<Check className="h-3 w-3" /> 0-9
 											</span>
-											<span
-												title="At least 1 symbol (!@#...)"
-												className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
-											>
-												<Check className="h-3 w-3 shrink-0" /> Symbol
+											<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+												<Check className="h-3 w-3" /> Symbol
 											</span>
-											<span
-												title="Passwords must match"
-												className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}
-											>
-												<Check className="h-3 w-3 shrink-0" /> Match
+											<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+												<Check className="h-3 w-3" /> Match
 											</span>
 										</div>
 									</>
@@ -649,7 +644,7 @@ export default function LoginView() {
 
 								<Button
 									type="submit"
-									className="mt-2 h-11 w-full bg-[#45f3ff] font-bold text-[#0b0c10] shadow-[0_0_24px_rgba(69,243,255,0.28)] hover:bg-[#45f3ff]/90 disabled:opacity-40 cursor-pointer"
+									className="mt-2 h-11 w-full rounded-xl bg-gradient-to-r from-[#45f3ff] to-[#38bdf8] font-bold text-[#090b12] shadow-[0_0_24px_rgba(69,243,255,0.25)] hover:shadow-[0_0_32px_rgba(69,243,255,0.4)] hover:brightness-105 transition-all cursor-pointer disabled:opacity-40"
 									disabled={
 										isLoading ||
 										isLoggingIn ||
@@ -668,130 +663,41 @@ export default function LoginView() {
 										: mode === "forgot"
 											? isSendingOtp
 												? "Sending OTP..."
-												: "Send OTP"
+												: "Send Verification Code"
 											: mode === "forgot_username"
 												? isRetrievingUsername
-													? "Sending username..."
-													: "Retrieve username"
+													? "Retrieving..."
+													: "Retrieve Username"
 												: isResetting
 													? "Updating password..."
-													: "Update password"}
+													: "Update Password"}
 								</Button>
 
 								{mode === "login" && (
-									<Button
-										type="button"
-										variant="outline"
-										onClick={() => window.location.assign("/signup")}
-										className="mt-2.5 h-11 w-full border-white/15 bg-white/[0.04] text-sm font-semibold text-white hover:bg-[#45f3ff]/10 hover:border-[#45f3ff]/60 hover:text-[#45f3ff] cursor-pointer transition-all"
-									>
-										Sign Up
-									</Button>
+									<div className="pt-2 text-center text-xs text-slate-400">
+										<button
+											type="button"
+											className="hover:text-slate-200 transition-colors cursor-pointer"
+											onClick={() => {
+												setMode("forgot_username");
+												setEmail("");
+												setErrorMessage("");
+												setInfoMessage("");
+											}}
+										>
+											Forgot your username?
+										</button>
+									</div>
 								)}
-
-								<div className="pt-2 text-xs text-[#8b949e]">
-									{mode === "login" ? (
-										<div className="space-y-3">
-											<div className="flex items-center justify-between">
-												<button
-													type="button"
-													className="text-[#45f3ff] underline-offset-2 hover:underline cursor-pointer"
-													onClick={() => {
-														setMode("forgot");
-														setEmail("");
-														setNewPassword("");
-														setConfirmPassword("");
-														setOtp("");
-														setIsOtpVerified(false);
-														setResetToken("");
-														setErrorMessage("");
-														setInfoMessage("");
-													}}
-												>
-													Forgot password?
-												</button>
-												<button
-													type="button"
-													className="text-[#45f3ff] underline-offset-2 hover:underline cursor-pointer"
-													onClick={() => {
-														setMode("forgot_username");
-														setEmail("");
-														setNewPassword("");
-														setConfirmPassword("");
-														setOtp("");
-														setIsOtpVerified(false);
-														setResetToken("");
-														setErrorMessage("");
-														setInfoMessage("");
-													}}
-												>
-													Forgot username?
-												</button>
-											</div>
-										</div>
-									) : mode === "reset" ? (
-										<div className="flex items-center justify-between text-xs">
-											<button
-												type="button"
-												className="text-[#8b949e] hover:text-[#45f3ff] inline-flex items-center gap-1 cursor-pointer transition-colors"
-												onClick={() => {
-													setMode("forgot");
-													setErrorMessage("");
-													setInfoMessage("");
-												}}
-											>
-												<ArrowLeft className="h-3 w-3" /> Back to forgot password
-											</button>
-											<button
-												type="button"
-												className="text-[#45f3ff] hover:underline cursor-pointer"
-												onClick={() => {
-													setMode("login");
-													setEmail("");
-													setNewPassword("");
-													setConfirmPassword("");
-													setOtp("");
-													setIsOtpVerified(false);
-													setResetToken("");
-													setErrorMessage("");
-													setInfoMessage("");
-												}}
-											>
-												Back to sign in
-											</button>
-										</div>
-									) : (
-										<div className="text-center">
-											<button
-												type="button"
-												className="text-[#45f3ff] underline-offset-2 hover:underline cursor-pointer inline-flex items-center gap-1.5"
-												onClick={() => {
-													setMode("login");
-													setEmail("");
-													setNewPassword("");
-													setConfirmPassword("");
-													setOtp("");
-													setIsOtpVerified(false);
-													setResetToken("");
-													setErrorMessage("");
-													setInfoMessage("");
-												}}
-											>
-												<ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
-											</button>
-										</div>
-									)}
-								</div>
 							</form>
 						</div>
 					</section>
-				</main>
-			</div>
+				</div>
+			</main>
 
-			<footer className="relative z-10 mt-auto border-t border-[#1f2833]/80 bg-[#07080c]/85 backdrop-blur-md">
-				<p className="px-5 py-3.5 text-center text-[11px] font-medium tracking-[0.18em] text-[#7d8896] uppercase">
-					{COMPANY_NAME}
-				</p>
+			{/* Minimal Sleek Footer */}
+			<footer className="relative z-10 mx-auto w-full max-w-[1400px] border-t border-white/5 px-6 py-4 text-center text-xs text-slate-500">
+				<span>© {new Date().getFullYear()} {COMPANY_NAME}. All rights reserved. Enterprise AI Governance Platform.</span>
 			</footer>
 		</div>
 	);
