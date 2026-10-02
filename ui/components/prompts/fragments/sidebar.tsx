@@ -595,6 +595,7 @@ function DroppableFolder({
 		folder.type?.startsWith("system_") ||
 		folder.name === "Users" ||
 		folder.name === "Customers" ||
+		folder.name === "Teams" ||
 		folder.name === "Removed Users" ||
 		folder.name === "Removed Customers" ||
 		folder.name === "Removed Teams";

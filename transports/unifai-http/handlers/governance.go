@@ -1191,17 +1191,9 @@ func (h *GovernanceHandler) allowedVKIDsForCaller(ctx *fasthttp.RequestCtx) (map
 	if err != nil || dbUser == nil {
 		return map[string]bool{}, true
 	}
-	ws, ok := configstore.AsWorkspaceStore(h.configStore)
-	if !ok || ws == nil {
-		return map[string]bool{}, true
-	}
-	links, err := ws.ListVirtualKeysForUser(ctx, dbUser.ID)
+	allowed, err := ResolveAllowedVirtualKeyIDsForUser(ctx, h.configStore, dbUser.ID)
 	if err != nil {
 		return map[string]bool{}, true
-	}
-	allowed := make(map[string]bool, len(links))
-	for _, link := range links {
-		allowed[link.VirtualKeyID] = true
 	}
 	return allowed, true
 }

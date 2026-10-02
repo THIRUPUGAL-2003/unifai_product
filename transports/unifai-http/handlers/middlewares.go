@@ -805,20 +805,16 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		return ""
 	}
 
-	ws, ok := configstore.AsWorkspaceStore(m.store)
-	if !ok || ws == nil {
-		return "Virtual Key assignment store unavailable. Contact your admin."
-	}
-	links, err := ws.ListVirtualKeysForUser(context.Background(), dbUser.ID)
+	allowedIDs, err := ResolveAllowedVirtualKeyIDsForUser(context.Background(), m.store, dbUser.ID)
 	if err != nil {
 		return "Failed to resolve assigned Virtual Key. Contact your admin."
 	}
 	existingVK := governance.ParseVirtualKeyFromFastHTTPRequest(ctx)
-	allowedValues := make(map[string]string, len(links)) // value → id
+	allowedValues := make(map[string]string, len(allowedIDs)) // value → id
 	var firstValue string
 	assignedKeys := 0
-	for _, link := range links {
-		vk, gerr := m.store.GetVirtualKey(context.Background(), link.VirtualKeyID)
+	for vkID := range allowedIDs {
+		vk, gerr := m.store.GetVirtualKey(context.Background(), vkID)
 		if errors.Is(gerr, configstore.ErrNotFound) {
 			continue
 		}
