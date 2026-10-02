@@ -612,4 +612,132 @@ func TestUserTeamChange_MovesPromptToNewTeamFolder(t *testing.T) {
 	}
 }
 
+func TestPromptLifecycle_UserApprovalFlow(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	// 1. Pending user self-registers (no prompt repo created initially)
+	grace := &tables.TableUser{
+		ID:       "user_grace_" + uuid.New().String()[:8],
+		Username: "grace",
+		Email:    "grace@company.com",
+		Role:     "user",
+		Status:   tables.UserStatusPending,
+	}
+	_ = store.CreateUser(ctx, grace)
+
+	var promptCount int64
+	store.DB().Model(&tables.TablePrompt{}).Where("name = ?", grace.Email).Count(&promptCount)
+	if promptCount != 0 {
+		t.Fatalf("expected 0 prompts for pending user, got %d", promptCount)
+	}
+
+	// 2. Admin approves user -> OnUserCreated called
+	grace.Status = tables.UserStatusApproved
+	_ = store.UpdateUser(ctx, grace)
+	err := lifecycle.OnUserCreated(ctx, grace, true)
+	if err != nil {
+		t.Fatalf("OnUserCreated failed: %v", err)
+	}
+
+	// Verify prompt was created in Users system folder
+	var gracePrompt tables.TablePrompt
+	err = store.DB().Where("name = ?", grace.Email).First(&gracePrompt).Error
+	if err != nil {
+		t.Fatalf("expected prompt for approved user Grace, got error: %v", err)
+	}
+
+	var usersFolder tables.TableFolder
+	_ = store.DB().Where("type = 'system_users_root' OR name = 'Users'").First(&usersFolder)
+	if gracePrompt.FolderID == nil || *gracePrompt.FolderID != usersFolder.ID {
+		t.Fatalf("expected Grace's prompt to be in Users folder %s, got %v", usersFolder.ID, gracePrompt.FolderID)
+	}
+
+	// Verify user permissions
+	updatedGrace, _ := store.GetUserByID(ctx, grace.ID)
+	if !strings.Contains(updatedGrace.AllowedPromptRepos, gracePrompt.ID) {
+		t.Fatalf("expected Grace AllowedPromptRepos to contain %s, got %s", gracePrompt.ID, updatedGrace.AllowedPromptRepos)
+	}
+
+	// 3. User logs in -> idempotent check should not duplicate prompt
+	_ = lifecycle.OnUserCreated(ctx, updatedGrace, true)
+	store.DB().Model(&tables.TablePrompt{}).Where("name = ?", grace.Email).Count(&promptCount)
+	if promptCount != 1 {
+		t.Fatalf("expected exactly 1 prompt after login, got %d", promptCount)
+	}
+}
+
+func TestPromptLifecycle_SCIMUserAndGroupFlow(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	// 1. SCIM provisions user Hank
+	hank := &tables.TableUser{
+		ID:       "user_hank_" + uuid.New().String()[:8],
+		Username: "hank",
+		Email:    "hank@enterprise.com",
+		Role:     "user",
+		Status:   tables.UserStatusApproved,
+	}
+	_ = store.CreateUser(ctx, hank)
+	err := lifecycle.OnUserCreated(ctx, hank, true)
+	if err != nil {
+		t.Fatalf("SCIM OnUserCreated failed: %v", err)
+	}
+
+	var hankPrompt tables.TablePrompt
+	err = store.DB().Where("name = ?", hank.Email).First(&hankPrompt).Error
+	if err != nil {
+		t.Fatalf("expected SCIM user prompt created: %v", err)
+	}
+
+	// 2. SCIM provisions group "Engineering"
+	engTeam := &tables.TableTeam{
+		ID:   "team_eng_" + uuid.New().String()[:8],
+		Name: "Engineering",
+	}
+	_ = store.CreateTeam(ctx, engTeam)
+	err = lifecycle.OnTeamCreated(ctx, engTeam)
+	if err != nil {
+		t.Fatalf("SCIM OnTeamCreated failed: %v", err)
+	}
+
+	var engFolder tables.TableFolder
+	err = store.DB().Where("entity_id = ?", engTeam.ID).First(&engFolder).Error
+	if err != nil || engFolder.ID == "" {
+		t.Fatalf("expected Engineering team folder created in prompt repo: %v", err)
+	}
+
+	// 3. SCIM adds Hank as a member of Engineering
+	err = lifecycle.OnTeamMemberAdded(ctx, engTeam.ID, hank.ID)
+	if err != nil {
+		t.Fatalf("SCIM OnTeamMemberAdded failed: %v", err)
+	}
+
+	// Hank's prompt should have moved into the Engineering folder
+	var promptAfterAdd tables.TablePrompt
+	_ = store.DB().Where("id = ?", hankPrompt.ID).First(&promptAfterAdd)
+	if promptAfterAdd.FolderID == nil || *promptAfterAdd.FolderID != engFolder.ID {
+		t.Fatalf("expected Hank's prompt to move to Engineering folder %s, got %v", engFolder.ID, promptAfterAdd.FolderID)
+	}
+
+	// 4. SCIM removes Hank from Engineering
+	err = lifecycle.OnTeamMemberRemoved(ctx, engTeam.ID, hank.ID)
+	if err != nil {
+		t.Fatalf("SCIM OnTeamMemberRemoved failed: %v", err)
+	}
+
+	// Hank's prompt should move back to Users root folder
+	var usersFolder tables.TableFolder
+	_ = store.DB().Where("type = 'system_users_root' OR name = 'Users'").First(&usersFolder)
+	var promptAfterRemove tables.TablePrompt
+	_ = store.DB().Where("id = ?", hankPrompt.ID).First(&promptAfterRemove)
+	if promptAfterRemove.FolderID == nil || *promptAfterRemove.FolderID != usersFolder.ID {
+		t.Fatalf("expected Hank's prompt to return to Users folder %s, got %v", usersFolder.ID, promptAfterRemove.FolderID)
+	}
+}
+
+
 

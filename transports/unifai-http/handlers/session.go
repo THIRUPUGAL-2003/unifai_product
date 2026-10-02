@@ -416,6 +416,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 	notifyEmail := ""
 	sessionAllowedSections := ""
 	authenticated := false
+	var activeDBUser *tables.TableUser
 
 	adminName, adminEmail := h.getAdminCredentials(ctx)
 	isBuiltinAdmin := isMatchingAdminIdentity(payload.Username, adminName, adminEmail)
@@ -483,6 +484,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 			notifyEmail = dbUser.Email
 			sessionAllowedSections = dbUser.AllowedSections
 			authenticated = true
+			activeDBUser = dbUser
 		} else {
 			padPasswordCompare(payload.Password)
 			h.recordAuthAudit(ctx, "login", "failure", payload.Username, "/api/session/login", start)
@@ -547,6 +549,10 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 
 	trySendLoginNoticeEmail(h.configStore, ctx, sessionUsername, notifyEmail)
 	h.recordAuthAudit(ctx, "login", "success", sessionUsername, "/api/session/login", start)
+
+	if activeDBUser != nil && h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserCreated(ctx, activeDBUser, true)
+	}
 
 	resp := map[string]any{
 		"message": "Login successful",
@@ -902,6 +908,11 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	now := time.Now()
+	autoCreatePrompt := false
+	if payload.AutoCreatePrompt != nil {
+		autoCreatePrompt = *payload.AutoCreatePrompt
+	}
+
 	existing, err := h.configStore.GetUserByUsername(ctx, payload.Username)
 	if err != nil && !errors.Is(err, configstore.ErrNotFound) {
 		logger.Error("failed to lookup governance user username=%s: %v", payload.Username, err)
@@ -931,6 +942,9 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 			logger.Error("failed to activate pending governance user username=%s: %v", payload.Username, err)
 			SendError(ctx, fasthttp.StatusInternalServerError, userCreateFailureMessage(err))
 			return
+		}
+		if h.promptLifecycle != nil {
+			_ = h.promptLifecycle.OnUserCreated(ctx, existing, autoCreatePrompt)
 		}
 		existing.Password = ""
 		emailTo := strings.TrimSpace(payload.Email)
@@ -982,10 +996,6 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	autoCreatePrompt := false
-	if payload.AutoCreatePrompt != nil {
-		autoCreatePrompt = *payload.AutoCreatePrompt
-	}
 	if h.promptLifecycle != nil {
 		_ = h.promptLifecycle.OnUserCreated(ctx, user, autoCreatePrompt)
 	}
@@ -1872,6 +1882,9 @@ func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 	if err := h.configStore.UpdateUser(ctx, user); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to approve user: "+err.Error())
 		return
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
 	}
 	emailSent, emailErr := trySendRegistrationDecisionEmail(h.configStore, ctx, user.Username, user.Email, "approved")
 	user.Password = ""

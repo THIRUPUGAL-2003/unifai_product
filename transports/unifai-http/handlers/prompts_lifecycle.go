@@ -148,9 +148,9 @@ func (m *PromptLifecycleManager) OnUserCreated(ctx context.Context, user *tables
 
 	db := m.store.DB().WithContext(ctx)
 
-	// Check if prompt already exists in the Users folder
+	// Check if prompt already exists anywhere in the system (Users folder or team folder)
 	var existing tables.TablePrompt
-	err = db.Where("name = ? AND folder_id = ?", promptName, usersFolder.ID).First(&existing).Error
+	err = db.Where("name = ?", promptName).First(&existing).Error
 	if err == nil {
 		m.ensureUserAllowedPrompt(ctx, user, existing.ID)
 		return nil

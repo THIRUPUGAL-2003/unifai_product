@@ -156,6 +156,7 @@ export const governanceApi = baseApi.injectEndpoints({
 				method: "POST",
 				body: data,
 			}),
+			invalidatesTags: ["Teams", "Folders", "Prompts"],
 			async onQueryStarted(arg, { dispatch, getState, queryFulfilled }) {
 				try {
 					const { data } = await queryFulfilled;
@@ -185,6 +186,7 @@ export const governanceApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: data,
 			}),
+			invalidatesTags: (result, error, { teamId }) => ["Teams", { type: "Teams", id: teamId }, "Folders", "Prompts"],
 			async onQueryStarted({ teamId }, { dispatch, getState, queryFulfilled }) {
 				try {
 					const { data } = await queryFulfilled;
@@ -217,6 +219,7 @@ export const governanceApi = baseApi.injectEndpoints({
 				url: `/governance/teams/${encodeURIComponent(teamId)}`,
 				method: "DELETE",
 			}),
+			invalidatesTags: (result, error, teamId) => ["Teams", { type: "Teams", id: teamId }, "Folders", "Prompts"],
 			async onQueryStarted(teamId, { dispatch, getState, queryFulfilled }) {
 				try {
 					await queryFulfilled;
@@ -306,6 +309,7 @@ export const governanceApi = baseApi.injectEndpoints({
 				method: "POST",
 				body: data,
 			}),
+			invalidatesTags: ["Customers", "Folders", "Prompts"],
 			async onQueryStarted(arg, { dispatch, getState, queryFulfilled }) {
 				try {
 					const { data } = await queryFulfilled;
@@ -335,6 +339,7 @@ export const governanceApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: data,
 			}),
+			invalidatesTags: (result, error, { customerId }) => ["Customers", { type: "Customers", id: customerId }, "Folders", "Prompts"],
 			async onQueryStarted({ customerId }, { dispatch, getState, queryFulfilled }) {
 				try {
 					const { data } = await queryFulfilled;
@@ -367,6 +372,7 @@ export const governanceApi = baseApi.injectEndpoints({
 				url: `/governance/customers/${customerId}`,
 				method: "DELETE",
 			}),
+			invalidatesTags: (result, error, customerId) => ["Customers", { type: "Customers", id: customerId }, "Folders", "Prompts"],
 			async onQueryStarted(customerId, { dispatch, getState, queryFulfilled }) {
 				try {
 					await queryFulfilled;

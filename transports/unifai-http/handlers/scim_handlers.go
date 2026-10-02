@@ -294,6 +294,9 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		}
 		existing.UpdatedAt = time.Now().UTC()
 		_ = h.store.ConfigStore.UpdateUser(ctx, existing)
+		if h.promptLifecycle != nil {
+			_ = h.promptLifecycle.OnUserCreated(ctx, existing, true)
+		}
 		SendJSONWithStatus(ctx, scimUserResource(existing), fasthttp.StatusOK)
 		return
 	}
@@ -312,6 +315,9 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	if err := h.store.ConfigStore.CreateUser(ctx, user); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to create user")
 		return
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
 	}
 	SendJSONWithStatus(ctx, scimUserResource(user), fasthttp.StatusCreated)
 }
@@ -332,11 +338,16 @@ func (h *WorkspaceHandler) scimPutUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim payload")
 		return
 	}
+	oldEmail := user.Email
+	oldUsername := user.Username
 	applySCIMUserPatch(user, body)
 	user.UpdatedAt = time.Now().UTC()
 	if err := h.store.ConfigStore.UpdateUser(ctx, user); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
 		return
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserUpdated(ctx, user, oldEmail, oldUsername)
 	}
 	SendJSON(ctx, scimUserResource(user))
 }
@@ -363,6 +374,8 @@ func (h *WorkspaceHandler) scimPatchUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim patch payload")
 		return
 	}
+	oldEmail := user.Email
+	oldUsername := user.Username
 	for _, op := range body.Operations {
 		opName := strings.ToLower(strings.TrimSpace(op.Op))
 		switch opName {
@@ -383,6 +396,9 @@ func (h *WorkspaceHandler) scimPatchUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update user")
 		return
 	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserUpdated(ctx, user, oldEmail, oldUsername)
+	}
 	SendJSON(ctx, scimUserResource(user))
 }
 
@@ -400,6 +416,9 @@ func (h *WorkspaceHandler) scimDeleteUser(ctx *fasthttp.RequestCtx) {
 	if err := h.store.ConfigStore.DeleteUser(ctx, id); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete user")
 		return
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnUserDeleted(ctx, user)
 	}
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }
@@ -762,6 +781,9 @@ func (h *WorkspaceHandler) scimCreateGroup(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusInternalServerError, "failed to create group")
 			return
 		}
+		if h.promptLifecycle != nil {
+			_ = h.promptLifecycle.OnTeamCreated(ctx, team)
+		}
 	} else if body.ExternalID != "" && (team.SourceID == nil || *team.SourceID == "") {
 		team.SourceID = &body.ExternalID
 		_ = h.store.ConfigStore.UpdateTeam(ctx, team)
@@ -773,6 +795,9 @@ func (h *WorkspaceHandler) scimCreateGroup(ctx *fasthttp.RequestCtx) {
 			if rawUID != "" {
 				uid := h.scimResolveUserID(ctx, rawUID)
 				_ = ws.AddTeamMember(ctx, team.ID, uid)
+				if h.promptLifecycle != nil {
+					_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
+				}
 			}
 		}
 	}
@@ -805,6 +830,7 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid scim group payload")
 		return
 	}
+	oldName := team.Name
 	if strings.TrimSpace(body.DisplayName) != "" {
 		team.Name = strings.TrimSpace(body.DisplayName)
 	}
@@ -813,6 +839,9 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 	}
 	team.UpdatedAt = time.Now().UTC()
 	_ = h.store.ConfigStore.UpdateTeam(ctx, team)
+	if h.promptLifecycle != nil && oldName != team.Name {
+		_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+	}
 
 	ws := h.scimWorkspaceStore()
 	if ws != nil {
@@ -828,10 +857,16 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 		for _, cur := range currentMembers {
 			if !targetMap[cur.UserID] {
 				_ = ws.RemoveTeamMember(ctx, team.ID, cur.UserID)
+				if h.promptLifecycle != nil {
+					_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, cur.UserID)
+				}
 			}
 		}
 		for uid := range targetMap {
 			_ = ws.AddTeamMember(ctx, team.ID, uid)
+			if h.promptLifecycle != nil {
+				_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
+			}
 		}
 	}
 	var members []tables.TableTeamMember
@@ -877,8 +912,12 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 		case "add":
 			if strings.EqualFold(cleanPath, "displayname") {
 				if name, ok := op.Value.(string); ok && strings.TrimSpace(name) != "" {
+					oldName := team.Name
 					team.Name = strings.TrimSpace(name)
 					_ = h.store.ConfigStore.UpdateTeam(ctx, team)
+					if h.promptLifecycle != nil && oldName != team.Name {
+						_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+					}
 				}
 			}
 			memberIDs := scimExtractMemberIDs(op.Value)
@@ -886,6 +925,9 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 				for _, rawUID := range memberIDs {
 					uid := h.scimResolveUserID(ctx, rawUID)
 					_ = ws.AddTeamMember(ctx, team.ID, uid)
+					if h.promptLifecycle != nil {
+						_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
+					}
 				}
 			}
 		case "remove":
@@ -895,6 +937,9 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 					if ws != nil {
 						uid := h.scimResolveUserID(ctx, filterUID)
 						_ = ws.RemoveTeamMember(ctx, team.ID, uid)
+						if h.promptLifecycle != nil {
+							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, uid)
+						}
 					}
 					continue
 				}
@@ -905,43 +950,66 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 					for _, rawUID := range memberIDs {
 						uid := h.scimResolveUserID(ctx, rawUID)
 						_ = ws.RemoveTeamMember(ctx, team.ID, uid)
+						if h.promptLifecycle != nil {
+							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, uid)
+						}
 					}
 				} else if strings.EqualFold(cleanPath, "members") {
 					all, _ := ws.ListTeamMembers(ctx, team.ID)
 					for _, m := range all {
 						_ = ws.RemoveTeamMember(ctx, team.ID, m.UserID)
+						if h.promptLifecycle != nil {
+							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, m.UserID)
+						}
 					}
 				}
 			}
 		case "replace":
 			if strings.EqualFold(cleanPath, "displayname") {
 				if name, ok := op.Value.(string); ok && strings.TrimSpace(name) != "" {
+					oldName := team.Name
 					team.Name = strings.TrimSpace(name)
 					_ = h.store.ConfigStore.UpdateTeam(ctx, team)
+					if h.promptLifecycle != nil && oldName != team.Name {
+						_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+					}
 				}
 			} else if strings.EqualFold(cleanPath, "members") {
 				if ws != nil {
 					all, _ := ws.ListTeamMembers(ctx, team.ID)
 					for _, m := range all {
 						_ = ws.RemoveTeamMember(ctx, team.ID, m.UserID)
+						if h.promptLifecycle != nil {
+							_ = h.promptLifecycle.OnTeamMemberRemoved(ctx, team.ID, m.UserID)
+						}
 					}
 					memberIDs := scimExtractMemberIDs(op.Value)
 					for _, rawUID := range memberIDs {
 						uid := h.scimResolveUserID(ctx, rawUID)
 						_ = ws.AddTeamMember(ctx, team.ID, uid)
+						if h.promptLifecycle != nil {
+							_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
+						}
 					}
 				}
 			} else if cleanPath == "" {
 				if m, ok := op.Value.(map[string]any); ok {
 					if name, ok := m["displayName"].(string); ok && strings.TrimSpace(name) != "" {
+						oldName := team.Name
 						team.Name = strings.TrimSpace(name)
 						_ = h.store.ConfigStore.UpdateTeam(ctx, team)
+						if h.promptLifecycle != nil && oldName != team.Name {
+							_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+						}
 					}
 					if membersVal, ok := m["members"]; ok && ws != nil {
 						memberIDs := scimExtractMemberIDs(membersVal)
 						for _, rawUID := range memberIDs {
 							uid := h.scimResolveUserID(ctx, rawUID)
 							_ = ws.AddTeamMember(ctx, team.ID, uid)
+							if h.promptLifecycle != nil {
+								_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, uid)
+							}
 						}
 					}
 				}
@@ -972,6 +1040,9 @@ func (h *WorkspaceHandler) scimDeleteGroup(ctx *fasthttp.RequestCtx) {
 	if err := h.store.ConfigStore.DeleteTeam(ctx, id); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete group")
 		return
+	}
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnTeamDeleted(ctx, team)
 	}
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }

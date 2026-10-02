@@ -21,12 +21,16 @@ type WorkspaceHandler struct {
 	store             *lib.Config
 	workspace         configstore.WorkspaceStore
 	governanceManager GovernanceManager
+	promptLifecycle   *PromptLifecycleManager
 }
 
 func NewWorkspaceHandler(store *lib.Config, governanceManager ...GovernanceManager) *WorkspaceHandler {
 	h := &WorkspaceHandler{store: store}
 	if store != nil {
 		h.workspace, _ = configstore.AsWorkspaceStore(store.ConfigStore)
+		if store.ConfigStore != nil {
+			h.promptLifecycle = NewPromptLifecycleManager(store.ConfigStore)
+		}
 	}
 	if len(governanceManager) > 0 {
 		h.governanceManager = governanceManager[0]

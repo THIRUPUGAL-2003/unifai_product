@@ -39,19 +39,19 @@ export const sessionUsersApi = baseApi.injectEndpoints({
 		}),
 		createSessionUser: builder.mutation<SessionUser, SessionUserPayload>({
 			query: (body) => ({ url: "/session/users", method: "POST", body }),
-			invalidatesTags: ["Users"],
+			invalidatesTags: ["Users", "Prompts", "Folders"],
 		}),
 		updateSessionUser: builder.mutation<SessionUser, { id: string; updates: SessionUserPayload }>({
 			query: ({ id, updates }) => ({ url: `/session/users/${id}`, method: "PUT", body: updates }),
-			invalidatesTags: ["Users"],
+			invalidatesTags: ["Users", "Prompts", "Folders"],
 		}),
 		deleteSessionUser: builder.mutation<void, string>({
 			query: (id) => ({ url: `/session/users/${id}`, method: "DELETE" }),
-			invalidatesTags: ["Users"],
+			invalidatesTags: ["Users", "Prompts", "Folders"],
 		}),
 		approveSessionUser: builder.mutation<SessionUser, string>({
 			query: (id) => ({ url: `/session/users/${id}/approve`, method: "POST" }),
-			invalidatesTags: ["Users"],
+			invalidatesTags: ["Users", "Prompts", "Folders"],
 		}),
 		rejectSessionUser: builder.mutation<Pick<SessionUser, "id" | "status" | "email_sent" | "email_error"> & { message?: string }, string>({
 			query: (id) => ({ url: `/session/users/${id}/reject`, method: "POST" }),
