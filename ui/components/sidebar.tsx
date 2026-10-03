@@ -73,7 +73,7 @@ import {
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE, COMPANY_NAME, COMPANY_LOGO, COMPANY_SHORT_NAME } from "@/lib/constants/config";
 import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, useLogoutMutation, useIsAuthEnabledQuery } from "@/lib/store";
-import { clearAuthStorage } from "@/lib/store/apis";
+import { beginLogout, clearAuthStorage } from "@/lib/store/apis";
 import {
 	getScopedWorkspaceSections,
 	invalidateSessionAuthCache,
@@ -1457,6 +1457,7 @@ export default function AppSidebar() {
 
 	const handleLogout = async () => {
 		setUserPopoverOpen(false);
+		beginLogout();
 		invalidateSessionAuthCache();
 		clearAuthStorage();
 		const currentTarget = pathname + (search ? (search.startsWith("?") ? search : `?${search}`) : "");

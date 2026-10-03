@@ -125,18 +125,18 @@ export const sessionApi = baseApi.injectEndpoints({
 				// user's sign-in, so dashboard logout must not revoke them.
 				return { data: { message: "Logout successful" } };
 			},
-			// After logout, clear token and all cached data
-			async onQueryStarted(arg, { dispatch, queryFulfilled }) {
+			// The caller does a full page navigation to /login, which drops all cached data.
+			// Resetting or invalidating the cache here would refetch every mounted query with
+			// the session already gone and flash "failed" errors before the page leaves.
+			async onQueryStarted(arg, { queryFulfilled }) {
 				try {
 					await queryFulfilled;
 				} catch {
 				} finally {
 					invalidateSessionAuthCache();
 					clearAuthStorage();
-					dispatch(baseApi.util.resetApiState());
 				}
 			},
-			invalidatesTags: ["Sessions", "Providers", "Logs", "VirtualKeys", "Teams", "Customers", "Budgets", "RateLimits"],
 		}),
 	}),
 });

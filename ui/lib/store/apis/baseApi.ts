@@ -66,10 +66,32 @@ const baseQuery = fetchBaseQuery({
 // Wrap base query with enterprise refresh logic (or passthrough for non-enterprise)
 const baseQueryWithRefresh = createBaseQueryWithRefresh(baseQuery);
 
+const LOGOUT_URL = "/session/logout";
+let loggingOut = false;
+
+/** Called right before logout; the page navigates to /login once the server session is cleared. */
+export const beginLogout = () => {
+	loggingOut = true;
+};
+
+// While logging out, other requests fail with 401 as soon as the session is gone. Their
+// error toasts and the 401 redirect would race the logout navigation, so they never settle;
+// the page unloads moments later.
+const settlesNever = () => new Promise<never>(() => {});
+
 // Enhanced base query with error handling
 const baseQueryWithErrorHandling: typeof baseQueryWithRefresh = async (args: any, api: any, extraOptions: any) => {
+	const isLogoutCall = (typeof args === "string" ? args : args?.url) === LOGOUT_URL;
+	if (loggingOut && !isLogoutCall) {
+		return settlesNever();
+	}
+
 	// First apply refresh logic (enterprise-specific, handles 401)
 	const result = await baseQueryWithRefresh(args, api, extraOptions);
+
+	if (loggingOut && !isLogoutCall && result.error) {
+		return settlesNever();
+	}
 
 	// Then handle other error types
 	if (result.error) {
@@ -80,7 +102,7 @@ const baseQueryWithErrorHandling: typeof baseQueryWithRefresh = async (args: any
 			// When a TempTokenScope wrapper is active, the wrapped page handles
 			// its own 401 display (an "invalid/expired link" view). Skip the
 			// global redirect so the user stays on the page they opened.
-			if (getSuppressGlobal401()) {
+			if (getSuppressGlobal401() || isLogoutCall) {
 				return result;
 			}
 			clearAuthStorage();
