@@ -3398,7 +3398,9 @@ func preloadVirtualKeyBaseRelations(db *gorm.DB) *gorm.DB {
 	return db.
 		Preload("Team").
 		Preload("Team.Customer").
+		Preload("Team.Budgets").
 		Preload("Customer").
+		Preload("Customer.Budgets").
 		Preload("Budgets").
 		Preload("RateLimit").
 		Preload("ProviderConfigs").
@@ -3410,7 +3412,9 @@ func preloadVirtualKeyBaseRelations(db *gorm.DB) *gorm.DB {
 		Preload("MCPConfigs").
 		Preload("MCPConfigs.MCPClient").
 		Preload("Teams").
+		Preload("Teams.Budgets").
 		Preload("Customers").
+		Preload("Customers.Budgets").
 		Preload("Users")
 }
 

@@ -72,6 +72,20 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				next(ctx)
 				return
 			}
+			if session.Role == "user" {
+				// Built-in "user" role is scoped to Prompt Repository playground.
+				// SessionMiddleware already verifies allowed paths for non-admin sessions.
+				// Allow read-only access to virtual keys (which are row-filtered by allowedVKIDsForCaller
+				// to only the keys assigned to the user/team/customer), providers, models, and billing blocks
+				// needed to run prompts in the playground.
+				if (method == "GET" || method == "HEAD") && (strings.HasPrefix(path, "/api/governance/virtual-keys") ||
+					strings.HasPrefix(path, "/api/governance/providers") ||
+					strings.HasPrefix(path, "/api/providers") ||
+					strings.HasPrefix(path, "/api/models")) {
+					next(ctx)
+					return
+				}
+			}
 			if req != nil {
 				perms, err := rbac.ResolvePermissions(ctx, ws, session.Role)
 				if err != nil {

@@ -117,47 +117,130 @@ export function ApiKeySelectorView({
 			</Combobox>
 
 			{/* Real-time Virtual Key Budget Status */}
-			{selectedVK && (
-				<div className="bg-muted/20 border-border/50 rounded-md border p-2 text-xs space-y-1.5">
-					<div className="flex items-center justify-between">
-						<span className="text-muted-foreground font-medium flex items-center gap-1.5">
-							<span className="h-1.5 w-1.5 rounded-full bg-teal-500 inline-block" />
-							VK: {selectedVK.name}
-						</span>
-						{selectedVK.budgets && selectedVK.budgets.length > 0 ? (
-							selectedVK.budgets.map((b) => (
-								<span key={b.id || b.reset_duration} className="font-mono text-[11px]">
-									{fmt(b.current_usage)} / {b.max_limit > 0 ? fmt(b.max_limit) : "Unlimited"}
+			{selectedVK && (() => {
+				const customerName = selectedVK.customer?.name || selectedVK.customers?.[0]?.name;
+				const teamName = selectedVK.team?.name || selectedVK.teams?.[0]?.name;
+				const scopeLabel = customerName ? `Customer: ${customerName}` : teamName ? `Team: ${teamName}` : null;
+				const customerBudgets = selectedVK.customer?.budgets || selectedVK.customers?.[0]?.budgets || [];
+				const teamBudgets = selectedVK.team?.budgets || selectedVK.teams?.[0]?.budgets || [];
+				const vkBudgets = selectedVK.budgets || [];
+
+				return (
+					<div className="bg-muted/20 border-border/50 rounded-md border p-2 text-xs space-y-2">
+						<div className="flex items-center justify-between">
+							<span className="text-muted-foreground font-medium flex items-center gap-1.5">
+								<span className="h-1.5 w-1.5 rounded-full bg-teal-500 inline-block" />
+								VK: {selectedVK.name}
+							</span>
+							{scopeLabel && (
+								<span className="rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 px-1.5 py-0.5 text-[10px] font-medium">
+									{scopeLabel}
 								</span>
+							)}
+						</div>
+
+						{/* Key Budget */}
+						{vkBudgets.length > 0 ? (
+							vkBudgets.map((b) => (
+								<div key={`vk-${b.id || b.reset_duration}`} className="space-y-0.5">
+									<div className="flex items-center justify-between text-[11px]">
+										<span className="text-muted-foreground font-medium">Key Budget:</span>
+										<span className="font-mono">{fmt(b.current_usage)} / {b.max_limit > 0 ? fmt(b.max_limit) : "Unlimited"}</span>
+									</div>
+									{b.max_limit > 0 && (
+										<div className="space-y-0.5">
+											<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+												<div
+													className={`h-full transition-all ${
+														(b.current_usage ?? 0) >= b.max_limit
+															? "bg-rose-500"
+															: (b.current_usage ?? 0) / b.max_limit > 0.8
+																? "bg-amber-500"
+																: "bg-teal-500"
+													}`}
+													style={{
+														width: `${Math.min(100, Math.max(0, ((b.current_usage ?? 0) / b.max_limit) * 100))}%`,
+													}}
+												/>
+											</div>
+											<div className="flex justify-between text-[10px] text-muted-foreground">
+												<span>Reset: {b.reset_duration || "monthly"}</span>
+												<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
+											</div>
+										</div>
+									)}
+								</div>
 							))
-						) : (
-							<span className="text-muted-foreground text-[11px]">Budget: Unlimited</span>
-						)}
-					</div>
-					{selectedVK.budgets?.map((b) =>
-						b.max_limit > 0 ? (
-							<div key={b.id || b.reset_duration} className="space-y-0.5">
-								<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
-									<div
-										className={`h-full transition-all ${
-											(b.current_usage ?? 0) >= b.max_limit
-												? "bg-rose-500"
-												: (b.current_usage ?? 0) / b.max_limit > 0.8
-													? "bg-amber-500"
-													: "bg-teal-500"
-										}`}
-										style={{
-											width: `${Math.min(100, Math.max(0, ((b.current_usage ?? 0) / b.max_limit) * 100))}%`,
-										}}
-									/>
-								</div>
-								<div className="flex justify-between text-[10px] text-muted-foreground">
-									<span>Reset: {b.reset_duration || "monthly"}</span>
-									<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
-								</div>
+						) : customerBudgets.length === 0 && teamBudgets.length === 0 ? (
+							<div className="flex items-center justify-between text-[11px]">
+								<span className="text-muted-foreground font-medium">Budget:</span>
+								<span className="text-muted-foreground">Unlimited</span>
 							</div>
-						) : null,
-					)}
+						) : null}
+
+						{/* Customer Budget (shared across teams and users under this customer) */}
+						{customerBudgets.map((b) => (
+							<div key={`cust-${b.id || b.reset_duration}`} className="space-y-0.5 pt-1 border-t border-border/40">
+								<div className="flex items-center justify-between text-[11px]">
+									<span className="text-muted-foreground font-medium">Customer Budget ({customerName}):</span>
+									<span className="font-mono">{fmt(b.current_usage)} / {b.max_limit > 0 ? fmt(b.max_limit) : "Unlimited"}</span>
+								</div>
+								{b.max_limit > 0 && (
+									<div className="space-y-0.5">
+										<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+											<div
+												className={`h-full transition-all ${
+													(b.current_usage ?? 0) >= b.max_limit
+														? "bg-rose-500"
+														: (b.current_usage ?? 0) / b.max_limit > 0.8
+															? "bg-amber-500"
+															: "bg-teal-500"
+												}`}
+												style={{
+													width: `${Math.min(100, Math.max(0, ((b.current_usage ?? 0) / b.max_limit) * 100))}%`,
+												}}
+											/>
+										</div>
+										<div className="flex justify-between text-[10px] text-muted-foreground">
+											<span>Reset: {b.reset_duration || "monthly"}</span>
+											<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
+										</div>
+									</div>
+								)}
+							</div>
+						))}
+
+						{/* Team Budget (shared across users in this team) */}
+						{teamBudgets.map((b) => (
+							<div key={`team-${b.id || b.reset_duration}`} className="space-y-0.5 pt-1 border-t border-border/40">
+								<div className="flex items-center justify-between text-[11px]">
+									<span className="text-muted-foreground font-medium">Team Budget ({teamName}):</span>
+									<span className="font-mono">{fmt(b.current_usage)} / {b.max_limit > 0 ? fmt(b.max_limit) : "Unlimited"}</span>
+								</div>
+								{b.max_limit > 0 && (
+									<div className="space-y-0.5">
+										<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+											<div
+												className={`h-full transition-all ${
+													(b.current_usage ?? 0) >= b.max_limit
+														? "bg-rose-500"
+														: (b.current_usage ?? 0) / b.max_limit > 0.8
+															? "bg-amber-500"
+															: "bg-teal-500"
+												}`}
+												style={{
+													width: `${Math.min(100, Math.max(0, ((b.current_usage ?? 0) / b.max_limit) * 100))}%`,
+												}}
+											/>
+										</div>
+										<div className="flex justify-between text-[10px] text-muted-foreground">
+											<span>Reset: {b.reset_duration || "monthly"}</span>
+											<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
+										</div>
+									</div>
+								)}
+							</div>
+						))}
 					{selectedVK.is_active === false && (
 						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1">
 							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -191,8 +274,9 @@ export function ApiKeySelectorView({
 							<span>Warning: Virtual Key budget exceeds 80%</span>
 						</div>
 					)}
-				</div>
-			)}
+					</div>
+				);
+			})()}
 
 			{/* Member Personal Budget Indicator */}
 			{hasUserBudget && (

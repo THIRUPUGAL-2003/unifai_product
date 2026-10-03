@@ -222,7 +222,7 @@ func (s *RDBConfigStore) EnsureRBACRoles(ctx context.Context) error {
 		allIDs = append(allIDs, perm.ID)
 		if perm.Operation == "View" || perm.Operation == "Read" {
 			switch perm.Resource {
-			case "Dashboard", "Logs", "Inference", "PromptRepository", "Observability", "MCPGateway":
+			case "Dashboard", "Logs", "Inference", "PromptRepository", "Observability", "MCPGateway", "VirtualKeys", "ModelProvider":
 				readIDs = append(readIDs, perm.ID)
 			}
 		}

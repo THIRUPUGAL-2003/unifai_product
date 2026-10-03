@@ -5,7 +5,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Input } from "@/components/ui/input";
 import { SplitButton } from "@/components/ui/splitButton";
 import { Message, MessageRole } from "@/lib/message";
-import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
+import { getErrorMessage, useIsAuthEnabledQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { useCreateSessionMutation, useGetSessionsQuery, useGetVersionsQuery, useRenameSessionMutation, useUpdateSessionMutation } from "@/lib/store/apis/promptsApi";
 import { ModelParams, PromptSession } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
@@ -42,6 +42,20 @@ export default function PromptsViewHeader() {
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isUserRole = isPromptMemberRole(authStatus?.role);
+
+	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole });
+	const selectedVK = useMemo(
+		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId),
+		[virtualKeysData, apiKeyId],
+	);
+	const vkScopeLabel = useMemo(() => {
+		if (!selectedVK) return null;
+		const cName = selectedVK.customer?.name || selectedVK.customers?.[0]?.name;
+		const tName = selectedVK.team?.name || selectedVK.teams?.[0]?.name;
+		if (cName) return `Customer: ${cName}`;
+		if (tName) return `Team: ${tName}`;
+		return null;
+	}, [selectedVK]);
 
 	const committedLabel = useMemo(() => {
 		const version = selectedPrompt?.latest_version;
@@ -228,9 +242,21 @@ export default function PromptsViewHeader() {
 					{!isUserRole && hasChanges && <span className="text-destructive ml-1">*</span>}
 				</h3>
 				{isUserRole ? (
-					<Badge variant="secondary" className="max-w-[280px] truncate font-normal" title={committedLabel}>
-						{committedLabel}
-					</Badge>
+					<>
+						<Badge variant="secondary" className="max-w-[280px] truncate font-normal" title={committedLabel}>
+							{committedLabel}
+						</Badge>
+						{selectedVK && (
+							<Badge variant="outline" className="border-teal-500/40 text-teal-600 dark:text-teal-400 bg-teal-500/10 gap-1 text-xs">
+								VK: {selectedVK.name}{vkScopeLabel ? ` (${vkScopeLabel})` : ""}
+							</Badge>
+						)}
+						{authStatus?.budget !== undefined && authStatus.budget > 0 && (
+							<Badge variant="outline" className="font-mono text-xs border-primary/30 text-muted-foreground">
+								User Budget: ${(authStatus.budget_current_usage ?? 0).toFixed(2)} / ${authStatus.budget.toFixed(2)}
+							</Badge>
+						)}
+					</>
 				) : (
 					<>
 						{displayVersion && <Badge variant={"secondary"}>v{displayVersion.version_number}</Badge>}
