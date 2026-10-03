@@ -1,6 +1,6 @@
 package credstore
 
-import "github.com/unifai/unifai/core/schemas"
+import "github.com/raksha/raksha/core/schemas"
 
 // identityForMCPAuthMode returns the identity string to look up by, given the
 // derived mode. Mirrors the priority used by ctx.MCPAuthMode().
@@ -9,18 +9,18 @@ import "github.com/unifai/unifai/core/schemas"
 // mcp_client) — currently per-user OAuth and per-user headers. Lives in its
 // own file so both resolvers can call it without duplication or accidental
 // drift.
-func identityForMCPAuthMode(ctx *schemas.UnifAIContext, mode schemas.MCPAuthMode) string {
+func identityForMCPAuthMode(ctx *schemas.RakshaContext, mode schemas.MCPAuthMode) string {
 	switch mode {
 	case schemas.MCPAuthModeUser:
-		if v, _ := ctx.Value(schemas.UnifAIContextKeyUserID).(string); v != "" {
+		if v, _ := ctx.Value(schemas.RakshaContextKeyUserID).(string); v != "" {
 			return v
 		}
 	case schemas.MCPAuthModeVK:
-		if v, _ := ctx.Value(schemas.UnifAIContextKeyGovernanceVirtualKeyID).(string); v != "" {
+		if v, _ := ctx.Value(schemas.RakshaContextKeyGovernanceVirtualKeyID).(string); v != "" {
 			return v
 		}
 	case schemas.MCPAuthModeSession:
-		if v, _ := ctx.Value(schemas.UnifAIContextKeyMCPSessionID).(string); v != "" {
+		if v, _ := ctx.Value(schemas.RakshaContextKeyMCPSessionID).(string); v != "" {
 			return v
 		}
 	}

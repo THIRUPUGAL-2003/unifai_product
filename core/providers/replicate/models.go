@@ -3,21 +3,21 @@ package replicate
 import (
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAIListModelsResponse converts Replicate deployments to a UnifAI list models response.
+// ToRakshaListModelsResponse converts Replicate deployments to a Raksha list models response.
 // Replicate model IDs are composite: "{owner}/{name}" (e.g. "stability-ai/stable-diffusion").
-func ToUnifAIListModelsResponse(
+func ToRakshaListModelsResponse(
 	deploymentsResponse *ReplicateDeploymentListResponse,
 	providerKey schemas.ModelProvider,
 	allowedModels schemas.WhiteList,
 	blacklistedModels schemas.BlackList,
 	aliases schemas.KeyAliases,
 	unfiltered bool,
-) *schemas.UnifAIListModelsResponse {
-	unifaiResponse := &schemas.UnifAIListModelsResponse{
+) *schemas.RakshaListModelsResponse {
+	rakshaResponse := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0),
 	}
 
@@ -30,7 +30,7 @@ func ToUnifAIListModelsResponse(
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return unifaiResponse
+		return rakshaResponse
 	}
 
 	included := make(map[string]bool)
@@ -49,27 +49,27 @@ func ToUnifAIListModelsResponse(
 			}
 
 			for _, result := range pipeline.FilterModel(deploymentID) {
-				unifaiModel := schemas.Model{
+				rakshaModel := schemas.Model{
 					ID:      string(providerKey) + "/" + result.ResolvedID,
 					Name:    schemas.Ptr(deployment.Name),
 					OwnedBy: schemas.Ptr(deployment.Owner),
 					Created: created,
 				}
 				if result.AliasValue != "" {
-					unifaiModel.Alias = schemas.Ptr(result.AliasValue)
+					rakshaModel.Alias = schemas.Ptr(result.AliasValue)
 				}
-				unifaiResponse.Data = append(unifaiResponse.Data, unifaiModel)
+				rakshaResponse.Data = append(rakshaResponse.Data, rakshaModel)
 				included[strings.ToLower(result.ResolvedID)] = true
 			}
 		}
 
 		if deploymentsResponse.Next != nil {
-			unifaiResponse.NextPageToken = *deploymentsResponse.Next
+			rakshaResponse.NextPageToken = *deploymentsResponse.Next
 		}
 	}
 
-	unifaiResponse.Data = append(unifaiResponse.Data,
+	rakshaResponse.Data = append(rakshaResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return unifaiResponse
+	return rakshaResponse
 }

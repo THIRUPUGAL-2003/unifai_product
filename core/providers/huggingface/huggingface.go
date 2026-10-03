@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/providers/openai"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/openai"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -114,7 +114,7 @@ func (provider *HuggingFaceProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // buildRequestURL composes the final request URL based on context overrides.
-func (provider *HuggingFaceProvider) buildRequestURL(ctx *schemas.UnifAIContext, defaultPath string, requestType schemas.RequestType) string {
+func (provider *HuggingFaceProvider) buildRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType) string {
 	path, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 	if isCompleteURL {
 		return path
@@ -124,7 +124,7 @@ func (provider *HuggingFaceProvider) buildRequestURL(ctx *schemas.UnifAIContext,
 
 // completeRequestWithModelAliasCache performs a request and retries once on 404 by clearing the cache and refetching model info
 func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	jsonData []byte,
 	key string,
 	isHFInferenceAudioRequest bool,
@@ -133,7 +133,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 	originalModelName string,
 	requiredTask string,
 	requestType schemas.RequestType,
-) ([]byte, time.Duration, map[string]string, *schemas.UnifAIError) {
+) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
 
 	// Build URL with original model name
 	url, urlErr := provider.getInferenceProviderRouteURL(ctx, inferenceProvider, originalModelName, requestType)
@@ -144,7 +144,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 	// For fal-ai, nebius, and together image generation, skip validation (model format is already correct)
 	skipValidation := (inferenceProvider == falAI || inferenceProvider == nebius || inferenceProvider == together) && requestType == schemas.ImageGenerationRequest
 	var modelName string
-	var err *schemas.UnifAIError
+	var err *schemas.RakshaError
 	if skipValidation {
 		// Use original model name for validation skip case (though we won't use it for these providers)
 		modelName = originalModelName
@@ -180,7 +180,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 				// Keep original model name for validation skip case
 				modelName = originalModelName
 			} else {
-				var retryErr *schemas.UnifAIError
+				var retryErr *schemas.RakshaError
 				modelName, retryErr = provider.getValidatedProviderModelID(ctx, inferenceProvider, originalModelName, requiredTask, requestType)
 				if retryErr != nil {
 					return nil, 0, nil, retryErr
@@ -219,7 +219,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 	return responseBody, latency, providerResponseHeaders, nil
 }
 
-func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.UnifAIContext, jsonData []byte, url string, key string, isHFInferenceAudioRequest bool, _ bool) ([]byte, time.Duration, map[string]string, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.RakshaContext, jsonData []byte, url string, key string, isHFInferenceAudioRequest bool, _ bool) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -246,10 +246,10 @@ func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.UnifAIContext,
 		req.SetBody(jsonData)
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, nil, rakshaErr
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
@@ -262,7 +262,7 @@ func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.UnifAIContext,
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, latency, providerResponseHeaders, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Read the response body and copy it before releasing the response
@@ -272,7 +272,7 @@ func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.UnifAIContext,
 	return bodyCopy, latency, providerResponseHeaders, nil
 }
 
-func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 
 	type providerResult struct {
@@ -280,7 +280,7 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.UnifAIContext,
 		response *HuggingFaceListModelsResponse
 		latency  int64
 		rawResp  map[string]interface{}
-		err      *schemas.UnifAIError
+		err      *schemas.RakshaError
 	}
 
 	resultsChan := make(chan providerResult, len(INFERENCE_PROVIDERS))
@@ -306,38 +306,38 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.UnifAIContext,
 				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key.Value.GetValue()))
 			}
 
-			latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+			latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 			defer wait()
-			if unifaiErr != nil {
-				resultsChan <- providerResult{provider: inferProvider, err: unifaiErr}
+			if rakshaErr != nil {
+				resultsChan <- providerResult{provider: inferProvider, err: rakshaErr}
 				return
 			}
 
 			if resp.StatusCode() != fasthttp.StatusOK {
 				var errorResp HuggingFaceHubError
-				unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
-				if unifaiErr.Error == nil {
-					unifaiErr.Error = &schemas.ErrorField{}
+				rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+				if rakshaErr.Error == nil {
+					rakshaErr.Error = &schemas.ErrorField{}
 				}
 				if strings.TrimSpace(errorResp.Message) != "" {
-					unifaiErr.Error.Message = errorResp.Message
+					rakshaErr.Error.Message = errorResp.Message
 				}
-				resultsChan <- providerResult{provider: inferProvider, err: unifaiErr}
+				resultsChan <- providerResult{provider: inferProvider, err: rakshaErr}
 				return
 			}
 
 			body, err := providerUtils.CheckAndDecodeBody(resp)
 			if err != nil {
-				resultsChan <- providerResult{provider: inferProvider, err: providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)}
+				resultsChan <- providerResult{provider: inferProvider, err: providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)}
 				return
 			}
 
 			var huggingfaceAPIResponse HuggingFaceListModelsResponse
 			var rawResponse interface{}
 			var rawRequest interface{}
-			rawRequest, rawResponse, unifaiErr = providerUtils.HandleProviderResponse(body, &huggingfaceAPIResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-			if unifaiErr != nil {
-				resultsChan <- providerResult{provider: inferProvider, err: unifaiErr}
+			rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, &huggingfaceAPIResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+			if rakshaErr != nil {
+				resultsChan <- providerResult{provider: inferProvider, err: rakshaErr}
 				return
 			}
 			var rawRespMap map[string]interface{}
@@ -370,12 +370,12 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.UnifAIContext,
 	}()
 
 	// Aggregate results
-	aggregatedResponse := &schemas.UnifAIListModelsResponse{
+	aggregatedResponse := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0),
 	}
 	var totalLatency int64
 	var successCount int
-	var firstError *schemas.UnifAIError
+	var firstError *schemas.RakshaError
 	var rawResponses []map[string]interface{}
 
 	for result := range resultsChan {
@@ -387,7 +387,7 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.UnifAIContext,
 		}
 
 		if result.response != nil {
-			providerResponse := result.response.ToUnifAIListModelsResponse(providerName, result.provider, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+			providerResponse := result.response.ToRakshaListModelsResponse(providerName, result.provider, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 			if providerResponse != nil {
 				aggregatedResponse.Data = append(aggregatedResponse.Data, providerResponse.Data...)
 				totalLatency += result.latency
@@ -422,13 +422,13 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.UnifAIContext,
 }
 
 // ListModels queries the Hugging Face model hub API to list models served by the inference provider.
-func (provider *HuggingFaceProvider) ListModels(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
 	if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
-		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 			return provider.listModelsByKey(ctx, schemas.Key{Models: schemas.WhiteList{"*"}}, request)
 		})
 	}
@@ -441,23 +441,23 @@ func (provider *HuggingFaceProvider) ListModels(ctx *schemas.UnifAIContext, keys
 
 }
 
-func (provider *HuggingFaceProvider) TextCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITextCompletionRequest) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) TextCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITextCompletionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) ChatCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -491,56 +491,56 @@ func (provider *HuggingFaceProvider) ChatCompletion(ctx *schemas.UnifAIContext, 
 
 	responseBody, latency, providerResponseHeaders, err := provider.completeRequest(ctx, jsonBody, requestURL, key.Value.GetValue(), false, false)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	unifaiResponse := &schemas.UnifAIChatResponse{}
+	rakshaResponse := &schemas.RakshaChatResponse{}
 
 	var rawResponse interface{}
 	var rawRequest interface{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, unifaiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, rakshaResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Ensure model is set correctly
-	if unifaiResponse.Model == "" {
-		unifaiResponse.Model = request.Model
+	if rakshaResponse.Model == "" {
+		rakshaResponse.Model = request.Model
 	}
 
 	// Set object if not already set
-	if unifaiResponse.Object == "" {
-		unifaiResponse.Object = "chat.completion"
+	if rakshaResponse.Object == "" {
+		rakshaResponse.Object = "chat.completion"
 	}
 
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
-func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIChatRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -553,7 +553,7 @@ func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.UnifAICon
 		request.Model = modelName
 	}
 
-	customRequestConverter := func(request *schemas.UnifAIChatRequest) (providerUtils.RequestBodyWithExtraParams, error) {
+	customRequestConverter := func(request *schemas.RakshaChatRequest) (providerUtils.RequestBodyWithExtraParams, error) {
 		reqBody, err := ToHuggingFaceChatCompletionRequest(request)
 		if err != nil {
 			return nil, err
@@ -587,7 +587,7 @@ func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.UnifAICon
 	)
 }
 
-func (provider *HuggingFaceProvider) Responses(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
@@ -597,17 +597,17 @@ func (provider *HuggingFaceProvider) Responses(ctx *schemas.UnifAIContext, key s
 		return nil, err
 	}
 
-	response := chatResponse.ToUnifAIResponsesResponse()
+	response := chatResponse.ToRakshaResponsesResponse()
 
 	return response, nil
 }
 
-func (provider *HuggingFaceProvider) ResponsesStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIResponsesRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
 	}
 
-	ctx.SetValue(schemas.UnifAIContextKeyIsResponsesToChatCompletionFallback, true)
+	ctx.SetValue(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback, true)
 	return provider.ChatCompletionStream(
 		ctx,
 		postHookRunner,
@@ -617,15 +617,15 @@ func (provider *HuggingFaceProvider) ResponsesStream(ctx *schemas.UnifAIContext,
 	)
 }
 
-func (provider *HuggingFaceProvider) Embedding(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIEmbeddingRequest) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.EmbeddingRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -656,7 +656,7 @@ func (provider *HuggingFaceProvider) Embedding(ctx *schemas.UnifAIContext, key s
 		schemas.EmbeddingRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -676,30 +676,30 @@ func (provider *HuggingFaceProvider) Embedding(ctx *schemas.UnifAIContext, key s
 		}
 	}
 
-	// Unmarshal directly to UnifAIEmbeddingResponse with custom logic
-	unifaiResponse, convErr := UnmarshalHuggingFaceEmbeddingResponse(responseBody, request.Model)
+	// Unmarshal directly to RakshaEmbeddingResponse with custom logic
+	rakshaResponse, convErr := UnmarshalHuggingFaceEmbeddingResponse(responseBody, request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
-func (provider *HuggingFaceProvider) Speech(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAISpeechRequest) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 	// Check if Speech is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.SpeechRequest); err != nil {
 		return nil, err
@@ -707,8 +707,8 @@ func (provider *HuggingFaceProvider) Speech(ctx *schemas.UnifAIContext, key sche
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -738,7 +738,7 @@ func (provider *HuggingFaceProvider) Speech(ctx *schemas.UnifAIContext, key sche
 		schemas.SpeechRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -749,52 +749,52 @@ func (provider *HuggingFaceProvider) Speech(ctx *schemas.UnifAIContext, key sche
 
 	var rawResponse interface{}
 	var rawRequest interface{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Download the audio file from the URL
 	audioData, downloadErr := provider.downloadAudioFromURL(ctx, response.Audio.URL)
 	if downloadErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, downloadErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, downloadErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	unifaiResponse, convErr := response.ToUnifAISpeechResponse(request.Model, audioData)
+	rakshaResponse, convErr := response.ToRakshaSpeechResponse(request.Model, audioData)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // Rerank is not supported by the HuggingFace provider.
-func (provider *HuggingFaceProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIRerankRequest) (*schemas.UnifAIRerankResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Huggingface provider.
-func (provider *HuggingFaceProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIOCRRequest) (*schemas.UnifAIOCRResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) SpeechStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAISpeechRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) Transcription(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITranscriptionRequest) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
 	// Check if Transcription is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.TranscriptionRequest); err != nil {
 		return nil, err
@@ -802,8 +802,8 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.UnifAIContext, k
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -812,12 +812,12 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.UnifAIContext, k
 	}
 
 	var jsonData []byte
-	var err *schemas.UnifAIError
+	var err *schemas.RakshaError
 	// hf-inference expects raw audio bytes with an audio content type instead of JSON
 	isHFInferenceAudioRequest := inferenceProvider == hfInference
 	if inferenceProvider == hfInference {
 		if request.Input == nil || len(request.Input.File) == 0 {
-			return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderCreateRequest, fmt.Errorf("input file data is required for hf-inference transcription requests"))
+			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderCreateRequest, fmt.Errorf("input file data is required for hf-inference transcription requests"))
 		}
 		jsonData = request.Input.File
 	} else {
@@ -845,7 +845,7 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.UnifAIContext, k
 		schemas.TranscriptionRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		// Don't wrap raw audio bytes (when isHFInferenceAudioRequest is true)
@@ -865,49 +865,49 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.UnifAIContext, k
 	if !isHFInferenceAudioRequest {
 		requestBodyForHandling = jsonData
 	}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, response, requestBodyForHandling, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, requestBodyForHandling, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
 		if !isHFInferenceAudioRequest {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
-		return nil, unifaiErr
+		return nil, rakshaErr
 	}
 
-	unifaiResponse, convErr := response.ToUnifAITranscriptionResponse(request.Model)
+	rakshaResponse, convErr := response.ToRakshaTranscriptionResponse(request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 
 }
 
 // TranscriptionStream is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) TranscriptionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITranscriptionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -938,7 +938,7 @@ func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.UnifAIContext,
 		schemas.ImageGenerationRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -959,41 +959,41 @@ func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.UnifAIContext,
 	}
 
 	// Unmarshal response using Nebius converter
-	unifaiResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
+	rakshaResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	unifaiResponse.Created = time.Now().Unix()
+	rakshaResponse.Created = time.Now().Unix()
 
 	// Set ExtraFields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // ImageGenerationStream handles streaming for fal-ai image generation.
 // Only fal-ai inference provider supports streaming for HuggingFace.
-func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageGenerationStreamRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -1003,7 +1003,7 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 
 	// Only fal-ai supports streaming for HuggingFace
 	if inferenceProvider != falAI {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			fmt.Sprintf("image generation streaming is only supported for fal-ai inference provider, got: %s", inferenceProvider),
 			nil)
 	}
@@ -1019,14 +1019,14 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 		headers["Authorization"] = "Bearer " + value
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToHuggingFaceImageStreamRequest(request)
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -1063,8 +1063,8 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1073,17 +1073,17 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1093,13 +1093,13 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1110,11 +1110,11 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 		defer close(responseChan)
 
 		if resp.BodyStream() == nil {
-			unifaiErr := providerUtils.NewUnifAIOperationError(
+			rakshaErr := providerUtils.NewRakshaOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"))
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -1150,11 +1150,11 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 					return
 				}
 				if readErr != io.EOF {
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						fmt.Sprintf("Error reading fal-ai stream: %v", readErr),
 						readErr)
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				break
@@ -1170,17 +1170,17 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 				var errorResp HuggingFaceResponseError
 				if err := sonic.UnmarshalString(jsonData, &errorResp); err == nil {
 					if errorResp.Error != "" || errorResp.Message != "" {
-						unifaiErr := &schemas.UnifAIError{
-							IsUnifAIError: false,
+						rakshaErr := &schemas.RakshaError{
+							IsRakshaError: false,
 							Error: &schemas.ErrorField{
 								Message: errorResp.Message,
 							},
 						}
 						if errorResp.Error != "" {
-							unifaiErr.Error.Message = errorResp.Error
+							rakshaErr.Error.Message = errorResp.Error
 						}
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -1197,9 +1197,9 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 			// Process each image in the response
 			for i, img := range images {
 				// Create a fresh chunk for each image to avoid data race
-				chunk := &schemas.UnifAIImageGenerationStreamResponse{
+				chunk := &schemas.RakshaImageGenerationStreamResponse{
 					Type: schemas.ImageGenerationEventTypePartial,
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1230,22 +1230,22 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 				lastJsonData = jsonData
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 			}
 		}
 
 		// Stream closed - send completion chunk
 		if chunkIndex > 0 {
-			finalChunk := &schemas.UnifAIImageGenerationStreamResponse{
+			finalChunk := &schemas.RakshaImageGenerationStreamResponse{
 				Type:  schemas.ImageGenerationEventTypeCompleted,
 				Index: lastIndex,
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(startTime).Milliseconds(),
 				},
 			}
-			finalChunk.BackfillParams(&schemas.UnifAIRequest{
+			finalChunk.BackfillParams(&schemas.RakshaRequest{
 				ImageGenerationRequest: request,
 			})
 			if lastURLData != "" {
@@ -1262,9 +1262,9 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 			if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 				finalChunk.ExtraFields.RawResponse = lastJsonData
 			}
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 				responseChan, postHookSpanFinalizer)
 
 		}
@@ -1273,15 +1273,15 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.UnifAICo
 	return responseChan, nil
 }
 
-func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageEditRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -1313,7 +1313,7 @@ func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.UnifAIContext, key s
 
 	responseBody, latency, providerResponseHeaders, err := provider.completeRequest(ctx, jsonBody, url, key.Value.GetValue(), false, true)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -1334,41 +1334,41 @@ func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.UnifAIContext, key s
 	}
 
 	// Unmarshal response
-	unifaiResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
+	rakshaResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	unifaiResponse.Created = time.Now().Unix()
+	rakshaResponse.Created = time.Now().Unix()
 
 	// Set ExtraFields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // ImageEditStream handles streaming for fal-ai image edit.
 // Only fal-ai inference provider supports streaming for HuggingFace.
-func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageEditRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageEditStreamRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -1378,7 +1378,7 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 
 	// Only fal-ai supports streaming for HuggingFace image edit
 	if inferenceProvider != falAI {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			fmt.Sprintf("image edit streaming is only supported for fal-ai inference provider, got: %s", inferenceProvider),
 			nil)
 	}
@@ -1407,14 +1407,14 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToHuggingFaceImageEditRequest(request)
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -1447,8 +1447,8 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1457,17 +1457,17 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1477,13 +1477,13 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1494,11 +1494,11 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 		defer close(responseChan)
 
 		if resp.BodyStream() == nil {
-			unifaiErr := providerUtils.NewUnifAIOperationError(
+			rakshaErr := providerUtils.NewRakshaOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"))
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -1534,11 +1534,11 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 					return
 				}
 				if readErr != io.EOF {
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						fmt.Sprintf("Error reading fal-ai stream: %v", readErr),
 						readErr)
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				break
@@ -1554,17 +1554,17 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 				var errorResp HuggingFaceResponseError
 				if err := sonic.UnmarshalString(jsonData, &errorResp); err == nil {
 					if errorResp.Error != "" || errorResp.Message != "" {
-						unifaiErr := &schemas.UnifAIError{
-							IsUnifAIError: false,
+						rakshaErr := &schemas.RakshaError{
+							IsRakshaError: false,
 							Error: &schemas.ErrorField{
 								Message: errorResp.Message,
 							},
 						}
 						if errorResp.Error != "" {
-							unifaiErr.Error.Message = errorResp.Error
+							rakshaErr.Error.Message = errorResp.Error
 						}
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -1581,9 +1581,9 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 			// Process each image in the response
 			for i, img := range images {
 				// Create a fresh chunk for each image to avoid data race
-				chunk := &schemas.UnifAIImageGenerationStreamResponse{
+				chunk := &schemas.RakshaImageGenerationStreamResponse{
 					Type: schemas.ImageEditEventTypePartial,
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1614,22 +1614,22 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 				lastJsonData = jsonData
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 			}
 		}
 
 		// Stream closed - send completion chunk
 		if chunkIndex > 0 {
-			finalChunk := &schemas.UnifAIImageGenerationStreamResponse{
+			finalChunk := &schemas.RakshaImageGenerationStreamResponse{
 				Type:  schemas.ImageEditEventTypeCompleted,
 				Index: lastIndex,
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(startTime).Milliseconds(),
 				},
 			}
-			finalChunk.BackfillParams(&schemas.UnifAIRequest{
+			finalChunk.BackfillParams(&schemas.RakshaRequest{
 				ImageEditRequest: request,
 			})
 			if lastURLData != "" {
@@ -1646,9 +1646,9 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 			if sendBackRawResponse {
 				finalChunk.ExtraFields.RawResponse = lastJsonData
 			}
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 				responseChan, postHookSpanFinalizer)
 
 		}
@@ -1658,155 +1658,155 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.UnifAIContext,
 }
 
 // ImageVariation is not supported by the HuggingFace provider.
-func (provider *HuggingFaceProvider) ImageVariation(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageVariationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoGeneration(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoGenerationRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) VideoGeneration(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoGenerationRequest, provider.GetProviderKey())
 }
 
 // VideoRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoRetrieve(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoRetrieveRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) VideoRetrieve(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRetrieveRequest, provider.GetProviderKey())
 }
 
 // VideoDownload is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoDownload(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoDownloadRequest) (*schemas.UnifAIVideoDownloadResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) VideoDownload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDownloadRequest, provider.GetProviderKey())
 }
 
 // VideoDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoDelete(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoDeleteRequest) (*schemas.UnifAIVideoDeleteResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoList(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoListRequest) (*schemas.UnifAIVideoListResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoRemix(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoRemixRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // BatchCreate is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIBatchCreateRequest) (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchRetrieveRequest) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchCancel(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchResults(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // FileUpload is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileUpload(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIFileUploadRequest) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) FileUpload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileUploadRequest, provider.GetProviderKey())
 }
 
 // FileList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileListRequest) (*schemas.UnifAIFileListResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) FileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileListRequest, provider.GetProviderKey())
 }
 
 // FileRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) FileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileRetrieveRequest, provider.GetProviderKey())
 }
 
 // FileDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) FileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileDeleteRequest, provider.GetProviderKey())
 }
 
 // FileContent is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileContent(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileContentRequest) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) FileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
 // CountTokens is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) CountTokens(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIResponsesRequest) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) Compaction(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICompactionRequest) (*schemas.UnifAICompactionResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerCreateRequest) (*schemas.UnifAIContainerCreateResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerListRequest) (*schemas.UnifAIContainerListResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerRetrieveRequest) (*schemas.UnifAIContainerRetrieveResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerDeleteRequest) (*schemas.UnifAIContainerDeleteResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerFileCreateRequest) (*schemas.UnifAIContainerFileCreateResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileListRequest) (*schemas.UnifAIContainerFileListResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileRetrieveRequest) (*schemas.UnifAIContainerFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileContent(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileContentRequest) (*schemas.UnifAIContainerFileContentResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileDeleteRequest) (*schemas.UnifAIContainerFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) Passthrough(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIPassthroughRequest) (*schemas.UnifAIPassthroughResponse, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) PassthroughStream(_ *schemas.UnifAIContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.UnifAIPassthroughRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *HuggingFaceProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

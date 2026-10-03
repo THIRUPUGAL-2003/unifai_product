@@ -6,14 +6,14 @@ import (
 	"sync"
 	"time"
 
-	schemas "github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
 )
 
 // getAccumulatorID extracts the ID for accumulator lookup from context.
-// Returns the value of UnifAIContextKeyAccumulatorID.
-func getAccumulatorID(ctx *schemas.UnifAIContext) (string, bool) {
-	if id, ok := ctx.Value(schemas.UnifAIContextKeyAccumulatorID).(string); ok && id != "" {
+// Returns the value of RakshaContextKeyAccumulatorID.
+func getAccumulatorID(ctx *schemas.RakshaContext) (string, bool) {
+	if id, ok := ctx.Value(schemas.RakshaContextKeyAccumulatorID).(string); ok && id != "" {
 		return id, true
 	}
 	return "", false
@@ -434,17 +434,17 @@ func (a *Accumulator) cleanupStreamAccumulator(requestID string, forceEndGate bo
 
 // ProcessStreamingResponse processes a streaming response
 // It handles chat, audio, and responses streaming responses
-func (a *Accumulator) ProcessStreamingResponse(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) ProcessStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
 	// Check if at least one of result or error is provided
-	if result == nil && unifaiErr == nil {
+	if result == nil && rakshaErr == nil {
 		return nil, fmt.Errorf("result and error are nil")
 	}
 
 	var requestType schemas.RequestType
 	if result != nil {
 		requestType = result.GetExtraFields().RequestType
-	} else if unifaiErr != nil {
-		requestType = unifaiErr.ExtraFields.RequestType
+	} else if rakshaErr != nil {
+		requestType = rakshaErr.ExtraFields.RequestType
 	}
 
 	isAudioStreaming := requestType == schemas.SpeechStreamRequest || requestType == schemas.TranscriptionStreamRequest
@@ -456,24 +456,24 @@ func (a *Accumulator) ProcessStreamingResponse(ctx *schemas.UnifAIContext, resul
 
 	if isChatStreaming {
 		// Handle text-based streaming with ordered accumulation
-		return a.processChatStreamingResponse(ctx, result, unifaiErr)
+		return a.processChatStreamingResponse(ctx, result, rakshaErr)
 	} else if isAudioStreaming {
 		// Handle speech/transcription streaming with original flow
 		if requestType == schemas.TranscriptionStreamRequest {
-			return a.processTranscriptionStreamingResponse(ctx, result, unifaiErr)
+			return a.processTranscriptionStreamingResponse(ctx, result, rakshaErr)
 		}
 		if requestType == schemas.SpeechStreamRequest {
-			return a.processAudioStreamingResponse(ctx, result, unifaiErr)
+			return a.processAudioStreamingResponse(ctx, result, rakshaErr)
 		}
 	} else if isResponsesStreaming {
 		// Handle responses streaming with responses accumulation
-		return a.processResponsesStreamingResponse(ctx, result, unifaiErr)
+		return a.processResponsesStreamingResponse(ctx, result, rakshaErr)
 	} else if isImageStreaming {
 		// Handle image streaming
-		return a.processImageStreamingResponse(ctx, result, unifaiErr)
+		return a.processImageStreamingResponse(ctx, result, rakshaErr)
 	} else if isPassthroughStreaming {
 		// Handle passthrough streaming with raw body accumulation
-		return a.processPassthroughStreamingResponse(ctx, result, unifaiErr)
+		return a.processPassthroughStreamingResponse(ctx, result, rakshaErr)
 	}
 	return nil, fmt.Errorf("request type missing/invalid for accumulator: %s", requestType)
 }

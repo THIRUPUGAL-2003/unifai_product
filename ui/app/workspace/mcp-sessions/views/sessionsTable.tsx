@@ -125,7 +125,7 @@ export default function SessionsTable({
 							<>
 								<AlertDialogTitle>Revoke these stored header values?</AlertDialogTitle>
 								<AlertDialogDescription>
-									UnifAI will remove the stored credential values for this binding. There is no upstream token to revoke; the user will
+									Raksha will remove the stored credential values for this binding. There is no upstream token to revoke; the user will
 									need to resubmit their header values to use this MCP again.
 								</AlertDialogDescription>
 							</>
@@ -133,7 +133,7 @@ export default function SessionsTable({
 							<>
 								<AlertDialogTitle>Revoke this MCP session?</AlertDialogTitle>
 								<AlertDialogDescription>
-									UnifAI will remove the stored credential for this binding. The upstream OAuth token is not revoked at the provider — it
+									Raksha will remove the stored credential for this binding. The upstream OAuth token is not revoked at the provider — it
 									stays detached and expires naturally. Anyone using this binding will need to re-authenticate to obtain a fresh token.
 								</AlertDialogDescription>
 							</>
@@ -199,7 +199,7 @@ export default function SessionsTable({
 								<TableHead>
 									<HeaderWithTooltip
 										label="Access token expiry"
-										tooltip="When the current access token expires. UnifAI auto-refreshes using the refresh token on the next request, so an active row past its expiry will silently mint a new token at use time. Header rows do not have an upstream expiry; their values stay valid until revoked or the schema changes."
+										tooltip="When the current access token expires. Raksha auto-refreshes using the refresh token on the next request, so an active row past its expiry will silently mint a new token at use time. Header rows do not have an upstream expiry; their values stay valid until revoked or the schema changes."
 									/>
 								</TableHead>
 								<TableHead>Created</TableHead>

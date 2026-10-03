@@ -243,10 +243,6 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mattn/go-sqlite3 v1.14.32 h1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=
 github.com/mattn/go-sqlite3 v1.14.32/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
-github.com/unifai/unifai/core v1.6.2 h1:dESW02/iyDznt/VnnjzYnevddUmplXw2YeaK/0dl3HA=
-github.com/unifai/unifai/core v1.6.2/go.mod h1:GuRwPmx0Kh7lhZ+SnbLjVAclDI360DyKrJtioc3t5jg=
-github.com/unifai/unifai/framework v1.4.2 h1:JoDZqJ0cw7MKJbWQBkLl4jCvHza1BXAiOLPbTbJ0ABc=
-github.com/unifai/unifai/framework v1.4.2/go.mod h1:QfDaIvEYJeP1fWkPl0GCPVVo6GhNCuIuUSMAb0OqWCo=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/oapi-codegen/runtime v1.1.1 h1:EXLHh0DXIJnWhdRPN2w4MXAzFyE4CskzhNLUmtpMYro=

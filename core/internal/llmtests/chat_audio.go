@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunChatAudioTest executes the chat audio test scenario
-func RunChatAudioTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunChatAudioTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ChatAudio || testConfig.ChatAudioModel == "" {
 		t.Logf("Chat audio not supported for provider %s", testConfig.Provider)
 		return
@@ -59,8 +59,8 @@ func RunChatAudioTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, 
 		}
 
 		// Test Chat Completions API with audio
-		chatOperation := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatAudioModel,
 				Input:    chatMessages,
@@ -70,11 +70,11 @@ func RunChatAudioTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, 
 						Voice:  "alloy",
 						Format: "wav", // output format
 					},
-					MaxCompletionTokens: unifai.Ptr(200),
+					MaxCompletionTokens: raksha.Ptr(200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			response, err := client.ChatCompletionRequest(bfCtx, chatReq)
 			if err != nil {
 				return nil, err
@@ -82,8 +82,8 @@ func RunChatAudioTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, 
 			if response != nil {
 				return response, nil
 			}
-			return nil, &schemas.UnifAIError{
-				IsUnifAIError: true,
+			return nil, &schemas.RakshaError{
+				IsRakshaError: true,
 				Error: &schemas.ErrorField{
 					Message: "No chat response returned",
 				},
@@ -150,7 +150,7 @@ func RunChatAudioTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, 
 }
 
 // RunChatAudioStreamTest executes the chat audio streaming test scenario
-func RunChatAudioStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunChatAudioStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ChatAudio || testConfig.ChatAudioModel == "" {
 		t.Logf("Chat audio streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -188,7 +188,7 @@ func RunChatAudioStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 		}
 
 		// Test Chat Completions Stream API with audio
-		chatReq := &schemas.UnifAIChatRequest{
+		chatReq := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatAudioModel,
 			Input:    chatMessages,
@@ -202,37 +202,37 @@ func RunChatAudioStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 			Fallbacks: testConfig.Fallbacks,
 		}
 
-		responseChannel, unifaiErr := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		responseChannel, rakshaErr := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionStreamRequest(bfCtx, chatReq)
 		})
 
 		// Enhanced error handling
-		if unifaiErr != nil {
-			t.Fatalf("Chat audio stream request failed: %v", unifaiErr)
+		if rakshaErr != nil {
+			t.Fatalf("Chat audio stream request failed: %v", rakshaErr)
 		}
 		if responseChannel == nil {
 			t.Fatal("Response channel should not be nil")
 		}
 
 		// Accumulate stream chunks
-		var chunks []*schemas.UnifAIStreamChunk
+		var chunks []*schemas.RakshaStreamChunk
 		var audioData strings.Builder
 		var audioTranscript strings.Builder
 		var audioID string
 		var audioExpiresAt int
-		var lastUsage *schemas.UnifAILLMUsage
+		var lastUsage *schemas.RakshaLLMUsage
 
 		for chunk := range responseChannel {
 			chunks = append(chunks, chunk)
 
-			if chunk.UnifAIError != nil && chunk.UnifAIError.Error != nil {
-				t.Fatalf("Stream error: %v", chunk.UnifAIError.Error)
+			if chunk.RakshaError != nil && chunk.RakshaError.Error != nil {
+				t.Fatalf("Stream error: %v", chunk.RakshaError.Error)
 			}
 
-			if chunk.UnifAIChatResponse != nil {
-				if len(chunk.UnifAIChatResponse.Choices) > 0 {
-					choice := chunk.UnifAIChatResponse.Choices[0]
+			if chunk.RakshaChatResponse != nil {
+				if len(chunk.RakshaChatResponse.Choices) > 0 {
+					choice := chunk.RakshaChatResponse.Choices[0]
 
 					// Accumulate text content
 					if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
@@ -257,8 +257,8 @@ func RunChatAudioStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 				}
 
 				// Capture final usage
-				if chunk.UnifAIChatResponse.Usage != nil {
-					lastUsage = chunk.UnifAIChatResponse.Usage
+				if chunk.RakshaChatResponse.Usage != nil {
+					lastUsage = chunk.RakshaChatResponse.Usage
 				}
 			}
 		}

@@ -16,7 +16,7 @@ var (
 // pluginDownloadClient is a fasthttp client with a larger read buffer to handle
 // responses with large headers.
 var pluginDownloadClient = &fasthttp.Client{
-	ReadBufferSize: 64 * 1024, // 64KB, matches the unifai HTTP server setting
+	ReadBufferSize: 64 * 1024, // 64KB, matches the raksha HTTP server setting
 }
 
 // DownloadPlugin downloads a plugin from a URL and returns the local file path
@@ -77,7 +77,7 @@ func DownloadPlugin(pluginURL string, extension string) (string, error) {
 	}
 
 	// Create a unique temporary file for the plugin
-	tempFile, err := os.CreateTemp(os.TempDir(), "unifai-plugin-*"+extension)
+	tempFile, err := os.CreateTemp(os.TempDir(), "raksha-plugin-*"+extension)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}

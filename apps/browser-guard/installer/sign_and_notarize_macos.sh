@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sign + notarize UnifAI Guard .app and refresh the employee ZIP / optional .pkg.
+# Sign + notarize Raksha Guard .app and refresh the employee ZIP / optional .pkg.
 # Requires Apple Developer ID + notary credentials.
 #
 # Required env:
@@ -9,7 +9,7 @@
 #   APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"   # or use keychain profile
 #
 # Optional:
-#   NOTARY_PROFILE="unifai-notary"   # if you ran: xcrun notarytool store-credentials
+#   NOTARY_PROFILE="raksha-notary"   # if you ran: xcrun notarytool store-credentials
 #   MACOS_SIGN_IDENTITY="Developer ID Installer: ..."  # for .pkg
 #
 # Run on a Mac after ./installer/build_macos.sh
@@ -23,8 +23,8 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-APP="release/UnifAI_Guard.app"
-ZIP="release/UnifAI_Guard_macOS.zip"
+APP="release/Raksha_Guard.app"
+ZIP="release/Raksha_Guard_macOS.zip"
 VERSION="$(tr -d '[:space:]\ufeff' < release/VERSION.txt 2>/dev/null || echo "0.0.0")"
 
 if [[ ! -d "$APP" ]]; then
@@ -43,7 +43,7 @@ codesign --force --deep --options runtime \
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "2) zip for notarization"
-NOTARY_ZIP="release/UnifAI_Guard_notarize.zip"
+NOTARY_ZIP="release/Raksha_Guard_notarize.zip"
 rm -f "$NOTARY_ZIP"
 ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
 
@@ -69,25 +69,25 @@ echo "5) rebuild employee ZIP (signed+stapled app)"
 STAGE="installer/staging-mac"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-cp -R "$APP" "$STAGE/UnifAI_Guard.app"
-cp config/unifai_guard_config.json "$STAGE/unifai_guard_config.json"
+cp -R "$APP" "$STAGE/Raksha_Guard.app"
+cp config/raksha_guard_config.json "$STAGE/raksha_guard_config.json"
 cp installer/EMPLOYEE_README_MAC.txt "$STAGE/EMPLOYEE_README_MAC.txt" 2>/dev/null || true
 cp release/INSTALL_MACOS.txt "$STAGE/INSTALL_MACOS.txt"
 cp release/UNINSTALL_MACOS.txt "$STAGE/UNINSTALL_MACOS.txt"
-cp installer/Install_UnifAI_Guard.command "$STAGE/Install_UnifAI_Guard.command"
-cp installer/Uninstall_UnifAI_Guard.command "$STAGE/Uninstall_UnifAI_Guard.command"
-chmod +x "$STAGE/Install_UnifAI_Guard.command" "$STAGE/Uninstall_UnifAI_Guard.command"
+cp installer/Install_Raksha_Guard.command "$STAGE/Install_Raksha_Guard.command"
+cp installer/Uninstall_Raksha_Guard.command "$STAGE/Uninstall_Raksha_Guard.command"
+chmod +x "$STAGE/Install_Raksha_Guard.command" "$STAGE/Uninstall_Raksha_Guard.command"
 rm -f "$ZIP"
 (
   cd "$STAGE"
   zip -r -y "$ZIP" \
-    UnifAI_Guard.app \
-    unifai_guard_config.json \
+    Raksha_Guard.app \
+    raksha_guard_config.json \
     EMPLOYEE_README_MAC.txt \
     INSTALL_MACOS.txt \
     UNINSTALL_MACOS.txt \
-    Install_UnifAI_Guard.command \
-    Uninstall_UnifAI_Guard.command
+    Install_Raksha_Guard.command \
+    Uninstall_Raksha_Guard.command
 )
 
 if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then

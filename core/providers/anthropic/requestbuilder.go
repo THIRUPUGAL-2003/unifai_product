@@ -3,8 +3,8 @@ package anthropic
 import (
 	"fmt"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // AnthropicRequestBuildConfig holds the dynamic, per-call inputs to
@@ -47,7 +47,7 @@ type AnthropicRequestBuildConfig struct {
 	ProviderExtraHeaders map[string]string
 
 	// ShouldSendBackRawRequest / ShouldSendBackRawResponse control whether raw
-	// request/response bytes are attached to UnifAIError.ExtraFields via
+	// request/response bytes are attached to RakshaError.ExtraFields via
 	// providerUtils.EnrichError.
 	ShouldSendBackRawRequest  bool
 	ShouldSendBackRawResponse bool
@@ -132,7 +132,7 @@ var AnthropicProviderRequestDefaultsMap = map[schemas.ModelProvider]AnthropicPro
 // supplied AnthropicRequestBuildConfig; the shared steps (large-payload guard,
 // raw-vs-typed branching, field stripping, beta-header injection, fallbacks
 // deletion) are handled here.
-func BuildAnthropicResponsesRequestBody(ctx *schemas.UnifAIContext, request *schemas.UnifAIResponsesRequest, cfg AnthropicRequestBuildConfig) ([]byte, *schemas.UnifAIError) {
+func BuildAnthropicResponsesRequestBody(ctx *schemas.RakshaContext, request *schemas.RakshaResponsesRequest, cfg AnthropicRequestBuildConfig) ([]byte, *schemas.RakshaError) {
 	if providerUtils.IsLargePayloadPassthroughEnabled(ctx) {
 		return nil, nil
 	}
@@ -142,10 +142,10 @@ func BuildAnthropicResponsesRequestBody(ctx *schemas.UnifAIContext, request *sch
 
 	defaults := AnthropicProviderRequestDefaultsMap[cfg.Provider]
 
-	newErr := func(msg string, err error, reqBody []byte) *schemas.UnifAIError {
+	newErr := func(msg string, err error, reqBody []byte) *schemas.RakshaError {
 		return providerUtils.EnrichError(
 			ctx,
-			providerUtils.NewUnifAIOperationError(msg, err),
+			providerUtils.NewRakshaOperationError(msg, err),
 			reqBody,
 			nil,
 			cfg.ShouldSendBackRawRequest,
@@ -156,7 +156,7 @@ func BuildAnthropicResponsesRequestBody(ctx *schemas.UnifAIContext, request *sch
 	var jsonBody []byte
 	var err error
 
-	if useRawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && useRawBody {
+	if useRawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && useRawBody {
 		jsonBody = request.GetRawRequestBody()
 
 		if cfg.IsCountTokens {
@@ -320,7 +320,7 @@ func BuildAnthropicResponsesRequestBody(ctx *schemas.UnifAIContext, request *sch
 			return nil, newErr(schemas.ErrProviderRequestMarshal, fmt.Errorf("failed to marshal request body: %w", err), jsonBody)
 		}
 
-		if ctx.Value(schemas.UnifAIContextKeyPassthroughExtraParams) == true {
+		if ctx.Value(schemas.RakshaContextKeyPassthroughExtraParams) == true {
 			extraParams := reqBody.GetExtraParams()
 			if len(extraParams) > 0 {
 				jsonBody, err = providerUtils.MergeExtraParamsIntoJSON(jsonBody, extraParams)
@@ -402,10 +402,10 @@ func BuildAnthropicResponsesRequestBody(ctx *schemas.UnifAIContext, request *sch
 // BuildAnthropicResponsesRequestBody, shared by Anthropic, Azure, Vertex, and
 // Bedrock for ChatCompletion / ChatCompletionStream paths. It mirrors the
 // responses pipeline (raw vs typed branching, field stripping, beta-header
-// injection, fallbacks deletion) but operates on UnifAIChatRequest +
+// injection, fallbacks deletion) but operates on RakshaChatRequest +
 // ToAnthropicChatRequest. IsCountTokens is not honoured here — count-tokens
 // is a Responses-API concept.
-func BuildAnthropicChatRequestBody(ctx *schemas.UnifAIContext, request *schemas.UnifAIChatRequest, cfg AnthropicRequestBuildConfig) ([]byte, *schemas.UnifAIError) {
+func BuildAnthropicChatRequestBody(ctx *schemas.RakshaContext, request *schemas.RakshaChatRequest, cfg AnthropicRequestBuildConfig) ([]byte, *schemas.RakshaError) {
 	if providerUtils.IsLargePayloadPassthroughEnabled(ctx) {
 		return nil, nil
 	}
@@ -416,10 +416,10 @@ func BuildAnthropicChatRequestBody(ctx *schemas.UnifAIContext, request *schemas.
 
 	defaults := AnthropicProviderRequestDefaultsMap[cfg.Provider]
 
-	newErr := func(msg string, err error, reqBody []byte) *schemas.UnifAIError {
+	newErr := func(msg string, err error, reqBody []byte) *schemas.RakshaError {
 		return providerUtils.EnrichError(
 			ctx,
-			providerUtils.NewUnifAIOperationError(msg, err),
+			providerUtils.NewRakshaOperationError(msg, err),
 			reqBody,
 			nil,
 			cfg.ShouldSendBackRawRequest,
@@ -430,7 +430,7 @@ func BuildAnthropicChatRequestBody(ctx *schemas.UnifAIContext, request *schemas.
 	var jsonBody []byte
 	var err error
 
-	if useRawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && useRawBody {
+	if useRawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && useRawBody {
 		jsonBody = request.GetRawRequestBody()
 
 		if cfg.Model != "" {
@@ -540,7 +540,7 @@ func BuildAnthropicChatRequestBody(ctx *schemas.UnifAIContext, request *schemas.
 		// Re-strip with cfg.Provider (canonical) in case the request was
 		// routed through a custom-provider alias whose name doesn't match
 		// the ProviderFeatures map entry. Idempotent — ToAnthropicChatRequest
-		// already strips using unifaiReq.Provider, so this only changes
+		// already strips using rakshaReq.Provider, so this only changes
 		// behaviour when the two diverge.
 		stripUnsupportedAnthropicFields(reqBody, cfg.Provider, request.Model)
 
@@ -551,7 +551,7 @@ func BuildAnthropicChatRequestBody(ctx *schemas.UnifAIContext, request *schemas.
 			return nil, newErr(schemas.ErrProviderRequestMarshal, fmt.Errorf("failed to marshal request body: %w", err), jsonBody)
 		}
 
-		if ctx.Value(schemas.UnifAIContextKeyPassthroughExtraParams) == true {
+		if ctx.Value(schemas.RakshaContextKeyPassthroughExtraParams) == true {
 			extraParams := reqBody.GetExtraParams()
 			if len(extraParams) > 0 {
 				jsonBody, err = providerUtils.MergeExtraParamsIntoJSON(jsonBody, extraParams)

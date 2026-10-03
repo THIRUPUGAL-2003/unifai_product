@@ -8,7 +8,7 @@ package queryscope
 import (
 	"context"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"gorm.io/gorm"
 )
 
@@ -22,7 +22,7 @@ func WithQueryScope(ctx context.Context, scope QueryScope) context.Context {
 	if scope == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, schemas.UnifAIContextKeyQueryScope, scope)
+	return context.WithValue(ctx, schemas.RakshaContextKeyQueryScope, scope)
 }
 
 // FromContext returns the scope stashed on ctx, or nil when no scope
@@ -33,7 +33,7 @@ func FromContext(ctx context.Context) QueryScope {
 	if ctx == nil {
 		return nil
 	}
-	if v, ok := ctx.Value(schemas.UnifAIContextKeyQueryScope).(QueryScope); ok {
+	if v, ok := ctx.Value(schemas.RakshaContextKeyQueryScope).(QueryScope); ok {
 		return v
 	}
 	return nil

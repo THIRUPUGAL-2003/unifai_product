@@ -1,1 +1,1 @@
-- feat: initial release of the UnifAI migration CLI
+- feat: initial release of the Raksha migration CLI

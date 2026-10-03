@@ -9,15 +9,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/unifai/unifai/scripts/unifai-migration-cli/litellm"
+	"github.com/raksha/raksha/scripts/raksha-migration-cli/litellm"
 )
 
 // Secrets are redacted by the LiteLLM management API (/credentials masks the
 // api_key, /model/info omits it entirely), so the model migration reads the
 // config file directly. It carries the unredacted credential references like
-// `os.environ/FOO` env refs and literal keys that UnifAI needs.
+// `os.environ/FOO` env refs and literal keys that Raksha needs.
 
-// ProviderPlan is one UnifAI provider to ensure, with the keys to add under
+// ProviderPlan is one Raksha provider to ensure, with the keys to add under
 // it. Name is the management-API provider key (a standard provider name, or a
 // generated name for a custom provider).
 type ProviderPlan struct {
@@ -28,14 +28,14 @@ type ProviderPlan struct {
 	Keys         []KeyPlan
 }
 
-// KeyPlan is one UnifAI key under a provider. Value is the wire string UnifAI
+// KeyPlan is one Raksha key under a provider. Value is the wire string Raksha
 // resolves: "env.FOO" => from environment, anything else => literal value.
 type KeyPlan struct {
 	Name   string
 	Value  string
 	Models []string // allowlist; ["*"] when the deployment serves all models
 	// URL and VLLMModelName carry per-key routing for the keyless self-hosted
-	// providers (vllm/ollama): these are standard UnifAI providers whose
+	// providers (vllm/ollama): these are standard Raksha providers whose
 	// server URL lives on each key, so distinct base URLs become distinct keys.
 	// URL set => emit the provider-matching *_key_config. VLLMModelName sets
 	// vllm_key_config.model_name (vllm selects a key by the exact served model).
@@ -43,19 +43,19 @@ type KeyPlan struct {
 	VLLMModelName string
 	// Provider-specific structured credentials (Azure/Bedrock/Vertex).
 	// Exactly one of these is set when the provider requires it.
-	AzureKeyConfig   *UnifAIAzureKeyConfig
-	BedrockKeyConfig *UnifAIBedrockKeyConfig
-	VertexKeyConfig  *UnifAIVertexKeyConfig
+	AzureKeyConfig   *RakshaAzureKeyConfig
+	BedrockKeyConfig *RakshaBedrockKeyConfig
+	VertexKeyConfig  *RakshaVertexKeyConfig
 }
 
-// ModelConfigPlan is one global UnifAI model config created from LiteLLM
+// ModelConfigPlan is one global Raksha model config created from LiteLLM
 // deployment-level budgets and rate limits.
 type ModelConfigPlan struct {
 	SourceName string
 	ModelName  string
 	Provider   *string
-	Budgets    []UnifAICreateBudgetRequest
-	RateLimit  *UnifAICreateRateLimitRequest
+	Budgets    []RakshaCreateBudgetRequest
+	RateLimit  *RakshaCreateRateLimitRequest
 }
 
 type SkippedProvider struct {
@@ -90,7 +90,7 @@ type modelMigrationInput struct {
 }
 
 // liteLLMProviderAliases maps LiteLLM provider prefix strings that differ from
-// UnifAI standard provider names. Applied in deriveProvider after lowercasing.
+// Raksha standard provider names. Applied in deriveProvider after lowercasing.
 var liteLLMProviderAliases = map[string]string{
 	"vertex_ai":              "vertex",
 	"vertex_ai_beta":         "vertex",
@@ -102,18 +102,18 @@ var liteLLMProviderAliases = map[string]string{
 	"fireworks_ai":           "fireworks",
 }
 
-// specialCredProviders are UnifAI standard providers that use structured
+// specialCredProviders are Raksha standard providers that use structured
 // credentials instead of a plain api_key: Azure (per-key endpoint + optional
 // Entra ID), Bedrock (AWS IAM credentials), Vertex (GCP credentials).
 // These are intercepted before the standard api_key path in
-// LiteLLMModelsToUnifAIProviders.
+// LiteLLMModelsToRakshaProviders.
 var specialCredProviders = map[string]bool{
 	"azure":   true,
 	"bedrock": true,
 	"vertex":  true,
 }
 
-// standardProviders is the set of UnifAI standard provider names (from schemas.StandardProviders).
+// standardProviders is the set of Raksha standard provider names (from schemas.StandardProviders).
 // A LiteLLM provider absent from this is either added as a custom provider or is skipped and reported.
 var standardProviders = map[string]bool{
 	"anthropic":   true,
@@ -143,10 +143,10 @@ var standardProviders = map[string]bool{
 
 var nonAlphanumRe = regexp.MustCompile(`[^a-z0-9]+`)
 
-// maxProviderNameLen is the UnifAI provider-name column limit (varchar(50)).
+// maxProviderNameLen is the Raksha provider-name column limit (varchar(50)).
 const maxProviderNameLen = 50
 
-// customProviders is the subset of UnifAI base providers we allow to back a
+// customProviders is the subset of Raksha base providers we allow to back a
 // custom provider (a deployment whose credential sets a non-standard api_base).
 // A deployment whose base provider is outside this set is skipped.
 var customProviders = map[string]bool{
@@ -156,7 +156,7 @@ var customProviders = map[string]bool{
 	"bedrock":   true,
 }
 
-// selfHostedURLProviders are keyless standard UnifAI providers that route per
+// selfHostedURLProviders are keyless standard Raksha providers that route per
 // key: each carries the server URL in its *_key_config rather than at the
 // provider level, so a deployment's api_base becomes a per-key URL instead of a
 // custom provider. vllm additionally selects a key by the exact served model.
@@ -165,15 +165,15 @@ var selfHostedURLProviders = map[string]bool{
 	"ollama": true,
 }
 
-// LiteLLMModelsToUnifAIProviders transforms LiteLLM model deployments into
-// UnifAI providers, keys and global model configs.
+// LiteLLMModelsToRakshaProviders transforms LiteLLM model deployments into
+// Raksha providers, keys and global model configs.
 //
 // credByName holds the resolved (decrypted) named credentials keyed by CredentialValues
 //
 // deployments holds the resolved per-deployment litellm_params (inline credential + budget)
 // keyed by model_id (database) and, as a fallback, model_name (config).
-func LiteLLMModelsToUnifAIProviders(models []litellm.LiteLLMModelInfo, credByName map[string]*litellm.LiteLLMModelCredential, deployments map[string]*litellm.Deployment, cfg MigrationRunConfig) ([]ProviderPlan, []ModelConfigPlan, []SkippedProvider) {
-	// keyAgg accumulates one UnifAI key's allowlist across the deployments that
+func LiteLLMModelsToRakshaProviders(models []litellm.LiteLLMModelInfo, credByName map[string]*litellm.LiteLLMModelCredential, deployments map[string]*litellm.Deployment, cfg MigrationRunConfig) ([]ProviderPlan, []ModelConfigPlan, []SkippedProvider) {
+	// keyAgg accumulates one Raksha key's allowlist across the deployments that
 	// share its credential. wildcard records a "*" deployment, which collapses
 	// the allowlist to ["*"].
 	type keyAgg struct {
@@ -181,7 +181,7 @@ func LiteLLMModelsToUnifAIProviders(models []litellm.LiteLLMModelInfo, credByNam
 		modelSet map[string]bool
 		wildcard bool
 	}
-	// provAgg accumulates one UnifAI provider and its keys, keyed by credential
+	// provAgg accumulates one Raksha provider and its keys, keyed by credential
 	// signature so deployments sharing a credential fold into one key.
 	type provAgg struct {
 		plan     ProviderPlan
@@ -351,7 +351,7 @@ func LiteLLMModelsToUnifAIProviders(models []litellm.LiteLLMModelInfo, credByNam
 					continue
 				}
 				credSig = "azure:" + apiKey + ":" + in.APIBase + ":" + in.AzureClientID
-				azCfg := &UnifAIAzureKeyConfig{Endpoint: endpoint}
+				azCfg := &RakshaAzureKeyConfig{Endpoint: endpoint}
 				if in.AzureClientID != "" {
 					azCfg.ClientID = ptr(in.AzureClientID)
 					if in.AzureClientSecret != "" {
@@ -365,7 +365,7 @@ func LiteLLMModelsToUnifAIProviders(models []litellm.LiteLLMModelInfo, credByNam
 
 			case "bedrock":
 				credSig = "bedrock:" + in.AWSAccessKeyID + ":" + in.AWSRoleName + ":" + in.AWSRegionName
-				bCfg := &UnifAIBedrockKeyConfig{}
+				bCfg := &RakshaBedrockKeyConfig{}
 				if in.AWSAccessKeyID != "" {
 					bCfg.AccessKey = in.AWSAccessKeyID
 					bCfg.SecretKey = in.AWSSecretAccessKey
@@ -390,7 +390,7 @@ func LiteLLMModelsToUnifAIProviders(models []litellm.LiteLLMModelInfo, credByNam
 					continue
 				}
 				credSig = "vertex:" + in.VertexProject + ":" + in.VertexLocation + ":" + in.VertexCredentials
-				vCfg := &UnifAIVertexKeyConfig{
+				vCfg := &RakshaVertexKeyConfig{
 					ProjectID:       in.VertexProject,
 					Region:          in.VertexLocation,
 					AuthCredentials: in.VertexCredentials,
@@ -414,14 +414,14 @@ func LiteLLMModelsToUnifAIProviders(models []litellm.LiteLLMModelInfo, credByNam
 		}
 
 		model := trimModelPrefix(p.Model)
-		// Partial wildcard like openai/gpt-5*: not representable in UnifAI; ignore.
+		// Partial wildcard like openai/gpt-5*: not representable in Raksha; ignore.
 		if model == "" || (model != "*" && strings.ContainsAny(model, "*?")) {
 			addSkippedProvider(base, fmt.Sprintf("partial wildcard model %q is not supported", rawModel))
 			continue
 		}
 
-		// A credential with a custom base URL becomes a UnifAI custom provider,
-		// but only for base providers UnifAI can wrap; others are ignored.
+		// A credential with a custom base URL becomes a Raksha custom provider,
+		// but only for base providers Raksha can wrap; others are ignored.
 		isCustom := apiBase != ""
 		provName := base
 		if isCustom {
@@ -444,7 +444,7 @@ func LiteLLMModelsToUnifAIProviders(models []litellm.LiteLLMModelInfo, credByNam
 		if ka == nil {
 			value, _ := keyValue(apiKey)
 			if value == "" {
-				// No credential resolved — UnifAI rejects keys with empty values.
+				// No credential resolved — Raksha rejects keys with empty values.
 				// Still emit a model config (rate limits) but skip key creation.
 				addSkippedProvider(provName, fmt.Sprintf("no credential for model %q; skipping key", rawModel))
 				addModelConfig(m.ModelName, rawModel, budget, base, provName)
@@ -510,7 +510,7 @@ func modelInfoRateLimits(m litellm.LiteLLMModelInfo) (tpm, rpm *int64) {
 	return tpm, rpm
 }
 
-// ProviderKeyRef is a (provider, key-UUID) pair used to attach specific UnifAI
+// ProviderKeyRef is a (provider, key-UUID) pair used to attach specific Raksha
 // provider keys to a virtual key.
 type ProviderKeyRef struct {
 	Provider string
@@ -518,10 +518,10 @@ type ProviderKeyRef struct {
 }
 
 // BuildKeyModelIndex builds a model-name → []ProviderKeyRef index from the
-// provider/key plans that were migrated and the UUIDs returned by UnifAI.
+// provider/key plans that were migrated and the UUIDs returned by Raksha.
 // A key whose Models list is ["*"] (wildcard) is reachable by every model name;
 // such keys are collected in wildcardKeys and merged into every lookup result.
-// keyIDByName maps full key names (e.g. "openai/OPENAI_KEY") to UnifAI UUIDs.
+// keyIDByName maps full key names (e.g. "openai/OPENAI_KEY") to Raksha UUIDs.
 func BuildKeyModelIndex(plans []ProviderPlan, keyIDByName map[string]string) (map[string][]ProviderKeyRef, []ProviderKeyRef) {
 	specific := map[string][]ProviderKeyRef{} // model → refs for keys with explicit model lists
 	var wildcardKeys []ProviderKeyRef         // keys that serve all models
@@ -535,7 +535,7 @@ func BuildKeyModelIndex(plans []ProviderPlan, keyIDByName map[string]string) (ma
 		for _, k := range p.Keys {
 			keyID, ok := keyIDByName[k.Name]
 			if !ok {
-				continue // key was not successfully created in UnifAI; skip
+				continue // key was not successfully created in Raksha; skip
 			}
 			isWildcard := len(k.Models) == 1 && k.Models[0] == "*"
 			if isWildcard {
@@ -550,14 +550,14 @@ func BuildKeyModelIndex(plans []ProviderPlan, keyIDByName map[string]string) (ma
 	return specific, wildcardKeys
 }
 
-// ModelRef is a UnifAI (provider, model) pair that a LiteLLM public model_name
+// ModelRef is a Raksha (provider, model) pair that a LiteLLM public model_name
 // resolves to.
 type ModelRef struct {
 	Provider string
 	Model    string
 }
 
-// BuildModelIndex maps each LiteLLM public model_name to the UnifAI
+// BuildModelIndex maps each LiteLLM public model_name to the Raksha
 // (provider, model) pairs it resolves to, and returns the sorted set of target
 // providers. It also indexes by the upstream model name (trimmed from its
 // provider prefix), so a VK with models:["gpt-4o"] resolves even when the
@@ -682,7 +682,7 @@ func resolveModelMigrationInput(m litellm.LiteLLMModelInfo, credByName map[strin
 		// LiteLLM resolves os.environ/ references before storing to DB, so if the
 		// env var was unset at LiteLLM startup the DB entry has an empty api_key.
 		// Fall back to the config-keyed deployment (by model_name) which still
-		// holds the raw env ref string we can pass to UnifAI as "env.VAR".
+		// holds the raw env ref string we can pass to Raksha as "env.VAR".
 		if cred == nil {
 			if cfgDep := deployments[m.ModelName]; cfgDep != nil && cfgDep != dep {
 				cred = cfgDep.InlineCredential()
@@ -711,7 +711,7 @@ func resolveModelMigrationInput(m litellm.LiteLLMModelInfo, credByName map[strin
 	// Resolve Azure/Bedrock/Vertex structured credential fields.
 	// Try the DB deployment value first (resolved literal); fall back to the
 	// config deployment which still carries "os.environ/VAR" env refs that
-	// keyValue converts to the "env.VAR" format UnifAI resolves at runtime.
+	// keyValue converts to the "env.VAR" format Raksha resolves at runtime.
 	cfgDep := deployments[m.ModelName]
 	sf := func(f func(*litellm.Deployment) string) string {
 		var dbVal, cfgVal string
@@ -757,8 +757,8 @@ func resolveModelMigrationInput(m litellm.LiteLLMModelInfo, credByName map[strin
 }
 
 // modelConfigPlan maps a LiteLLM deployment's governance fields (carried in b)
-// to one global UnifAI model config keyed by the actual upstream model name
-// because UnifAI model configs are unique by model_name. sourceName is the
+// to one global Raksha model config keyed by the actual upstream model name
+// because Raksha model configs are unique by model_name. sourceName is the
 // public model_name and rawModel is litellm_params.model.
 func modelConfigPlan(sourceName, rawModel string, b litellm.LiteLLMBudget, base, provider, maxBudgetPeriod string) (*ModelConfigPlan, string, error) {
 	budget, err := toBudget(b, maxBudgetPeriod)
@@ -792,13 +792,13 @@ func modelConfigPlan(sourceName, rawModel string, b litellm.LiteLLMBudget, base,
 
 	plan := &ModelConfigPlan{SourceName: strings.TrimSpace(sourceName), ModelName: modelName, Provider: providerPtr, RateLimit: rateLimit}
 	if budget != nil {
-		plan.Budgets = []UnifAICreateBudgetRequest{*budget}
+		plan.Budgets = []RakshaCreateBudgetRequest{*budget}
 	}
 	return plan, "", nil
 }
 
-// mergeModelConfig folds duplicate UnifAI model configs into the stricter
-// limit because UnifAI accepts only one config per model_name.
+// mergeModelConfig folds duplicate Raksha model configs into the stricter
+// limit because Raksha accepts only one config per model_name.
 func mergeModelConfig(existing *ModelConfigPlan, next ModelConfigPlan) {
 	existing.SourceName = appendSource(existing.SourceName, next.SourceName)
 	existing.Provider = mergeModelConfigProvider(existing.Provider, next.Provider)
@@ -830,7 +830,7 @@ func mergeModelConfigProvider(existing, next *string) *string {
 
 // mergeRateLimit keeps the lowest non-nil RPM and TPM from duplicate LiteLLM
 // deployments for the same actual model.
-func mergeRateLimit(existing, next *UnifAICreateRateLimitRequest) *UnifAICreateRateLimitRequest {
+func mergeRateLimit(existing, next *RakshaCreateRateLimitRequest) *RakshaCreateRateLimitRequest {
 	if existing == nil {
 		return next
 	}
@@ -839,7 +839,7 @@ func mergeRateLimit(existing, next *UnifAICreateRateLimitRequest) *UnifAICreateR
 	}
 	requestLimit, requestReset := minRateLimitDimension(existing.RequestMaxLimit, existing.RequestResetDuration, next.RequestMaxLimit, next.RequestResetDuration)
 	tokenLimit, tokenReset := minRateLimitDimension(existing.TokenMaxLimit, existing.TokenResetDuration, next.TokenMaxLimit, next.TokenResetDuration)
-	return &UnifAICreateRateLimitRequest{
+	return &RakshaCreateRateLimitRequest{
 		RequestMaxLimit:      requestLimit,
 		RequestResetDuration: requestReset,
 		TokenMaxLimit:        tokenLimit,
@@ -861,7 +861,7 @@ func minRateLimitDimension(a *int64, aReset *string, b *int64, bReset *string) (
 
 // mergeBudgets keeps a single lowest max budget when duplicate model configs
 // contain budget limits, preserving the reset duration attached to that budget.
-func mergeBudgets(existing, next []UnifAICreateBudgetRequest) []UnifAICreateBudgetRequest {
+func mergeBudgets(existing, next []RakshaCreateBudgetRequest) []RakshaCreateBudgetRequest {
 	if len(existing) == 0 {
 		return next
 	}
@@ -874,7 +874,7 @@ func mergeBudgets(existing, next []UnifAICreateBudgetRequest) []UnifAICreateBudg
 	return existing
 }
 
-// modelConfigSignature returns the UnifAI uniqueness key for a global model
+// modelConfigSignature returns the Raksha uniqueness key for a global model
 // config, intentionally ignoring the governance payload.
 func modelConfigSignature(mc ModelConfigPlan) string {
 	provider := ""
@@ -884,10 +884,10 @@ func modelConfigSignature(mc ModelConfigPlan) string {
 	return provider + "|" + mc.ModelName
 }
 
-// deriveProvider resolves the UnifAI base provider for a deployment:
+// deriveProvider resolves the Raksha base provider for a deployment:
 // custom_llm_provider, else the prefix before the first "/" in model, else the
 // default. The result is lowercased and normalised through liteLLMProviderAliases
-// so LiteLLM names like "vertex_ai" map to UnifAI names like "vertex".
+// so LiteLLM names like "vertex_ai" map to Raksha names like "vertex".
 func deriveProvider(customLLMProvider, model, def string) string {
 	var raw string
 	if customLLMProvider != "" {
@@ -916,7 +916,7 @@ func customProviderName(base, apiBase string) string {
 	return base + "-" + hex.EncodeToString(h[:8])
 }
 
-// keyValue maps a LiteLLM api_key onto a UnifAI key value string and reports
+// keyValue maps a LiteLLM api_key onto a Raksha key value string and reports
 // whether it is a literal (plaintext) secret. "os.environ/FOO" and "env.FOO"
 // become "env.FOO"; an empty key stays empty (keyless providers are valid);
 // anything else is carried as a literal.

@@ -10,20 +10,20 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // Shared test texts for TTS->SST round-trip validation
 const (
 	// Basic test text for simple round-trip validation
-	TTSTestTextBasic = "Hello, this is a comprehensive test of speech synthesis capabilities from UnifAI AI Gateway. We are testing various aspects of text-to-speech conversion including clarity, pronunciation, and overall audio quality. This basic test should demonstrate the fundamental functionality of converting written text into natural-sounding speech audio."
+	TTSTestTextBasic = "Hello, this is a comprehensive test of speech synthesis capabilities from Raksha AI Gateway. We are testing various aspects of text-to-speech conversion including clarity, pronunciation, and overall audio quality. This basic test should demonstrate the fundamental functionality of converting written text into natural-sounding speech audio."
 
 	// Medium length text with punctuation for comprehensive testing
-	TTSTestTextMedium = "Testing speech synthesis and transcription round-trip functionality with UnifAI AI Gateway. This comprehensive text includes various punctuation marks: commas, periods, exclamation points! Question marks? Semicolons; and colons: for thorough testing. We also include numbers like 123, 456.789, and technical terms such as API, HTTP, JSON, WebSocket, and machine learning algorithms. The system should handle abbreviations like Dr., Mr., Mrs., and acronyms like NASA, FBI, and CPU correctly. Additionally, we test special characters and symbols: @, #, $, %, &, *, +, =, and various currency symbols like €, £, ¥."
+	TTSTestTextMedium = "Testing speech synthesis and transcription round-trip functionality with Raksha AI Gateway. This comprehensive text includes various punctuation marks: commas, periods, exclamation points! Question marks? Semicolons; and colons: for thorough testing. We also include numbers like 123, 456.789, and technical terms such as API, HTTP, JSON, WebSocket, and machine learning algorithms. The system should handle abbreviations like Dr., Mr., Mrs., and acronyms like NASA, FBI, and CPU correctly. Additionally, we test special characters and symbols: @, #, $, %, &, *, +, =, and various currency symbols like €, £, ¥."
 
 	// Technical text for comprehensive format testing
-	TTSTestTextTechnical = "UnifAI AI Gateway is a sophisticated artificial intelligence proxy server that efficiently processes and routes audio requests, chat completions, embeddings, and various machine learning workloads across multiple provider endpoints. The system implements advanced load balancing algorithms, request queuing mechanisms, and intelligent failover strategies to ensure high availability and optimal performance. It supports multiple audio formats including MP3, WAV, FLAC, and OGG, with configurable bitrates, sample rates, and encoding parameters. The gateway handles authentication, rate limiting, request validation, response transformation, and comprehensive logging for enterprise-grade deployments. Performance metrics indicate sub-100ms latency for most operations with 99.9% uptime reliability."
+	TTSTestTextTechnical = "Raksha AI Gateway is a sophisticated artificial intelligence proxy server that efficiently processes and routes audio requests, chat completions, embeddings, and various machine learning workloads across multiple provider endpoints. The system implements advanced load balancing algorithms, request queuing mechanisms, and intelligent failover strategies to ensure high availability and optimal performance. It supports multiple audio formats including MP3, WAV, FLAC, and OGG, with configurable bitrates, sample rates, and encoding parameters. The gateway handles authentication, rate limiting, request validation, response transformation, and comprehensive logging for enterprise-grade deployments. Performance metrics indicate sub-100ms latency for most operations with 99.9% uptime reliability."
 )
 
 func GetProviderDefaultFormat(provider schemas.ModelProvider) string {
@@ -203,7 +203,7 @@ func GetSampleChatTool(toolName SampleToolType) *schemas.ChatTool {
 		Type: "function",
 		Function: &schemas.ChatToolFunction{
 			Name:        toolDisplayName,
-			Description: unifai.Ptr(description),
+			Description: raksha.Ptr(description),
 			Parameters:  function.Parameters,
 		},
 	}
@@ -228,8 +228,8 @@ func GetSampleResponsesTool(toolName SampleToolType) *schemas.ResponsesTool {
 
 	return &schemas.ResponsesTool{
 		Type:        "function",
-		Name:        unifai.Ptr(toolDisplayName),
-		Description: unifai.Ptr(description),
+		Name:        raksha.Ptr(toolDisplayName),
+		Description: raksha.Ptr(description),
 		ResponsesToolFunction: &schemas.ResponsesToolFunction{
 			Parameters: function.Parameters,
 		},
@@ -281,8 +281,8 @@ func GetSampleAudioBase64() (string, error) {
 }
 
 // CreateSpeechRequest creates a basic speech input for testing
-func CreateSpeechRequest(text, voice, format string) *schemas.UnifAISpeechRequest {
-	return &schemas.UnifAISpeechRequest{
+func CreateSpeechRequest(text, voice, format string) *schemas.RakshaSpeechRequest {
+	return &schemas.RakshaSpeechRequest{
 		Input: &schemas.SpeechInput{
 			Input: text,
 		},
@@ -296,8 +296,8 @@ func CreateSpeechRequest(text, voice, format string) *schemas.UnifAISpeechReques
 }
 
 // CreateTranscriptionInput creates a basic transcription input for testing
-func CreateTranscriptionInput(audioData []byte, language, responseFormat *string) *schemas.UnifAITranscriptionRequest {
-	return &schemas.UnifAITranscriptionRequest{
+func CreateTranscriptionInput(audioData []byte, language, responseFormat *string) *schemas.RakshaTranscriptionRequest {
+	return &schemas.RakshaTranscriptionRequest{
 		Input: &schemas.TranscriptionInput{
 			File: audioData,
 		},
@@ -313,17 +313,17 @@ func CreateBasicChatMessage(content string) schemas.ChatMessage {
 	return schemas.ChatMessage{
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
-			ContentStr: unifai.Ptr(content),
+			ContentStr: raksha.Ptr(content),
 		},
 	}
 }
 
 func CreateBasicResponsesMessage(content string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: unifai.Ptr(schemas.ResponsesMessageTypeMessage),
-		Role: unifai.Ptr(schemas.ResponsesInputMessageRoleUser),
+		Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
+		Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
 		Content: &schemas.ResponsesMessageContent{
-			ContentStr: unifai.Ptr(content),
+			ContentStr: raksha.Ptr(content),
 		},
 	}
 }
@@ -333,7 +333,7 @@ func CreateImageChatMessage(text, imageURL string) schemas.ChatMessage {
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
 			ContentBlocks: []schemas.ChatContentBlock{
-				{Type: schemas.ChatContentBlockTypeText, Text: unifai.Ptr(text)},
+				{Type: schemas.ChatContentBlockTypeText, Text: raksha.Ptr(text)},
 				{Type: schemas.ChatContentBlockTypeImage, ImageURLStruct: &schemas.ChatInputImage{URL: imageURL}},
 			},
 		},
@@ -342,15 +342,15 @@ func CreateImageChatMessage(text, imageURL string) schemas.ChatMessage {
 
 func CreateImageResponsesMessage(text, imageURL string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: unifai.Ptr(schemas.ResponsesMessageTypeMessage),
-		Role: unifai.Ptr(schemas.ResponsesInputMessageRoleUser),
+		Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
+		Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
 		Content: &schemas.ResponsesMessageContent{
 			ContentBlocks: []schemas.ResponsesMessageContentBlock{
-				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: unifai.Ptr(text)},
+				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: raksha.Ptr(text)},
 				{
 					Type: schemas.ResponsesInputMessageContentBlockTypeImage,
 					ResponsesInputMessageContentBlockImage: &schemas.ResponsesInputMessageContentBlockImage{
-						ImageURL: unifai.Ptr(imageURL),
+						ImageURL: raksha.Ptr(imageURL),
 					},
 				},
 			},
@@ -359,12 +359,12 @@ func CreateImageResponsesMessage(text, imageURL string) schemas.ResponsesMessage
 }
 
 func CreateAudioChatMessage(text, audioData string, audioFormat string) schemas.ChatMessage {
-	format := unifai.Ptr(audioFormat)
+	format := raksha.Ptr(audioFormat)
 	return schemas.ChatMessage{
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
 			ContentBlocks: []schemas.ChatContentBlock{
-				{Type: schemas.ChatContentBlockTypeText, Text: unifai.Ptr(text)},
+				{Type: schemas.ChatContentBlockTypeText, Text: raksha.Ptr(text)},
 				{
 					Type: schemas.ChatContentBlockTypeInputAudio,
 					InputAudio: &schemas.ChatInputAudio{
@@ -381,23 +381,23 @@ func CreateToolChatMessage(content string, toolCallID string) schemas.ChatMessag
 	return schemas.ChatMessage{
 		Role: schemas.ChatMessageRoleTool,
 		Content: &schemas.ChatMessageContent{
-			ContentStr: unifai.Ptr(content),
+			ContentStr: raksha.Ptr(content),
 		},
 		ChatToolMessage: &schemas.ChatToolMessage{
-			ToolCallID: unifai.Ptr(toolCallID),
+			ToolCallID: raksha.Ptr(toolCallID),
 		},
 	}
 }
 
 func CreateToolResponsesMessage(content string, toolCallID string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: unifai.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
+		Type: raksha.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
 		// Note: function_call_output messages don't have a role field per OpenAI API
 		ResponsesToolMessage: &schemas.ResponsesToolMessage{
-			CallID: unifai.Ptr(toolCallID),
+			CallID: raksha.Ptr(toolCallID),
 			// Set ResponsesFunctionToolCallOutput for OpenAI's native Responses API
 			Output: &schemas.ResponsesToolMessageOutputStruct{
-				ResponsesToolCallOutputStr: unifai.Ptr(content),
+				ResponsesToolCallOutputStr: raksha.Ptr(content),
 			},
 		},
 	}
@@ -411,8 +411,8 @@ type ToolCallInfo struct {
 	Index     int // OpenAI tool_calls index (0, 1, 2, ...); -1 when not available
 }
 
-// GetChatContent returns the string content from a UnifAIChatResponse
-func GetChatContent(response *schemas.UnifAIChatResponse) string {
+// GetChatContent returns the string content from a RakshaChatResponse
+func GetChatContent(response *schemas.RakshaChatResponse) string {
 	if response == nil || response.Choices == nil {
 		return ""
 	}
@@ -441,8 +441,8 @@ func GetChatContent(response *schemas.UnifAIChatResponse) string {
 	return ""
 }
 
-// GetTextCompletionContent returns the string content from a UnifAITextCompletionResponse
-func GetTextCompletionContent(response *schemas.UnifAITextCompletionResponse) string {
+// GetTextCompletionContent returns the string content from a RakshaTextCompletionResponse
+func GetTextCompletionContent(response *schemas.RakshaTextCompletionResponse) string {
 	if response == nil || response.Choices == nil {
 		return ""
 	}
@@ -457,8 +457,8 @@ func GetTextCompletionContent(response *schemas.UnifAITextCompletionResponse) st
 	return ""
 }
 
-// GetResponsesContent returns the string content from a UnifAIResponsesResponse
-func GetResponsesContent(response *schemas.UnifAIResponsesResponse) string {
+// GetResponsesContent returns the string content from a RakshaResponsesResponse
+func GetResponsesContent(response *schemas.RakshaResponsesResponse) string {
 	if response == nil || response.Output == nil {
 		return ""
 	}
@@ -539,8 +539,8 @@ func GetResponsesContent(response *schemas.UnifAIResponsesResponse) string {
 	return ""
 }
 
-// ExtractChatToolCalls extracts tool call information from a UnifAIChatResponse
-func ExtractChatToolCalls(response *schemas.UnifAIChatResponse) []ToolCallInfo {
+// ExtractChatToolCalls extracts tool call information from a RakshaChatResponse
+func ExtractChatToolCalls(response *schemas.RakshaChatResponse) []ToolCallInfo {
 	var toolCalls []ToolCallInfo
 
 	if response == nil || response.Choices == nil {
@@ -566,8 +566,8 @@ func ExtractChatToolCalls(response *schemas.UnifAIChatResponse) []ToolCallInfo {
 	return toolCalls
 }
 
-// ExtractResponsesToolCalls extracts tool call information from a UnifAIResponsesResponse
-func ExtractResponsesToolCalls(response *schemas.UnifAIResponsesResponse) []ToolCallInfo {
+// ExtractResponsesToolCalls extracts tool call information from a RakshaResponsesResponse
+func ExtractResponsesToolCalls(response *schemas.RakshaResponsesResponse) []ToolCallInfo {
 	var toolCalls []ToolCallInfo
 
 	if response == nil || response.Output == nil {
@@ -593,7 +593,7 @@ func ExtractResponsesToolCalls(response *schemas.UnifAIResponsesResponse) []Tool
 	return toolCalls
 }
 
-func GetResultContent(response *schemas.UnifAIResponse) string {
+func GetResultContent(response *schemas.RakshaResponse) string {
 	if response == nil {
 		return ""
 	}
@@ -608,7 +608,7 @@ func GetResultContent(response *schemas.UnifAIResponse) string {
 	return ""
 }
 
-func ExtractToolCalls(response *schemas.UnifAIResponse) []ToolCallInfo {
+func ExtractToolCalls(response *schemas.RakshaResponse) []ToolCallInfo {
 	if response == nil {
 		return []ToolCallInfo{}
 	}
@@ -621,7 +621,7 @@ func ExtractToolCalls(response *schemas.UnifAIResponse) []ToolCallInfo {
 	return []ToolCallInfo{}
 }
 
-// getEmbeddingVector extracts the float64 vector from a UnifAIEmbeddingResponse.
+// getEmbeddingVector extracts the float64 vector from a RakshaEmbeddingResponse.
 func getEmbeddingVector(embedding schemas.EmbeddingData) ([]float64, error) {
 	if embedding.Embedding.EmbeddingArray != nil {
 		return embedding.Embedding.EmbeddingArray, nil
@@ -649,7 +649,7 @@ func getEmbeddingVector(embedding schemas.EmbeddingData) ([]float64, error) {
 
 // GenerateTTSAudioForTest generates real audio using TTS and writes a temp file.
 // Returns audio bytes and temp filepath. Caller’s t will clean it up.
-func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *unifai.UnifAI, provider schemas.ModelProvider, ttsModel string, text string, voiceType string, format string) ([]byte, string) {
+func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *raksha.Raksha, provider schemas.ModelProvider, ttsModel string, text string, voiceType string, format string) ([]byte, string) {
 	// inline import guard comment: context/testing/os are required at call sites; Go compiler will include them.
 	voice := GetProviderVoice(provider, voiceType)
 	if voice == "" {
@@ -659,7 +659,7 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *unifai.U
 		format = "mp3"
 	}
 
-	req := &schemas.UnifAISpeechRequest{
+	req := &schemas.RakshaSpeechRequest{
 		Provider: provider,
 		Model:    ttsModel,
 		Input:    &schemas.SpeechInput{Input: text},
@@ -698,8 +698,8 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *unifai.U
 		OnFinalFail: retryConfig.OnFinalFail,
 	}
 
-	resp, err := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "GenerateTTSAudioForTest", func() (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
-		bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+	resp, err := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "GenerateTTSAudioForTest", func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 		return client.SpeechRequest(bfCtx, req)
 	})
 	if err != nil {
@@ -710,7 +710,7 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *unifai.U
 	}
 
 	suffix := "." + format
-	f, cerr := os.CreateTemp("", "unifai-tts-*"+suffix)
+	f, cerr := os.CreateTemp("", "raksha-tts-*"+suffix)
 	if cerr != nil {
 		t.Fatalf("failed to create temp audio file: %v", cerr)
 	}
@@ -726,7 +726,7 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *unifai.U
 	return resp.Audio, tempPath
 }
 
-func GetErrorMessage(err *schemas.UnifAIError) string {
+func GetErrorMessage(err *schemas.RakshaError) string {
 	if err == nil {
 		return ""
 	}

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/encrypt"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/encrypt"
 	"gorm.io/gorm"
 )
 

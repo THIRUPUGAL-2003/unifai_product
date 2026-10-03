@@ -11,13 +11,13 @@ import { CheckCircle2, Copy, ExternalLink, InfoIcon, Key, Shield } from "lucide-
 import { useMemo } from "react";
 
 export default function APIKeysView() {
-	const { data: unifaiConfig, isLoading } = useGetCoreConfigQuery({ fromDB: true });
+	const { data: rakshaConfig, isLoading } = useGetCoreConfigQuery({ fromDB: true });
 	const { data: virtualKeysData, isLoading: loadingKeys } = useGetVirtualKeysQuery({ limit: 20 });
 	const { data: health, isFetching: testingHealth, refetch: testHealth } = useGetGovernanceHealthQuery();
 	const { copy: copyToClipboard } = useCopyToClipboard();
 
-	const isAuthConfigured = useMemo(() => unifaiConfig?.auth_config?.is_enabled, [unifaiConfig]);
-	const isInferenceAuthDisabled = !(unifaiConfig?.client_config?.enforce_auth_on_inference ?? false);
+	const isAuthConfigured = useMemo(() => rakshaConfig?.auth_config?.is_enabled, [rakshaConfig]);
+	const isInferenceAuthDisabled = !(rakshaConfig?.client_config?.enforce_auth_on_inference ?? false);
 	const baseUrl = getExampleBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
 
 	const adminCurlExample = `# 1. Sign in once; the session cookie is stored in cookies.txt

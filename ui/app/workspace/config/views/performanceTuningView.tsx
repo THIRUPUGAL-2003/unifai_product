@@ -10,8 +10,8 @@ import { toast } from "sonner";
 
 export default function PerformanceTuningView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const config = unifaiConfig?.client_config;
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const config = rakshaConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
 	const [needsRestart, setNeedsRestart] = useState<boolean>(false);
@@ -25,14 +25,14 @@ export default function PerformanceTuningView() {
 	});
 
 	useEffect(() => {
-		if (unifaiConfig && config) {
+		if (rakshaConfig && config) {
 			setLocalConfig(config);
 			setLocalValues({
 				initial_pool_size: config?.initial_pool_size?.toString() || "1000",
 				max_request_body_size_mb: config?.max_request_body_size_mb?.toString() || "100",
 			});
 		}
-	}, [config, unifaiConfig]);
+	}, [config, rakshaConfig]);
 
 	const hasChanges = useMemo(() => {
 		if (!config) return false;
@@ -74,16 +74,16 @@ export default function PerformanceTuningView() {
 				return;
 			}
 
-			if (!unifaiConfig) {
+			if (!rakshaConfig) {
 				toast.error("Configuration not loaded. Please refresh and try again.");
 				return;
 			}
-			await updateCoreConfig({ ...unifaiConfig, client_config: localConfig }).unwrap();
+			await updateCoreConfig({ ...rakshaConfig, client_config: localConfig }).unwrap();
 			toast.success("Performance settings updated successfully.");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [unifaiConfig, localConfig, localValues, updateCoreConfig]);
+	}, [rakshaConfig, localConfig, localValues, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4">
@@ -95,7 +95,7 @@ export default function PerformanceTuningView() {
 			<Alert variant="destructive">
 				<AlertTriangle className="h-4 w-4" />
 				<AlertDescription>
-					These settings require a UnifAI service restart to take effect. Current connections will continue with existing settings until
+					These settings require a Raksha service restart to take effect. Current connections will continue with existing settings until
 					restart.
 				</AlertDescription>
 			</Alert>
@@ -157,5 +157,5 @@ export default function PerformanceTuningView() {
 }
 
 const RestartWarning = () => {
-	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart UnifAI to apply changes.</div>;
+	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart Raksha to apply changes.</div>;
 };

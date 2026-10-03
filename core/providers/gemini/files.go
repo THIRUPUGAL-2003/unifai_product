@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // Gemini Files API types
@@ -37,8 +37,8 @@ type GeminiFileListResponse struct {
 	NextPageToken string               `json:"nextPageToken,omitempty"`
 }
 
-// ToUnifAIFileStatus converts Gemini file state to UnifAI status.
-func ToUnifAIFileStatus(state string) schemas.FileStatus {
+// ToRakshaFileStatus converts Gemini file state to Raksha status.
+func ToRakshaFileStatus(state string) schemas.FileStatus {
 	switch state {
 	case "PROCESSING":
 		return schemas.FileStatusProcessing
@@ -51,8 +51,8 @@ func ToUnifAIFileStatus(state string) schemas.FileStatus {
 	}
 }
 
-// ToGeminiFileListResponse converts a UnifAI file list response to Gemini format.
-func ToGeminiFileListResponse(resp *schemas.UnifAIFileListResponse) *GeminiFileListResponse {
+// ToGeminiFileListResponse converts a Raksha file list response to Gemini format.
+func ToGeminiFileListResponse(resp *schemas.RakshaFileListResponse) *GeminiFileListResponse {
 	files := make([]GeminiFileResponse, len(resp.Data))
 	for i, f := range resp.Data {
 		updateAt := f.UpdatedAt
@@ -76,8 +76,8 @@ func ToGeminiFileListResponse(resp *schemas.UnifAIFileListResponse) *GeminiFileL
 	return result
 }
 
-// ToGeminiFileRetrieveResponse converts a UnifAI file retrieve response to Gemini format.
-func ToGeminiFileRetrieveResponse(resp *schemas.UnifAIFileRetrieveResponse) *GeminiFileResponse {
+// ToGeminiFileRetrieveResponse converts a Raksha file retrieve response to Gemini format.
+func ToGeminiFileRetrieveResponse(resp *schemas.RakshaFileRetrieveResponse) *GeminiFileResponse {
 	updateAt := resp.UpdatedAt
 	if updateAt == 0 {
 		updateAt = resp.CreatedAt
@@ -94,7 +94,7 @@ func ToGeminiFileRetrieveResponse(resp *schemas.UnifAIFileRetrieveResponse) *Gem
 	}
 }
 
-// toGeminiFileState converts UnifAI file status to Gemini state.
+// toGeminiFileState converts Raksha file status to Gemini state.
 func toGeminiFileState(status schemas.FileStatus) string {
 	switch status {
 	case schemas.FileStatusProcessing:
@@ -124,8 +124,8 @@ func safeDerefInt64(ptr *int64) int64 {
 	return *ptr
 }
 
-// ToGeminiFileUploadResponse converts a UnifAI file upload response to Gemini format.
-func ToGeminiFileUploadResponse(resp *schemas.UnifAIFileUploadResponse) map[string]interface{} {
+// ToGeminiFileUploadResponse converts a Raksha file upload response to Gemini format.
+func ToGeminiFileUploadResponse(resp *schemas.RakshaFileUploadResponse) map[string]interface{} {
 	file := map[string]interface{}{
 		"name":        resp.ID,
 		"displayName": resp.Filename,

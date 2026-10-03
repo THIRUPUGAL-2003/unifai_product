@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunCompleteEnd2EndTest executes the complete end-to-end test scenario
-func RunCompleteEnd2EndTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunCompleteEnd2EndTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.CompleteEnd2End {
 		t.Logf("Complete end-to-end not supported for provider %s", testConfig.Provider)
 		return
@@ -59,36 +59,36 @@ func RunCompleteEnd2EndTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 		}
 
 		// Create operations for both APIs
-		chatOperation1 := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation1 := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    []schemas.ChatMessage{chatUserMessage1},
 				Params: &schemas.ChatParameters{
 					Tools: []schemas.ChatTool{*chatTool},
 					ToolChoice: &schemas.ChatToolChoice{
-						ChatToolChoiceStr: unifai.Ptr(string(schemas.ChatToolChoiceTypeRequired)),
+						ChatToolChoiceStr: raksha.Ptr(string(schemas.ChatToolChoiceTypeRequired)),
 					},
-					MaxCompletionTokens: unifai.Ptr(500),
+					MaxCompletionTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation1 := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation1 := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    []schemas.ResponsesMessage{responsesUserMessage1},
 				Params: &schemas.ResponsesParameters{
 					Tools: []schemas.ResponsesTool{*responsesTool},
 					ToolChoice: &schemas.ResponsesToolChoice{
-						ResponsesToolChoiceStr: unifai.Ptr(string(schemas.ResponsesToolChoiceTypeRequired)),
+						ResponsesToolChoiceStr: raksha.Ptr(string(schemas.ResponsesToolChoiceTypeRequired)),
 					},
-					MaxOutputTokens: unifai.Ptr(500),
+					MaxOutputTokens: raksha.Ptr(500),
 				},
 			}
 			return client.ResponsesRequest(bfCtx, responsesReq)
@@ -198,28 +198,28 @@ func RunCompleteEnd2EndTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 		} // Should not indicate confusion about tool results
 
 		// Create operations for both APIs - Step 2 (processing tool results)
-		chatOperation2 := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation2 := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatConversationHistory,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(500),
+					MaxCompletionTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation2 := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation2 := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesConversationHistory,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(400),
+					MaxOutputTokens: raksha.Ptr(400),
 				},
 			}
 			return client.ResponsesRequest(bfCtx, responsesReq)
@@ -336,28 +336,28 @@ func RunCompleteEnd2EndTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 		} // Context loss indicators
 
 		// Create operations for both APIs - Step 3
-		chatOperation3 := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation3 := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    chatConversationHistory,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(600),
+					MaxCompletionTokens: raksha.Ptr(600),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation3 := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation3 := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    responsesConversationHistory,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(600),
+					MaxOutputTokens: raksha.Ptr(600),
 				},
 			}
 			return client.ResponsesRequest(bfCtx, responsesReq)

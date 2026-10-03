@@ -6,33 +6,33 @@ import (
 	"mime/multipart"
 	"strconv"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToMistralTranscriptionRequest converts a UnifAI transcription request to Mistral format.
-func ToMistralTranscriptionRequest(unifaiReq *schemas.UnifAITranscriptionRequest) *MistralTranscriptionRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil || len(unifaiReq.Input.File) == 0 {
+// ToMistralTranscriptionRequest converts a Raksha transcription request to Mistral format.
+func ToMistralTranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequest) *MistralTranscriptionRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil || len(rakshaReq.Input.File) == 0 {
 		return nil
 	}
 
 	req := &MistralTranscriptionRequest{
-		Model:    unifaiReq.Model,
-		File:     unifaiReq.Input.File,
-		Filename: unifaiReq.Input.Filename,
+		Model:    rakshaReq.Model,
+		File:     rakshaReq.Input.File,
+		Filename: rakshaReq.Input.Filename,
 	}
 
-	if unifaiReq.Params != nil {
-		req.Language = unifaiReq.Params.Language
-		req.Prompt = unifaiReq.Params.Prompt
-		req.ResponseFormat = unifaiReq.Params.ResponseFormat
+	if rakshaReq.Params != nil {
+		req.Language = rakshaReq.Params.Language
+		req.Prompt = rakshaReq.Params.Prompt
+		req.ResponseFormat = rakshaReq.Params.ResponseFormat
 
 		// Handle extra params for Mistral-specific fields
-		if unifaiReq.Params.ExtraParams != nil {
-			if temp, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["temperature"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			if temp, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["temperature"]); ok {
 				req.Temperature = temp
 			}
-			if granularities, ok := unifaiReq.Params.ExtraParams["timestamp_granularities"].([]string); ok {
+			if granularities, ok := rakshaReq.Params.ExtraParams["timestamp_granularities"].([]string); ok {
 				req.TimestampGranularities = granularities
 			}
 		}
@@ -41,13 +41,13 @@ func ToMistralTranscriptionRequest(unifaiReq *schemas.UnifAITranscriptionRequest
 	return req
 }
 
-// ToUnifAITranscriptionResponse converts a Mistral transcription response to UnifAI format.
-func (r *MistralTranscriptionResponse) ToUnifAITranscriptionResponse() *schemas.UnifAITranscriptionResponse {
+// ToRakshaTranscriptionResponse converts a Mistral transcription response to Raksha format.
+func (r *MistralTranscriptionResponse) ToRakshaTranscriptionResponse() *schemas.RakshaTranscriptionResponse {
 	if r == nil {
 		return nil
 	}
 
-	response := &schemas.UnifAITranscriptionResponse{
+	response := &schemas.RakshaTranscriptionResponse{
 		Text:     r.Text,
 		Duration: r.Duration,
 		Language: r.Language,
@@ -89,7 +89,7 @@ func (r *MistralTranscriptionResponse) ToUnifAITranscriptionResponse() *schemas.
 }
 
 // createMistralTranscriptionMultipartBody creates the multipart form body for a transcription request.
-func createMistralTranscriptionMultipartBody(req *MistralTranscriptionRequest, providerName schemas.ModelProvider) (*bytes.Buffer, string, *schemas.UnifAIError) {
+func createMistralTranscriptionMultipartBody(req *MistralTranscriptionRequest, providerName schemas.ModelProvider) (*bytes.Buffer, string, *schemas.RakshaError) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -101,47 +101,47 @@ func createMistralTranscriptionMultipartBody(req *MistralTranscriptionRequest, p
 }
 
 // parseTranscriptionFormDataBodyFromRequest writes the transcription request to a multipart form.
-func parseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, req *MistralTranscriptionRequest, providerName schemas.ModelProvider) *schemas.UnifAIError {
+func parseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, req *MistralTranscriptionRequest, providerName schemas.ModelProvider) *schemas.RakshaError {
 	// Add model field (required) before the file so upstreams can route without buffering audio bytes.
 	if err := writer.WriteField("model", req.Model); err != nil {
-		return providerUtils.NewUnifAIOperationError("failed to write model field",  err)
+		return providerUtils.NewRakshaOperationError("failed to write model field",  err)
 	}
 
 	// Add stream field if streaming
 	if req.Stream != nil && *req.Stream {
 		if err := writer.WriteField("stream", "true"); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write stream field",  err)
+			return providerUtils.NewRakshaOperationError("failed to write stream field",  err)
 		}
 	}
 
 	// Add optional fields
 	if req.Language != nil {
 		if err := writer.WriteField("language", *req.Language); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write language field",  err)
+			return providerUtils.NewRakshaOperationError("failed to write language field",  err)
 		}
 	}
 
 	if req.Prompt != nil {
 		if err := writer.WriteField("prompt", *req.Prompt); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write prompt field",  err)
+			return providerUtils.NewRakshaOperationError("failed to write prompt field",  err)
 		}
 	}
 
 	if req.ResponseFormat != nil {
 		if err := writer.WriteField("response_format", *req.ResponseFormat); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write response_format field",  err)
+			return providerUtils.NewRakshaOperationError("failed to write response_format field",  err)
 		}
 	}
 
 	if req.Temperature != nil {
 		if err := writer.WriteField("temperature", formatFloat64(*req.Temperature)); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write temperature field",  err)
+			return providerUtils.NewRakshaOperationError("failed to write temperature field",  err)
 		}
 	}
 
 	for _, granularity := range req.TimestampGranularities {
 		if err := writer.WriteField("timestamp_granularities[]", granularity); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write timestamp_granularities field",  err)
+			return providerUtils.NewRakshaOperationError("failed to write timestamp_granularities field",  err)
 		}
 	}
 
@@ -152,15 +152,15 @@ func parseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, req *Mi
 	}
 	fileWriter, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return providerUtils.NewUnifAIOperationError("failed to create form file",  err)
+		return providerUtils.NewRakshaOperationError("failed to create form file",  err)
 	}
 	if _, err := fileWriter.Write(req.File); err != nil {
-		return providerUtils.NewUnifAIOperationError("failed to write file data",  err)
+		return providerUtils.NewRakshaOperationError("failed to write file data",  err)
 	}
 
 	// Close the multipart writer to finalize the form
 	if err := writer.Close(); err != nil {
-		return providerUtils.NewUnifAIOperationError("failed to close multipart writer",  err)
+		return providerUtils.NewRakshaOperationError("failed to close multipart writer",  err)
 	}
 
 	return nil
@@ -171,13 +171,13 @@ func formatFloat64(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
-// ToUnifAITranscriptionStreamResponse converts a Mistral streaming event to UnifAI format.
-func (e *MistralTranscriptionStreamEvent) ToUnifAITranscriptionStreamResponse() *schemas.UnifAITranscriptionStreamResponse {
+// ToRakshaTranscriptionStreamResponse converts a Mistral streaming event to Raksha format.
+func (e *MistralTranscriptionStreamEvent) ToRakshaTranscriptionStreamResponse() *schemas.RakshaTranscriptionStreamResponse {
 	if e == nil {
 		return nil
 	}
 
-	response := &schemas.UnifAITranscriptionStreamResponse{}
+	response := &schemas.RakshaTranscriptionStreamResponse{}
 
 	switch MistralTranscriptionStreamEventType(e.Event) {
 	case MistralTranscriptionStreamEventTextDelta:

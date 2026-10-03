@@ -31,7 +31,7 @@ export default function VirtualKeyQuickstart({ virtualKey }: VirtualKeyQuickstar
 		if (typeof window !== "undefined" && window.location.origin) {
 			return `${window.location.origin.replace(/\/+$/, "")}/v1`;
 		}
-		return "<YOUR_UNIFAI_URL>/v1";
+		return "<YOUR_RAKSHA_URL>/v1";
 	}, []);
 
 	const keySecret = virtualKey.value || "sk-uf-your-virtual-key";
@@ -63,7 +63,7 @@ client = OpenAI(
 response = client.chat.completions.create(
     model="${recommendedModel}",
     messages=[
-        {"role": "user", "content": "Hello from UniFAI!"}
+        {"role": "user", "content": "Hello from Raksha!"}
     ]
 )
 
@@ -75,7 +75,7 @@ print(response.choices[0].message.content)`;
   -d '{
     "model": "${recommendedModel}",
     "messages": [
-      {"role": "user", "content": "Hello from UniFAI!"}
+      {"role": "user", "content": "Hello from Raksha!"}
     ]
   }'`;
 
@@ -90,7 +90,7 @@ async function main() {
   const completion = await client.chat.completions.create({
     model: "${recommendedModel}",
     messages: [
-      { role: "user", content: "Hello from UniFAI!" }
+      { role: "user", content: "Hello from Raksha!" }
     ],
   });
 
@@ -119,7 +119,7 @@ main();`;
 				},
 				body: JSON.stringify({
 					model: recommendedModel,
-					messages: [{ role: "user", content: "Hello UniFAI! Test ping." }],
+					messages: [{ role: "user", content: "Hello Raksha! Test ping." }],
 					max_tokens: 30,
 				}),
 			});

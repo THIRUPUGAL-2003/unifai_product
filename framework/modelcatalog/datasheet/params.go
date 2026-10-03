@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"slices"
 
-	unifai "github.com/unifai/unifai/core"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
+	raksha "github.com/raksha/raksha/core"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
 	"github.com/tidwall/gjson"
 )
 
@@ -143,7 +143,7 @@ func (s *Store) loadModelParametersFromURL(ctx context.Context) (map[string]json
 			return nil, fmt.Errorf("failed to read model parameters file: %w", err)
 		}
 	} else {
-		if err := unifai.ValidateExternalURL(rawURL, true); err != nil {
+		if err := raksha.ValidateExternalURL(rawURL, true); err != nil {
 			return nil, fmt.Errorf("model parameters URL validation failed: %w", err)
 		}
 		client := &http.Client{Timeout: DefaultModelParametersTimeout}

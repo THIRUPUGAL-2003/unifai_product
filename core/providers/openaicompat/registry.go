@@ -1,6 +1,6 @@
 package openaicompat
 
-import "github.com/unifai/unifai/core/schemas"
+import "github.com/raksha/raksha/core/schemas"
 
 // Spec describes a thin OpenAI-compatible provider.
 type Spec struct {

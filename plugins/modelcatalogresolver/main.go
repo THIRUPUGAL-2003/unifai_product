@@ -11,14 +11,14 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
 )
 
 const PluginName = "model-catalog-resolver"
 
 // integrationTypeToDefaultProvider maps the integration-type ctx value (set by
-// transports/unifai-http/integrations/router.go on integration routes) to the
+// transports/raksha-http/integrations/router.go on integration routes) to the
 // integration's canonical provider. When the catalog returns multiple providers
 // for an unprefixed model, the resolver prefers the integration's canonical
 // provider if it's in the candidate list.
@@ -56,12 +56,12 @@ func (p *Plugin) Cleanup() error { return nil }
 // string like "openai/gpt-5", or from an earlier routing plugin — governance, LB).
 //
 // When the catalog returns multiple providers for an unprefixed model, the resolver prefers the
-// integration's canonical provider (looked up from UnifAIContextKeyIntegrationType set by the
+// integration's canonical provider (looked up from RakshaContextKeyIntegrationType set by the
 // integration router) if it's in the candidate list. Otherwise it picks the first candidate.
 //
 // If the catalog returns zero providers, the resolver leaves req.Provider empty — the
 // empty-provider validation in handleRequest/handleStreamRequest then returns a clear error.
-func (p *Plugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) error {
+func (p *Plugin) PreRequestHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error {
 	if req.RequestType == schemas.PassthroughRequest || req.RequestType == schemas.PassthroughStreamRequest {
 		return nil
 	}
@@ -113,7 +113,7 @@ func (p *Plugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIR
 		}
 	}
 
-	schemas.AppendToContextList(ctx, schemas.UnifAIContextKeyRoutingEnginesUsed, schemas.RoutingEngineModelCatalog)
+	schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineModelCatalog)
 	return nil
 }
 
@@ -123,21 +123,21 @@ func (p *Plugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIR
 // candidate list (post-allowlist when an allowlist is in effect). Returns ("", nil) when
 // the catalog has no match for the model, or when an allowlist excludes every candidate.
 //
-// The integration hint (UnifAIContextKeyIntegrationType, when present and mapped) biases
+// The integration hint (RakshaContextKeyIntegrationType, when present and mapped) biases
 // the pick toward the integration's canonical provider if it is in the candidate set;
 // otherwise selection falls back to the alphabetically-first candidate for determinism.
 //
 // For requests routed through the openai integration whose user-agent identifies an Azure
-// OpenAI SDK (UnifAIContextKeyIsAzureUserAgent), schemas.Azure is preferred over
+// OpenAI SDK (RakshaContextKeyIsAzureUserAgent), schemas.Azure is preferred over
 // schemas.OpenAI when Azure is in the candidate list — the openai-format converters no
 // longer apply this default inline.
 //
-// When UnifAIContextKeyRoutingAllowedProviders is set on ctx by an earlier plugin (e.g.,
+// When RakshaContextKeyRoutingAllowedProviders is set on ctx by an earlier plugin (e.g.,
 // governance VK config), the candidate list is intersected with the allowlist before
 // selection — emitting routing-engine logs visible to callers when the allowlist prunes
 // candidates. Side effect: routing-engine logs are written to ctx when allowlist filtering
 // is applied (nil ctx skips logging).
-func ResolveProviderFromCatalog(ctx *schemas.UnifAIContext, catalog *modelcatalog.ModelCatalog, model string) (schemas.ModelProvider, []schemas.ModelProvider) {
+func ResolveProviderFromCatalog(ctx *schemas.RakshaContext, catalog *modelcatalog.ModelCatalog, model string) (schemas.ModelProvider, []schemas.ModelProvider) {
 	if catalog == nil || model == "" {
 		return "", nil
 	}
@@ -158,9 +158,9 @@ func ResolveProviderFromCatalog(ctx *schemas.UnifAIContext, catalog *modelcatalo
 	var allowed []schemas.ModelProvider
 	allowlistSet := false
 	if ctx != nil {
-		integrationType, _ = ctx.Value(schemas.UnifAIContextKeyIntegrationType).(string)
-		isAzureUser, _ = ctx.Value(schemas.UnifAIContextKeyIsAzureUserAgent).(bool)
-		allowed, allowlistSet = ctx.Value(schemas.UnifAIContextKeyRoutingAllowedProviders).([]schemas.ModelProvider)
+		integrationType, _ = ctx.Value(schemas.RakshaContextKeyIntegrationType).(string)
+		isAzureUser, _ = ctx.Value(schemas.RakshaContextKeyIsAzureUserAgent).(bool)
+		allowed, allowlistSet = ctx.Value(schemas.RakshaContextKeyRoutingAllowedProviders).([]schemas.ModelProvider)
 	}
 
 	// Respect the routing-allowlist set by an earlier plugin (e.g., governance VK config):
@@ -230,11 +230,11 @@ func ResolveProviderFromCatalog(ctx *schemas.UnifAIContext, catalog *modelcatalo
 }
 
 // PreLLMHook implements schemas.LLMPlugin (no-op).
-func (p *Plugin) PreLLMHook(_ *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *Plugin) PreLLMHook(_ *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	return req, nil, nil
 }
 
 // PostLLMHook implements schemas.LLMPlugin (no-op).
-func (p *Plugin) PostLLMHook(_ *schemas.UnifAIContext, resp *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
-	return resp, unifaiErr, nil
+func (p *Plugin) PostLLMHook(_ *schemas.RakshaContext, resp *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+	return resp, rakshaErr, nil
 }

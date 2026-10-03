@@ -3,7 +3,7 @@ package streaming
 import (
 	"fmt"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // gateReplayBufMaxBytes caps the per-stream paused replay buffer at 100 MB.
@@ -11,9 +11,9 @@ import (
 // consumer is notified and memory is released.
 const gateReplayBufMaxBytes int64 = 100 * 1024 * 1024
 
-// chunkBytes returns the approximate wire size of a UnifAIStreamChunk via
+// chunkBytes returns the approximate wire size of a RakshaStreamChunk via
 // MarshalJSON. Used only on the paused replay path to bound buffer growth.
-func chunkBytes(chunk *schemas.UnifAIStreamChunk) int64 {
+func chunkBytes(chunk *schemas.RakshaStreamChunk) int64 {
 	if chunk == nil {
 		return 0
 	}
@@ -46,7 +46,7 @@ func (a *Accumulator) ResumeStream(traceID string) {
 // EndStream is the Tracer-level entry point for terminating a stream.
 // Any buffered chunks are flushed first; then if err is non-nil it is delivered
 // as a terminal error chunk. After EndStream, further provider chunks are dropped.
-func (a *Accumulator) EndStream(traceID string, err *schemas.UnifAIError) {
+func (a *Accumulator) EndStream(traceID string, err *schemas.RakshaError) {
 	if traceID == "" {
 		return
 	}
@@ -100,7 +100,7 @@ func (a *Accumulator) IsStreamPaused(traceID string) bool {
 	return sa.gateState == StreamStatePaused
 }
 
-// GetAccumulatedResponse returns a snapshot *schemas.UnifAIResponse built
+// GetAccumulatedResponse returns a snapshot *schemas.RakshaResponse built
 // from chunks accumulated so far for traceID. Built on demand each call; no
 // caching. Detects stream type by which per-type chunk slice is populated.
 // Returns nil if:
@@ -115,7 +115,7 @@ func (a *Accumulator) IsStreamPaused(traceID string) bool {
 // not preserved on the StreamAccumulator (they're per-chunk, not per-stream),
 // so the returned response will have empty values for those fields. The body
 // of the response (Choices/Message/etc.) is fully populated.
-func (a *Accumulator) GetAccumulatedResponse(traceID string) *schemas.UnifAIResponse {
+func (a *Accumulator) GetAccumulatedResponse(traceID string) *schemas.RakshaResponse {
 	if traceID == "" {
 		return nil
 	}
@@ -185,14 +185,14 @@ func (a *Accumulator) GetAccumulatedResponse(traceID string) *schemas.UnifAIResp
 		StreamType: streamType,
 		Data:       data,
 	}
-	return psr.ToUnifAIResponse()
+	return psr.ToRakshaResponse()
 }
 
 // GateSend is the Tracer-level entry point for delivering a stream chunk
 // through the pause/resume/end gate. See Tracer.GateSend in core/schemas for
 // behavior. Returns true if the chunk was handled (delivered or buffered),
 // false if the caller should stop sending.
-func (a *Accumulator) GateSend(traceID string, chunk *schemas.UnifAIStreamChunk, isFinal, isHardErr bool, ch chan *schemas.UnifAIStreamChunk, ctx *schemas.UnifAIContext) bool {
+func (a *Accumulator) GateSend(traceID string, chunk *schemas.RakshaStreamChunk, isFinal, isHardErr bool, ch chan *schemas.RakshaStreamChunk, ctx *schemas.RakshaContext) bool {
 	sa := a.getOrCreateStreamAccumulator(traceID)
 	return sa.GateSend(chunk, isFinal, isHardErr, ch, ctx)
 }
@@ -232,7 +232,7 @@ func (sa *StreamAccumulator) Resume() {
 // the terminal chunk reaches the client. When ch+ctx were never cached
 // (no chunks ever sent), the error is dropped: there is no consumer to
 // deliver it to.
-func (sa *StreamAccumulator) End(err *schemas.UnifAIError) {
+func (sa *StreamAccumulator) End(err *schemas.RakshaError) {
 	sa.mu.Lock()
 	defer sa.mu.Unlock()
 	if sa.gateState == StreamStateEnded {
@@ -263,7 +263,7 @@ func (sa *StreamAccumulator) End(err *schemas.UnifAIError) {
 // and force-flush + transition to Ended; if a flusher is running or chunks are
 // buffered, the final chunk is appended to the buffer so the flusher delivers
 // it in order.
-func (sa *StreamAccumulator) GateSend(chunk *schemas.UnifAIStreamChunk, isFinal, isHardErr bool, ch chan *schemas.UnifAIStreamChunk, ctx *schemas.UnifAIContext) bool {
+func (sa *StreamAccumulator) GateSend(chunk *schemas.RakshaStreamChunk, isFinal, isHardErr bool, ch chan *schemas.RakshaStreamChunk, ctx *schemas.RakshaContext) bool {
 	sa.mu.Lock()
 	sa.gateSeq++
 	// Cache (ch, ctx) for the flusher. They are stable for the life of the stream.
@@ -291,8 +291,8 @@ func (sa *StreamAccumulator) GateSend(chunk *schemas.UnifAIStreamChunk, isFinal,
 			// consumer is notified and memory is released. Drops this chunk
 			// and any further chunks for this stream.
 			sa.gateState = StreamStateEnded
-			sa.gateEndError = &schemas.UnifAIError{
-				IsUnifAIError: true,
+			sa.gateEndError = &schemas.RakshaError{
+				IsRakshaError: true,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr("paused_replay_buffer_overflow"),
 					Message: fmt.Sprintf("paused stream replay buffer exceeded %d bytes — ending stream", gateReplayBufMaxBytes),
@@ -431,7 +431,7 @@ func (sa *StreamAccumulator) gateFlusher() {
 			if sa.gateEndError != nil {
 				ch := sa.gateFlusherCh
 				ctx := sa.gateFlusherCtx
-				errChunk := &schemas.UnifAIStreamChunk{UnifAIError: sa.gateEndError}
+				errChunk := &schemas.RakshaStreamChunk{RakshaError: sa.gateEndError}
 				sa.gateEndError = nil
 				sa.mu.Unlock()
 				_ = sendOrCancel(ctx, ch, errChunk)
@@ -460,7 +460,7 @@ func (sa *StreamAccumulator) WaitForFlusher() {
 // Recovers from "send on closed channel" panics so a consumer that has gone
 // away does not take down the flusher goroutine; the caller treats this as
 // equivalent to ctx-done and finalizes the gate.
-func sendOrCancel(ctx *schemas.UnifAIContext, ch chan *schemas.UnifAIStreamChunk, chunk *schemas.UnifAIStreamChunk) (ok bool) {
+func sendOrCancel(ctx *schemas.RakshaContext, ch chan *schemas.RakshaStreamChunk, chunk *schemas.RakshaStreamChunk) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			ok = false

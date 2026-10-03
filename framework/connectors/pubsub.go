@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	pubsubapi "google.golang.org/api/pubsub/v1"
@@ -67,7 +67,7 @@ func testPubSub(ctx context.Context, cfg Settings) error {
 	if err != nil {
 		return fmt.Errorf("pubsub topic not reachable: %w", err)
 	}
-	payload, _ := sonic.Marshal(map[string]string{"message": "unifai connector test"})
+	payload, _ := sonic.Marshal(map[string]string{"message": "raksha connector test"})
 	_, err = svc.Projects.Topics.Publish(topicName, &pubsubapi.PublishRequest{
 		Messages: []*pubsubapi.PubsubMessage{{
 			Data: base64.StdEncoding.EncodeToString(payload),

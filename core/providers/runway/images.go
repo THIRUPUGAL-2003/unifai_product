@@ -5,27 +5,27 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-// ToRunwayImageGenerationRequest converts a UnifAI image generation request to Runway's text_to_image format.
-func ToRunwayImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequest) (*RunwayImageGenerationRequest, error) {
-	if unifaiReq.Input == nil {
+// ToRunwayImageGenerationRequest converts a Raksha image generation request to Runway's text_to_image format.
+func ToRunwayImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (*RunwayImageGenerationRequest, error) {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
 	// Field support varies by model; only attach what the target model accepts.
-	caps := runwayImageModelCapabilities(unifaiReq.Model)
+	caps := runwayImageModelCapabilities(rakshaReq.Model)
 
 	request := &RunwayImageGenerationRequest{
-		Model:      unifaiReq.Model,
-		PromptText: unifaiReq.Input.Prompt,
-		Ratio:      defaultRunwayImageRatio(unifaiReq.Model),
+		Model:      rakshaReq.Model,
+		PromptText: rakshaReq.Input.Prompt,
+		Ratio:      defaultRunwayImageRatio(rakshaReq.Model),
 	}
 
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		if params.AspectRatio != nil && *params.AspectRatio != "" {
 			request.Ratio = *params.AspectRatio
@@ -98,32 +98,32 @@ func ToRunwayImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequ
 	return request, nil
 }
 
-// ToRunwayImageEditRequest converts a UnifAI image edit request to Runway's text_to_image format.
+// ToRunwayImageEditRequest converts a Raksha image edit request to Runway's text_to_image format.
 // Runway has no dedicated edit endpoint, so the input images are sent as reference images.
-func ToRunwayImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*RunwayImageGenerationRequest, error) {
-	if unifaiReq.Input == nil {
+func ToRunwayImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*RunwayImageGenerationRequest, error) {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
 	// Field support varies by model; only attach what the target model accepts.
-	caps := runwayImageModelCapabilities(unifaiReq.Model)
+	caps := runwayImageModelCapabilities(rakshaReq.Model)
 
 	request := &RunwayImageGenerationRequest{
-		Model:      unifaiReq.Model,
-		PromptText: unifaiReq.Input.Prompt,
-		Ratio:      defaultRunwayImageRatio(unifaiReq.Model),
+		Model:      rakshaReq.Model,
+		PromptText: rakshaReq.Input.Prompt,
+		Ratio:      defaultRunwayImageRatio(rakshaReq.Model),
 	}
 
 	// Map edit input images (raw bytes) to reference images as data URIs.
-	for _, img := range unifaiReq.Input.Images {
+	for _, img := range rakshaReq.Input.Images {
 		if len(img.Image) == 0 {
 			continue
 		}
 		request.ReferenceImages = append(request.ReferenceImages, ReferenceImage{URI: providerUtils.FileBytesToBase64DataURL(img.Image)})
 	}
 
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		if params.Size != nil && *params.Size != "" {
 			// convert 1920x1080 to 1920:1080
@@ -182,13 +182,13 @@ func ToRunwayImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*Runwa
 	return request, nil
 }
 
-// ToUnifAIImageGenerationResponse converts Runway task details to UnifAI image generation response format.
-func ToUnifAIImageGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+// ToRakshaImageGenerationResponse converts Runway task details to Raksha image generation response format.
+func ToRakshaImageGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if taskDetails == nil {
-		return nil, providerUtils.NewUnifAIOperationError("task details is nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("task details is nil", nil)
 	}
 
-	response := &schemas.UnifAIImageGenerationResponse{
+	response := &schemas.RakshaImageGenerationResponse{
 		ID:   taskDetails.ID,
 		Data: []schemas.ImageData{},
 	}

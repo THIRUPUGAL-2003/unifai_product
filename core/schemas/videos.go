@@ -61,7 +61,7 @@ type VideoObject struct {
 
 // --- Video Generation ---
 
-type UnifAIVideoGenerationRequest struct {
+type RakshaVideoGenerationRequest struct {
 	Provider       ModelProvider              `json:"provider"`
 	Model          string                     `json:"model"`
 	Input          *VideoGenerationInput      `json:"input"`
@@ -70,11 +70,11 @@ type UnifAIVideoGenerationRequest struct {
 	RawRequestBody []byte                     `json:"-"`
 }
 
-func (b *UnifAIVideoGenerationRequest) GetRawRequestBody() []byte {
+func (b *RakshaVideoGenerationRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
-func (b *UnifAIVideoGenerationRequest) GetExtraParams() map[string]interface{} {
+func (b *RakshaVideoGenerationRequest) GetExtraParams() map[string]interface{} {
 	if b == nil || b.Params == nil {
 		return nil
 	}
@@ -100,8 +100,8 @@ type VideoGenerationParameters struct {
 // DefaultVideoDuration is the default video duration in seconds for Gemini/Vertex when not specified.
 const DefaultVideoDuration = "8"
 
-// UnifAIVideoGenerationResponse represents the video generation job response in unifai format.
-type UnifAIVideoGenerationResponse struct {
+// RakshaVideoGenerationResponse represents the video generation job response in raksha format.
+type RakshaVideoGenerationResponse struct {
 	ID                 string             `json:"id,omitempty"`
 	CompletedAt        *int64             `json:"completed_at,omitempty"`          // Unix timestamp (seconds) when the job completed
 	CreatedAt          int64              `json:"created_at,omitempty"`            // Unix timestamp (seconds) when the job was created
@@ -118,11 +118,11 @@ type UnifAIVideoGenerationResponse struct {
 	Videos             []VideoOutput      `json:"videos,omitempty"`                // Generated videos (supports multiple videos)
 	ContentFilter      *ContentFilterInfo `json:"content_filter,omitempty"`        // Information about content filtering (if applicable)
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields,omitempty"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields,omitempty"`
 }
 
 // getSecondsFromVideoRequest extracts Seconds from video-related requests.
-func getSecondsFromVideoRequest(req *UnifAIRequest) *string {
+func getSecondsFromVideoRequest(req *RakshaRequest) *string {
 	if req == nil {
 		return nil
 	}
@@ -148,7 +148,7 @@ func getSecondsFromVideoRequest(req *UnifAIRequest) *string {
 // BackfillParams populates response fields from the original request that are needed
 // for cost calculation but may not be returned by the provider.
 // - Seconds (duration from request params or default)
-func (r *UnifAIVideoGenerationResponse) BackfillParams(req *UnifAIRequest) {
+func (r *RakshaVideoGenerationResponse) BackfillParams(req *RakshaRequest) {
 	if r == nil || req == nil {
 		return
 	}
@@ -163,7 +163,7 @@ func (r *UnifAIVideoGenerationResponse) BackfillParams(req *UnifAIRequest) {
 
 // --- Video Remix ---
 
-type UnifAIVideoRemixRequest struct {
+type RakshaVideoRemixRequest struct {
 	ID             string                `json:"id"`
 	Provider       ModelProvider         `json:"provider"`
 	Input          *VideoGenerationInput `json:"input"`
@@ -171,11 +171,11 @@ type UnifAIVideoRemixRequest struct {
 	RawRequestBody []byte                `json:"-"`
 }
 
-func (b *UnifAIVideoRemixRequest) GetRawRequestBody() []byte {
+func (b *RakshaVideoRemixRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
-func (b *UnifAIVideoRemixRequest) GetExtraParams() map[string]interface{} {
+func (b *RakshaVideoRemixRequest) GetExtraParams() map[string]interface{} {
 	if b == nil {
 		return nil
 	}
@@ -184,42 +184,42 @@ func (b *UnifAIVideoRemixRequest) GetExtraParams() map[string]interface{} {
 
 // --- Video List ---
 
-type UnifAIVideoListRequest struct {
+type RakshaVideoListRequest struct {
 	Provider ModelProvider `json:"provider"`
 	After    *string       `json:"after,omitempty"`
 	Limit    *int          `json:"limit,omitempty"`
 	Order    *string       `json:"order,omitempty"`
 }
 
-type UnifAIVideoListResponse struct {
+type RakshaVideoListResponse struct {
 	Object      string                     `json:"object"` // "list"
 	Data        []VideoObject              `json:"data"`
 	FirstID     *string                    `json:"first_id,omitempty"`
 	HasMore     *bool                      `json:"has_more,omitempty"`
 	LastID      *string                    `json:"last_id,omitempty"`
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
 // --- Video Retrieve / Delete ---
 
-type UnifAIVideoReferenceRequest struct {
+type RakshaVideoReferenceRequest struct {
 	Provider ModelProvider `json:"provider"`
 	ID       string        `json:"id"`
 }
 
-type UnifAIVideoDeleteRequest = UnifAIVideoReferenceRequest
-type UnifAIVideoRetrieveRequest = UnifAIVideoReferenceRequest
+type RakshaVideoDeleteRequest = RakshaVideoReferenceRequest
+type RakshaVideoRetrieveRequest = RakshaVideoReferenceRequest
 
-type UnifAIVideoDeleteResponse struct {
+type RakshaVideoDeleteResponse struct {
 	ID          string                     `json:"id"`
 	Deleted     bool                       `json:"deleted"`
 	Object      string                     `json:"object,omitempty"` // "video.deleted"
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
 // --- Video Download ---
 
-type UnifAIVideoDownloadRequest struct {
+type RakshaVideoDownloadRequest struct {
 	Provider    ModelProvider         `json:"provider"`
 	ID          string                `json:"id"`
 	Variant     *VideoDownloadVariant `json:"variant,omitempty"`
@@ -234,12 +234,12 @@ const (
 	VideoDownloadVariantSpriteSheet VideoDownloadVariant = "sprite_sheet"
 )
 
-type UnifAIVideoDownloadResponse struct {
+type RakshaVideoDownloadResponse struct {
 	VideoID     string `json:"video_id"`
 	Content     []byte `json:"-"`                      // Raw video content (not serialized)
 	ContentType string `json:"content_type,omitempty"` // MIME type (e.g., "video/mp4", "image/png" for thumbnails)
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
 type VideoLogParams struct {

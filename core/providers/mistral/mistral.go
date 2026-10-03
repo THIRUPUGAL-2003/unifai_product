@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/providers/openai"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/openai"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -23,8 +23,8 @@ type MistralProvider struct {
 	streamingClient      *fasthttp.Client      // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig // Network configuration including extra headers
 	customProviderConfig *schemas.CustomProviderConfig
-	sendBackRawRequest   bool // Whether to include raw request in UnifAIResponse
-	sendBackRawResponse  bool // Whether to include raw response in UnifAIResponse
+	sendBackRawRequest   bool // Whether to include raw request in RakshaResponse
+	sendBackRawResponse  bool // Whether to include raw response in RakshaResponse
 }
 
 // NewMistralProvider creates a new Mistral provider instance.
@@ -46,7 +46,7 @@ func NewMistralProvider(config *schemas.ProviderConfig, logger schemas.Logger) *
 
 	// Pre-warm response pools
 	// for range config.ConcurrencyAndBufferSize.Concurrency {
-	// 	mistralResponsePool.Put(&schemas.UnifAIResponse{})
+	// 	mistralResponsePool.Put(&schemas.RakshaResponse{})
 	// }
 
 	// Configure proxy and retry policy
@@ -78,7 +78,7 @@ func (provider *MistralProvider) GetProviderKey() schemas.ModelProvider {
 
 // listModelsByKey performs a list models request for a single key.
 // Returns the response and latency, or an error if the request fails.
-func (provider *MistralProvider) listModelsByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -96,16 +96,16 @@ func (provider *MistralProvider) listModelsByKey(ctx *schemas.UnifAIContext, key
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
-		unifaiErr := providerUtils.SetErrorLatency(ParseMistralError(resp), latency)
-		return nil, unifaiErr
+		rakshaErr := providerUtils.SetErrorLatency(ParseMistralError(resp), latency)
+		return nil, rakshaErr
 	}
 
 	// Copy response body before releasing
@@ -113,13 +113,13 @@ func (provider *MistralProvider) listModelsByKey(ctx *schemas.UnifAIContext, key
 
 	// Parse Mistral's response
 	var mistralResponse MistralListModelsResponse
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &mistralResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &mistralResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create final response
-	response := mistralResponse.ToUnifAIListModelsResponse(key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	response := mistralResponse.ToRakshaListModelsResponse(key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 
 	response.ExtraFields.Latency = latency.Milliseconds()
 
@@ -138,7 +138,7 @@ func (provider *MistralProvider) listModelsByKey(ctx *schemas.UnifAIContext, key
 
 // ListModels performs a list models request to Mistral's API.
 // Requests are made concurrently for improved performance.
-func (provider *MistralProvider) ListModels(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	return providerUtils.HandleMultipleListModelsRequests(
 		ctx,
 		keys,
@@ -148,14 +148,14 @@ func (provider *MistralProvider) ListModels(ctx *schemas.UnifAIContext, keys []s
 }
 
 // TextCompletion is not supported by the Mistral provider.
-func (provider *MistralProvider) TextCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITextCompletionRequest) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
 // TextCompletionStream performs a streaming text completion request to Mistral's API.
 // It formats the request, sends it to Mistral, and processes the response.
-// Returns a channel of UnifAIStreamChunk objects or an error if the request fails.
-func (provider *MistralProvider) TextCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITextCompletionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
+func (provider *MistralProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
@@ -164,7 +164,7 @@ func (provider *MistralProvider) TextCompletionStream(ctx *schemas.UnifAIContext
 // BaseProviderType=Mistral), it returns a shallow copy with Provider set to schemas.Mistral
 // so the shared OpenAI converter applies Mistral-specific compatibility (max_completion_tokens
 // → max_tokens, tool_choice struct → "any"). The caller's request is never mutated.
-func (provider *MistralProvider) normalizeChatRequestForConversion(request *schemas.UnifAIChatRequest) *schemas.UnifAIChatRequest {
+func (provider *MistralProvider) normalizeChatRequestForConversion(request *schemas.RakshaChatRequest) *schemas.RakshaChatRequest {
 	if request == nil || provider.customProviderConfig == nil || request.Provider == schemas.Mistral {
 		return request
 	}
@@ -174,7 +174,7 @@ func (provider *MistralProvider) normalizeChatRequestForConversion(request *sche
 }
 
 // ChatCompletion performs a chat completion request to the Mistral API.
-func (provider *MistralProvider) ChatCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	return openai.HandleOpenAIChatCompletionRequest(
 		ctx,
 		provider.client,
@@ -195,8 +195,8 @@ func (provider *MistralProvider) ChatCompletion(ctx *schemas.UnifAIContext, key 
 // ChatCompletionStream performs a streaming chat completion request to the Mistral API.
 // It supports real-time streaming of responses using Server-Sent Events (SSE).
 // Uses Mistral's OpenAI-compatible streaming format.
-// Returns a channel containing UnifAIStreamChunk objects representing the stream or an error if the request fails.
-func (provider *MistralProvider) ChatCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIChatRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel containing RakshaStreamChunk objects representing the stream or an error if the request fails.
+func (provider *MistralProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return openai.HandleOpenAIChatCompletionStreaming(
 		ctx,
 		provider.streamingClient,
@@ -221,20 +221,20 @@ func (provider *MistralProvider) ChatCompletionStream(ctx *schemas.UnifAIContext
 }
 
 // Responses performs a responses request to the Mistral API.
-func (provider *MistralProvider) Responses(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	chatResponse, err := provider.ChatCompletion(ctx, key, request.ToChatRequest())
 	if err != nil {
 		return nil, err
 	}
 
-	response := chatResponse.ToUnifAIResponsesResponse()
+	response := chatResponse.ToRakshaResponsesResponse()
 
 	return response, nil
 }
 
 // ResponsesStream performs a streaming responses request to the Mistral API.
-func (provider *MistralProvider) ResponsesStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIResponsesRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-	ctx.SetValue(schemas.UnifAIContextKeyIsResponsesToChatCompletionFallback, true)
+func (provider *MistralProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	ctx.SetValue(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback, true)
 	return provider.ChatCompletionStream(
 		ctx,
 		postHookRunner,
@@ -245,8 +245,8 @@ func (provider *MistralProvider) ResponsesStream(ctx *schemas.UnifAIContext, pos
 }
 
 // Embedding generates embeddings for the given input text(s) using the Mistral API.
-// Supports Mistral's embedding models and returns a UnifAIResponse containing the embedding(s).
-func (provider *MistralProvider) Embedding(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIEmbeddingRequest) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+// Supports Mistral's embedding models and returns a RakshaResponse containing the embedding(s).
+func (provider *MistralProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 	// Use the shared embedding request handler
 	return openai.HandleOpenAIEmbeddingRequest(
 		ctx,
@@ -264,29 +264,29 @@ func (provider *MistralProvider) Embedding(ctx *schemas.UnifAIContext, key schem
 }
 
 // Speech is not supported by the Mistral provider.
-func (provider *MistralProvider) Speech(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAISpeechRequest) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the Mistral provider.
-func (provider *MistralProvider) SpeechStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAISpeechRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *MistralProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
 // Transcription performs an audio transcription request to the Mistral API.
 // It creates a multipart form with the audio file and sends it to Mistral's transcription endpoint.
 // Returns the transcribed text and metadata, or an error if the request fails.
-func (provider *MistralProvider) Transcription(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITranscriptionRequest) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
-	// Convert UnifAI request to Mistral format
+func (provider *MistralProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+	// Convert Raksha request to Mistral format
 	mistralReq := ToMistralTranscriptionRequest(request)
 	if mistralReq == nil {
-		return nil, providerUtils.NewUnifAIOperationError("transcription input is not provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("transcription input is not provided", nil)
 	}
 
 	// Create multipart form body
-	body, contentType, unifaiErr := createMistralTranscriptionMultipartBody(mistralReq, provider.GetProviderKey())
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	body, contentType, rakshaErr := createMistralTranscriptionMultipartBody(mistralReq, provider.GetProviderKey())
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request
@@ -308,10 +308,10 @@ func (provider *MistralProvider) Transcription(ctx *schemas.UnifAIContext, key s
 	req.SetBody(body.Bytes())
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -321,14 +321,14 @@ func (provider *MistralProvider) Transcription(ctx *schemas.UnifAIContext, key s
 
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -341,21 +341,21 @@ func (provider *MistralProvider) Transcription(ctx *schemas.UnifAIContext, key s
 	var mistralResponse MistralTranscriptionResponse
 	if err := sonic.Unmarshal(copiedResponseBody, &mistralResponse); err != nil {
 		if providerUtils.IsHTMLResponse(resp, copiedResponseBody) {
-			return nil, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderResponseHTML,
 					Error:   errors.New(string(copiedResponseBody)),
 				},
 			}
 		}
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	// Convert to UnifAI format
-	response := mistralResponse.ToUnifAITranscriptionResponse()
+	// Convert to Raksha format
+	response := mistralResponse.ToRakshaTranscriptionResponse()
 	if response == nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to convert transcription response", nil)
+		return nil, providerUtils.NewRakshaOperationError("failed to convert transcription response", nil)
 	}
 
 	// Set extra fields
@@ -374,21 +374,21 @@ func (provider *MistralProvider) Transcription(ctx *schemas.UnifAIContext, key s
 
 // TranscriptionStream performs a streaming transcription request to Mistral's API.
 // It creates a multipart form with the audio file and streams transcription events.
-// Returns a channel of UnifAIStreamChunk objects containing transcription deltas.
-func (provider *MistralProvider) TranscriptionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITranscriptionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel of RakshaStreamChunk objects containing transcription deltas.
+func (provider *MistralProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 
-	// Convert UnifAI request to Mistral format
+	// Convert Raksha request to Mistral format
 	mistralReq := ToMistralTranscriptionRequest(request)
 	if mistralReq == nil {
-		return nil, providerUtils.NewUnifAIOperationError("transcription input is not provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("transcription input is not provided", nil)
 	}
 	mistralReq.Stream = schemas.Ptr(true)
 
 	// Create multipart form body with stream=true
-	body, contentType, unifaiErr := createMistralTranscriptionMultipartBody(mistralReq, providerName)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	body, contentType, rakshaErr := createMistralTranscriptionMultipartBody(mistralReq, providerName)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Prepare headers for streaming
@@ -428,8 +428,8 @@ func (provider *MistralProvider) TranscriptionStream(ctx *schemas.UnifAIContext,
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -438,17 +438,17 @@ func (provider *MistralProvider) TranscriptionStream(ctx *schemas.UnifAIContext,
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -458,13 +458,13 @@ func (provider *MistralProvider) TranscriptionStream(ctx *schemas.UnifAIContext,
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -511,7 +511,7 @@ func (provider *MistralProvider) TranscriptionStream(ctx *schemas.UnifAIContext,
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
@@ -528,7 +528,7 @@ func (provider *MistralProvider) TranscriptionStream(ctx *schemas.UnifAIContext,
 			provider.processTranscriptionStreamEvent(ctx, postHookRunner, currentEvent, currentData, chunkIndex, startTime, &lastChunkTime, responseChan, postHookSpanFinalizer)
 			// Break on terminal stream indicator (covers both done events and error events
 			// that processTranscriptionStreamEvent signals via context).
-			if ended, _ := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator).(bool); ended {
+			if ended, _ := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator).(bool); ended {
 				break
 			}
 		}
@@ -539,14 +539,14 @@ func (provider *MistralProvider) TranscriptionStream(ctx *schemas.UnifAIContext,
 
 // processTranscriptionStreamEvent processes a single SSE event and sends it to the response channel.
 func (provider *MistralProvider) processTranscriptionStreamEvent(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	eventType string,
 	jsonData string,
 	chunkIndex int,
 	startTime time.Time,
 	lastChunkTime *time.Time,
-	responseChan chan *schemas.UnifAIStreamChunk,
+	responseChan chan *schemas.RakshaStreamChunk,
 	postHookSpanFinalizer func(context.Context),
 ) {
 	// Skip empty data
@@ -557,11 +557,11 @@ func (provider *MistralProvider) processTranscriptionStreamEvent(
 	// Quick check for error field (allocation-free using sonic.GetFromString)
 	if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 		// Only unmarshal when we know there's an error
-		var unifaiErr schemas.UnifAIError
-		if err := sonic.UnmarshalString(jsonData, &unifaiErr); err == nil {
-			if unifaiErr.Error != nil && unifaiErr.Error.Message != "" {
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, &unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+		var rakshaErr schemas.RakshaError
+		if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
+			if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, &rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 				return
 			}
 		}
@@ -580,14 +580,14 @@ func (provider *MistralProvider) processTranscriptionStreamEvent(
 		Data:  &eventData,
 	}
 
-	// Convert to UnifAI format
-	response := streamEvent.ToUnifAITranscriptionStreamResponse()
+	// Convert to Raksha format
+	response := streamEvent.ToRakshaTranscriptionStreamResponse()
 	if response == nil {
 		return
 	}
 
 	// Set extra fields
-	response.ExtraFields = schemas.UnifAIResponseExtraFields{
+	response.ExtraFields = schemas.RakshaResponseExtraFields{
 		ChunkIndex: chunkIndex,
 		Latency:    time.Since(*lastChunkTime).Milliseconds(),
 	}
@@ -600,39 +600,39 @@ func (provider *MistralProvider) processTranscriptionStreamEvent(
 	// Check for done event (handle both "transcription.done" and "transcript.text.done")
 	if MistralTranscriptionStreamEventType(eventType) == MistralTranscriptionStreamEventDone || eventType == "transcript.text.done" {
 		response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-		ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 		// Ensure response type is set to Done
 		response.Type = schemas.TranscriptionStreamResponseTypeDone
 	}
 
-	providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+	providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 }
 
 // Rerank is not supported by the Mistral provider.
-func (provider *MistralProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIRerankRequest) (*schemas.UnifAIRerankResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR performs an OCR request to the Mistral API.
 // It sends a JSON request to Mistral's OCR endpoint and returns the extracted content.
-func (provider *MistralProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIOCRRequest) (*schemas.UnifAIOCRResponse, *schemas.UnifAIError) {
-	// Convert UnifAI request to Mistral format
+func (provider *MistralProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+	// Convert Raksha request to Mistral format
 	mistralReq := ToMistralOCRRequest(request)
 	if mistralReq == nil {
-		return nil, providerUtils.NewUnifAIOperationError("ocr request input is not provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("ocr request input is not provided", nil)
 	}
 
 	// Marshal request body
 	requestBody, err := sonic.Marshal(mistralReq)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 
 	// Merge extra params into JSON payload
 	if len(mistralReq.ExtraParams) > 0 {
 		requestBody, err = providerUtils.MergeExtraParamsIntoJSON(requestBody, mistralReq.ExtraParams)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderRequestMarshal, err)
+			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
 		}
 	}
 
@@ -660,10 +660,10 @@ func (provider *MistralProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -673,14 +673,14 @@ func (provider *MistralProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key
 
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -693,21 +693,21 @@ func (provider *MistralProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key
 	var mistralResponse MistralOCRResponse
 	if err := sonic.Unmarshal(copiedResponseBody, &mistralResponse); err != nil {
 		if providerUtils.IsHTMLResponse(resp, copiedResponseBody) {
-			return nil, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderResponseHTML,
 					Error:   errors.New(string(copiedResponseBody)),
 				},
 			}
 		}
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	// Convert to UnifAI format
-	response := mistralResponse.ToUnifAIOCRResponse()
+	// Convert to Raksha format
+	response := mistralResponse.ToRakshaOCRResponse()
 	if response == nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to convert ocr response", nil)
+		return nil, providerUtils.NewRakshaOperationError("failed to convert ocr response", nil)
 	}
 
 	// Set extra fields
@@ -725,175 +725,175 @@ func (provider *MistralProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key
 }
 
 // BatchCreate is not supported by Mistral provider.
-func (provider *MistralProvider) BatchCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIBatchCreateRequest) (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by Mistral provider.
-func (provider *MistralProvider) BatchList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by Mistral provider.
-func (provider *MistralProvider) BatchRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchRetrieveRequest) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by Mistral provider.
-func (provider *MistralProvider) BatchCancel(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by Mistral provider.
-func (provider *MistralProvider) BatchDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by Mistral provider.
-func (provider *MistralProvider) BatchResults(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // FileUpload is not supported by Mistral provider.
-func (provider *MistralProvider) FileUpload(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIFileUploadRequest) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) FileUpload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileUploadRequest, provider.GetProviderKey())
 }
 
 // FileList is not supported by Mistral provider.
-func (provider *MistralProvider) FileList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileListRequest) (*schemas.UnifAIFileListResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) FileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileListRequest, provider.GetProviderKey())
 }
 
 // FileRetrieve is not supported by Mistral provider.
-func (provider *MistralProvider) FileRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) FileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileRetrieveRequest, provider.GetProviderKey())
 }
 
 // FileDelete is not supported by Mistral provider.
-func (provider *MistralProvider) FileDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) FileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileDeleteRequest, provider.GetProviderKey())
 }
 
 // FileContent is not supported by Mistral provider.
-func (provider *MistralProvider) FileContent(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIFileContentRequest) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) FileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
 // CountTokens is not supported by the Mistral provider.
-func (provider *MistralProvider) CountTokens(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIResponsesRequest) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the Mistral provider.
-func (provider *MistralProvider) Compaction(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICompactionRequest) (*schemas.UnifAICompactionResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ImageGeneration is not supported by the Mistral provider.
-func (provider *MistralProvider) ImageGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationRequest, provider.GetProviderKey())
 }
 
 // ImageGenerationStream is not supported by the Mistral provider.
-func (provider *MistralProvider) ImageGenerationStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *MistralProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit is not supported by the Mistral provider.
-func (provider *MistralProvider) ImageEdit(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageEditRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditRequest, provider.GetProviderKey())
 }
 
 // ImageEditStream is not supported by the Mistral provider.
-func (provider *MistralProvider) ImageEditStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageEditRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *MistralProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the Mistral provider.
-func (provider *MistralProvider) ImageVariation(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageVariationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration is not supported by the Mistral provider.
-func (provider *MistralProvider) VideoGeneration(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoGenerationRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) VideoGeneration(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoGenerationRequest, provider.GetProviderKey())
 }
 
 // VideoRetrieve is not supported by the Mistral provider.
-func (provider *MistralProvider) VideoRetrieve(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoRetrieveRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) VideoRetrieve(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRetrieveRequest, provider.GetProviderKey())
 }
 
 // VideoDownload is not supported by the Mistral provider.
-func (provider *MistralProvider) VideoDownload(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoDownloadRequest) (*schemas.UnifAIVideoDownloadResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) VideoDownload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDownloadRequest, provider.GetProviderKey())
 }
 
 // VideoDelete is not supported by the Mistral provider.
-func (provider *MistralProvider) VideoDelete(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoDeleteRequest) (*schemas.UnifAIVideoDeleteResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the Mistral provider.
-func (provider *MistralProvider) VideoList(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoListRequest) (*schemas.UnifAIVideoListResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the Mistral provider.
-func (provider *MistralProvider) VideoRemix(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoRemixRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerCreateRequest) (*schemas.UnifAIContainerCreateResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerListRequest) (*schemas.UnifAIContainerListResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerRetrieveRequest) (*schemas.UnifAIContainerRetrieveResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerDeleteRequest) (*schemas.UnifAIContainerDeleteResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerFileCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerFileCreateRequest) (*schemas.UnifAIContainerFileCreateResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerFileList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileListRequest) (*schemas.UnifAIContainerFileListResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerFileRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileRetrieveRequest) (*schemas.UnifAIContainerFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerFileContent(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileContentRequest) (*schemas.UnifAIContainerFileContentResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Mistral provider.
-func (provider *MistralProvider) ContainerFileDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileDeleteRequest) (*schemas.UnifAIContainerFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Mistral provider.
-func (provider *MistralProvider) Passthrough(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIPassthroughRequest) (*schemas.UnifAIPassthroughResponse, *schemas.UnifAIError) {
+func (provider *MistralProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *MistralProvider) PassthroughStream(_ *schemas.UnifAIContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.UnifAIPassthroughRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *MistralProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

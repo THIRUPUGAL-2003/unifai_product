@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/option"

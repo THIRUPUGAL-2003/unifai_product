@@ -3,29 +3,29 @@ package openai
 import (
 	"maps"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToOpenAITextCompletionRequest converts a UnifAI text completion request to OpenAI format
-func ToOpenAITextCompletionRequest(unifaiReq *schemas.UnifAITextCompletionRequest) *OpenAITextCompletionRequest {
-	if unifaiReq == nil {
+// ToOpenAITextCompletionRequest converts a Raksha text completion request to OpenAI format
+func ToOpenAITextCompletionRequest(rakshaReq *schemas.RakshaTextCompletionRequest) *OpenAITextCompletionRequest {
+	if rakshaReq == nil {
 		return nil
 	}
-	params := unifaiReq.Params
+	params := rakshaReq.Params
 	openaiReq := &OpenAITextCompletionRequest{
-		Model:  unifaiReq.Model,
-		Prompt: unifaiReq.Input,
+		Model:  rakshaReq.Model,
+		Prompt: rakshaReq.Input,
 	}
 	if params != nil {
 		openaiReq.TextCompletionParameters = *params
 		// Drop user field if it exceeds OpenAI's 64 character limit
 		openaiReq.TextCompletionParameters.User = SanitizeUserField(openaiReq.TextCompletionParameters.User)
-		if unifaiReq.Params.ExtraParams != nil {
-			openaiReq.ExtraParams = maps.Clone(unifaiReq.Params.ExtraParams)
+		if rakshaReq.Params.ExtraParams != nil {
+			openaiReq.ExtraParams = maps.Clone(rakshaReq.Params.ExtraParams)
 			openaiReq.TextCompletionParameters.ExtraParams = openaiReq.ExtraParams
 		}
 	}
-	if unifaiReq.Provider == schemas.Fireworks {
+	if rakshaReq.Provider == schemas.Fireworks {
 		openaiReq.applyFireworksTextCompletionCompatibility()
 	}
 	return openaiReq
@@ -56,15 +56,15 @@ func (req *OpenAITextCompletionRequest) applyFireworksTextCompletionCompatibilit
 	req.TextCompletionParameters.ExtraParams = req.ExtraParams
 }
 
-// ToUnifAITextCompletionRequest converts an OpenAI text completion request to UnifAI format
-func (req *OpenAITextCompletionRequest) ToUnifAITextCompletionRequest(ctx *schemas.UnifAIContext) *schemas.UnifAITextCompletionRequest {
+// ToRakshaTextCompletionRequest converts an OpenAI text completion request to Raksha format
+func (req *OpenAITextCompletionRequest) ToRakshaTextCompletionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTextCompletionRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	return &schemas.UnifAITextCompletionRequest{
+	return &schemas.RakshaTextCompletionRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     req.Prompt,

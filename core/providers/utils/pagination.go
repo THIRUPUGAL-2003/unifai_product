@@ -1,7 +1,7 @@
 package utils
 
 import (
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // SerialListHelper manages serial key pagination for list operations.

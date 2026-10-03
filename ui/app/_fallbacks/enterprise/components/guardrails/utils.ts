@@ -97,7 +97,7 @@ export function formatRuleConnectionPreview(opts: {
 	const phase =
 		opts.applyTo === "both" ? "user input and model output" : opts.applyTo === "output" ? "model output" : "user input";
 	const providers = opts.providerLabels.length > 0 ? opts.providerLabels.join(", ") : "no providers selected";
-	let when = "every chat/completions request through UnifAI";
+	let when = "every chat/completions request through Raksha";
 	if (opts.promptScope === "prompts") {
 		const names = opts.selectedPromptIds.map((id) => opts.promptNameById.get(id) || id).filter(Boolean);
 		when = names.length

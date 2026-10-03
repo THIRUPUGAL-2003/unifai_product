@@ -1,5 +1,5 @@
 @echo off
-title Stop UnifAI Security Proxy
+title Stop Raksha Security Proxy
 echo ====================================================
 echo   Disabling Windows System Proxy ^& Stopping Agent...
 echo ====================================================
@@ -10,7 +10,7 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v Pr
 rem Terminate any running mitmweb or mitmdump background processes
 taskkill /F /IM mitmdump.exe >nul 2>&1
 taskkill /F /IM mitmweb.exe >nul 2>&1
-taskkill /F /IM UnifAI_Guard.exe >nul 2>&1
+taskkill /F /IM Raksha_Guard.exe >nul 2>&1
 
 echo ====================================================
 echo SUCCESS: Windows System Proxy disabled!

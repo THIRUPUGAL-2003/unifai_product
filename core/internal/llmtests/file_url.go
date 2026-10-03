@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // CreateFileURLChatMessage creates a ChatMessage with a file URL
@@ -16,11 +16,11 @@ func CreateFileURLChatMessage(text, fileURL string) schemas.ChatMessage {
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
 			ContentBlocks: []schemas.ChatContentBlock{
-				{Type: schemas.ChatContentBlockTypeText, Text: unifai.Ptr(text)},
+				{Type: schemas.ChatContentBlockTypeText, Text: raksha.Ptr(text)},
 				{
 					Type: schemas.ChatContentBlockTypeFile,
 					File: &schemas.ChatInputFile{
-						FileURL: unifai.Ptr(fileURL),
+						FileURL: raksha.Ptr(fileURL),
 					},
 				},
 			},
@@ -31,15 +31,15 @@ func CreateFileURLChatMessage(text, fileURL string) schemas.ChatMessage {
 // CreateFileURLResponsesMessage creates a ResponsesMessage with a file URL
 func CreateFileURLResponsesMessage(text, fileURL string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: unifai.Ptr(schemas.ResponsesMessageTypeMessage),
-		Role: unifai.Ptr(schemas.ResponsesInputMessageRoleUser),
+		Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
+		Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
 		Content: &schemas.ResponsesMessageContent{
 			ContentBlocks: []schemas.ResponsesMessageContentBlock{
-				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: unifai.Ptr(text)},
+				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: raksha.Ptr(text)},
 				{
 					Type: schemas.ResponsesInputMessageContentBlockTypeFile,
 					ResponsesInputMessageContentBlockFile: &schemas.ResponsesInputMessageContentBlockFile{
-						FileURL: unifai.Ptr(fileURL),
+						FileURL: raksha.Ptr(fileURL),
 					},
 				},
 			},
@@ -48,7 +48,7 @@ func CreateFileURLResponsesMessage(text, fileURL string) schemas.ResponsesMessag
 }
 
 // RunFileURLTest executes the file URL input test scenario with separate subtests for each API
-func RunFileURLTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileURLTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileURL {
 		t.Logf("File URL not supported for provider %s", testConfig.Provider)
 		return
@@ -62,7 +62,7 @@ func RunFileURLTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, te
 }
 
 // RunFileURLChatCompletionsTest executes the file URL test using Chat Completions API
-func RunFileURLChatCompletionsTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileURLChatCompletionsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileURL {
 		t.Logf("File URL not supported for provider %s", testConfig.Provider)
 		return
@@ -124,14 +124,14 @@ func RunFileURLChatCompletionsTest(t *testing.T, client *unifai.UnifAI, ctx cont
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "FileURL", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "FileURL", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(500),
+					MaxCompletionTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -151,7 +151,7 @@ func RunFileURLChatCompletionsTest(t *testing.T, client *unifai.UnifAI, ctx cont
 }
 
 // RunFileURLResponsesTest executes the file URL test using Responses API
-func RunFileURLResponsesTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileURLResponsesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileURL {
 		t.Logf("File URL not supported for provider %s", testConfig.Provider)
 		return
@@ -199,14 +199,14 @@ func RunFileURLResponsesTest(t *testing.T, client *unifai.UnifAI, ctx context.Co
 
 		responsesRetryConfig := FileInputResponsesRetryConfig()
 
-		response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "FileURL", func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "FileURL", func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(500),
+					MaxOutputTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}

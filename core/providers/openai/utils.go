@@ -3,25 +3,25 @@ package openai
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// CustomResponseHandler is a function that produces a UnifAI response from a UnifAI request.
-// T is the concrete UnifAI response type (e.g. UnifAIEmbeddingResponse, UnifAITextCompletionResponse, UnifAIChatResponse, UnifAIResponsesResponse, UnifAIImageGenerationResponse, UnifAITranscriptionResponse).
-type responseHandler[T any] func(responseBody []byte, response *T, requestBody []byte, sendBackRawRequest bool, sendBackRawResponse bool) (rawRequest interface{}, rawResponse interface{}, unifaiErr *schemas.UnifAIError)
+// CustomResponseHandler is a function that produces a Raksha response from a Raksha request.
+// T is the concrete Raksha response type (e.g. RakshaEmbeddingResponse, RakshaTextCompletionResponse, RakshaChatResponse, RakshaResponsesResponse, RakshaImageGenerationResponse, RakshaTranscriptionResponse).
+type responseHandler[T any] func(responseBody []byte, response *T, requestBody []byte, sendBackRawRequest bool, sendBackRawResponse bool) (rawRequest interface{}, rawResponse interface{}, rakshaErr *schemas.RakshaError)
 
-func ConvertOpenAIMessagesToUnifAIMessages(messages []OpenAIMessage) []schemas.ChatMessage {
-	unifaiMessages := make([]schemas.ChatMessage, len(messages))
+func ConvertOpenAIMessagesToRakshaMessages(messages []OpenAIMessage) []schemas.ChatMessage {
+	rakshaMessages := make([]schemas.ChatMessage, len(messages))
 	for i, message := range messages {
-		unifaiMessages[i] = schemas.ChatMessage{
+		rakshaMessages[i] = schemas.ChatMessage{
 			Name:            message.Name,
 			Role:            message.Role,
 			Content:         message.Content,
 			ChatToolMessage: message.ChatToolMessage,
 		}
 		if message.OpenAIChatAssistantMessage != nil {
-			unifaiMessages[i].ChatAssistantMessage = &schemas.ChatAssistantMessage{
+			rakshaMessages[i].ChatAssistantMessage = &schemas.ChatAssistantMessage{
 				Refusal:     message.OpenAIChatAssistantMessage.Refusal,
 				Reasoning:   message.OpenAIChatAssistantMessage.Reasoning,
 				Annotations: message.OpenAIChatAssistantMessage.Annotations,
@@ -29,10 +29,10 @@ func ConvertOpenAIMessagesToUnifAIMessages(messages []OpenAIMessage) []schemas.C
 			}
 		}
 	}
-	return unifaiMessages
+	return rakshaMessages
 }
 
-func ConvertUnifAIMessagesToOpenAIMessages(messages []schemas.ChatMessage) []OpenAIMessage {
+func ConvertRakshaMessagesToOpenAIMessages(messages []schemas.ChatMessage) []OpenAIMessage {
 	openaiMessages := make([]OpenAIMessage, len(messages))
 	for i, message := range messages {
 		openaiMessages[i] = OpenAIMessage{

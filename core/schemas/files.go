@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the UnifAI system.
+// Package schemas defines the core schemas and types used by the Raksha system.
 package schemas
 
 // FilePurpose represents the purpose of an uploaded file.
@@ -51,8 +51,8 @@ type FileObject struct {
 	ExpiresAt     *int64      `json:"expires_at,omitempty"`
 }
 
-// UnifAIFileUploadRequest represents a request to upload a file.
-type UnifAIFileUploadRequest struct {
+// RakshaFileUploadRequest represents a request to upload a file.
+type RakshaFileUploadRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -98,8 +98,8 @@ type FileStorageConfig struct {
 	GCS *GCSStorageConfig `json:"gcs,omitempty"`
 }
 
-// UnifAIFileUploadResponse represents the response from uploading a file.
-type UnifAIFileUploadResponse struct {
+// RakshaFileUploadResponse represents the response from uploading a file.
+type RakshaFileUploadResponse struct {
 	ID            string      `json:"id"`
 	Object        string      `json:"object,omitempty"` // "file"
 	Bytes         int64       `json:"bytes"`
@@ -115,14 +115,14 @@ type UnifAIFileUploadResponse struct {
 	StorageURI     string             `json:"storage_uri,omitempty"` // S3/GCS URI if applicable
 
 	// GCS resumable upload session URL (Vertex only, set when File bytes are not provided).
-	// Client PUTs file bytes directly to this URL; UnifAI stays out of the data path.
+	// Client PUTs file bytes directly to this URL; Raksha stays out of the data path.
 	UploadURL *string `json:"upload_url,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIFileListRequest represents a request to list files.
-type UnifAIFileListRequest struct {
+// RakshaFileListRequest represents a request to list files.
+type RakshaFileListRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -144,22 +144,22 @@ type UnifAIFileListRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIFileListRequest) GetRawRequestBody() []byte {
+func (request *RakshaFileListRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIFileListResponse represents the response from listing files.
-type UnifAIFileListResponse struct {
+// RakshaFileListResponse represents the response from listing files.
+type RakshaFileListResponse struct {
 	Object  string       `json:"object,omitempty"` // "list"
 	Data    []FileObject `json:"data"`
 	HasMore bool         `json:"has_more,omitempty"`
 	After   *string      `json:"after,omitempty"` // Continuation token for pagination
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIFileRetrieveRequest represents a request to retrieve file metadata.
-type UnifAIFileRetrieveRequest struct {
+// RakshaFileRetrieveRequest represents a request to retrieve file metadata.
+type RakshaFileRetrieveRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -175,12 +175,12 @@ type UnifAIFileRetrieveRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIFileRetrieveRequest) GetRawRequestBody() []byte {
+func (request *RakshaFileRetrieveRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIFileRetrieveResponse represents the response from retrieving file metadata.
-type UnifAIFileRetrieveResponse struct {
+// RakshaFileRetrieveResponse represents the response from retrieving file metadata.
+type RakshaFileRetrieveResponse struct {
 	ID            string      `json:"id"`
 	Object        string      `json:"object,omitempty"` // "file"
 	Bytes         int64       `json:"bytes"`
@@ -196,11 +196,11 @@ type UnifAIFileRetrieveResponse struct {
 	StorageBackend FileStorageBackend `json:"storage_backend,omitempty"`
 	StorageURI     string             `json:"storage_uri,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIFileDeleteRequest represents a request to delete a file.
-type UnifAIFileDeleteRequest struct {
+// RakshaFileDeleteRequest represents a request to delete a file.
+type RakshaFileDeleteRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	FileID   string        `json:"file_id"` // ID of the file to delete
@@ -215,21 +215,21 @@ type UnifAIFileDeleteRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIFileDeleteRequest) GetRawRequestBody() []byte {
+func (request *RakshaFileDeleteRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIFileDeleteResponse represents the response from deleting a file.
-type UnifAIFileDeleteResponse struct {
+// RakshaFileDeleteResponse represents the response from deleting a file.
+type RakshaFileDeleteResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object,omitempty"` // "file"
 	Deleted bool   `json:"deleted"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIFileContentRequest represents a request to download file content.
-type UnifAIFileContentRequest struct {
+// RakshaFileContentRequest represents a request to download file content.
+type RakshaFileContentRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	FileID   string        `json:"file_id"` // ID of the file to download
@@ -244,15 +244,15 @@ type UnifAIFileContentRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIFileContentRequest) GetRawRequestBody() []byte {
+func (request *RakshaFileContentRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIFileContentResponse represents the response from downloading file content.
-type UnifAIFileContentResponse struct {
+// RakshaFileContentResponse represents the response from downloading file content.
+type RakshaFileContentResponse struct {
 	FileID      string `json:"file_id"`
 	Content     []byte `json:"-"`                      // Raw file content (not serialized)
 	ContentType string `json:"content_type,omitempty"` // MIME type
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }

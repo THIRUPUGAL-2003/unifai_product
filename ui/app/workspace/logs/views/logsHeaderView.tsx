@@ -221,7 +221,7 @@ async function recalculateCostsWithProgress(
 	};
 	const tempToken = getActiveTempToken();
 	if (tempToken) {
-		headers["X-UnifAI-Temp-Token"] = tempToken;
+		headers["X-Raksha-Temp-Token"] = tempToken;
 	}
 
 	const response = await fetch(`${getApiBaseUrl()}/logs/recalculate-cost`, {

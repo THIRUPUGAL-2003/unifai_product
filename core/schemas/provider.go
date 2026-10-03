@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the UnifAI system.
+// Package schemas defines the core schemas and types used by the Raksha system.
 package schemas
 
 import (
@@ -18,7 +18,7 @@ const (
 	DefaultBufferSize                 = 5000
 	DefaultConcurrency                = 1000
 	DefaultStreamBufferSize           = 256
-	DefaultStreamIdleTimeoutInSeconds = 120 // Idle timeout per stream chunk — if no data for this many seconds, unifai closes the connection
+	DefaultStreamIdleTimeoutInSeconds = 120 // Idle timeout per stream chunk — if no data for this many seconds, raksha closes the connection
 	DefaultMaxConnsPerHost            = 5000
 	MaxConnsPerHostUpperBound         = 10000
 	DefaultMaxIdleConnsPerHost        = 40
@@ -28,7 +28,7 @@ const (
 const (
 	ErrProviderRequestTimedOut      = "request timed out (default is 300 seconds). You can increase it by setting the default_request_timeout_in_seconds in the network_config or in UI - Providers > Provider Name > Network Config."
 	ErrRequestCancelled             = "request cancelled by caller"
-	ErrRequestBodyConversion        = "failed to convert unifai request to the expected provider request body"
+	ErrRequestBodyConversion        = "failed to convert raksha request to the expected provider request body"
 	ErrProviderRequestMarshal       = "failed to marshal request body to JSON"
 	ErrProviderCreateRequest        = "failed to create HTTP request to provider API"
 	ErrProviderDoRequest            = "failed to execute HTTP request to provider API"
@@ -510,7 +510,7 @@ func (ar *AllowedRequests) IsOperationAllowed(operation RequestType) bool {
 }
 
 type CustomProviderConfig struct {
-	CustomProviderKey    string                 `json:"-"`                                // Custom provider key, internally set by UnifAI
+	CustomProviderKey    string                 `json:"-"`                                // Custom provider key, internally set by Raksha
 	IsKeyLess            bool                   `json:"is_key_less"`                      // Whether the custom provider requires a key (not allowed for Bedrock)
 	BaseProviderType     ModelProvider          `json:"base_provider_type"`               // Base provider type
 	AllowedRequests      *AllowedRequests       `json:"allowed_requests,omitempty"`       // Allowed requests for the custom provider
@@ -531,11 +531,11 @@ func (cpc *CustomProviderConfig) IsOperationAllowed(operation RequestType) bool 
 type ProviderConfig struct {
 	NetworkConfig            NetworkConfig            `json:"network_config"`              // Network configuration
 	ConcurrencyAndBufferSize ConcurrencyAndBufferSize `json:"concurrency_and_buffer_size"` // Concurrency settings
-	// Logger instance, can be provided by the user or unifai default logger is used if not provided
+	// Logger instance, can be provided by the user or raksha default logger is used if not provided
 	Logger                  Logger                `json:"-"`
 	ProxyConfig             *ProxyConfig          `json:"proxy_config,omitempty"`     // Proxy configuration
-	SendBackRawRequest      bool                  `json:"send_back_raw_request"`      // Send raw request back in the unifai response (default: false)
-	SendBackRawResponse     bool                  `json:"send_back_raw_response"`     // Send raw response back in the unifai response (default: false)
+	SendBackRawRequest      bool                  `json:"send_back_raw_request"`      // Send raw request back in the raksha response (default: false)
+	SendBackRawResponse     bool                  `json:"send_back_raw_response"`     // Send raw response back in the raksha response (default: false)
 	StoreRawRequestResponse bool                  `json:"store_raw_request_response"` // Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)
 	CustomProviderConfig    *CustomProviderConfig `json:"custom_provider_config,omitempty"`
 	OpenAIConfig            *OpenAIConfig         `json:"openai_config,omitempty"`
@@ -596,136 +596,136 @@ func (config *ProviderConfig) CheckAndSetDefaults() {
 	}
 }
 
-type PostHookRunner func(ctx *UnifAIContext, result *UnifAIResponse, err *UnifAIError) (*UnifAIResponse, *UnifAIError)
+type PostHookRunner func(ctx *RakshaContext, result *RakshaResponse, err *RakshaError) (*RakshaResponse, *RakshaError)
 
 // Provider defines the interface for AI model providers.
 type Provider interface {
 	// GetProviderKey returns the provider's identifier
 	GetProviderKey() ModelProvider
 	// ListModels performs a list models request
-	ListModels(ctx *UnifAIContext, keys []Key, request *UnifAIListModelsRequest) (*UnifAIListModelsResponse, *UnifAIError)
+	ListModels(ctx *RakshaContext, keys []Key, request *RakshaListModelsRequest) (*RakshaListModelsResponse, *RakshaError)
 	// TextCompletion performs a text completion request
-	TextCompletion(ctx *UnifAIContext, key Key, request *UnifAITextCompletionRequest) (*UnifAITextCompletionResponse, *UnifAIError)
+	TextCompletion(ctx *RakshaContext, key Key, request *RakshaTextCompletionRequest) (*RakshaTextCompletionResponse, *RakshaError)
 	// TextCompletionStream performs a text completion stream request.
 	// postHookSpanFinalizer is invoked by the provider's stream goroutine on stream completion
 	// (or on its panic-recovery defer) to finalize aggregated post-hook spans and release the
 	// per-attempt plugin pipeline. Pass nil if the caller does not need finalization.
-	TextCompletionStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *UnifAITextCompletionRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	TextCompletionStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaTextCompletionRequest) (chan *RakshaStreamChunk, *RakshaError)
 	// ChatCompletion performs a chat completion request
-	ChatCompletion(ctx *UnifAIContext, key Key, request *UnifAIChatRequest) (*UnifAIChatResponse, *UnifAIError)
+	ChatCompletion(ctx *RakshaContext, key Key, request *RakshaChatRequest) (*RakshaChatResponse, *RakshaError)
 	// ChatCompletionStream performs a chat completion stream request
-	ChatCompletionStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *UnifAIChatRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	ChatCompletionStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaChatRequest) (chan *RakshaStreamChunk, *RakshaError)
 	// Responses performs a completion request using the Responses API (uses chat completion request internally for non-openai providers)
-	Responses(ctx *UnifAIContext, key Key, request *UnifAIResponsesRequest) (*UnifAIResponsesResponse, *UnifAIError)
+	Responses(ctx *RakshaContext, key Key, request *RakshaResponsesRequest) (*RakshaResponsesResponse, *RakshaError)
 	// ResponsesStream performs a completion request using the Responses API stream (uses chat completion stream request internally for non-openai providers)
-	ResponsesStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *UnifAIResponsesRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	ResponsesStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaResponsesRequest) (chan *RakshaStreamChunk, *RakshaError)
 	// CountTokens performs a count tokens request
-	CountTokens(ctx *UnifAIContext, key Key, request *UnifAIResponsesRequest) (*UnifAICountTokensResponse, *UnifAIError)
+	CountTokens(ctx *RakshaContext, key Key, request *RakshaResponsesRequest) (*RakshaCountTokensResponse, *RakshaError)
 	// Compaction compacts a conversation context window (OpenAI-only; other providers return unsupported)
-	Compaction(ctx *UnifAIContext, key Key, request *UnifAICompactionRequest) (*UnifAICompactionResponse, *UnifAIError)
+	Compaction(ctx *RakshaContext, key Key, request *RakshaCompactionRequest) (*RakshaCompactionResponse, *RakshaError)
 	// Embedding performs an embedding request
-	Embedding(ctx *UnifAIContext, key Key, request *UnifAIEmbeddingRequest) (*UnifAIEmbeddingResponse, *UnifAIError)
+	Embedding(ctx *RakshaContext, key Key, request *RakshaEmbeddingRequest) (*RakshaEmbeddingResponse, *RakshaError)
 	// Rerank performs a rerank request to reorder documents by relevance to a query
-	Rerank(ctx *UnifAIContext, key Key, request *UnifAIRerankRequest) (*UnifAIRerankResponse, *UnifAIError)
+	Rerank(ctx *RakshaContext, key Key, request *RakshaRerankRequest) (*RakshaRerankResponse, *RakshaError)
 	// OCR performs an optical character recognition request on a document
-	OCR(ctx *UnifAIContext, key Key, request *UnifAIOCRRequest) (*UnifAIOCRResponse, *UnifAIError)
+	OCR(ctx *RakshaContext, key Key, request *RakshaOCRRequest) (*RakshaOCRResponse, *RakshaError)
 	// Speech performs a text to speech request
-	Speech(ctx *UnifAIContext, key Key, request *UnifAISpeechRequest) (*UnifAISpeechResponse, *UnifAIError)
+	Speech(ctx *RakshaContext, key Key, request *RakshaSpeechRequest) (*RakshaSpeechResponse, *RakshaError)
 	// SpeechStream performs a text to speech stream request
-	SpeechStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *UnifAISpeechRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	SpeechStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaSpeechRequest) (chan *RakshaStreamChunk, *RakshaError)
 	// Transcription performs a transcription request
-	Transcription(ctx *UnifAIContext, key Key, request *UnifAITranscriptionRequest) (*UnifAITranscriptionResponse, *UnifAIError)
+	Transcription(ctx *RakshaContext, key Key, request *RakshaTranscriptionRequest) (*RakshaTranscriptionResponse, *RakshaError)
 	// TranscriptionStream performs a transcription stream request
-	TranscriptionStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *UnifAITranscriptionRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	TranscriptionStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaTranscriptionRequest) (chan *RakshaStreamChunk, *RakshaError)
 	// ImageGeneration performs an image generation request
-	ImageGeneration(ctx *UnifAIContext, key Key, request *UnifAIImageGenerationRequest) (
-		*UnifAIImageGenerationResponse, *UnifAIError)
+	ImageGeneration(ctx *RakshaContext, key Key, request *RakshaImageGenerationRequest) (
+		*RakshaImageGenerationResponse, *RakshaError)
 	// ImageGenerationStream performs an image generation stream request
-	ImageGenerationStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
-		request *UnifAIImageGenerationRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	ImageGenerationStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
+		request *RakshaImageGenerationRequest) (chan *RakshaStreamChunk, *RakshaError)
 	// ImageEdit performs an image edit request
-	ImageEdit(ctx *UnifAIContext, key Key, request *UnifAIImageEditRequest) (*UnifAIImageGenerationResponse, *UnifAIError)
+	ImageEdit(ctx *RakshaContext, key Key, request *RakshaImageEditRequest) (*RakshaImageGenerationResponse, *RakshaError)
 	// ImageEditStream performs an image edit stream request
-	ImageEditStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
-		request *UnifAIImageEditRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	ImageEditStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
+		request *RakshaImageEditRequest) (chan *RakshaStreamChunk, *RakshaError)
 	// ImageVariation performs an image variation request
-	ImageVariation(ctx *UnifAIContext, key Key, request *UnifAIImageVariationRequest) (*UnifAIImageGenerationResponse, *UnifAIError)
+	ImageVariation(ctx *RakshaContext, key Key, request *RakshaImageVariationRequest) (*RakshaImageGenerationResponse, *RakshaError)
 	// VideoGeneration performs a video generation request
-	VideoGeneration(ctx *UnifAIContext, key Key, request *UnifAIVideoGenerationRequest) (*UnifAIVideoGenerationResponse, *UnifAIError)
+	VideoGeneration(ctx *RakshaContext, key Key, request *RakshaVideoGenerationRequest) (*RakshaVideoGenerationResponse, *RakshaError)
 	// VideoRetrieve retrieves a video from the provider
-	VideoRetrieve(ctx *UnifAIContext, key Key, request *UnifAIVideoRetrieveRequest) (*UnifAIVideoGenerationResponse, *UnifAIError)
+	VideoRetrieve(ctx *RakshaContext, key Key, request *RakshaVideoRetrieveRequest) (*RakshaVideoGenerationResponse, *RakshaError)
 	// VideoDownload downloads a video from the provider
-	VideoDownload(ctx *UnifAIContext, key Key, request *UnifAIVideoDownloadRequest) (*UnifAIVideoDownloadResponse, *UnifAIError)
+	VideoDownload(ctx *RakshaContext, key Key, request *RakshaVideoDownloadRequest) (*RakshaVideoDownloadResponse, *RakshaError)
 	// VideoDelete deletes a video from the provider
-	VideoDelete(ctx *UnifAIContext, key Key, request *UnifAIVideoDeleteRequest) (*UnifAIVideoDeleteResponse, *UnifAIError)
+	VideoDelete(ctx *RakshaContext, key Key, request *RakshaVideoDeleteRequest) (*RakshaVideoDeleteResponse, *RakshaError)
 	// VideoList lists videos from the provider
-	VideoList(ctx *UnifAIContext, key Key, request *UnifAIVideoListRequest) (*UnifAIVideoListResponse, *UnifAIError)
+	VideoList(ctx *RakshaContext, key Key, request *RakshaVideoListRequest) (*RakshaVideoListResponse, *RakshaError)
 	// VideoRemix remixes a video from the provider
-	VideoRemix(ctx *UnifAIContext, key Key, request *UnifAIVideoRemixRequest) (*UnifAIVideoGenerationResponse, *UnifAIError)
+	VideoRemix(ctx *RakshaContext, key Key, request *RakshaVideoRemixRequest) (*RakshaVideoGenerationResponse, *RakshaError)
 	// BatchCreate creates a new batch job for asynchronous processing
-	BatchCreate(ctx *UnifAIContext, key Key, request *UnifAIBatchCreateRequest) (*UnifAIBatchCreateResponse, *UnifAIError)
+	BatchCreate(ctx *RakshaContext, key Key, request *RakshaBatchCreateRequest) (*RakshaBatchCreateResponse, *RakshaError)
 	// BatchList lists batch jobs
-	BatchList(ctx *UnifAIContext, keys []Key, request *UnifAIBatchListRequest) (*UnifAIBatchListResponse, *UnifAIError)
+	BatchList(ctx *RakshaContext, keys []Key, request *RakshaBatchListRequest) (*RakshaBatchListResponse, *RakshaError)
 	// BatchRetrieve retrieves a specific batch job
-	BatchRetrieve(ctx *UnifAIContext, keys []Key, request *UnifAIBatchRetrieveRequest) (*UnifAIBatchRetrieveResponse, *UnifAIError)
+	BatchRetrieve(ctx *RakshaContext, keys []Key, request *RakshaBatchRetrieveRequest) (*RakshaBatchRetrieveResponse, *RakshaError)
 	// BatchCancel cancels a batch job
-	BatchCancel(ctx *UnifAIContext, keys []Key, request *UnifAIBatchCancelRequest) (*UnifAIBatchCancelResponse, *UnifAIError)
+	BatchCancel(ctx *RakshaContext, keys []Key, request *RakshaBatchCancelRequest) (*RakshaBatchCancelResponse, *RakshaError)
 	// BatchDelete deletes a batch job
-	BatchDelete(ctx *UnifAIContext, keys []Key, request *UnifAIBatchDeleteRequest) (*UnifAIBatchDeleteResponse, *UnifAIError)
+	BatchDelete(ctx *RakshaContext, keys []Key, request *RakshaBatchDeleteRequest) (*RakshaBatchDeleteResponse, *RakshaError)
 	// BatchResults retrieves results from a completed batch job
-	BatchResults(ctx *UnifAIContext, keys []Key, request *UnifAIBatchResultsRequest) (*UnifAIBatchResultsResponse, *UnifAIError)
+	BatchResults(ctx *RakshaContext, keys []Key, request *RakshaBatchResultsRequest) (*RakshaBatchResultsResponse, *RakshaError)
 	// FileUpload uploads a file to the provider
-	FileUpload(ctx *UnifAIContext, key Key, request *UnifAIFileUploadRequest) (*UnifAIFileUploadResponse, *UnifAIError)
+	FileUpload(ctx *RakshaContext, key Key, request *RakshaFileUploadRequest) (*RakshaFileUploadResponse, *RakshaError)
 	// FileList lists files from the provider
-	FileList(ctx *UnifAIContext, keys []Key, request *UnifAIFileListRequest) (*UnifAIFileListResponse, *UnifAIError)
+	FileList(ctx *RakshaContext, keys []Key, request *RakshaFileListRequest) (*RakshaFileListResponse, *RakshaError)
 	// FileRetrieve retrieves file metadata from the provider
-	FileRetrieve(ctx *UnifAIContext, keys []Key, request *UnifAIFileRetrieveRequest) (*UnifAIFileRetrieveResponse, *UnifAIError)
+	FileRetrieve(ctx *RakshaContext, keys []Key, request *RakshaFileRetrieveRequest) (*RakshaFileRetrieveResponse, *RakshaError)
 	// FileDelete deletes a file from the provider
-	FileDelete(ctx *UnifAIContext, keys []Key, request *UnifAIFileDeleteRequest) (*UnifAIFileDeleteResponse, *UnifAIError)
+	FileDelete(ctx *RakshaContext, keys []Key, request *RakshaFileDeleteRequest) (*RakshaFileDeleteResponse, *RakshaError)
 	// FileContent downloads file content from the provider
-	FileContent(ctx *UnifAIContext, keys []Key, request *UnifAIFileContentRequest) (*UnifAIFileContentResponse, *UnifAIError)
+	FileContent(ctx *RakshaContext, keys []Key, request *RakshaFileContentRequest) (*RakshaFileContentResponse, *RakshaError)
 	// CachedContentCreate creates a new cached content (Gemini / Vertex AI named cache lifecycle)
-	CachedContentCreate(ctx *UnifAIContext, key Key, request *UnifAICachedContentCreateRequest) (*UnifAICachedContentCreateResponse, *UnifAIError)
+	CachedContentCreate(ctx *RakshaContext, key Key, request *RakshaCachedContentCreateRequest) (*RakshaCachedContentCreateResponse, *RakshaError)
 	// CachedContentList lists cached contents
-	CachedContentList(ctx *UnifAIContext, keys []Key, request *UnifAICachedContentListRequest) (*UnifAICachedContentListResponse, *UnifAIError)
+	CachedContentList(ctx *RakshaContext, keys []Key, request *RakshaCachedContentListRequest) (*RakshaCachedContentListResponse, *RakshaError)
 	// CachedContentRetrieve retrieves a single cached content by name
-	CachedContentRetrieve(ctx *UnifAIContext, keys []Key, request *UnifAICachedContentRetrieveRequest) (*UnifAICachedContentRetrieveResponse, *UnifAIError)
+	CachedContentRetrieve(ctx *RakshaContext, keys []Key, request *RakshaCachedContentRetrieveRequest) (*RakshaCachedContentRetrieveResponse, *RakshaError)
 	// CachedContentUpdate updates a cached content's expiration (TTL or expireTime)
-	CachedContentUpdate(ctx *UnifAIContext, keys []Key, request *UnifAICachedContentUpdateRequest) (*UnifAICachedContentUpdateResponse, *UnifAIError)
+	CachedContentUpdate(ctx *RakshaContext, keys []Key, request *RakshaCachedContentUpdateRequest) (*RakshaCachedContentUpdateResponse, *RakshaError)
 	// CachedContentDelete deletes a cached content by name
-	CachedContentDelete(ctx *UnifAIContext, keys []Key, request *UnifAICachedContentDeleteRequest) (*UnifAICachedContentDeleteResponse, *UnifAIError)
+	CachedContentDelete(ctx *RakshaContext, keys []Key, request *RakshaCachedContentDeleteRequest) (*RakshaCachedContentDeleteResponse, *RakshaError)
 	// ContainerCreate creates a new container
-	ContainerCreate(ctx *UnifAIContext, key Key, request *UnifAIContainerCreateRequest) (*UnifAIContainerCreateResponse, *UnifAIError)
+	ContainerCreate(ctx *RakshaContext, key Key, request *RakshaContainerCreateRequest) (*RakshaContainerCreateResponse, *RakshaError)
 	// ContainerList lists containers
-	ContainerList(ctx *UnifAIContext, keys []Key, request *UnifAIContainerListRequest) (*UnifAIContainerListResponse, *UnifAIError)
+	ContainerList(ctx *RakshaContext, keys []Key, request *RakshaContainerListRequest) (*RakshaContainerListResponse, *RakshaError)
 	// ContainerRetrieve retrieves a specific container
-	ContainerRetrieve(ctx *UnifAIContext, keys []Key, request *UnifAIContainerRetrieveRequest) (*UnifAIContainerRetrieveResponse, *UnifAIError)
+	ContainerRetrieve(ctx *RakshaContext, keys []Key, request *RakshaContainerRetrieveRequest) (*RakshaContainerRetrieveResponse, *RakshaError)
 	// ContainerDelete deletes a container
-	ContainerDelete(ctx *UnifAIContext, keys []Key, request *UnifAIContainerDeleteRequest) (*UnifAIContainerDeleteResponse, *UnifAIError)
+	ContainerDelete(ctx *RakshaContext, keys []Key, request *RakshaContainerDeleteRequest) (*RakshaContainerDeleteResponse, *RakshaError)
 	// ContainerFileCreate creates a file in a container
-	ContainerFileCreate(ctx *UnifAIContext, key Key, request *UnifAIContainerFileCreateRequest) (*UnifAIContainerFileCreateResponse, *UnifAIError)
+	ContainerFileCreate(ctx *RakshaContext, key Key, request *RakshaContainerFileCreateRequest) (*RakshaContainerFileCreateResponse, *RakshaError)
 	// ContainerFileList lists files in a container
-	ContainerFileList(ctx *UnifAIContext, keys []Key, request *UnifAIContainerFileListRequest) (*UnifAIContainerFileListResponse, *UnifAIError)
+	ContainerFileList(ctx *RakshaContext, keys []Key, request *RakshaContainerFileListRequest) (*RakshaContainerFileListResponse, *RakshaError)
 	// ContainerFileRetrieve retrieves a file from a container
-	ContainerFileRetrieve(ctx *UnifAIContext, keys []Key, request *UnifAIContainerFileRetrieveRequest) (*UnifAIContainerFileRetrieveResponse, *UnifAIError)
+	ContainerFileRetrieve(ctx *RakshaContext, keys []Key, request *RakshaContainerFileRetrieveRequest) (*RakshaContainerFileRetrieveResponse, *RakshaError)
 	// ContainerFileContent retrieves the content of a file from a container
-	ContainerFileContent(ctx *UnifAIContext, keys []Key, request *UnifAIContainerFileContentRequest) (*UnifAIContainerFileContentResponse, *UnifAIError)
+	ContainerFileContent(ctx *RakshaContext, keys []Key, request *RakshaContainerFileContentRequest) (*RakshaContainerFileContentResponse, *RakshaError)
 	// ContainerFileDelete deletes a file from a container
-	ContainerFileDelete(ctx *UnifAIContext, keys []Key, request *UnifAIContainerFileDeleteRequest) (*UnifAIContainerFileDeleteResponse, *UnifAIError)
+	ContainerFileDelete(ctx *RakshaContext, keys []Key, request *RakshaContainerFileDeleteRequest) (*RakshaContainerFileDeleteResponse, *RakshaError)
 	// Passthrough executes a non-streaming passthrough; body is fully buffered.
-	Passthrough(ctx *UnifAIContext, key Key, req *UnifAIPassthroughRequest) (*UnifAIPassthroughResponse, *UnifAIError)
-	// PassthroughStream executes a streaming passthrough, forwarding raw response bytes as UnifAIStreamChunks.
-	PassthroughStream(ctx *UnifAIContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, req *UnifAIPassthroughRequest) (chan *UnifAIStreamChunk, *UnifAIError)
+	Passthrough(ctx *RakshaContext, key Key, req *RakshaPassthroughRequest) (*RakshaPassthroughResponse, *RakshaError)
+	// PassthroughStream executes a streaming passthrough, forwarding raw response bytes as RakshaStreamChunks.
+	PassthroughStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, req *RakshaPassthroughRequest) (chan *RakshaStreamChunk, *RakshaError)
 }
 
 // ResponsesLifecycleProvider is an optional interface for OpenAI-style Responses API
 // secondary verbs (retrieve, delete, cancel, list input items). Checked via type assertion
 // in core dispatch; providers that do not implement it return unsupported_operation.
 type ResponsesLifecycleProvider interface {
-	ResponsesRetrieve(ctx *UnifAIContext, key Key, req *UnifAIResponsesRetrieveRequest) (*UnifAIResponsesResponse, *UnifAIError)
-	ResponsesDelete(ctx *UnifAIContext, key Key, req *UnifAIResponsesDeleteRequest) (*UnifAIResponsesDeleteResponse, *UnifAIError)
-	ResponsesCancel(ctx *UnifAIContext, key Key, req *UnifAIResponsesCancelRequest) (*UnifAIResponsesResponse, *UnifAIError)
-	ResponsesInputItems(ctx *UnifAIContext, key Key, req *UnifAIResponsesInputItemsRequest) (*UnifAIResponsesInputItemsResponse, *UnifAIError)
+	ResponsesRetrieve(ctx *RakshaContext, key Key, req *RakshaResponsesRetrieveRequest) (*RakshaResponsesResponse, *RakshaError)
+	ResponsesDelete(ctx *RakshaContext, key Key, req *RakshaResponsesDeleteRequest) (*RakshaResponsesDeleteResponse, *RakshaError)
+	ResponsesCancel(ctx *RakshaContext, key Key, req *RakshaResponsesCancelRequest) (*RakshaResponsesResponse, *RakshaError)
+	ResponsesInputItems(ctx *RakshaContext, key Key, req *RakshaResponsesInputItemsRequest) (*RakshaResponsesInputItemsResponse, *RakshaError)
 }
 
 // WebSocketCapableProvider is an optional interface that providers can implement

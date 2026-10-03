@@ -1,4 +1,4 @@
-module github.com/unifai/unifai/core
+module github.com/raksha/raksha/core
 
 go 1.26.4
 

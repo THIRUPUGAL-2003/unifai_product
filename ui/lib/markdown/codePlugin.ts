@@ -1,7 +1,7 @@
 import { createHighlighterCore, type HighlighterCore, type TokensResult } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
-// Languages we actually want to highlight in the UnifAI UI.
+// Languages we actually want to highlight in the Raksha UI.
 // Adding a new language requires only adding the dynamic import below.
 const langLoaders = {
 	typescript: () => import("shiki/langs/typescript.mjs"),
@@ -159,7 +159,7 @@ export function createCodePlugin(options: CodePluginOptions = {}): CodeHighlight
 					}
 				})
 				.catch((err) => {
-					console.error("[UnifAI Code Highlighter] Failed to highlight:", err);
+					console.error("[Raksha Code Highlighter] Failed to highlight:", err);
 					pendingCallbacks.delete(key);
 				})
 				.finally(() => {

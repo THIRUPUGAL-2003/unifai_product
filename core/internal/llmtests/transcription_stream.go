@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunTranscriptionStreamTest executes the streaming transcription test scenario
-func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.TranscriptionStream {
 		t.Logf("Transcription streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -43,14 +43,14 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 				text:           TTSTestTextMedium,
 				voiceType:      "secondary",
 				format:         "mp3",
-				responseFormat: unifai.Ptr("json"),
+				responseFormat: raksha.Ptr("json"),
 			},
 			{
 				name:           "StreamRoundTrip_Technical_MP3",
 				text:           TTSTestTextTechnical,
 				voiceType:      "tertiary",
 				format:         "mp3",
-				responseFormat: unifai.Ptr("json"),
+				responseFormat: raksha.Ptr("json"),
 			},
 		}
 
@@ -70,7 +70,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 
 				// Step 1: Generate TTS audio
 				voice := GetProviderVoice(speechSynthesisProvider, tc.voiceType)
-				ttsRequest := &schemas.UnifAISpeechRequest{
+				ttsRequest := &schemas.RakshaSpeechRequest{
 					Provider: speechSynthesisProvider,
 					Model:    speechSynthesisModel,
 					Input: &schemas.SpeechInput{
@@ -109,8 +109,8 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 					OnFinalFail: ttsRetryConfig.OnFinalFail,
 				}
 
-				ttsResponse, err := WithSpeechTestRetry(t, ttsSpeechRetryConfig, ttsRetryContext, ttsExpectations, "TranscriptionStream_TTS", func() (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
-					bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+				ttsResponse, err := WithSpeechTestRetry(t, ttsSpeechRetryConfig, ttsRetryContext, ttsExpectations, "TranscriptionStream_TTS", func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 					return client.SpeechRequest(bfCtx, ttsRequest)
 				})
 				if err != nil {
@@ -136,15 +136,15 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 				t.Logf("Generated TTS audio for stream round-trip: %s (%d bytes)", audioFileName, len(ttsResponse.Audio))
 
 				// Step 2: Test streaming transcription
-				streamRequest := &schemas.UnifAITranscriptionRequest{
+				streamRequest := &schemas.RakshaTranscriptionRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.TranscriptionModel,
 					Input: &schemas.TranscriptionInput{
 						File: ttsResponse.Audio,
 					},
 					Params: &schemas.TranscriptionParameters{
-						Language:       unifai.Ptr("en"),
-						Format:         unifai.Ptr(tc.format),
+						Language:       raksha.Ptr("en"),
+						Format:         raksha.Ptr(tc.format),
 						ResponseFormat: tc.responseFormat,
 					},
 					Fallbacks: testConfig.TranscriptionFallbacks,
@@ -167,8 +167,8 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 					},
 				}
 
-				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-					bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 					return client.TranscriptionStreamRequest(bfCtx, streamRequest)
 				})
 
@@ -181,7 +181,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 				defer cancel()
 
 				fullTranscriptionText := ""
-				lastResponse := &schemas.UnifAIStreamChunk{}
+				lastResponse := &schemas.RakshaStreamChunk{}
 				streamErrors := []string{}
 				lastTokenLatency := int64(0)
 
@@ -200,34 +200,34 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 						}
 
 						// Check for errors in stream
-						if response.UnifAIError != nil {
-							streamErrors = append(streamErrors, FormatErrorConcise(ParseUnifAIError(response.UnifAIError)))
+						if response.RakshaError != nil {
+							streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
 							continue
 						}
 
-						if response.UnifAITranscriptionStreamResponse == nil {
+						if response.RakshaTranscriptionStreamResponse == nil {
 							streamErrors = append(streamErrors, "Stream response missing transcription stream payload")
 							continue
 						}
 
-						if response.UnifAITranscriptionStreamResponse != nil {
-							lastTokenLatency = response.UnifAITranscriptionStreamResponse.ExtraFields.Latency
+						if response.RakshaTranscriptionStreamResponse != nil {
+							lastTokenLatency = response.RakshaTranscriptionStreamResponse.ExtraFields.Latency
 						}
 
-						if response.UnifAITranscriptionStreamResponse.Text == "" && response.UnifAITranscriptionStreamResponse.Delta == nil {
+						if response.RakshaTranscriptionStreamResponse.Text == "" && response.RakshaTranscriptionStreamResponse.Delta == nil {
 							streamErrors = append(streamErrors, "Stream response missing transcription data")
 							continue
 						}
 
-						chunkIndex := response.UnifAITranscriptionStreamResponse.ExtraFields.ChunkIndex
+						chunkIndex := response.RakshaTranscriptionStreamResponse.ExtraFields.ChunkIndex
 
 						// Log latency for each chunk (can be 0 for inter-chunks)
-						t.Logf("📊 Transcription chunk %d latency: %d ms", chunkIndex, response.UnifAITranscriptionStreamResponse.ExtraFields.Latency)
+						t.Logf("📊 Transcription chunk %d latency: %d ms", chunkIndex, response.RakshaTranscriptionStreamResponse.ExtraFields.Latency)
 
 						// Collect transcription chunks
-						transcribeData := response.UnifAITranscriptionStreamResponse
+						transcribeData := response.RakshaTranscriptionStreamResponse
 						if transcribeData.Text != "" {
-							t.Logf("✅ Received transcription text chunk %d with latency %d ms: '%s'", chunkIndex, response.UnifAITranscriptionStreamResponse.ExtraFields.Latency, transcribeData.Text)
+							t.Logf("✅ Received transcription text chunk %d with latency %d ms: '%s'", chunkIndex, response.RakshaTranscriptionStreamResponse.ExtraFields.Latency, transcribeData.Text)
 						}
 
 						// Handle delta vs complete text chunks
@@ -235,14 +235,14 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 							// This is a delta chunk
 							deltaText := *transcribeData.Delta
 							fullTranscriptionText += deltaText
-							t.Logf("✅ Received transcription delta chunk %d with latency %d ms: '%s'", chunkIndex, response.UnifAITranscriptionStreamResponse.ExtraFields.Latency, deltaText)
+							t.Logf("✅ Received transcription delta chunk %d with latency %d ms: '%s'", chunkIndex, response.RakshaTranscriptionStreamResponse.ExtraFields.Latency, deltaText)
 						}
 
 						// Validate chunk structure
-						if response.UnifAITranscriptionStreamResponse.Type != schemas.TranscriptionStreamResponseTypeDelta {
-							t.Logf("⚠️ Unexpected object type in stream: %s", response.UnifAITranscriptionStreamResponse.Type)
+						if response.RakshaTranscriptionStreamResponse.Type != schemas.TranscriptionStreamResponseTypeDelta {
+							t.Logf("⚠️ Unexpected object type in stream: %s", response.RakshaTranscriptionStreamResponse.Type)
 						}
-						gotModel := response.UnifAITranscriptionStreamResponse.ExtraFields.OriginalModelRequested
+						gotModel := response.RakshaTranscriptionStreamResponse.ExtraFields.OriginalModelRequested
 						if gotModel == "" {
 							t.Fatal("❌ Stream chunk missing extra_fields.original_model_requested")
 						}
@@ -250,7 +250,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 							t.Fatalf("❌ Unexpected original_model_requested in stream: got %q want %q", gotModel, testConfig.TranscriptionModel)
 						}
 
-						lastResponse = DeepCopyUnifAIStreamChunk(response)
+						lastResponse = DeepCopyRakshaStreamChunk(response)
 
 					case <-streamCtx.Done():
 						streamErrors = append(streamErrors, "Stream reading timed out")
@@ -335,7 +335,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 }
 
 // RunTranscriptionStreamAdvancedTest executes advanced streaming transcription test scenarios
-func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.TranscriptionStream {
 		t.Logf("Transcription streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -359,16 +359,16 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 			audioData, _ := GenerateTTSAudioForTest(ctx, t, client, speechSynthesisProvider, speechSynthesisModel, TTSTestTextBasic, "primary", "mp3")
 
 			// Test streaming with JSON format
-			request := &schemas.UnifAITranscriptionRequest{
+			request := &schemas.RakshaTranscriptionRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.TranscriptionModel,
 				Input: &schemas.TranscriptionInput{
 					File: audioData,
 				},
 				Params: &schemas.TranscriptionParameters{
-					Language:       unifai.Ptr("en"),
-					Format:         unifai.Ptr("mp3"),
-					ResponseFormat: unifai.Ptr("json"),
+					Language:       raksha.Ptr("en"),
+					Format:         raksha.Ptr("mp3"),
+					ResponseFormat: raksha.Ptr("json"),
 				},
 				Fallbacks: testConfig.TranscriptionFallbacks,
 			}
@@ -387,8 +387,8 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 				},
 			}
 
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.TranscriptionStreamRequest(bfCtx, request)
 			})
 
@@ -403,16 +403,16 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 					continue
 				}
 
-				if response.UnifAIError != nil {
-					streamErrors = append(streamErrors, FormatErrorConcise(ParseUnifAIError(response.UnifAIError)))
+				if response.RakshaError != nil {
+					streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
 					continue
 				}
 
-				if response.UnifAITranscriptionStreamResponse != nil {
+				if response.RakshaTranscriptionStreamResponse != nil {
 					receivedResponse = true
 
 					// Check for JSON streaming specific fields
-					transcribeData := response.UnifAITranscriptionStreamResponse
+					transcribeData := response.RakshaTranscriptionStreamResponse
 					if transcribeData.Type != "" {
 						t.Logf("✅ Stream type: %v", transcribeData.Type)
 						if transcribeData.Delta != nil {
@@ -459,7 +459,7 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 					ShouldRunParallel(t, testConfig, "Transcription")
 
 					langCopy := lang
-					request := &schemas.UnifAITranscriptionRequest{
+					request := &schemas.RakshaTranscriptionRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.TranscriptionModel,
 						Input: &schemas.TranscriptionInput{
@@ -484,8 +484,8 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 						},
 					}
 
-					responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-						bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+					responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+						bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 						return client.TranscriptionStreamRequest(bfCtx, request)
 					})
 
@@ -501,16 +501,16 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 							continue
 						}
 
-						if response.UnifAIError != nil {
-							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream for language %s: %s", lang, FormatErrorConcise(ParseUnifAIError(response.UnifAIError))))
+						if response.RakshaError != nil {
+							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream for language %s: %s", lang, FormatErrorConcise(ParseRakshaError(response.RakshaError))))
 							continue
 						}
 
-						if response.UnifAITranscriptionStreamResponse != nil {
+						if response.RakshaTranscriptionStreamResponse != nil {
 							receivedData = true
 							t.Logf("✅ Received transcription data for language %s", lang)
-							if response.UnifAITranscriptionStreamResponse != nil {
-								lastTokenLatency = response.UnifAITranscriptionStreamResponse.ExtraFields.Latency
+							if response.RakshaTranscriptionStreamResponse != nil {
+								lastTokenLatency = response.RakshaTranscriptionStreamResponse.ExtraFields.Latency
 							}
 						}
 					}
@@ -549,15 +549,15 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 			audioData, _ := GenerateTTSAudioForTest(ctx, t, client, speechSynthesisProvider, speechSynthesisModel, TTSTestTextTechnical, "tertiary", "mp3")
 
 			// Test streaming with custom prompt for context
-			request := &schemas.UnifAITranscriptionRequest{
+			request := &schemas.RakshaTranscriptionRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.TranscriptionModel,
 				Input: &schemas.TranscriptionInput{
 					File: audioData,
 				},
 				Params: &schemas.TranscriptionParameters{
-					Language: unifai.Ptr("en"),
-					Prompt:   unifai.Ptr("This audio contains technical terms, proper nouns, and streaming-related vocabulary."),
+					Language: raksha.Ptr("en"),
+					Prompt:   raksha.Ptr("This audio contains technical terms, proper nouns, and streaming-related vocabulary."),
 				},
 				Fallbacks: testConfig.TranscriptionFallbacks,
 			}
@@ -577,8 +577,8 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 				},
 			}
 
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.TranscriptionStreamRequest(bfCtx, request)
 			})
 
@@ -595,18 +595,18 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *unifai.UnifAI, ctx
 					continue
 				}
 
-				if response.UnifAIError != nil {
-					streamErrors = append(streamErrors, FormatErrorConcise(ParseUnifAIError(response.UnifAIError)))
+				if response.RakshaError != nil {
+					streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
 					continue
 				}
 
-				if response.UnifAITranscriptionStreamResponse != nil {
-					lastTokenLatency = response.UnifAITranscriptionStreamResponse.ExtraFields.Latency
+				if response.RakshaTranscriptionStreamResponse != nil {
+					lastTokenLatency = response.RakshaTranscriptionStreamResponse.ExtraFields.Latency
 				}
 
-				if response.UnifAITranscriptionStreamResponse != nil && response.UnifAITranscriptionStreamResponse.Text != "" {
+				if response.RakshaTranscriptionStreamResponse != nil && response.RakshaTranscriptionStreamResponse.Text != "" {
 					chunkCount++
-					chunkText := response.UnifAITranscriptionStreamResponse.Text
+					chunkText := response.RakshaTranscriptionStreamResponse.Text
 					receivedText += chunkText
 					t.Logf("✅ Custom prompt chunk %d: '%s'", chunkCount, chunkText)
 				}

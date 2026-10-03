@@ -5,11 +5,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAIResponsesRequest converts a Cohere count tokens request to UnifAI format.
-func (req *CohereCountTokensRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIResponsesRequest {
+// ToRakshaResponsesRequest converts a Cohere count tokens request to Raksha format.
+func (req *CohereCountTokensRequest) ToRakshaResponsesRequest(ctx *schemas.RakshaContext) *schemas.RakshaResponsesRequest {
 	if req == nil {
 		return nil
 	}
@@ -17,7 +17,7 @@ func (req *CohereCountTokensRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifA
 	provider, model := schemas.ParseModelString(req.Model, "")
 
 	userRole := schemas.ResponsesInputMessageRoleUser
-	return &schemas.UnifAIResponsesRequest{
+	return &schemas.RakshaResponsesRequest{
 		Provider: provider,
 		Model:    model,
 		Input: []schemas.ResponsesMessage{
@@ -31,17 +31,17 @@ func (req *CohereCountTokensRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifA
 	}
 }
 
-// ToCohereCountTokensRequest converts a UnifAI count tokens request to Cohere's tokenize payload.
-func ToCohereCountTokensRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*CohereCountTokensRequest, error) {
-	if unifaiReq == nil {
+// ToCohereCountTokensRequest converts a Raksha count tokens request to Cohere's tokenize payload.
+func ToCohereCountTokensRequest(rakshaReq *schemas.RakshaResponsesRequest) (*CohereCountTokensRequest, error) {
+	if rakshaReq == nil {
 		return nil, nil
 	}
 
-	if unifaiReq.Input == nil {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("count tokens input is not provided")
 	}
 
-	text := buildCohereCountTokensText(unifaiReq.Input)
+	text := buildCohereCountTokensText(rakshaReq.Input)
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return nil, fmt.Errorf("count tokens text is empty after conversion")
@@ -52,18 +52,18 @@ func ToCohereCountTokensRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Coh
 	}
 
 	cohereReq := &CohereCountTokensRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 		Text:  trimmed,
 	}
-	if unifaiReq.Params != nil {
-		cohereReq.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 
 	return cohereReq, nil
 }
 
-// ToUnifAICountTokensResponse converts a Cohere tokenize response to UnifAI format.
-func (resp *CohereCountTokensResponse) ToUnifAICountTokensResponse(model string) *schemas.UnifAICountTokensResponse {
+// ToRakshaCountTokensResponse converts a Cohere tokenize response to Raksha format.
+func (resp *CohereCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -74,7 +74,7 @@ func (resp *CohereCountTokensResponse) ToUnifAICountTokensResponse(model string)
 	}
 	totalTokens := inputTokens
 
-	return &schemas.UnifAICountTokensResponse{
+	return &schemas.RakshaCountTokensResponse{
 		Model:        model,
 		InputTokens:  inputTokens,
 		TotalTokens:  &totalTokens,

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { UnifAIOCRResponse, OCRDocument } from "@/lib/types/logs";
+import { RakshaOCRResponse, OCRDocument } from "@/lib/types/logs";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/codeEditor";
 import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
@@ -14,7 +14,7 @@ function getImageSrc(b64: string): string {
 
 interface OCRViewProps {
 	ocrInput?: OCRDocument;
-	ocrOutput?: UnifAIOCRResponse;
+	ocrOutput?: RakshaOCRResponse;
 }
 
 export default function OCRView({ ocrInput, ocrOutput }: OCRViewProps) {

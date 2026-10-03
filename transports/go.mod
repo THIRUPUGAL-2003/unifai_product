@@ -1,4 +1,4 @@
-module github.com/unifai/unifai/transports
+module github.com/raksha/raksha/transports
 
 go 1.26.4
 
@@ -22,18 +22,18 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/gjson v1.18.0
-	github.com/unifai/unifai/core v1.6.2
-	github.com/unifai/unifai/framework v1.4.2
-	github.com/unifai/unifai/plugins/compat v0.1.24
-	github.com/unifai/unifai/plugins/connectors v0.1.0
-	github.com/unifai/unifai/plugins/governance v1.6.2
-	github.com/unifai/unifai/plugins/logging v1.5.25
-	github.com/unifai/unifai/plugins/maxim v1.6.25
-	github.com/unifai/unifai/plugins/modelcatalogresolver v1.0.6
-	github.com/unifai/unifai/plugins/otel v1.3.2
-	github.com/unifai/unifai/plugins/prompts v1.0.25
-	github.com/unifai/unifai/plugins/semanticcache v1.5.25
-	github.com/unifai/unifai/plugins/telemetry v1.5.25
+	github.com/raksha/raksha/core v1.6.2
+	github.com/raksha/raksha/framework v1.4.2
+	github.com/raksha/raksha/plugins/compat v0.1.24
+	github.com/raksha/raksha/plugins/connectors v0.1.0
+	github.com/raksha/raksha/plugins/governance v1.6.2
+	github.com/raksha/raksha/plugins/logging v1.5.25
+	github.com/raksha/raksha/plugins/maxim v1.6.25
+	github.com/raksha/raksha/plugins/modelcatalogresolver v1.0.6
+	github.com/raksha/raksha/plugins/otel v1.3.2
+	github.com/raksha/raksha/plugins/prompts v1.0.25
+	github.com/raksha/raksha/plugins/semanticcache v1.5.25
+	github.com/raksha/raksha/plugins/telemetry v1.5.25
 	github.com/valyala/fasthttp v1.71.0
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/sync v0.20.0
@@ -192,7 +192,7 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
-	github.com/unifai/unifai/plugins/mocker v1.5.25 // indirect
+	github.com/raksha/raksha/plugins/mocker v1.5.25 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/weaviate/weaviate v1.36.5 // indirect
 	github.com/weaviate/weaviate-go-client/v5 v5.7.1 // indirect
@@ -240,19 +240,19 @@ require (
 )
 
 replace (
-	github.com/unifai/unifai/core => ../core
-	github.com/unifai/unifai/framework => ../framework
-	github.com/unifai/unifai/plugins/compat => ../plugins/compat
-	github.com/unifai/unifai/plugins/connectors => ../plugins/connectors
-	github.com/unifai/unifai/plugins/governance => ../plugins/governance
-	github.com/unifai/unifai/plugins/guardrails => ../plugins/guardrails
-	github.com/unifai/unifai/plugins/jsonparser => ../plugins/jsonparser
-	github.com/unifai/unifai/plugins/logging => ../plugins/logging
-	github.com/unifai/unifai/plugins/maxim => ../plugins/maxim
-	github.com/unifai/unifai/plugins/mocker => ../plugins/mocker
-	github.com/unifai/unifai/plugins/modelcatalogresolver => ../plugins/modelcatalogresolver
-	github.com/unifai/unifai/plugins/otel => ../plugins/otel
-	github.com/unifai/unifai/plugins/prompts => ../plugins/prompts
-	github.com/unifai/unifai/plugins/semanticcache => ../plugins/semanticcache
-	github.com/unifai/unifai/plugins/telemetry => ../plugins/telemetry
+	github.com/raksha/raksha/core => ../core
+	github.com/raksha/raksha/framework => ../framework
+	github.com/raksha/raksha/plugins/compat => ../plugins/compat
+	github.com/raksha/raksha/plugins/connectors => ../plugins/connectors
+	github.com/raksha/raksha/plugins/governance => ../plugins/governance
+	github.com/raksha/raksha/plugins/guardrails => ../plugins/guardrails
+	github.com/raksha/raksha/plugins/jsonparser => ../plugins/jsonparser
+	github.com/raksha/raksha/plugins/logging => ../plugins/logging
+	github.com/raksha/raksha/plugins/maxim => ../plugins/maxim
+	github.com/raksha/raksha/plugins/mocker => ../plugins/mocker
+	github.com/raksha/raksha/plugins/modelcatalogresolver => ../plugins/modelcatalogresolver
+	github.com/raksha/raksha/plugins/otel => ../plugins/otel
+	github.com/raksha/raksha/plugins/prompts => ../plugins/prompts
+	github.com/raksha/raksha/plugins/semanticcache => ../plugins/semanticcache
+	github.com/raksha/raksha/plugins/telemetry => ../plugins/telemetry
 )

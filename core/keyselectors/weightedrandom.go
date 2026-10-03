@@ -3,10 +3,10 @@ package keyselectors
 import (
 	"math/rand"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func WeightedRandom(ctx *schemas.UnifAIContext, keys []schemas.Key, providerKey schemas.ModelProvider, model string) (schemas.Key, error) {
+func WeightedRandom(ctx *schemas.RakshaContext, keys []schemas.Key, providerKey schemas.ModelProvider, model string) (schemas.Key, error) {
 	// Use a weighted random selection based on key weights
 	totalWeight := 0
 	for _, key := range keys {

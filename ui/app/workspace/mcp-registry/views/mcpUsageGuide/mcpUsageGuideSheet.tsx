@@ -48,7 +48,7 @@ export function MCPUsageGuideSheet() {
 	const debouncedVirtualKeySearch = useDebouncedValue(virtualKeySearch, 250);
 
 	// ── Queries ──────────────────────────────────────────────────────────
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
 	const { data: virtualKeysData, isFetching: isFetchingVirtualKeys } = useGetVirtualKeysQuery(
 		{ limit: 50, search: debouncedVirtualKeySearch || undefined },
 		{ skip: !open },
@@ -134,7 +134,7 @@ export function MCPUsageGuideSheet() {
 					<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky px-8 -top-4 bg-card z-10">
 						<div className="flex items-center gap-2">
 							<div>
-								<SheetTitle>Install UnifAI MCP</SheetTitle>
+								<SheetTitle>Install Raksha MCP</SheetTitle>
 								<SheetDescription>Build a copy-ready command or config for your agent harness.</SheetDescription>
 							</div>
 						</div>
@@ -279,7 +279,7 @@ export function MCPUsageGuideSheet() {
 						{/* ── Active harness install panel ────────────────── */}
 						<activeHarness.Install
 							canGenerateCommand={canGenerateCommand}
-							clientConfig={unifaiConfig?.client_config}
+							clientConfig={rakshaConfig?.client_config}
 							platform={platform}
 							selectedServers={selectedServers}
 							serverScope={serverScope}

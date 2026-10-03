@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 type dummyLogger struct{}
@@ -66,9 +66,9 @@ func TestVirtualKeyBinding(t *testing.T) {
 	secretText := "This contains TOP_SECRET content"
 	cleanText := "This is safe text"
 
-	makeReq := func(text string) *schemas.UnifAIRequest {
-		return &schemas.UnifAIRequest{
-			ChatRequest: &schemas.UnifAIChatRequest{
+	makeReq := func(text string) *schemas.RakshaRequest {
+		return &schemas.RakshaRequest{
+			ChatRequest: &schemas.RakshaChatRequest{
 				Model: "gpt-4",
 				Input: []schemas.ChatMessage{
 					{
@@ -88,8 +88,8 @@ func TestVirtualKeyBinding(t *testing.T) {
 	}
 
 	// 1. Request with matching virtual key should be evaluated and blocked on violation
-	ctxMatching := &schemas.UnifAIContext{}
-	ctxMatching.SetValue(schemas.UnifAIContextKeyGovernanceVirtualKeyID, "vk-scoped-123")
+	ctxMatching := &schemas.RakshaContext{}
+	ctxMatching.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, "vk-scoped-123")
 	_, shortCircuit, err := gp.PreLLMHook(ctxMatching, makeReq(secretText))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -114,23 +114,23 @@ func TestVirtualKeyBinding(t *testing.T) {
 	pScopedOnly, _ := Init(context.Background(), cfgScopedOnly, &dummyLogger{})
 	gpScopedOnly := pScopedOnly.(*GuardrailsPlugin)
 
-	ctxOtherVK := &schemas.UnifAIContext{}
-	ctxOtherVK.SetValue(schemas.UnifAIContextKeyGovernanceVirtualKeyID, "vk-other-999")
+	ctxOtherVK := &schemas.RakshaContext{}
+	ctxOtherVK.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, "vk-other-999")
 	_, scOther, _ := gpScopedOnly.PreLLMHook(ctxOtherVK, makeReq(secretText))
 	if scOther != nil {
 		t.Fatal("expected request with different VK to skip scoped rule, but it was blocked")
 	}
 
 	// 4. Request with no VK should also skip scoped rule
-	ctxNoVK := &schemas.UnifAIContext{}
+	ctxNoVK := &schemas.RakshaContext{}
 	_, scNoVK, _ := gpScopedOnly.PreLLMHook(ctxNoVK, makeReq(secretText))
 	if scNoVK != nil {
 		t.Fatal("expected request without VK to skip scoped rule, but it was blocked")
 	}
 
 	// 5. Raw VK matching
-	ctxRawVK := &schemas.UnifAIContext{}
-	ctxRawVK.SetValue(schemas.UnifAIContextKeyVirtualKey, "vk-scoped-123")
+	ctxRawVK := &schemas.RakshaContext{}
+	ctxRawVK.SetValue(schemas.RakshaContextKeyVirtualKey, "vk-scoped-123")
 	_, scRaw, _ := gpScopedOnly.PreLLMHook(ctxRawVK, makeReq(secretText))
 	if scRaw == nil {
 		t.Fatal("expected raw VK header match to trigger rule and block violation")

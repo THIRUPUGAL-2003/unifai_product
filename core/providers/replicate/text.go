@@ -4,25 +4,25 @@ import (
 	"fmt"
 	"strings"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-func ToReplicateTextRequest(unifaiReq *schemas.UnifAITextCompletionRequest) (*ReplicatePredictionRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request is nil or prompt is nil")
+func ToReplicateTextRequest(rakshaReq *schemas.RakshaTextCompletionRequest) (*ReplicatePredictionRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request is nil or prompt is nil")
 	}
 
 	input := &ReplicatePredictionRequestInput{}
-	if unifaiReq.Input.PromptStr != nil {
-		input.Prompt = unifaiReq.Input.PromptStr
-	} else if len(unifaiReq.Input.PromptArray) > 0 {
-		prompt := strings.Join(unifaiReq.Input.PromptArray, "\n")
+	if rakshaReq.Input.PromptStr != nil {
+		input.Prompt = rakshaReq.Input.PromptStr
+	} else if len(rakshaReq.Input.PromptArray) > 0 {
+		prompt := strings.Join(rakshaReq.Input.PromptArray, "\n")
 		input.Prompt = &prompt
 	}
 
 	// Map parameters if present
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		// Temperature
 		if params.Temperature != nil {
@@ -69,15 +69,15 @@ func ToReplicateTextRequest(unifaiReq *schemas.UnifAITextCompletionRequest) (*Re
 		Input: input,
 	}
 
-	if isVersionID(unifaiReq.Model) {
-		req.Version = &unifaiReq.Model
+	if isVersionID(rakshaReq.Model) {
+		req.Version = &rakshaReq.Model
 	}
 
-	if unifaiReq.Params != nil && unifaiReq.Params.ExtraParams != nil {
-		if webhook, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["webhook"]); ok {
+	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
+		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
 			req.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			req.WebhookEventsFilter = webhookEventsFilter
 		}
 	}
@@ -85,14 +85,14 @@ func ToReplicateTextRequest(unifaiReq *schemas.UnifAITextCompletionRequest) (*Re
 	return req, nil
 }
 
-// ToUnifAITextCompletionResponse converts a Replicate prediction response to UnifAI format
-func (response *ReplicatePredictionResponse) ToUnifAITextCompletionResponse() *schemas.UnifAITextCompletionResponse {
+// ToRakshaTextCompletionResponse converts a Replicate prediction response to Raksha format
+func (response *ReplicatePredictionResponse) ToRakshaTextCompletionResponse() *schemas.RakshaTextCompletionResponse {
 	if response == nil {
 		return nil
 	}
 
-	// Initialize UnifAI response
-	unifaiResponse := &schemas.UnifAITextCompletionResponse{
+	// Initialize Raksha response
+	rakshaResponse := &schemas.RakshaTextCompletionResponse{
 		ID:     response.ID,
 		Model:  response.Model,
 		Object: "text_completion",
@@ -122,7 +122,7 @@ func (response *ReplicatePredictionResponse) ToUnifAITextCompletionResponse() *s
 	}
 
 	// Create choice with text completion response choice
-	choice := schemas.UnifAIResponseChoice{
+	choice := schemas.RakshaResponseChoice{
 		Index: 0,
 		TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
 			Text: textOutput,
@@ -130,13 +130,13 @@ func (response *ReplicatePredictionResponse) ToUnifAITextCompletionResponse() *s
 		FinishReason: finishReason,
 	}
 
-	unifaiResponse.Choices = []schemas.UnifAIResponseChoice{choice}
+	rakshaResponse.Choices = []schemas.RakshaResponseChoice{choice}
 
 	// Extract usage information from logs
 	if response.Logs != nil {
 		inputTokens, outputTokens, totalTokens, found := parseTokenUsageFromLogs(response.Logs, schemas.TextCompletionRequest)
 		if found {
-			unifaiResponse.Usage = &schemas.UnifAILLMUsage{
+			rakshaResponse.Usage = &schemas.RakshaLLMUsage{
 				PromptTokens:     inputTokens,
 				CompletionTokens: outputTokens,
 				TotalTokens:      totalTokens,
@@ -144,5 +144,5 @@ func (response *ReplicatePredictionResponse) ToUnifAITextCompletionResponse() *s
 		}
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }

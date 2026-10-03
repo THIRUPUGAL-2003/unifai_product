@@ -1,14 +1,14 @@
 package openai
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAIEmbeddingRequest converts an OpenAI embedding request to UnifAI format
-func (request *OpenAIEmbeddingRequest) ToUnifAIEmbeddingRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIEmbeddingRequest {
+// ToRakshaEmbeddingRequest converts an OpenAI embedding request to Raksha format
+func (request *OpenAIEmbeddingRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaContext) *schemas.RakshaEmbeddingRequest {
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.UnifAIEmbeddingRequest{
+	return &schemas.RakshaEmbeddingRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     request.Input,
@@ -17,17 +17,17 @@ func (request *OpenAIEmbeddingRequest) ToUnifAIEmbeddingRequest(ctx *schemas.Uni
 	}
 }
 
-// ToOpenAIEmbeddingRequest converts a UnifAI embedding request to OpenAI format
-func ToOpenAIEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *OpenAIEmbeddingRequest {
-	if unifaiReq == nil {
+// ToOpenAIEmbeddingRequest converts a Raksha embedding request to OpenAI format
+func ToOpenAIEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *OpenAIEmbeddingRequest {
+	if rakshaReq == nil {
 		return nil
 	}
 
-	params := unifaiReq.Params
+	params := rakshaReq.Params
 
 	openaiReq := &OpenAIEmbeddingRequest{
-		Model: unifaiReq.Model,
-		Input: unifaiReq.Input,
+		Model: rakshaReq.Model,
+		Input: rakshaReq.Input,
 	}
 
 	// Map parameters

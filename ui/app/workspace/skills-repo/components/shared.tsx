@@ -465,7 +465,7 @@ export function SkillMarkdown({
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Open external link?</DialogTitle>
-						<DialogDescription>This link opens outside UnifAI in a new browser tab.</DialogDescription>
+						<DialogDescription>This link opens outside Raksha in a new browser tab.</DialogDescription>
 					</DialogHeader>
 					<div className="bg-muted/40 rounded-sm border px-3 py-2">
 						<p className="truncate text-sm font-medium">{externalLink?.label}</p>

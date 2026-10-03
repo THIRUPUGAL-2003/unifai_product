@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // CodeMode tool type constants
@@ -30,7 +30,7 @@ type CodeMode interface {
 
 	// ExecuteTool handles a code mode tool call by name.
 	// Returns the response message and any error that occurred.
-	ExecuteTool(ctx *schemas.UnifAIContext, toolCall schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, error)
+	ExecuteTool(ctx *schemas.RakshaContext, toolCall schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, error)
 
 	// IsCodeModeTool returns true if the given tool name is a code mode tool.
 	IsCodeModeTool(toolName string) bool
@@ -62,7 +62,7 @@ type CodeModeDependencies struct {
 	ClientManager ClientManager
 
 	// FetchNewRequestIDFunc generates unique request IDs for nested tool calls
-	FetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string
+	FetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string
 
 	// LogMutex protects concurrent access to logs during code execution
 	LogMutex *sync.Mutex

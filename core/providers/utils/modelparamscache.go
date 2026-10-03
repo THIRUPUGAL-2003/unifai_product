@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 const DefaultModelParamsCacheSize = 2048

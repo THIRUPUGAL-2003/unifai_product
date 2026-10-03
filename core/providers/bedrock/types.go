@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // DefaultBedrockRegion is the default region for Bedrock
@@ -98,7 +98,7 @@ type BedrockConverseRequest struct {
 	// Extra params for advanced use cases
 	ExtraParams map[string]interface{} `json:"-"`
 
-	// UnifAI specific field (only parsed when converting from Provider -> UnifAI request)
+	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
 	Fallbacks []string `json:"fallbacks,omitempty"`
 }
 
@@ -771,7 +771,7 @@ type BedrockStreamEvent struct {
 
 	// For InvokeModelWithResponseStream (Legacy API)
 	// InvokeModelRawChunks holds one or more raw byte payloads for legacy invoke stream.
-	// Multiple chunks are needed when a single UnifAI event maps to multiple Anthropic SSE events
+	// Multiple chunks are needed when a single Raksha event maps to multiple Anthropic SSE events
 	// (e.g., Completed → message_delta + message_stop).
 	InvokeModelRawChunks [][]byte `json:"invokeModelRawChunks,omitempty"`
 }

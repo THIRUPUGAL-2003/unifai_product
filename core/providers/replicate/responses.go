@@ -5,51 +5,51 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func ToReplicateResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*ReplicatePredictionRequest, error) {
-	if unifaiReq == nil {
-		return nil, fmt.Errorf("unifai request is nil")
+func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*ReplicatePredictionRequest, error) {
+	if rakshaReq == nil {
+		return nil, fmt.Errorf("raksha request is nil")
 	}
 
 	input := &ReplicatePredictionRequestInput{}
 
-	if strings.HasPrefix(unifaiReq.Model, "openai/") && strings.Contains(unifaiReq.Model, "gpt-5-structured") {
+	if strings.HasPrefix(rakshaReq.Model, "openai/") && strings.Contains(rakshaReq.Model, "gpt-5-structured") {
 		// handle responses style request
-		if len(unifaiReq.Input) > 0 {
-			input.InputItemList = unifaiReq.Input
+		if len(rakshaReq.Input) > 0 {
+			input.InputItemList = rakshaReq.Input
 		}
-		if unifaiReq.Params != nil {
-			if unifaiReq.Params.Instructions != nil {
-				input.Instructions = unifaiReq.Params.Instructions
+		if rakshaReq.Params != nil {
+			if rakshaReq.Params.Instructions != nil {
+				input.Instructions = rakshaReq.Params.Instructions
 			}
-			if unifaiReq.Params.Tools != nil {
-				input.Tools = unifaiReq.Params.Tools
+			if rakshaReq.Params.Tools != nil {
+				input.Tools = rakshaReq.Params.Tools
 			}
-			if unifaiReq.Params.MaxOutputTokens != nil {
-				input.MaxOutputTokens = unifaiReq.Params.MaxOutputTokens
+			if rakshaReq.Params.MaxOutputTokens != nil {
+				input.MaxOutputTokens = rakshaReq.Params.MaxOutputTokens
 			}
-			if unifaiReq.Params.Text != nil {
-				input.JsonSchema = unifaiReq.Params.Text
+			if rakshaReq.Params.Text != nil {
+				input.JsonSchema = rakshaReq.Params.Text
 			}
-			if unifaiReq.Params.ExtraParams != nil {
-				input.ExtraParams = unifaiReq.Params.ExtraParams
+			if rakshaReq.Params.ExtraParams != nil {
+				input.ExtraParams = rakshaReq.Params.ExtraParams
 			}
 		}
 	} else {
 		// handle chat style request (same logic as chat converter)
-		if len(unifaiReq.Input) > 0 {
+		if len(rakshaReq.Input) > 0 {
 			// if model is from openai family, use messages
-			if strings.HasPrefix(unifaiReq.Model, string(schemas.OpenAI)) {
-				input.Messages = schemas.ToChatMessages(unifaiReq.Input)
+			if strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
+				input.Messages = schemas.ToChatMessages(rakshaReq.Input)
 			} else {
 				// convert input to prompt and system prompt
 				var systemPrompt string
 				var conversationParts []string
 				var imageInput []string
 
-				for _, msg := range unifaiReq.Input {
+				for _, msg := range rakshaReq.Input {
 					if msg.Content == nil {
 						continue
 					}
@@ -95,7 +95,7 @@ func ToReplicateResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Re
 				}
 
 				// Set system prompt if present and model supports it
-				modelSupportsSystemPrompt := supportsSystemPrompt(unifaiReq.Model)
+				modelSupportsSystemPrompt := supportsSystemPrompt(rakshaReq.Model)
 
 				if systemPrompt != "" {
 					if modelSupportsSystemPrompt {
@@ -126,8 +126,8 @@ func ToReplicateResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Re
 		}
 
 		// Map parameters if present
-		if unifaiReq.Params != nil {
-			params := unifaiReq.Params
+		if rakshaReq.Params != nil {
+			params := rakshaReq.Params
 
 			// Temperature
 			if params.Temperature != nil {
@@ -141,7 +141,7 @@ func ToReplicateResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Re
 
 			// Max tokens - use max_completion_tokens if available
 			if params.MaxOutputTokens != nil {
-				if strings.HasPrefix(unifaiReq.Model, string(schemas.OpenAI)) {
+				if strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
 					input.MaxCompletionTokens = params.MaxOutputTokens
 				} else {
 					input.MaxTokens = params.MaxOutputTokens
@@ -156,7 +156,7 @@ func ToReplicateResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Re
 			}
 
 			if params.Instructions != nil && *params.Instructions != "" {
-				if supportsSystemPrompt(unifaiReq.Model) {
+				if supportsSystemPrompt(rakshaReq.Model) {
 					if input.SystemPrompt == nil {
 						input.SystemPrompt = params.Instructions
 					}
@@ -181,15 +181,15 @@ func ToReplicateResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Re
 		Input: input,
 	}
 
-	if isVersionID(unifaiReq.Model) {
-		req.Version = &unifaiReq.Model
+	if isVersionID(rakshaReq.Model) {
+		req.Version = &rakshaReq.Model
 	}
 
-	if unifaiReq.Params != nil && unifaiReq.Params.ExtraParams != nil {
-		if webhook, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["webhook"]); ok {
+	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
+		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
 			req.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			req.WebhookEventsFilter = webhookEventsFilter
 		}
 	}
@@ -197,7 +197,7 @@ func ToReplicateResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Re
 	return req, nil
 }
 
-func (response *ReplicatePredictionResponse) ToUnifAIResponsesResponse() *schemas.UnifAIResponsesResponse {
+func (response *ReplicatePredictionResponse) ToRakshaResponsesResponse() *schemas.RakshaResponsesResponse {
 	if response == nil {
 		return nil
 	}
@@ -216,8 +216,8 @@ func (response *ReplicatePredictionResponse) ToUnifAIResponsesResponse() *schema
 		}
 	}
 
-	// Initialize UnifAI response
-	unifaiResponse := &schemas.UnifAIResponsesResponse{
+	// Initialize Raksha response
+	rakshaResponse := &schemas.RakshaResponsesResponse{
 		ID:          schemas.Ptr(response.ID),
 		Model:       response.Model,
 		CreatedAt:   int(createdAt),
@@ -256,7 +256,7 @@ func (response *ReplicatePredictionResponse) ToUnifAIResponsesResponse() *schema
 		}
 	}
 
-	unifaiResponse.Output = outputMessages
+	rakshaResponse.Output = outputMessages
 
 	// Set status based on prediction status
 	var status string
@@ -274,11 +274,11 @@ func (response *ReplicatePredictionResponse) ToUnifAIResponsesResponse() *schema
 	default:
 		status = string(response.Status)
 	}
-	unifaiResponse.Status = &status
+	rakshaResponse.Status = &status
 
 	// Set error if present
 	if response.Error != nil && *response.Error != "" {
-		unifaiResponse.Error = &schemas.ResponsesResponseError{
+		rakshaResponse.Error = &schemas.ResponsesResponseError{
 			Code:    "provider_error",
 			Message: *response.Error,
 		}
@@ -288,7 +288,7 @@ func (response *ReplicatePredictionResponse) ToUnifAIResponsesResponse() *schema
 	if response.Logs != nil {
 		inputTokens, outputTokens, totalTokens, found := parseTokenUsageFromLogs(response.Logs, schemas.ResponsesRequest)
 		if found {
-			unifaiResponse.Usage = &schemas.ResponsesResponseUsage{
+			rakshaResponse.Usage = &schemas.ResponsesResponseUsage{
 				InputTokens:  inputTokens,
 				OutputTokens: outputTokens,
 				TotalTokens:  totalTokens,
@@ -296,5 +296,5 @@ func (response *ReplicatePredictionResponse) ToUnifAIResponsesResponse() *schema
 		}
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }

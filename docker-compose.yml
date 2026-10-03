@@ -1,5 +1,5 @@
 services:
-  # Production path for employees = Guard EXE on each laptop (local MitM via UNIFAI_PROXY_ADDR) → this UnifAI backend.
+  # Production path for employees = Guard EXE on each laptop (local MitM via RAKSHA_PROXY_ADDR) → this Raksha backend.
   # Optional shared/network proxy (lab/office PAC) — enable with:
   #   docker compose --profile network-proxy up -d raksha_browser_ai_proxy
   # Secrets and environment-specific hosts MUST come from .env — no hardcoded fallbacks.
@@ -7,7 +7,7 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.local
-    image: unifai-local:latest
+    image: raksha-local:latest
     container_name: ${CONTAINER_NAME:?set CONTAINER_NAME in .env}
     user: "0:0"
     env_file:
@@ -30,11 +30,11 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
       - BROWSER_AI_OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
       - OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
-      - UNIFAI_GUARD_SECRET=${UNIFAI_GUARD_SECRET:?set UNIFAI_GUARD_SECRET in .env}
-      - UNIFAI_GUARD_REQUIRE_SECRET=${UNIFAI_GUARD_REQUIRE_SECRET:-1}
-      - UNIFAI_PAC_ALLOW_QUERY_PROXY=${UNIFAI_PAC_ALLOW_QUERY_PROXY:-0}
-      - UNIFAI_COMPANY_NAME=${UNIFAI_COMPANY_NAME:-YesPanchi Group of Companies}
-      - UNIFAI_COMPANY_LOGO=${UNIFAI_COMPANY_LOGO:-/yes-panchi-logo.png}
+      - RAKSHA_GUARD_SECRET=${RAKSHA_GUARD_SECRET:?set RAKSHA_GUARD_SECRET in .env}
+      - RAKSHA_GUARD_REQUIRE_SECRET=${RAKSHA_GUARD_REQUIRE_SECRET:-1}
+      - RAKSHA_PAC_ALLOW_QUERY_PROXY=${RAKSHA_PAC_ALLOW_QUERY_PROXY:-0}
+      - RAKSHA_COMPANY_NAME=${RAKSHA_COMPANY_NAME:-YesPanchi Group of Companies}
+      - RAKSHA_COMPANY_LOGO=${RAKSHA_COMPANY_LOGO:-/yes-panchi-logo.png}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -68,13 +68,13 @@ services:
     container_name: ${NETWORK_PROXY_CONTAINER_NAME:-raksha_browser_ai_proxy}
     command: mitmdump -s /app/proxy/browser_ai_proxy.py -p ${PROXY_PORT:?set PROXY_PORT in .env} --set listen_host=0.0.0.0 --set block_global=false --set ssl_insecure=true --set ignore_hosts='^(localhost|127\.0\.0\.1|${CONTAINER_NAME:?set CONTAINER_NAME in .env})'
     environment:
-      - UNIFAI_BACKEND_URL=http://${CONTAINER_NAME:?set CONTAINER_NAME in .env}:${APP_PORT:?set APP_PORT in .env}
-      - UNIFAI_GUARD_SECRET=${UNIFAI_GUARD_SECRET:?set UNIFAI_GUARD_SECRET in .env}
-      - UNIFAI_FAIL_OPEN=0
-      - UNIFAI_SERVER_MODE=1
-      - UNIFAI_AGENT_TYPE=network
-      - UNIFAI_AGENT_ID=${UNIFAI_NETWORK_AGENT_ID:-network-proxy-1}
-      - UNIFAI_AGENT_HOSTNAME=${UNIFAI_NETWORK_AGENT_HOSTNAME:-corp-network-proxy}
+      - RAKSHA_BACKEND_URL=http://${CONTAINER_NAME:?set CONTAINER_NAME in .env}:${APP_PORT:?set APP_PORT in .env}
+      - RAKSHA_GUARD_SECRET=${RAKSHA_GUARD_SECRET:?set RAKSHA_GUARD_SECRET in .env}
+      - RAKSHA_FAIL_OPEN=0
+      - RAKSHA_SERVER_MODE=1
+      - RAKSHA_AGENT_TYPE=network
+      - RAKSHA_AGENT_ID=${RAKSHA_NETWORK_AGENT_ID:-network-proxy-1}
+      - RAKSHA_AGENT_HOSTNAME=${RAKSHA_NETWORK_AGENT_HOSTNAME:-corp-network-proxy}
     ports:
       - "${PROXY_PORT:?set PROXY_PORT in .env}:${PROXY_PORT:?set PROXY_PORT in .env}"
     volumes:
@@ -86,7 +86,7 @@ services:
 networks:
   # Auto-created bridge network. Works out of the box on any server (no manual 'docker network create' needed).
   default:
-    name: ${DOCKER_NETWORK:-unifai-network}
+    name: ${DOCKER_NETWORK:-raksha-network}
     driver: bridge
   # Existing network the Ollama container runs on, so OLLAMA_URL can use its container name
   # (1Panel apps: 1panel-network). It must exist before `up`; on a server without 1Panel run

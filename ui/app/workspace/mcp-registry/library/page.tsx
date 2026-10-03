@@ -113,7 +113,7 @@ export default function MCPLibraryPage() {
 		const err = libraryError || mcpClientsError;
 		if (!err) return;
 		const message = getErrorMessage(err);
-		if (message.toLowerCase().includes("mcp is not configured in this unifai instance")) return;
+		if (message.toLowerCase().includes("mcp is not configured in this raksha instance")) return;
 		toast({ title: "Error", description: message, variant: "destructive" });
 	}, [libraryError, mcpClientsError, toast]);
 

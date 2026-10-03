@@ -1,11 +1,11 @@
-import { UnifAIConfig, GlobalProxyConfig, LatestReleaseResponse, VectorStoreConfigResponse } from "@/lib/types/config";
+import { RakshaConfig, GlobalProxyConfig, LatestReleaseResponse, VectorStoreConfigResponse } from "@/lib/types/config";
 import axios from "axios";
 import { baseApi } from "./baseApi";
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
-const applyMetadataPatch = (metadata: UnifAIConfig["metadata"] | undefined, patch: Record<string, unknown>): Record<string, unknown> => {
+const applyMetadataPatch = (metadata: RakshaConfig["metadata"] | undefined, patch: Record<string, unknown>): Record<string, unknown> => {
 	const next = { ...(metadata ?? {}) };
 	Object.entries(patch).forEach(([key, value]) => {
 		if (value === null) {
@@ -21,7 +21,7 @@ const applyMetadataPatch = (metadata: UnifAIConfig["metadata"] | undefined, patc
 export const configApi = baseApi.injectEndpoints({
 	endpoints: (builder) => ({
 		// Get core configuration
-		getCoreConfig: builder.query<UnifAIConfig, { fromDB?: boolean }>({
+		getCoreConfig: builder.query<RakshaConfig, { fromDB?: boolean }>({
 			query: ({ fromDB = false } = {}) => ({
 				url: "/config",
 				params: { from_db: fromDB },
@@ -43,7 +43,7 @@ export const configApi = baseApi.injectEndpoints({
 			},
 		}),
 		// Update core configuration
-		updateCoreConfig: builder.mutation<null, UnifAIConfig>({
+		updateCoreConfig: builder.mutation<null, RakshaConfig>({
 			query: (data) => ({
 				url: "/config",
 				method: "PUT",

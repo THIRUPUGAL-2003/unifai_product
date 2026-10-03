@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/unifai/unifai/core/mcp"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/mcp"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // StarlarkCodeMode implements the CodeMode interface using a Starlark interpreter.
@@ -24,7 +24,7 @@ type StarlarkCodeMode struct {
 
 	// Dependencies
 	clientManager         mcp.ClientManager
-	fetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string
+	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string
 	credStore             schemas.MCPCredentialStore
 
 	// Logger for this instance
@@ -108,7 +108,7 @@ func (s *StarlarkCodeMode) GetTools() []schemas.ChatTool {
 // Returns:
 //   - *schemas.ChatMessage: The tool response message
 //   - error: Any error that occurred during execution
-func (s *StarlarkCodeMode) ExecuteTool(ctx *schemas.UnifAIContext, toolCall schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, error) {
+func (s *StarlarkCodeMode) ExecuteTool(ctx *schemas.RakshaContext, toolCall schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, error) {
 	if toolCall.Function.Name == nil {
 		return nil, fmt.Errorf("tool call missing function name")
 	}

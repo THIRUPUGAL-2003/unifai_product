@@ -1,4 +1,4 @@
-// Package maxim provides integration for Maxim's SDK as a UnifAI plugin.
+// Package maxim provides integration for Maxim's SDK as a Raksha plugin.
 // This file contains the main plugin implementation.
 package maxim
 
@@ -10,9 +10,9 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/streaming"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/streaming"
 
 	"github.com/maximhq/maxim-go"
 	"github.com/maximhq/maxim-go/logging"
@@ -96,13 +96,13 @@ func Init(config *Config, logger schemas.Logger) (schemas.LLMPlugin, error) {
 // This constant provides a consistent key for tracking request traces
 // throughout the request/response lifecycle.
 const (
-	SessionIDKey      schemas.UnifAIContextKey = "session-id"
-	TraceIDKey        schemas.UnifAIContextKey = "trace-id"
-	TraceNameKey      schemas.UnifAIContextKey = "trace-name"
-	GenerationIDKey   schemas.UnifAIContextKey = "generation-id"
-	GenerationNameKey schemas.UnifAIContextKey = "generation-name"
-	TagsKey           schemas.UnifAIContextKey = "maxim-tags"
-	LogRepoIDKey      schemas.UnifAIContextKey = "log-repo-id"
+	SessionIDKey      schemas.RakshaContextKey = "session-id"
+	TraceIDKey        schemas.RakshaContextKey = "trace-id"
+	TraceNameKey      schemas.RakshaContextKey = "trace-name"
+	GenerationIDKey   schemas.RakshaContextKey = "generation-id"
+	GenerationNameKey schemas.RakshaContextKey = "generation-name"
+	TagsKey           schemas.RakshaContextKey = "maxim-tags"
+	LogRepoIDKey      schemas.RakshaContextKey = "log-repo-id"
 )
 
 // convertAccResultToProcessedStreamResponse converts StreamAccumulatorResult to ProcessedStreamResponse
@@ -165,17 +165,17 @@ func (plugin *Plugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (plugin *Plugin) HTTPTransportPreHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (plugin *Plugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (plugin *Plugin) HTTPTransportPostHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (plugin *Plugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, chunk *schemas.UnifAIStreamChunk) (*schemas.UnifAIStreamChunk, error) {
+func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
 	return chunk, nil
 }
 
@@ -183,7 +183,7 @@ func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.UnifAIContext, r
 // 1. Header log repo ID (if provided)
 // 2. Default log repo ID from config (if configured)
 // 3. Empty string (skip logging)
-func (plugin *Plugin) getEffectiveLogRepoID(ctx *schemas.UnifAIContext) string {
+func (plugin *Plugin) getEffectiveLogRepoID(ctx *schemas.RakshaContext) string {
 	// Check for header log repo ID first (highest priority)
 	if ctx != nil {
 		if headerRepoID, ok := ctx.Value(LogRepoIDKey).(string); ok && headerRepoID != "" {
@@ -230,11 +230,11 @@ func (plugin *Plugin) getOrCreateLogger(logRepoID string) (*logging.Logger, erro
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (plugin *Plugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAIRequest) error {
+func (plugin *Plugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
 	return nil
 }
 
-// PreLLMHook is called before a request is processed by UnifAI.
+// PreLLMHook is called before a request is processed by Raksha.
 // It manages trace and generation tracking for incoming requests by either:
 // - Creating a new trace if none exists
 // - Reusing an existing trace ID from the context
@@ -249,13 +249,13 @@ func (plugin *Plugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAI
 // - Model parameters
 //
 // Parameters:
-//   - ctx: Pointer to the schemas.UnifAIContext that may contain existing trace/generation IDs
-//   - req: The incoming UnifAI request to be traced
+//   - ctx: Pointer to the schemas.RakshaContext that may contain existing trace/generation IDs
+//   - req: The incoming Raksha request to be traced
 //
 // Returns:
-//   - *schemas.UnifAIRequest: The original request, unmodified
+//   - *schemas.RakshaRequest: The original request, unmodified
 //   - error: Any error that occurred during trace/generation creation
-func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	if req != nil && req.RequestType == schemas.RealtimeRequest {
 		return req, nil, nil
 	}
@@ -443,7 +443,7 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAI
 		traceID = uuid.New().String()
 	}
 
-	name := fmt.Sprintf("unifai_%s", string(req.RequestType))
+	name := fmt.Sprintf("raksha_%s", string(req.RequestType))
 	if traceName != "" {
 		name = traceName
 	}
@@ -496,18 +496,18 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAI
 		ctx.SetValue(GenerationIDKey, generationID)
 
 		// Extract request ID from context, if not present, create a new one
-		requestID, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string)
+		requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
 		if !ok || requestID == "" {
-			// This should never happen since core/unifai.go guarantees it's set before PreHooks
+			// This should never happen since core/raksha.go guarantees it's set before PreHooks
 			requestID = uuid.New().String()
 			plugin.logger.Warn("%s request ID missing in PreLLMHook, using fallback: %s", PluginLoggerPrefix, requestID)
 		}
 
 		// If streaming, create accumulator via central tracer using traceID
-		if unifai.IsStreamRequestType(req.RequestType) {
-			tracer, unifaiTraceID, err := unifai.GetTracerFromContext(ctx)
-			if err == nil && tracer != nil && unifaiTraceID != "" {
-				tracer.CreateStreamAccumulator(unifaiTraceID, time.Now())
+		if raksha.IsStreamRequestType(req.RequestType) {
+			tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
+			if err == nil && tracer != nil && rakshaTraceID != "" {
+				tracer.CreateStreamAccumulator(rakshaTraceID, time.Now())
 			}
 		}
 	}
@@ -515,10 +515,10 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAI
 	return req, nil, nil
 }
 
-// PostLLMHook is called after a request has been processed by UnifAI.
+// PostLLMHook is called after a request has been processed by Raksha.
 // It completes the request trace by:
 // - Adding response data to the generation if a generation ID exists
-// - Logging error details if unifaiErr is provided
+// - Logging error details if rakshaErr is provided
 // - Ending the generation if it exists
 // - Ending the trace if a trace ID exists
 // - Flushing all pending log data
@@ -527,32 +527,32 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAI
 // ensuring that partial logging is still performed when possible.
 //
 // Parameters:
-//   - ctx: Pointer to the schemas.UnifAIContext containing trace/generation IDs
-//   - result: The UnifAI response to be traced
-//   - unifaiErr: The UnifAIError returned by the request, if any
+//   - ctx: Pointer to the schemas.RakshaContext containing trace/generation IDs
+//   - result: The Raksha response to be traced
+//   - rakshaErr: The RakshaError returned by the request, if any
 //
 // Returns:
-//   - *schemas.UnifAIResponse: The original response, unmodified
-//   - *schemas.UnifAIError: The original error, unmodified
+//   - *schemas.RakshaResponse: The original response, unmodified
+//   - *schemas.RakshaError: The original error, unmodified
 //   - error: Never returns an error as it handles missing IDs gracefully
-func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
-	requestType, _, _, _ := unifai.GetResponseFields(result, unifaiErr)
+func (plugin *Plugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+	requestType, _, _, _ := raksha.GetResponseFields(result, rakshaErr)
 	if requestType == schemas.RealtimeRequest {
-		return result, unifaiErr, nil
+		return result, rakshaErr, nil
 	}
 
 	// Get effective log repo ID for this request
 	effectiveLogRepoID := plugin.getEffectiveLogRepoID(ctx)
 	if effectiveLogRepoID == "" {
-		return result, unifaiErr, nil
+		return result, rakshaErr, nil
 	}
 	if ctx == nil {
-		return result, unifaiErr, nil
+		return result, rakshaErr, nil
 	}
 
-	requestID, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
 	if !ok || requestID == "" {
-		return result, unifaiErr, nil
+		return result, rakshaErr, nil
 	}
 
 	// Capture context values BEFORE goroutine to avoid race conditions
@@ -561,37 +561,37 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.Un
 	traceID, hasTraceID := ctx.Value(TraceIDKey).(string)
 	tags, hasTags := ctx.Value(TagsKey).(map[string]string)
 	// Also capture x-uf-dim-* dimensions to forward as tags
-	dims, hasDims := ctx.Value(schemas.UnifAIContextKeyDimensions).(map[string]string)
+	dims, hasDims := ctx.Value(schemas.RakshaContextKeyDimensions).(map[string]string)
 	// Capture configured request headers (exact or wildcard patterns) to forward as tags.
 	var reqHeaders map[string]string
 	if len(plugin.requestHeaders) > 0 {
-		allHeaders, _ := ctx.Value(schemas.UnifAIContextKeyRequestHeaders).(map[string]string)
+		allHeaders, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string)
 		reqHeaders = schemas.FilterHeaders(allHeaders, plugin.requestHeaders)
 	}
 	hasReqHeaders := len(reqHeaders) > 0
 
-	isFinalChunk := unifai.IsFinalChunk(ctx)
+	isFinalChunk := raksha.IsFinalChunk(ctx)
 
 	go func() {
-		requestType, _, originalModel, resolvedModel := unifai.GetResponseFields(result, unifaiErr)
+		requestType, _, originalModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
 		modelTag := resolvedModel
 		if modelTag == "" {
 			modelTag = originalModel
 		}
 
 		var streamResponse *streaming.ProcessedStreamResponse
-		if unifai.IsStreamRequestType(requestType) {
+		if raksha.IsStreamRequestType(requestType) {
 			// Use central tracer's accumulator
-			tracer, unifaiTraceID, err := unifai.GetTracerFromContext(ctx)
-			if err == nil && tracer != nil && unifaiTraceID != "" {
-				accResult := tracer.ProcessStreamingChunk(ctx, unifaiTraceID, isFinalChunk, result, unifaiErr)
+			tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
+			if err == nil && tracer != nil && rakshaTraceID != "" {
+				accResult := tracer.ProcessStreamingChunk(ctx, rakshaTraceID, isFinalChunk, result, rakshaErr)
 				if accResult != nil {
 					streamResponse = convertAccResultToProcessedStreamResponse(accResult)
 				}
 			}
 
 			// For streaming: only process on final chunk. Skip intermediate chunks.
-			// When there's an error, streamResponse may be nil but we must still log unifaiErr.
+			// When there's an error, streamResponse may be nil but we must still log rakshaErr.
 			if !isFinalChunk {
 				return
 			}
@@ -602,18 +602,18 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.Un
 			return
 		}
 		if hasGenerationID {
-			if unifaiErr != nil {
+			if rakshaErr != nil {
 				// Safely extract message from nested error
 				message := ""
 				code := ""
 				errorType := ""
-				if unifaiErr.Error != nil {
-					message = unifaiErr.Error.Message
-					if unifaiErr.Error.Code != nil {
-						code = *unifaiErr.Error.Code
+				if rakshaErr.Error != nil {
+					message = rakshaErr.Error.Message
+					if rakshaErr.Error.Code != nil {
+						code = *rakshaErr.Error.Code
 					}
-					if unifaiErr.Error.Type != nil {
-						errorType = *unifaiErr.Error.Type
+					if rakshaErr.Error.Type != nil {
+						errorType = *rakshaErr.Error.Type
 					}
 				}
 				genErr := maximSchemas.GenerationError{
@@ -623,46 +623,46 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.Un
 				}
 				logger.SetGenerationError(generationID, &genErr)
 
-				if unifai.IsStreamRequestType(requestType) {
+				if raksha.IsStreamRequestType(requestType) {
 					// Cleanup via central tracer
-					tracer, unifaiTraceID, err := unifai.GetTracerFromContext(ctx)
-					if err == nil && tracer != nil && unifaiTraceID != "" {
-						tracer.CleanupStreamAccumulator(unifaiTraceID)
+					tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
+					if err == nil && tracer != nil && rakshaTraceID != "" {
+						tracer.CleanupStreamAccumulator(rakshaTraceID)
 					}
 				}
 			} else if result != nil {
 				switch requestType {
 				case schemas.TextCompletionRequest, schemas.TextCompletionStreamRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToUnifAIResponse().TextCompletionResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().TextCompletionResponse)
 					} else {
 						logger.AddResultToGeneration(generationID, result.TextCompletionResponse)
 					}
 				case schemas.ChatCompletionRequest, schemas.ChatCompletionStreamRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToUnifAIResponse().ChatResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().ChatResponse)
 					} else {
 						logger.AddResultToGeneration(generationID, result.ChatResponse)
 					}
 				case schemas.ResponsesRequest, schemas.ResponsesStreamRequest, schemas.WebSocketResponsesRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToUnifAIResponse().ResponsesResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().ResponsesResponse)
 					} else {
 						logger.AddResultToGeneration(generationID, result.ResponsesResponse)
 					}
 				case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
 					schemas.ImageEditRequest, schemas.ImageEditStreamRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToUnifAIResponse().ImageGenerationResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().ImageGenerationResponse)
 					} else if result != nil {
 						logger.AddResultToGeneration(generationID, result.ImageGenerationResponse)
 					}
 				}
 				if streamResponse != nil && isFinalChunk {
 					// Cleanup via central tracer
-					tracer, unifaiTraceID, err := unifai.GetTracerFromContext(ctx)
-					if err == nil && tracer != nil && unifaiTraceID != "" {
-						tracer.CleanupStreamAccumulator(unifaiTraceID)
+					tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
+					if err == nil && tracer != nil && rakshaTraceID != "" {
+						tracer.CleanupStreamAccumulator(rakshaTraceID)
 					}
 				}
 			}
@@ -717,7 +717,7 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.Un
 		// Flush only the effective logger that was used for this request
 		logger.Flush()
 	}()
-	return result, unifaiErr, nil
+	return result, rakshaErr, nil
 }
 
 func (plugin *Plugin) Cleanup() error {

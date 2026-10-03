@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/configstore/tables"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

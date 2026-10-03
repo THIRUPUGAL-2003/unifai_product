@@ -11,8 +11,8 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	codemcp "github.com/unifai/unifai/core/mcp"
-	"github.com/unifai/unifai/core/schemas"
+	codemcp "github.com/raksha/raksha/core/mcp"
+	"github.com/raksha/raksha/core/schemas"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
@@ -106,7 +106,7 @@ func (s *StarlarkCodeMode) createExecuteToolCodeTool() schemas.ChatTool {
 }
 
 // handleExecuteToolCode handles the executeToolCode tool call.
-func (s *StarlarkCodeMode) handleExecuteToolCode(ctx *schemas.UnifAIContext, toolCall schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, error) {
+func (s *StarlarkCodeMode) handleExecuteToolCode(ctx *schemas.RakshaContext, toolCall schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, error) {
 	toolName := "unknown"
 	if toolCall.Function.Name != nil {
 		toolName = *toolCall.Function.Name
@@ -200,7 +200,7 @@ func (s *StarlarkCodeMode) handleExecuteToolCode(ctx *schemas.UnifAIContext, too
 }
 
 // executeCode executes Python (Starlark) code in a sandboxed interpreter with MCP tool bindings.
-func (s *StarlarkCodeMode) executeCode(ctx *schemas.UnifAIContext, code string) ExecutionResult {
+func (s *StarlarkCodeMode) executeCode(ctx *schemas.RakshaContext, code string) ExecutionResult {
 	logs := []string{}
 
 	s.logger.Debug("%s Starting Starlark code execution", codemcp.CodeModeLogPrefix)
@@ -393,7 +393,7 @@ func (s *StarlarkCodeMode) executeCode(ctx *schemas.UnifAIContext, code string) 
 }
 
 // callMCPTool calls an MCP tool and returns the result.
-func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.UnifAIContext, clientName, toolName string, args map[string]interface{}, appendLog func(string)) (interface{}, error) {
+func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.RakshaContext, clientName, toolName string, args map[string]interface{}, appendLog func(string)) (interface{}, error) {
 	// Get available tools per client
 	availableToolsPerClient := s.clientManager.GetToolPerClient(ctx)
 
@@ -421,7 +421,7 @@ func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.UnifAIContext, clientName, t
 	// Strip the client name prefix from tool name before calling MCP server
 	originalToolName := stripClientPrefix(toolName, clientName)
 
-	originalRequestID, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string)
+	originalRequestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
 	if !ok {
 		originalRequestID = ""
 	}
@@ -439,10 +439,10 @@ func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.UnifAIContext, clientName, t
 	if !hasDeadline {
 		deadline = schemas.NoDeadline
 	}
-	nestedCtx := schemas.NewUnifAIContext(ctx, deadline)
-	nestedCtx.SetValue(schemas.UnifAIContextKeyRequestID, newRequestID)
+	nestedCtx := schemas.NewRakshaContext(ctx, deadline)
+	nestedCtx.SetValue(schemas.RakshaContextKeyRequestID, newRequestID)
 	if originalRequestID != "" {
-		nestedCtx.SetValue(schemas.UnifAIContextKeyParentMCPRequestID, originalRequestID)
+		nestedCtx.SetValue(schemas.RakshaContextKeyParentMCPRequestID, originalRequestID)
 	}
 
 	// Marshal arguments to JSON for the tool call
@@ -460,9 +460,9 @@ func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.UnifAIContext, clientName, t
 		},
 	}
 
-	// Create UnifAIMCPRequest. ClientName is set explicitly so the plugin gate
+	// Create RakshaMCPRequest. ClientName is set explicitly so the plugin gate
 	// can attribute short-circuit responses without re-parsing the prefixed name.
-	mcpRequest := &schemas.UnifAIMCPRequest{
+	mcpRequest := &schemas.RakshaMCPRequest{
 		RequestType:                  schemas.MCPRequestTypeChatToolCall,
 		ClientName:                   clientName,
 		ChatAssistantMessageToolCall: &toolCallReq,
@@ -485,7 +485,7 @@ func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.UnifAIContext, clientName, t
 	// PopulateExtraFields), plugin log draining, and short-circuit semantics —
 	// the op closure below only handles the wire CallTool. Keeps Starlark
 	// nested calls observationally identical to gateway-routed calls.
-	finalResp, finalErr := s.clientManager.RunWithPluginPipeline(nestedCtx, mcpRequest, func(preReq *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPResponse, error) {
+	finalResp, finalErr := s.clientManager.RunWithPluginPipeline(nestedCtx, mcpRequest, func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
 		// Honor any pre-hook mutation of tool name + arguments before the wire
 		// call. Mirrors ToolsManager.executeToolInternal (toolmanager.go:648–670):
 		// mutated name has its client prefix stripped using the ORIGINAL client
@@ -514,7 +514,7 @@ func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.UnifAIContext, clientName, t
 		toolCtx, cancel := context.WithTimeout(nestedCtx, toolExecutionTimeout)
 		defer cancel()
 
-		// Per-request extra headers (UnifAIContextKeyMCPExtraHeaders) are injected
+		// Per-request extra headers (RakshaContextKeyMCPExtraHeaders) are injected
 		// uniformly by the transport headerFunc (see createHTTPConnection /
 		// createSSEConnection / AcquireClientConn), so no per-call Header is set here.
 		// Keeps nested codemode calls on the same single header path as the gateway.
@@ -551,9 +551,9 @@ func (s *StarlarkCodeMode) callMCPTool(ctx *schemas.UnifAIContext, clientName, t
 		logToolName := strings.ReplaceAll(effectiveToolName, "-", "_")
 		appendLog(fmt.Sprintf("[TOOL] %s.%s raw response: %s", clientName, logToolName, resultStr))
 
-		return &schemas.UnifAIMCPResponse{
+		return &schemas.RakshaMCPResponse{
 			ChatMessage: createToolResponseMessage(toolCallReq, rawResult),
-			ExtraFields: schemas.UnifAIMCPResponseExtraFields{
+			ExtraFields: schemas.RakshaMCPResponseExtraFields{
 				ClientName: clientName,
 				ToolName:   effectiveToolName,
 				Latency:    latency,

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/raksha/raksha/core/schemas"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
 )
 
 type fakeDeployments struct {
@@ -23,8 +23,8 @@ func (f *fakeDeployments) ListPromptDeployments(_ context.Context, promptID stri
 	return out, nil
 }
 
-func newResolverCtx(values map[schemas.UnifAIContextKey]any) *schemas.UnifAIContext {
-	ctx := schemas.NewUnifAIContext(context.Background(), time.Time{})
+func newResolverCtx(values map[schemas.RakshaContextKey]any) *schemas.RakshaContext {
+	ctx := schemas.NewRakshaContext(context.Background(), time.Time{})
 	for k, v := range values {
 		ctx.SetValue(k, v)
 	}
@@ -44,17 +44,17 @@ func TestDeploymentAwareResolver(t *testing.T) {
 
 	cases := []struct {
 		name        string
-		values      map[schemas.UnifAIContextKey]any
+		values      map[schemas.RakshaContextKey]any
 		wantPrompt  string
 		wantVersion int
 	}{
 		{"no headers resolves nothing", nil, "", 0},
-		{"explicit version wins", map[schemas.UnifAIContextKey]any{PromptIDKey: "p1", PromptVersionKey: "1", PromptEnvironmentKey: "production"}, "p1", 1},
-		{"prompt plus env uses newest deployment of that prompt", map[schemas.UnifAIContextKey]any{PromptIDKey: "p2", PromptEnvironmentKey: "production"}, "p2", 7},
-		{"env only uses newest enabled deployment", map[schemas.UnifAIContextKey]any{PromptEnvironmentKey: "production"}, "p1", 3},
-		{"disabled deployment ignored", map[schemas.UnifAIContextKey]any{PromptIDKey: "p1", PromptEnvironmentKey: "staging"}, "p1", 0},
-		{"dimension env alone never injects", map[schemas.UnifAIContextKey]any{schemas.UnifAIContextKeyDimensions: map[string]string{"environment": "production"}}, "", 0},
-		{"dimension env selects version for named prompt", map[schemas.UnifAIContextKey]any{PromptIDKey: "p1", schemas.UnifAIContextKeyDimensions: map[string]string{"environment": "production"}}, "p1", 3},
+		{"explicit version wins", map[schemas.RakshaContextKey]any{PromptIDKey: "p1", PromptVersionKey: "1", PromptEnvironmentKey: "production"}, "p1", 1},
+		{"prompt plus env uses newest deployment of that prompt", map[schemas.RakshaContextKey]any{PromptIDKey: "p2", PromptEnvironmentKey: "production"}, "p2", 7},
+		{"env only uses newest enabled deployment", map[schemas.RakshaContextKey]any{PromptEnvironmentKey: "production"}, "p1", 3},
+		{"disabled deployment ignored", map[schemas.RakshaContextKey]any{PromptIDKey: "p1", PromptEnvironmentKey: "staging"}, "p1", 0},
+		{"dimension env alone never injects", map[schemas.RakshaContextKey]any{schemas.RakshaContextKeyDimensions: map[string]string{"environment": "production"}}, "", 0},
+		{"dimension env selects version for named prompt", map[schemas.RakshaContextKey]any{PromptIDKey: "p1", schemas.RakshaContextKeyDimensions: map[string]string{"environment": "production"}}, "p1", 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

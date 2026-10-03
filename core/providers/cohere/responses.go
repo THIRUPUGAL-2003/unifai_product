@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/core/providers/anthropic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/anthropic"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/tidwall/gjson"
 )
 
@@ -176,8 +176,8 @@ func (state *CohereResponsesStreamState) getOrCreateOutputIndex(contentIndex *in
 	return outputIndex
 }
 
-// convertCohereContentBlockToUnifAI converts CohereContentBlock to schemas.ContentBlock for Responses
-func convertCohereContentBlockToUnifAI(cohereBlock CohereContentBlock) schemas.ResponsesMessageContentBlock {
+// convertCohereContentBlockToRaksha converts CohereContentBlock to schemas.ContentBlock for Responses
+func convertCohereContentBlockToRaksha(cohereBlock CohereContentBlock) schemas.ResponsesMessageContentBlock {
 	switch cohereBlock.Type {
 	case CohereContentBlockTypeText:
 		return schemas.ResponsesMessageContentBlock{
@@ -218,7 +218,7 @@ func convertCohereContentBlockToUnifAI(cohereBlock CohereContentBlock) schemas.R
 	}
 }
 
-func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, state *CohereResponsesStreamState) ([]*schemas.UnifAIResponsesStreamResponse, *schemas.UnifAIError, bool) {
+func (chunk *CohereStreamEvent) ToRakshaResponsesStream(sequenceNumber int, state *CohereResponsesStreamState) ([]*schemas.RakshaResponsesStreamResponse, *schemas.RakshaError, bool) {
 	switch chunk.Type {
 	case StreamEventMessageStart:
 		// Message start - emit response.created and response.in_progress (OpenAI-style lifecycle)
@@ -229,15 +229,15 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				state.CreatedAt = int(time.Now().Unix())
 			}
 
-			var responses []*schemas.UnifAIResponsesStreamResponse
+			var responses []*schemas.RakshaResponsesStreamResponse
 
 			// Emit response.created
 			if !state.HasEmittedCreated {
-				response := &schemas.UnifAIResponsesResponse{
+				response := &schemas.RakshaResponsesResponse{
 					ID:        state.MessageID,
 					CreatedAt: state.CreatedAt,
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeCreated,
 					SequenceNumber: sequenceNumber,
 					Response:       response,
@@ -247,11 +247,11 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 
 			// Emit response.in_progress
 			if !state.HasEmittedInProgress {
-				response := &schemas.UnifAIResponsesResponse{
+				response := &schemas.RakshaResponsesResponse{
 					ID:        state.MessageID,
 					CreatedAt: state.CreatedAt, // Use same timestamp
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeInProgress,
 					SequenceNumber: sequenceNumber + len(responses),
 					Response:       response,
@@ -266,7 +266,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 	case StreamEventContentStart:
 		// Content block start - emit output_item.added (OpenAI-style)
 		// First, close tool plan message item if it's still open
-		var responses []*schemas.UnifAIResponsesStreamResponse
+		var responses []*schemas.RakshaResponsesStreamResponse
 		if state.ToolPlanOutputIndex != nil {
 			outputIndex := *state.ToolPlanOutputIndex
 			itemID := state.ItemIDs[outputIndex]
@@ -276,7 +276,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			}
 
 			// Emit output_text.done with accumulated text
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -296,7 +296,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 					Annotations: []schemas.ResponsesOutputMessageContentTextAnnotation{},
 				},
 			}
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -330,7 +330,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			if itemID != "" {
 				doneItem.ID = &itemID
 			}
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -371,7 +371,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 					},
 				}
 
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -389,7 +389,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 						Annotations: []schemas.ResponsesOutputMessageContentTextAnnotation{},
 					},
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -422,7 +422,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				}
 
 				// Emit output_item.added
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -436,7 +436,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 					Type: schemas.ResponsesOutputMessageContentTypeReasoning,
 					Text: &emptyText,
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -465,7 +465,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 
 				// Emit output_text.delta (not reasoning_summary_text.delta for regular text)
 				itemID := state.ItemIDs[outputIndex]
-				response := &schemas.UnifAIResponsesStreamResponse{
+				response := &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -476,14 +476,14 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				if itemID != "" {
 					response.ItemID = &itemID
 				}
-				return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+				return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 			}
 
 			// Handle thinking content delta
 			if chunk.Delta.Message != nil && chunk.Delta.Message.Content != nil && chunk.Delta.Message.Content.CohereStreamContentObject != nil && chunk.Delta.Message.Content.CohereStreamContentObject.Thinking != nil && *chunk.Delta.Message.Content.CohereStreamContentObject.Thinking != "" {
 				// Emit reasoning_summary_text.delta for thinking content
 				itemID := state.ItemIDs[outputIndex]
-				response := &schemas.UnifAIResponsesStreamResponse{
+				response := &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryTextDelta,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -493,7 +493,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				if itemID != "" {
 					response.ItemID = &itemID
 				}
-				return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+				return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 			}
 		}
 		return nil, nil, false
@@ -502,7 +502,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 		if chunk.Index != nil {
 			outputIndex := state.getOrCreateOutputIndex(chunk.Index)
 			itemID := state.ItemIDs[outputIndex]
-			var responses []*schemas.UnifAIResponsesStreamResponse
+			var responses []*schemas.RakshaResponsesStreamResponse
 			isReasoning := state.ReasoningContentIndices[*chunk.Index]
 
 			// Grab accumulated text up front (empty string for reasoning blocks)
@@ -515,7 +515,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			if isReasoning {
 				// Emit reasoning_summary_text.done (reasoning equivalent of output_text.done)
 				emptyText := ""
-				reasoningDoneResponse := &schemas.UnifAIResponsesStreamResponse{
+				reasoningDoneResponse := &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryTextDone,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -532,7 +532,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 					Type: schemas.ResponsesOutputMessageContentTypeReasoning,
 					Text: &emptyText,
 				}
-				partDoneResponse := &schemas.UnifAIResponsesStreamResponse{
+				partDoneResponse := &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -548,7 +548,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				delete(state.ReasoningContentIndices, *chunk.Index)
 			} else {
 				// Regular text block - emit output_text.done with accumulated text
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -568,7 +568,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 						Annotations: []schemas.ResponsesOutputMessageContentTextAnnotation{},
 					},
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -622,7 +622,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			if itemID != "" {
 				doneItem.ID = &itemID
 			}
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -636,7 +636,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			// Tool plan delta - treat as normal text (Option A)
 			// Use output_index 0 for text message if it exists, otherwise create new
 			outputIndex := 0
-			var responses []*schemas.UnifAIResponsesStreamResponse
+			var responses []*schemas.RakshaResponsesStreamResponse
 
 			if state.ToolPlanOutputIndex != nil {
 				outputIndex = *state.ToolPlanOutputIndex
@@ -669,7 +669,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				}
 
 				// Emit output_item.added for text message
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -687,7 +687,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 						Annotations: []schemas.ResponsesOutputMessageContentTextAnnotation{},
 					},
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -705,7 +705,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 
 			// Emit output_text.delta (not reasoning_summary_text.delta)
 			itemID := state.ItemIDs[outputIndex]
-			response := &schemas.UnifAIResponsesStreamResponse{
+			response := &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -722,7 +722,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 		return nil, nil, false
 	case StreamEventToolCallStart:
 		// First, close tool plan message item if it's still open
-		var responses []*schemas.UnifAIResponsesStreamResponse
+		var responses []*schemas.RakshaResponsesStreamResponse
 		if state.ToolPlanOutputIndex != nil {
 			outputIndex := *state.ToolPlanOutputIndex
 			itemID := state.ItemIDs[outputIndex]
@@ -732,7 +732,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			}
 
 			// Emit output_text.done with accumulated text
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -752,7 +752,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 					Annotations: []schemas.ResponsesOutputMessageContentTextAnnotation{},
 				},
 			}
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -786,7 +786,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			if itemID != "" {
 				doneItem.ID = &itemID
 			}
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -840,7 +840,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				// Initialize argument buffer for this tool call
 				state.ToolArgumentBuffers[outputIndex] = ""
 
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -868,7 +868,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 
 				// Emit function_call_arguments.delta
 				itemID := state.ItemIDs[outputIndex]
-				response := &schemas.UnifAIResponsesStreamResponse{
+				response := &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDelta,
 					SequenceNumber: sequenceNumber,
 					ContentIndex:   chunk.Index,
@@ -878,7 +878,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				if itemID != "" {
 					response.ItemID = &itemID
 				}
-				return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+				return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 			}
 		}
 		return nil, nil, false
@@ -886,14 +886,14 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 		if chunk.Index != nil {
 			// Tool call end - emit function_call_arguments.done then output_item.done
 			outputIndex := state.getOrCreateOutputIndex(chunk.Index)
-			var responses []*schemas.UnifAIResponsesStreamResponse
+			var responses []*schemas.RakshaResponsesStreamResponse
 			argsValue := ""
 
 			// Emit function_call_arguments.done with full accumulated JSON
 			if accumulatedArgs, hasArgs := state.ToolArgumentBuffers[outputIndex]; hasArgs && accumulatedArgs != "" {
 				argsValue = accumulatedArgs
 				itemID := state.ItemIDs[outputIndex]
-				response := &schemas.UnifAIResponsesStreamResponse{
+				response := &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDone,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -928,7 +928,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			if itemID != "" {
 				doneItem.ID = &itemID
 			}
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -992,7 +992,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 				state.AnnotationIndexToContentIndex[*chunk.Index] = citation.ContentIndex
 			}
 
-			return []*schemas.UnifAIResponsesStreamResponse{{
+			return []*schemas.RakshaResponsesStreamResponse{{
 				Type:            schemas.ResponsesStreamResponseTypeOutputTextAnnotationAdded,
 				SequenceNumber:  sequenceNumber,
 				ContentIndex:    schemas.Ptr(citation.ContentIndex),
@@ -1016,7 +1016,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			contentIndexPtr := &contentIndex
 			outputIndex := state.getOrCreateOutputIndex(contentIndexPtr)
 
-			return []*schemas.UnifAIResponsesStreamResponse{{
+			return []*schemas.RakshaResponsesStreamResponse{{
 				Type:            schemas.ResponsesStreamResponseTypeOutputTextAnnotationDone,
 				SequenceNumber:  sequenceNumber,
 				ContentIndex:    &contentIndex,
@@ -1027,7 +1027,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 		return nil, nil, false
 	case StreamEventMessageEnd:
 		// Message end - emit response.completed (OpenAI-style)
-		response := &schemas.UnifAIResponsesResponse{
+		response := &schemas.RakshaResponsesResponse{
 			CreatedAt: state.CreatedAt,
 		}
 		if state.MessageID != nil {
@@ -1060,7 +1060,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 			}
 		}
 
-		return []*schemas.UnifAIResponsesStreamResponse{{
+		return []*schemas.RakshaResponsesStreamResponse{{
 			Type:           schemas.ResponsesStreamResponseTypeCompleted,
 			SequenceNumber: sequenceNumber,
 			Response:       response,
@@ -1071,7 +1071,7 @@ func (chunk *CohereStreamEvent) ToUnifAIResponsesStream(sequenceNumber int, stat
 	return nil, nil, false
 }
 
-// ConvertResponsesTextFormatToCohere converts UnifAI Responses Text.Format to Cohere's typed format
+// ConvertResponsesTextFormatToCohere converts Raksha Responses Text.Format to Cohere's typed format
 // Responses format: Text.Format with type "json_schema", "json_object", or "text"
 // Cohere format: { type: "json_object", json_schema: {...} }
 func convertResponsesTextFormatToCohere(textFormat *schemas.ResponsesTextConfigFormat) *CohereResponseFormat {
@@ -1117,49 +1117,49 @@ func convertResponsesTextFormatToCohere(textFormat *schemas.ResponsesTextConfigF
 	return cohereFormat
 }
 
-// ToCohereResponsesRequest converts a UnifAIRequest (Responses structure) to CohereChatRequest
-func ToCohereResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*CohereChatRequest, error) {
-	if unifaiReq == nil {
+// ToCohereResponsesRequest converts a RakshaRequest (Responses structure) to CohereChatRequest
+func ToCohereResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*CohereChatRequest, error) {
+	if rakshaReq == nil {
 		return nil, nil
 	}
 
 	cohereReq := &CohereChatRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
 
 	// Map basic parameters
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.MaxOutputTokens != nil {
-			cohereReq.MaxTokens = unifaiReq.Params.MaxOutputTokens
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.MaxOutputTokens != nil {
+			cohereReq.MaxTokens = rakshaReq.Params.MaxOutputTokens
 		}
-		if unifaiReq.Params.Temperature != nil {
-			cohereReq.Temperature = unifaiReq.Params.Temperature
+		if rakshaReq.Params.Temperature != nil {
+			cohereReq.Temperature = rakshaReq.Params.Temperature
 		}
-		if unifaiReq.Params.TopP != nil {
-			cohereReq.P = unifaiReq.Params.TopP
+		if rakshaReq.Params.TopP != nil {
+			cohereReq.P = rakshaReq.Params.TopP
 		}
 
 		// Convert reasoning
-		if unifaiReq.Params.Reasoning != nil {
-			if unifaiReq.Params.Reasoning.MaxTokens != nil {
+		if rakshaReq.Params.Reasoning != nil {
+			if rakshaReq.Params.Reasoning.MaxTokens != nil {
 				thinking := &CohereThinking{
 					Type: ThinkingTypeEnabled,
 				}
-				if *unifaiReq.Params.Reasoning.MaxTokens == -1 {
+				if *rakshaReq.Params.Reasoning.MaxTokens == -1 {
 					// cohere does not support dynamic reasoning budget like gemini
 					// setting it to minimum reasoning budget
 					thinking.TokenBudget = schemas.Ptr(anthropic.MinimumReasoningMaxTokens)
 				} else {
-					thinking.TokenBudget = unifaiReq.Params.Reasoning.MaxTokens
+					thinking.TokenBudget = rakshaReq.Params.Reasoning.MaxTokens
 				}
 				cohereReq.Thinking = thinking
 			} else {
-				if unifaiReq.Params.Reasoning.Effort != nil && *unifaiReq.Params.Reasoning.Effort != "none" {
-					maxOutputTokens := providerUtils.GetMaxOutputTokensOrDefault(unifaiReq.Model, DefaultCompletionMaxTokens)
-					if unifaiReq.Params.MaxOutputTokens != nil {
-						maxOutputTokens = *unifaiReq.Params.MaxOutputTokens
+				if rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none" {
+					maxOutputTokens := providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, DefaultCompletionMaxTokens)
+					if rakshaReq.Params.MaxOutputTokens != nil {
+						maxOutputTokens = *rakshaReq.Params.MaxOutputTokens
 					}
-					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*unifaiReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, maxOutputTokens)
+					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*rakshaReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, maxOutputTokens)
 					if err != nil {
 						return nil, err
 					}
@@ -1175,28 +1175,28 @@ func ToCohereResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Coher
 			}
 		}
 
-		if unifaiReq.Params.Text != nil && unifaiReq.Params.Text.Format != nil {
-			cohereReq.ResponseFormat = convertResponsesTextFormatToCohere(unifaiReq.Params.Text.Format)
+		if rakshaReq.Params.Text != nil && rakshaReq.Params.Text.Format != nil {
+			cohereReq.ResponseFormat = convertResponsesTextFormatToCohere(rakshaReq.Params.Text.Format)
 		}
-		if unifaiReq.Params.ExtraParams != nil {
-			cohereReq.ExtraParams = unifaiReq.Params.ExtraParams
-			if topK, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["top_k"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
+			if topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"]); ok {
 				delete(cohereReq.ExtraParams, "top_k")
 				cohereReq.K = topK
 			}
-			if stop, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["stop"]); ok {
+			if stop, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["stop"]); ok {
 				delete(cohereReq.ExtraParams, "stop")
 				cohereReq.StopSequences = stop
 			}
-			if frequencyPenalty, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["frequency_penalty"]); ok {
+			if frequencyPenalty, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["frequency_penalty"]); ok {
 				delete(cohereReq.ExtraParams, "frequency_penalty")
 				cohereReq.FrequencyPenalty = frequencyPenalty
 			}
-			if presencePenalty, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["presence_penalty"]); ok {
+			if presencePenalty, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["presence_penalty"]); ok {
 				delete(cohereReq.ExtraParams, "presence_penalty")
 				cohereReq.PresencePenalty = presencePenalty
 			}
-			if thinkingParam, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "thinking"); ok {
+			if thinkingParam, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "thinking"); ok {
 				if thinkingMap, ok := thinkingParam.(map[string]interface{}); ok {
 					thinking := &CohereThinking{}
 					if typeStr, ok := schemas.SafeExtractString(thinkingMap["type"]); ok {
@@ -1208,16 +1208,16 @@ func ToCohereResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Coher
 						thinking.TokenBudget = tokenBudget
 					}
 					cohereReq.Thinking = thinking
-					unifaiReq.Params.ExtraParams["thinking"] = thinkingMap
+					rakshaReq.Params.ExtraParams["thinking"] = thinkingMap
 				}
 			}
 		}
 	}
 
 	// Convert tools
-	if unifaiReq.Params != nil && unifaiReq.Params.Tools != nil {
+	if rakshaReq.Params != nil && rakshaReq.Params.Tools != nil {
 		var cohereTools []CohereChatRequestTool
-		for _, tool := range unifaiReq.Params.Tools {
+		for _, tool := range rakshaReq.Params.Tools {
 			if tool.ResponsesToolFunction != nil && tool.Name != nil {
 				cohereTool := CohereChatRequestTool{
 					Type: "function",
@@ -1237,25 +1237,25 @@ func ToCohereResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*Coher
 	}
 
 	// Convert tool choice
-	if unifaiReq.Params != nil && unifaiReq.Params.ToolChoice != nil {
-		cohereReq.ToolChoice = convertUnifAIToolChoiceToCohereToolChoice(*unifaiReq.Params.ToolChoice)
+	if rakshaReq.Params != nil && rakshaReq.Params.ToolChoice != nil {
+		cohereReq.ToolChoice = convertRakshaToolChoiceToCohereToolChoice(*rakshaReq.Params.ToolChoice)
 	}
 
 	// Process ResponsesInput (which contains the Responses items)
-	if unifaiReq.Input != nil {
-		cohereReq.Messages = ConvertUnifAIMessagesToCohereMessages(unifaiReq.Input, unifaiReq.Params)
+	if rakshaReq.Input != nil {
+		cohereReq.Messages = ConvertRakshaMessagesToCohereMessages(rakshaReq.Input, rakshaReq.Params)
 	}
 
 	return cohereReq, nil
 }
 
-// ToUnifAIResponsesResponse converts CohereChatResponse to UnifAIResponse (Responses structure)
-func (response *CohereChatResponse) ToUnifAIResponsesResponse() *schemas.UnifAIResponsesResponse {
+// ToRakshaResponsesResponse converts CohereChatResponse to RakshaResponse (Responses structure)
+func (response *CohereChatResponse) ToRakshaResponsesResponse() *schemas.RakshaResponsesResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResp := &schemas.UnifAIResponsesResponse{
+	rakshaResp := &schemas.RakshaResponsesResponse{
 		ID:        schemas.Ptr(response.ID),
 		CreatedAt: int(time.Now().Unix()), // Set current timestamp
 	}
@@ -1280,27 +1280,27 @@ func (response *CohereChatResponse) ToUnifAIResponsesResponse() *schemas.UnifAIR
 			}
 		}
 
-		unifaiResp.Usage = usage
+		rakshaResp.Usage = usage
 	}
 
 	// Convert output message to Responses format
 	if response.Message != nil {
-		outputMessages := ConvertCohereMessagesToUnifAIMessages([]CohereMessage{*response.Message}, true)
-		unifaiResp.Output = outputMessages
+		outputMessages := ConvertCohereMessagesToRakshaMessages([]CohereMessage{*response.Message}, true)
+		rakshaResp.Output = outputMessages
 	}
 
-	return unifaiResp
+	return rakshaResp
 }
 
-// ConvertUnifAIMessagesToCohereMessages converts an array of UnifAI ResponsesMessage to Cohere message format
-// This is the main conversion method from UnifAI to Cohere - handles all message types and returns messages
-func ConvertUnifAIMessagesToCohereMessages(unifaiMessages []schemas.ResponsesMessage, params *schemas.ResponsesParameters) []CohereMessage {
+// ConvertRakshaMessagesToCohereMessages converts an array of Raksha ResponsesMessage to Cohere message format
+// This is the main conversion method from Raksha to Cohere - handles all message types and returns messages
+func ConvertRakshaMessagesToCohereMessages(rakshaMessages []schemas.ResponsesMessage, params *schemas.ResponsesParameters) []CohereMessage {
 	// If only a single system / developer message is present, convert it to a user message.
 	// Cohere requires a user message to be present in the conversation.
-	if len(unifaiMessages) == 1 && unifaiMessages[0].Role != nil && (*unifaiMessages[0].Role == schemas.ResponsesInputMessageRoleSystem || *unifaiMessages[0].Role == schemas.ResponsesInputMessageRoleDeveloper) {
-		msg := unifaiMessages[0]
+	if len(rakshaMessages) == 1 && rakshaMessages[0].Role != nil && (*rakshaMessages[0].Role == schemas.ResponsesInputMessageRoleSystem || *rakshaMessages[0].Role == schemas.ResponsesInputMessageRoleDeveloper) {
+		msg := rakshaMessages[0]
 		msg.Role = schemas.Ptr(schemas.ResponsesInputMessageRoleUser)
-		if cohereMsg := convertUnifAIMessageToCohereMessage(&msg); cohereMsg != nil {
+		if cohereMsg := convertRakshaMessageToCohereMessage(&msg); cohereMsg != nil {
 			return []CohereMessage{*cohereMsg}
 		}
 	}
@@ -1310,7 +1310,7 @@ func ConvertUnifAIMessagesToCohereMessages(unifaiMessages []schemas.ResponsesMes
 	var pendingReasoningContentBlocks []CohereContentBlock
 	var currentAssistantMessage *CohereMessage
 
-	for _, msg := range unifaiMessages {
+	for _, msg := range rakshaMessages {
 		// Handle nil Type with default
 		msgType := schemas.ResponsesMessageTypeMessage
 		if msg.Type != nil {
@@ -1328,11 +1328,11 @@ func ConvertUnifAIMessagesToCohereMessages(unifaiMessages []schemas.ResponsesMes
 			// Cohere has no support for role "developer", so we treat it as "system"
 			if role == "system" || role == "developer" {
 				// Collect system messages separately for Cohere
-				systemMsgs := convertUnifAIMessageToCohereSystemContent(&msg)
+				systemMsgs := convertRakshaMessageToCohereSystemContent(&msg)
 				systemContent = append(systemContent, systemMsgs...)
 			} else {
 				// Convert regular message
-				cohereMsg := convertUnifAIMessageToCohereMessage(&msg)
+				cohereMsg := convertRakshaMessageToCohereMessage(&msg)
 				if cohereMsg != nil {
 					if role == "assistant" {
 						// Add any pending reasoning content blocks to the message
@@ -1378,7 +1378,7 @@ func ConvertUnifAIMessagesToCohereMessages(unifaiMessages []schemas.ResponsesMes
 
 		case schemas.ResponsesMessageTypeReasoning:
 			// Handle reasoning as thinking content blocks
-			reasoningBlocks := convertUnifAIReasoningToCohereThinking(&msg)
+			reasoningBlocks := convertRakshaReasoningToCohereThinking(&msg)
 			if len(reasoningBlocks) > 0 {
 				if currentAssistantMessage == nil {
 					currentAssistantMessage = &CohereMessage{
@@ -1402,14 +1402,14 @@ func ConvertUnifAIMessagesToCohereMessages(unifaiMessages []schemas.ResponsesMes
 			}
 
 			// Handle function calls from Responses
-			assistantMsg := convertUnifAIFunctionCallToCohereMessage(&msg)
+			assistantMsg := convertRakshaFunctionCallToCohereMessage(&msg)
 			if assistantMsg != nil {
 				cohereMessages = append(cohereMessages, *assistantMsg)
 			}
 
 		case schemas.ResponsesMessageTypeFunctionCallOutput:
 			// Handle function call outputs
-			toolMsg := convertUnifAIFunctionCallOutputToCohereMessage(&msg)
+			toolMsg := convertRakshaFunctionCallOutputToCohereMessage(&msg)
 			if toolMsg != nil {
 				cohereMessages = append(cohereMessages, *toolMsg)
 			}
@@ -1447,21 +1447,21 @@ func ConvertUnifAIMessagesToCohereMessages(unifaiMessages []schemas.ResponsesMes
 	return cohereMessages
 }
 
-// ConvertCohereMessagesToUnifAIMessages converts an array of Cohere messages to UnifAI ResponsesMessage format
-// This is the main conversion method from Cohere to UnifAI - handles all message types and content blocks
-func ConvertCohereMessagesToUnifAIMessages(cohereMessages []CohereMessage, isOutputMessage bool) []schemas.ResponsesMessage {
-	var unifaiMessages []schemas.ResponsesMessage
+// ConvertCohereMessagesToRakshaMessages converts an array of Cohere messages to Raksha ResponsesMessage format
+// This is the main conversion method from Cohere to Raksha - handles all message types and content blocks
+func ConvertCohereMessagesToRakshaMessages(cohereMessages []CohereMessage, isOutputMessage bool) []schemas.ResponsesMessage {
+	var rakshaMessages []schemas.ResponsesMessage
 
 	for _, msg := range cohereMessages {
-		convertedMessages := convertSingleCohereMessageToUnifAIMessages(&msg, isOutputMessage)
-		unifaiMessages = append(unifaiMessages, convertedMessages...)
+		convertedMessages := convertSingleCohereMessageToRakshaMessages(&msg, isOutputMessage)
+		rakshaMessages = append(rakshaMessages, convertedMessages...)
 	}
 
-	return unifaiMessages
+	return rakshaMessages
 }
 
-// convertUnifAIToolChoiceToCohere converts schemas.ToolChoice to CohereToolChoice
-func convertUnifAIToolChoiceToCohereToolChoice(toolChoice schemas.ResponsesToolChoice) *CohereToolChoice {
+// convertRakshaToolChoiceToCohere converts schemas.ToolChoice to CohereToolChoice
+func convertRakshaToolChoiceToCohereToolChoice(toolChoice schemas.ResponsesToolChoice) *CohereToolChoice {
 	toolChoiceString := toolChoice.ResponsesToolChoiceStr
 
 	if toolChoiceString != nil {
@@ -1486,8 +1486,8 @@ func convertUnifAIToolChoiceToCohereToolChoice(toolChoice schemas.ResponsesToolC
 
 // Helper functions for converting individual Cohere message types
 
-// convertUnifAIMessageToCohereSystemContent converts a UnifAI system message to Cohere system content
-func convertUnifAIMessageToCohereSystemContent(msg *schemas.ResponsesMessage) []string {
+// convertRakshaMessageToCohereSystemContent converts a Raksha system message to Cohere system content
+func convertRakshaMessageToCohereSystemContent(msg *schemas.ResponsesMessage) []string {
 	var systemContent []string
 
 	if msg.Content != nil {
@@ -1505,8 +1505,8 @@ func convertUnifAIMessageToCohereSystemContent(msg *schemas.ResponsesMessage) []
 	return systemContent
 }
 
-// convertUnifAIMessageToCohereMessage converts a regular UnifAI message to Cohere message
-func convertUnifAIMessageToCohereMessage(msg *schemas.ResponsesMessage) *CohereMessage {
+// convertRakshaMessageToCohereMessage converts a regular Raksha message to Cohere message
+func convertRakshaMessageToCohereMessage(msg *schemas.ResponsesMessage) *CohereMessage {
 	role := "user"
 	if msg.Role != nil {
 		role = string(*msg.Role)
@@ -1529,8 +1529,8 @@ func convertUnifAIMessageToCohereMessage(msg *schemas.ResponsesMessage) *CohereM
 	return &cohereMsg
 }
 
-// convertUnifAIReasoningToCohereThinking converts a UnifAI reasoning message to Cohere thinking blocks
-func convertUnifAIReasoningToCohereThinking(msg *schemas.ResponsesMessage) []CohereContentBlock {
+// convertRakshaReasoningToCohereThinking converts a Raksha reasoning message to Cohere thinking blocks
+func convertRakshaReasoningToCohereThinking(msg *schemas.ResponsesMessage) []CohereContentBlock {
 	var thinkingBlocks []CohereContentBlock
 
 	if msg.Content != nil && msg.Content.ContentBlocks != nil {
@@ -1567,8 +1567,8 @@ func convertUnifAIReasoningToCohereThinking(msg *schemas.ResponsesMessage) []Coh
 	return thinkingBlocks
 }
 
-// convertUnifAIFunctionCallToCohereMessage converts a UnifAI function call to Cohere message
-func convertUnifAIFunctionCallToCohereMessage(msg *schemas.ResponsesMessage) *CohereMessage {
+// convertRakshaFunctionCallToCohereMessage converts a Raksha function call to Cohere message
+func convertRakshaFunctionCallToCohereMessage(msg *schemas.ResponsesMessage) *CohereMessage {
 	assistantMsg := CohereMessage{
 		Role: "assistant",
 	}
@@ -1603,8 +1603,8 @@ func convertUnifAIFunctionCallToCohereMessage(msg *schemas.ResponsesMessage) *Co
 	return &assistantMsg
 }
 
-// convertUnifAIFunctionCallOutputToCohereMessage converts a UnifAI function call output to Cohere message
-func convertUnifAIFunctionCallOutputToCohereMessage(msg *schemas.ResponsesMessage) *CohereMessage {
+// convertRakshaFunctionCallOutputToCohereMessage converts a Raksha function call output to Cohere message
+func convertRakshaFunctionCallOutputToCohereMessage(msg *schemas.ResponsesMessage) *CohereMessage {
 	if msg.ResponsesToolMessage != nil && msg.ResponsesToolMessage.CallID != nil {
 		toolMsg := CohereMessage{
 			Role: "tool",
@@ -1639,8 +1639,8 @@ func convertUnifAIFunctionCallOutputToCohereMessage(msg *schemas.ResponsesMessag
 	return nil
 }
 
-// convertSingleCohereMessageToUnifAIMessages converts a single Cohere message to UnifAI messages
-func convertSingleCohereMessageToUnifAIMessages(cohereMsg *CohereMessage, isOutputMessage bool) []schemas.ResponsesMessage {
+// convertSingleCohereMessageToRakshaMessages converts a single Cohere message to Raksha messages
+func convertSingleCohereMessageToRakshaMessages(cohereMsg *CohereMessage, isOutputMessage bool) []schemas.ResponsesMessage {
 	var outputMessages []schemas.ResponsesMessage
 	var reasoningContentBlocks []schemas.ResponsesMessageContentBlock
 
@@ -1670,7 +1670,7 @@ func convertSingleCohereMessageToUnifAIMessages(cohereMsg *CohereMessage, isOutp
 						Text: block.Thinking,
 					})
 				} else {
-					converted := convertCohereContentBlockToUnifAI(block)
+					converted := convertCohereContentBlockToRaksha(block)
 					if converted.Type != "" {
 						contentBlocks = append(contentBlocks, converted)
 					}
@@ -1771,7 +1771,7 @@ func convertSingleCohereMessageToUnifAIMessages(cohereMsg *CohereMessage, isOutp
 	return outputMessages
 }
 
-// convertUnifAIContentBlocksToCohere converts UnifAI content blocks to Cohere format
+// convertRakshaContentBlocksToCohere converts Raksha content blocks to Cohere format
 func convertResponsesMessageContentBlocksToCohere(blocks []schemas.ResponsesMessageContentBlock) []CohereContentBlock {
 	var cohereBlocks []CohereContentBlock
 

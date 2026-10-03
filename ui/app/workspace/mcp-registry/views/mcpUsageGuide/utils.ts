@@ -3,18 +3,18 @@ import type { VirtualKey } from "@/lib/types/governance";
 import type { MCPClient } from "@/lib/types/mcp";
 import type { HarnessPlatform, ServerScope } from "./types";
 
-/** Default port UnifAI serves on; used when guessing the gateway URL in local dev. */
-const DEFAULT_UNIFAI_PORT = "8081";
+/** Default port Raksha serves on; used when guessing the gateway URL in local dev. */
+const DEFAULT_RAKSHA_PORT = "8081";
 
 /**
- * Resolve the externally reachable UnifAI base URL used in generated commands/configs.
+ * Resolve the externally reachable Raksha base URL used in generated commands/configs.
  *
  * Order of preference:
  *  1. The admin-configured `mcp_external_client_url`. When sourced from an env var the
  *     value is still honoured as long as it resolves to a concrete http(s) URL — a
  *     redacted/empty value falls through to the window-origin heuristic below.
  *  2. The current window origin. For local dev on a non-default port we assume the
- *     gateway listens on DEFAULT_UNIFAI_PORT (the UI is often proxied on another port).
+ *     gateway listens on DEFAULT_RAKSHA_PORT (the UI is often proxied on another port).
  *  3. A placeholder the user must replace by hand.
  */
 export function getExternalBaseUrl(clientConfig?: CoreConfig): string {
@@ -26,8 +26,8 @@ export function getExternalBaseUrl(clientConfig?: CoreConfig): string {
 	if (typeof window !== "undefined" && window.location.origin) {
 		const { protocol, hostname, port } = window.location;
 		const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-		if (isLocalHost && port && port !== DEFAULT_UNIFAI_PORT) {
-			return `${protocol}//${hostname}:${DEFAULT_UNIFAI_PORT}`;
+		if (isLocalHost && port && port !== DEFAULT_RAKSHA_PORT) {
+			return `${protocol}//${hostname}:${DEFAULT_RAKSHA_PORT}`;
 		}
 		return window.location.origin.replace(/\/+$/, "");
 	}
@@ -84,12 +84,12 @@ export function getRegistrationLabel(serverScope: ServerScope, selectedServers: 
 	if (serverScope === "selected" && selectedServers.length > 0) {
 		return `${selectedServers.length} ${selectedServers.length === 1 ? "server" : "servers"}`;
 	}
-	return "UnifAI";
+	return "Raksha";
 }
 
 /** The registration name used for the generated MCP server entry. */
 export function getRegistrationName(selectedServers?: MCPClient[]): string {
-	return selectedServers?.length === 1 ? selectedServers[0].config.name : "UnifAI";
+	return selectedServers?.length === 1 ? selectedServers[0].config.name : "Raksha";
 }
 
 /** Comma-joined list of selected server names, or undefined when none are selected. */

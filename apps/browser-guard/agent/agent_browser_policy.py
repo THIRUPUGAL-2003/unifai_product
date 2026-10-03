@@ -44,8 +44,8 @@ _CHROMIUM_POLICY_PATHS = (
     r"Software\Vivaldi",
 )
 
-_FIREFOX_PREF_MARKER_BEGIN = "// --- UnifAI Guard BEGIN ---"
-_FIREFOX_PREF_MARKER_END = "// --- UnifAI Guard END ---"
+_FIREFOX_PREF_MARKER_BEGIN = "// --- Raksha Guard BEGIN ---"
+_FIREFOX_PREF_MARKER_END = "// --- Raksha Guard END ---"
 
 
 def _notify_wininet() -> None:
@@ -122,7 +122,7 @@ def _apply_chromium_browser_policies(enable: bool, pac_url: str | None = None) -
                     for name in ("ProxyMode", "ProxyPacUrl", "DnsOverHttpsMode", "QuicAllowed"):
                         _delete_reg_value(root, path, name)
             except Exception as e:
-                print(f"[UnifAI Guard WARNING] Could not update browser policy on {path}: {e}")
+                print(f"[Raksha Guard WARNING] Could not update browser policy on {path}: {e}")
     return applied
 
 
@@ -136,7 +136,7 @@ def set_browser_quic(enable_quic: bool) -> None:
             try:
                 write_chrome_mac_proxy_policy(enable=True, pac_url=pac_http_url())
             except Exception as e:
-                print(f"[UnifAI Guard WARNING] Mac QUIC policy update failed: {e}")
+                print(f"[Raksha Guard WARNING] Mac QUIC policy update failed: {e}")
         return
     if not IS_WIN:
         return
@@ -147,7 +147,7 @@ def set_browser_quic(enable_quic: bool) -> None:
             if _set_reg_dword(root, path, "QuicAllowed", value):
                 ok = True
     if not ok and not enable_quic:
-        print("[UnifAI Guard WARNING] Could not disable browser HTTP/3 (QUIC). Some sites may bypass the proxy.")
+        print("[Raksha Guard WARNING] Could not disable browser HTTP/3 (QUIC). Some sites may bypass the proxy.")
 
 
 def set_browser_pac_policy(enable: bool, pac_url: str | None = None) -> None:
@@ -164,18 +164,18 @@ def set_browser_pac_policy(enable: bool, pac_url: str | None = None) -> None:
         if IS_WIN:
             if applied:
                 print(
-                    "[UnifAI Guard] PAC applied to Chrome, Edge, Brave, Opera, Vivaldi (+ Firefox profiles). "
+                    "[Raksha Guard] PAC applied to Chrome, Edge, Brave, Opera, Vivaldi (+ Firefox profiles). "
                     "Fully quit & reopen each browser once."
                 )
             else:
-                print("[UnifAI Guard WARNING] Could not set Chromium PAC policy — try restarting Guard as admin.")
+                print("[Raksha Guard WARNING] Could not set Chromium PAC policy — try restarting Guard as admin.")
         else:
             print(
-                "[UnifAI Guard] System auto-proxy PAC + Firefox prefs applied. "
+                "[Raksha Guard] System auto-proxy PAC + Firefox prefs applied. "
                 "Fully quit & reopen Chrome/Safari/Firefox once."
             )
     else:
-        print("[UnifAI Guard] Browser PAC policies cleared.")
+        print("[Raksha Guard] Browser PAC policies cleared.")
 
 
 def _firefox_profiles_dirs() -> list[str]:
@@ -227,7 +227,7 @@ def _write_firefox_user_js(profile_dir: str, enable: bool, pac_url: str) -> bool
             f.write(cleaned if cleaned.endswith("\n") else cleaned + "\n")
         return True
     except Exception as e:
-        print(f"[UnifAI Guard WARNING] Firefox user.js update failed ({profile_dir}): {e}")
+        print(f"[Raksha Guard WARNING] Firefox user.js update failed ({profile_dir}): {e}")
         return False
 
 
@@ -281,7 +281,7 @@ def _write_firefox_policies_json(enable: bool, pac_url: str) -> None:
             os.makedirs(dist, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(policy, f, indent=2)
-            print(f"[UnifAI Guard] Firefox policies.json -> {path}")
+            print(f"[Raksha Guard] Firefox policies.json -> {path}")
         except Exception:
             pass
 
@@ -318,14 +318,14 @@ def set_firefox_proxy_policy(enable: bool, pac_url: str | None = None) -> None:
                     pass
             winreg.CloseKey(key)
         except Exception as e:
-            print(f"[UnifAI Guard WARNING] Firefox registry policy: {e}")
+            print(f"[Raksha Guard WARNING] Firefox registry policy: {e}")
     if enable:
         if ok:
-            print(f"[UnifAI Guard] Firefox PAC applied to {ok} profile(s). Fully quit & reopen Firefox.")
+            print(f"[Raksha Guard] Firefox PAC applied to {ok} profile(s). Fully quit & reopen Firefox.")
         else:
-            print("[UnifAI Guard] Firefox not found yet — open Firefox once, then restart Guard to apply PAC.")
+            print("[Raksha Guard] Firefox not found yet — open Firefox once, then restart Guard to apply PAC.")
     else:
-        print("[UnifAI Guard] Firefox Guard prefs cleared (restart Firefox).")
+        print("[Raksha Guard] Firefox Guard prefs cleared (restart Firefox).")
 
 
 def set_system_proxy_pac_and_browsers(enable: bool, pac_url: str | None = None, silent: bool = False) -> bool:

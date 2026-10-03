@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // =============================================================================
@@ -26,11 +26,11 @@ type TestLoggingPlugin struct {
 // ops, ConnectRequest/ConnectResponse are populated instead — the two pipelines
 // are separate so each entry carries exactly one shape.
 type MCPLogEntry struct {
-	Request         *schemas.UnifAIMCPRequest
-	Response        *schemas.UnifAIMCPResponse
-	ConnectRequest  *schemas.UnifAIMCPConnectRequest
-	ConnectResponse *schemas.UnifAIMCPConnectResponse
-	Error           *schemas.UnifAIError
+	Request         *schemas.RakshaMCPRequest
+	Response        *schemas.RakshaMCPResponse
+	ConnectRequest  *schemas.RakshaMCPConnectRequest
+	ConnectResponse *schemas.RakshaMCPConnectResponse
+	Error           *schemas.RakshaError
 	Timestamp       int64
 }
 
@@ -55,7 +55,7 @@ func (p *TestLoggingPlugin) Cleanup() error {
 }
 
 // PreMCPHook implements schemas.MCPPlugin
-func (p *TestLoggingPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *TestLoggingPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	if p.captureRequests {
 		p.mu.Lock()
 		p.preHookCalls = append(p.preHookCalls, MCPLogEntry{
@@ -68,17 +68,17 @@ func (p *TestLoggingPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.
 }
 
 // PostMCPHook implements schemas.MCPPlugin
-func (p *TestLoggingPlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error) {
+func (p *TestLoggingPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
 	if p.captureResponses {
 		p.mu.Lock()
 		p.postHookCalls = append(p.postHookCalls, MCPLogEntry{
 			Response:  resp,
-			Error:     unifaiErr,
+			Error:     rakshaErr,
 			Timestamp: time.Now().UnixNano(),
 		})
 		p.mu.Unlock()
 	}
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 // GetPreHookCallCount returns the number of PreHook calls
@@ -124,7 +124,7 @@ func (p *TestLoggingPlugin) Reset() {
 // PreMCPConnectionHook implements schemas.MCPConnectionPlugin so the logging plugin
 // observes Connect events too. The typed sub-request lands in ConnectRequest on the
 // log entry — the envelope-based Request field is left nil for Connect captures.
-func (p *TestLoggingPlugin) PreMCPConnectionHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPConnectRequest) (*schemas.UnifAIMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error) {
+func (p *TestLoggingPlugin) PreMCPConnectionHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error) {
 	if p.captureRequests {
 		p.mu.Lock()
 		p.preHookCalls = append(p.preHookCalls, MCPLogEntry{
@@ -137,17 +137,17 @@ func (p *TestLoggingPlugin) PreMCPConnectionHook(ctx *schemas.UnifAIContext, req
 }
 
 // PostMCPConnectionHook implements schemas.MCPConnectionPlugin for Connect responses.
-func (p *TestLoggingPlugin) PostMCPConnectionHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPConnectResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPConnectResponse, *schemas.UnifAIError, error) {
+func (p *TestLoggingPlugin) PostMCPConnectionHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPConnectResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError, error) {
 	if p.captureResponses {
 		p.mu.Lock()
 		p.postHookCalls = append(p.postHookCalls, MCPLogEntry{
 			ConnectResponse: resp,
-			Error:           unifaiErr,
+			Error:           rakshaErr,
 			Timestamp:       time.Now().UnixNano(),
 		})
 		p.mu.Unlock()
 	}
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 // =============================================================================
@@ -242,7 +242,7 @@ func (p *TestGovernancePlugin) ClearAllowList() {
 }
 
 // PreMCPHook implements schemas.MCPPlugin
-func (p *TestGovernancePlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *TestGovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -271,13 +271,13 @@ func (p *TestGovernancePlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schem
 }
 
 // PostMCPHook implements schemas.MCPPlugin
-func (p *TestGovernancePlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error) {
+func (p *TestGovernancePlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
 	// No post-processing needed for governance
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 // extractToolName extracts tool name from request
-func (p *TestGovernancePlugin) extractToolName(req *schemas.UnifAIMCPRequest) string {
+func (p *TestGovernancePlugin) extractToolName(req *schemas.RakshaMCPRequest) string {
 	if req.ChatAssistantMessageToolCall != nil && req.ChatAssistantMessageToolCall.Function.Name != nil {
 		return *req.ChatAssistantMessageToolCall.Function.Name
 	}
@@ -290,7 +290,7 @@ func (p *TestGovernancePlugin) extractToolName(req *schemas.UnifAIMCPRequest) st
 // createShortCircuit creates a short-circuit response
 func (p *TestGovernancePlugin) createShortCircuit(toolName, message string) *schemas.MCPPluginShortCircuit {
 	return &schemas.MCPPluginShortCircuit{
-		Response: &schemas.UnifAIMCPResponse{
+		Response: &schemas.RakshaMCPResponse{
 			ChatMessage: &schemas.ChatMessage{
 				Role: schemas.ChatMessageRoleTool,
 				Content: &schemas.ChatMessageContent{
@@ -352,7 +352,7 @@ func (p *TestModifyRequestPlugin) SetShouldModify(should bool) {
 }
 
 // PreMCPHook implements schemas.MCPPlugin
-func (p *TestModifyRequestPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *TestModifyRequestPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -376,8 +376,8 @@ func (p *TestModifyRequestPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *sc
 }
 
 // PostMCPHook implements schemas.MCPPlugin
-func (p *TestModifyRequestPlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error) {
-	return resp, unifaiErr, nil
+func (p *TestModifyRequestPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
+	return resp, rakshaErr, nil
 }
 
 // =============================================================================
@@ -423,17 +423,17 @@ func (p *TestModifyResponsePlugin) SetShouldModify(should bool) {
 }
 
 // PreMCPHook implements schemas.MCPPlugin
-func (p *TestModifyResponsePlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *TestModifyResponsePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	return req, nil, nil
 }
 
 // PostMCPHook implements schemas.MCPPlugin
-func (p *TestModifyResponsePlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error) {
+func (p *TestModifyResponsePlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	if !p.shouldModify || p.responseModifier == nil || resp == nil {
-		return resp, unifaiErr, nil
+		return resp, rakshaErr, nil
 	}
 
 	// Modify Chat format response
@@ -450,7 +450,7 @@ func (p *TestModifyResponsePlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp 
 		}
 	}
 
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 // =============================================================================
@@ -497,7 +497,7 @@ func (p *TestShortCircuitPlugin) SetShortCircuitMessage(message string) {
 }
 
 // PreMCPHook implements schemas.MCPPlugin
-func (p *TestShortCircuitPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *TestShortCircuitPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -506,7 +506,7 @@ func (p *TestShortCircuitPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *sch
 	}
 
 	return req, &schemas.MCPPluginShortCircuit{
-		Response: &schemas.UnifAIMCPResponse{
+		Response: &schemas.RakshaMCPResponse{
 			ChatMessage: &schemas.ChatMessage{
 				Role: schemas.ChatMessageRoleTool,
 				Content: &schemas.ChatMessageContent{
@@ -526,8 +526,8 @@ func (p *TestShortCircuitPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *sch
 }
 
 // PostMCPHook implements schemas.MCPPlugin
-func (p *TestShortCircuitPlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error) {
-	return resp, unifaiErr, nil
+func (p *TestShortCircuitPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
+	return resp, rakshaErr, nil
 }
 
 // =============================================================================
@@ -536,7 +536,7 @@ func (p *TestShortCircuitPlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *s
 //
 // Only acts on Connect requests via the typed MCPConnectionPlugin interface.
 // MCPPluginNoOpHooks provides no-op generic PreMCPHook/PostMCPHook so this
-// plugin satisfies MCPPlugin (required by the UnifAIConfig.MCPPlugins slice).
+// plugin satisfies MCPPlugin (required by the RakshaConfig.MCPPlugins slice).
 type TestConnectPlugin struct {
 	schemas.MCPPluginNoOpHooks
 
@@ -552,8 +552,8 @@ type TestConnectPlugin struct {
 	mutateStdioArgsIsSet bool
 
 	// Short-circuit knobs (PreHook).
-	shortCircuitResponse *schemas.UnifAIMCPConnectResponse
-	shortCircuitError    *schemas.UnifAIError
+	shortCircuitResponse *schemas.RakshaMCPConnectResponse
+	shortCircuitError    *schemas.RakshaError
 }
 
 func NewTestConnectPlugin() *TestConnectPlugin {
@@ -598,14 +598,14 @@ func (p *TestConnectPlugin) SetMutateStdioArgs(args []string) {
 
 // SetShortCircuitResponse configures the plugin to short-circuit Connect with a
 // synthetic success response carrying the provided sub-response payload.
-func (p *TestConnectPlugin) SetShortCircuitResponse(resp *schemas.UnifAIMCPConnectResponse) {
+func (p *TestConnectPlugin) SetShortCircuitResponse(resp *schemas.RakshaMCPConnectResponse) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.shortCircuitResponse = resp
 }
 
 // SetShortCircuitError configures the plugin to short-circuit Connect with the given error.
-func (p *TestConnectPlugin) SetShortCircuitError(err *schemas.UnifAIError) {
+func (p *TestConnectPlugin) SetShortCircuitError(err *schemas.RakshaError) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.shortCircuitError = err
@@ -614,7 +614,7 @@ func (p *TestConnectPlugin) SetShortCircuitError(err *schemas.UnifAIError) {
 // PreMCPConnectionHook implements schemas.MCPConnectionPlugin (typed Connect hook).
 // No RequestType filtering needed — the pipeline only invokes this method for
 // Connect requests, and it gets the typed sub-request directly.
-func (p *TestConnectPlugin) PreMCPConnectionHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPConnectRequest) (*schemas.UnifAIMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error) {
+func (p *TestConnectPlugin) PreMCPConnectionHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -650,18 +650,18 @@ func (p *TestConnectPlugin) PreMCPConnectionHook(ctx *schemas.UnifAIContext, req
 // PostMCPConnectionHook implements schemas.MCPConnectionPlugin.
 // Captures only successful Connect outcomes (resp non-nil). Short-circuit-error
 // paths skip capture — matching the "observe outcomes" intent of test logging.
-func (p *TestConnectPlugin) PostMCPConnectionHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPConnectResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPConnectResponse, *schemas.UnifAIError, error) {
+func (p *TestConnectPlugin) PostMCPConnectionHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPConnectResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError, error) {
 	if resp == nil {
-		return resp, unifaiErr, nil
+		return resp, rakshaErr, nil
 	}
 	p.mu.Lock()
 	p.postHookCalls = append(p.postHookCalls, MCPLogEntry{
 		ConnectResponse: resp,
-		Error:           unifaiErr,
+		Error:           rakshaErr,
 		Timestamp:       time.Now().UnixNano(),
 	})
 	p.mu.Unlock()
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 func (p *TestConnectPlugin) GetPreHookCalls() []MCPLogEntry {
@@ -698,7 +698,7 @@ type TestPingPlugin struct {
 	postHookCalls []MCPLogEntry
 
 	shortCircuitHealthy bool                  // if true, PreHook returns a synthetic healthy response
-	shortCircuitError   *schemas.UnifAIError // if non-nil, PreHook returns this error
+	shortCircuitError   *schemas.RakshaError // if non-nil, PreHook returns this error
 }
 
 func NewTestPingPlugin() *TestPingPlugin {
@@ -719,13 +719,13 @@ func (p *TestPingPlugin) SetShortCircuitHealthy(healthy bool) {
 }
 
 // SetShortCircuitError makes PreHook return the given error (counts as ping failure).
-func (p *TestPingPlugin) SetShortCircuitError(err *schemas.UnifAIError) {
+func (p *TestPingPlugin) SetShortCircuitError(err *schemas.RakshaError) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.shortCircuitError = err
 }
 
-func (p *TestPingPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *TestPingPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	if req == nil || req.RequestType != schemas.MCPRequestTypePing {
 		return req, nil, nil
 	}
@@ -743,31 +743,31 @@ func (p *TestPingPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.Uni
 	}
 	if p.shortCircuitHealthy {
 		return req, &schemas.MCPPluginShortCircuit{
-			Response: &schemas.UnifAIMCPResponse{
-				UnifAIMCPPingResponse: &schemas.UnifAIMCPPingResponse{},
+			Response: &schemas.RakshaMCPResponse{
+				RakshaMCPPingResponse: &schemas.RakshaMCPPingResponse{},
 			},
 		}, nil
 	}
 	return req, nil, nil
 }
 
-func (p *TestPingPlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error) {
+func (p *TestPingPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
 	// Distinguish ping responses from other ops. Successful ping carries a non-nil
-	// UnifAIMCPPingResponse; failed ping has nil response + non-nil error — in that
+	// RakshaMCPPingResponse; failed ping has nil response + non-nil error — in that
 	// case we can't tell from the response alone, but the err path is reached for
 	// any failed op, so for now only capture successful pings (matches the typical
 	// observability use case).
-	if resp == nil || resp.UnifAIMCPPingResponse == nil {
-		return resp, unifaiErr, nil
+	if resp == nil || resp.RakshaMCPPingResponse == nil {
+		return resp, rakshaErr, nil
 	}
 	p.mu.Lock()
 	p.postHookCalls = append(p.postHookCalls, MCPLogEntry{
 		Response:  resp,
-		Error:     unifaiErr,
+		Error:     rakshaErr,
 		Timestamp: time.Now().UnixNano(),
 	})
 	p.mu.Unlock()
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 func (p *TestPingPlugin) GetPreHookCallCount() int {
@@ -816,8 +816,8 @@ type TestListToolsPlugin struct {
 	postHookCalls []MCPLogEntry
 
 	// PreHook short-circuit knobs.
-	shortCircuitResponse *schemas.UnifAIMCPListToolsResponse
-	shortCircuitError    *schemas.UnifAIError
+	shortCircuitResponse *schemas.RakshaMCPListToolsResponse
+	shortCircuitError    *schemas.RakshaError
 
 	// PostHook mutation knob: optional filter applied to the Tools map. If non-nil,
 	// only keys returned true are kept; ToolNameMapping is filtered to match.
@@ -835,14 +835,14 @@ func (p *TestListToolsPlugin) GetName() string { return "TestListToolsPlugin" }
 func (p *TestListToolsPlugin) Cleanup() error  { return nil }
 
 // SetShortCircuitResponse makes PreHook return a synthetic list_tools response.
-func (p *TestListToolsPlugin) SetShortCircuitResponse(resp *schemas.UnifAIMCPListToolsResponse) {
+func (p *TestListToolsPlugin) SetShortCircuitResponse(resp *schemas.RakshaMCPListToolsResponse) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.shortCircuitResponse = resp
 }
 
 // SetShortCircuitError makes PreHook return the given error.
-func (p *TestListToolsPlugin) SetShortCircuitError(err *schemas.UnifAIError) {
+func (p *TestListToolsPlugin) SetShortCircuitError(err *schemas.RakshaError) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.shortCircuitError = err
@@ -857,7 +857,7 @@ func (p *TestListToolsPlugin) SetPostHookFilter(filter func(toolName string) boo
 	p.postHookFilter = filter
 }
 
-func (p *TestListToolsPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *TestListToolsPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	if req == nil || req.RequestType != schemas.MCPRequestTypeListTools {
 		return req, nil, nil
 	}
@@ -875,17 +875,17 @@ func (p *TestListToolsPlugin) PreMCPHook(ctx *schemas.UnifAIContext, req *schema
 	}
 	if p.shortCircuitResponse != nil {
 		return req, &schemas.MCPPluginShortCircuit{
-			Response: &schemas.UnifAIMCPResponse{
-				UnifAIMCPListToolsResponse: p.shortCircuitResponse,
+			Response: &schemas.RakshaMCPResponse{
+				RakshaMCPListToolsResponse: p.shortCircuitResponse,
 			},
 		}, nil
 	}
 	return req, nil, nil
 }
 
-func (p *TestListToolsPlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error) {
-	if resp == nil || resp.UnifAIMCPListToolsResponse == nil {
-		return resp, unifaiErr, nil
+func (p *TestListToolsPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
+	if resp == nil || resp.RakshaMCPListToolsResponse == nil {
+		return resp, rakshaErr, nil
 	}
 
 	p.mu.Lock()
@@ -922,10 +922,10 @@ func (p *TestListToolsPlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *sche
 
 	p.postHookCalls = append(p.postHookCalls, MCPLogEntry{
 		Response:  resp,
-		Error:     unifaiErr,
+		Error:     rakshaErr,
 		Timestamp: time.Now().UnixNano(),
 	})
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 func (p *TestListToolsPlugin) GetPreHookCallCount() int {

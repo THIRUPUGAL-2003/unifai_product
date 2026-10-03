@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the UnifAI system.
+// Package schemas defines the core schemas and types used by the Raksha system.
 package schemas
 
 // ContainerStatus represents the status of a container.
@@ -27,8 +27,8 @@ type ContainerObject struct {
 	Metadata     map[string]string      `json:"metadata,omitempty"`
 }
 
-// UnifAIContainerCreateRequest represents a request to create a container.
-type UnifAIContainerCreateRequest struct {
+// RakshaContainerCreateRequest represents a request to create a container.
+type RakshaContainerCreateRequest struct {
 	Provider ModelProvider `json:"provider"`
 
 	// Required fields
@@ -44,8 +44,8 @@ type UnifAIContainerCreateRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerCreateResponse represents the response from creating a container.
-type UnifAIContainerCreateResponse struct {
+// RakshaContainerCreateResponse represents the response from creating a container.
+type RakshaContainerCreateResponse struct {
 	ID           string                 `json:"id"`
 	Object       string                 `json:"object,omitempty"` // "container"
 	Name         string                 `json:"name"`
@@ -56,11 +56,11 @@ type UnifAIContainerCreateResponse struct {
 	MemoryLimit  string                 `json:"memory_limit,omitempty"`
 	Metadata     map[string]string      `json:"metadata,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIContainerListRequest represents a request to list containers.
-type UnifAIContainerListRequest struct {
+// RakshaContainerListRequest represents a request to list containers.
+type RakshaContainerListRequest struct {
 	Provider ModelProvider `json:"provider"`
 
 	// Pagination
@@ -72,8 +72,8 @@ type UnifAIContainerListRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerListResponse represents the response from listing containers.
-type UnifAIContainerListResponse struct {
+// RakshaContainerListResponse represents the response from listing containers.
+type RakshaContainerListResponse struct {
 	Object  string            `json:"object,omitempty"` // "list"
 	Data    []ContainerObject `json:"data"`
 	FirstID *string           `json:"first_id,omitempty"`
@@ -81,11 +81,11 @@ type UnifAIContainerListResponse struct {
 	HasMore bool              `json:"has_more,omitempty"`
 	After   *string           `json:"after,omitempty"` // Encoded cursor for next page (includes key index for multi-key pagination)
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIContainerRetrieveRequest represents a request to retrieve a container.
-type UnifAIContainerRetrieveRequest struct {
+// RakshaContainerRetrieveRequest represents a request to retrieve a container.
+type RakshaContainerRetrieveRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container to retrieve
 
@@ -93,8 +93,8 @@ type UnifAIContainerRetrieveRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerRetrieveResponse represents the response from retrieving a container.
-type UnifAIContainerRetrieveResponse struct {
+// RakshaContainerRetrieveResponse represents the response from retrieving a container.
+type RakshaContainerRetrieveResponse struct {
 	ID           string                 `json:"id"`
 	Object       string                 `json:"object,omitempty"` // "container"
 	Name         string                 `json:"name"`
@@ -105,11 +105,11 @@ type UnifAIContainerRetrieveResponse struct {
 	MemoryLimit  string                 `json:"memory_limit,omitempty"`
 	Metadata     map[string]string      `json:"metadata,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIContainerDeleteRequest represents a request to delete a container.
-type UnifAIContainerDeleteRequest struct {
+// RakshaContainerDeleteRequest represents a request to delete a container.
+type RakshaContainerDeleteRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container to delete
 
@@ -117,13 +117,13 @@ type UnifAIContainerDeleteRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerDeleteResponse represents the response from deleting a container.
-type UnifAIContainerDeleteResponse struct {
+// RakshaContainerDeleteResponse represents the response from deleting a container.
+type RakshaContainerDeleteResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object,omitempty"` // "container.deleted"
 	Deleted bool   `json:"deleted"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
 // =============================================================================
@@ -141,8 +141,8 @@ type ContainerFileObject struct {
 	Source      string `json:"source"` // "user" typically
 }
 
-// UnifAIContainerFileCreateRequest represents a request to create a file in a container.
-type UnifAIContainerFileCreateRequest struct {
+// RakshaContainerFileCreateRequest represents a request to create a file in a container.
+type RakshaContainerFileCreateRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 
@@ -155,8 +155,8 @@ type UnifAIContainerFileCreateRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerFileCreateResponse represents the response from creating a container file.
-type UnifAIContainerFileCreateResponse struct {
+// RakshaContainerFileCreateResponse represents the response from creating a container file.
+type RakshaContainerFileCreateResponse struct {
 	ID          string `json:"id"`
 	Object      string `json:"object,omitempty"` // "container.file"
 	Bytes       int64  `json:"bytes"`
@@ -165,11 +165,11 @@ type UnifAIContainerFileCreateResponse struct {
 	Path        string `json:"path"`
 	Source      string `json:"source"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIContainerFileListRequest represents a request to list files in a container.
-type UnifAIContainerFileListRequest struct {
+// RakshaContainerFileListRequest represents a request to list files in a container.
+type RakshaContainerFileListRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 
@@ -182,8 +182,8 @@ type UnifAIContainerFileListRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerFileListResponse represents the response from listing container files.
-type UnifAIContainerFileListResponse struct {
+// RakshaContainerFileListResponse represents the response from listing container files.
+type RakshaContainerFileListResponse struct {
 	Object  string                `json:"object,omitempty"` // "list"
 	Data    []ContainerFileObject `json:"data"`
 	FirstID *string               `json:"first_id,omitempty"`
@@ -191,11 +191,11 @@ type UnifAIContainerFileListResponse struct {
 	HasMore bool                  `json:"has_more,omitempty"`
 	After   *string               `json:"after,omitempty"` // Encoded cursor for next page (includes key index for multi-key pagination)
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIContainerFileRetrieveRequest represents a request to retrieve a container file.
-type UnifAIContainerFileRetrieveRequest struct {
+// RakshaContainerFileRetrieveRequest represents a request to retrieve a container file.
+type RakshaContainerFileRetrieveRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 	FileID      string        `json:"file_id"`      // ID of the file to retrieve
@@ -204,8 +204,8 @@ type UnifAIContainerFileRetrieveRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerFileRetrieveResponse represents the response from retrieving a container file.
-type UnifAIContainerFileRetrieveResponse struct {
+// RakshaContainerFileRetrieveResponse represents the response from retrieving a container file.
+type RakshaContainerFileRetrieveResponse struct {
 	ID          string `json:"id"`
 	Object      string `json:"object,omitempty"` // "container.file"
 	Bytes       int64  `json:"bytes"`
@@ -214,11 +214,11 @@ type UnifAIContainerFileRetrieveResponse struct {
 	Path        string `json:"path"`
 	Source      string `json:"source"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIContainerFileContentRequest represents a request to retrieve the content of a container file.
-type UnifAIContainerFileContentRequest struct {
+// RakshaContainerFileContentRequest represents a request to retrieve the content of a container file.
+type RakshaContainerFileContentRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 	FileID      string        `json:"file_id"`      // ID of the file
@@ -227,16 +227,16 @@ type UnifAIContainerFileContentRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerFileContentResponse represents the response from retrieving container file content.
-type UnifAIContainerFileContentResponse struct {
+// RakshaContainerFileContentResponse represents the response from retrieving container file content.
+type RakshaContainerFileContentResponse struct {
 	Content     []byte `json:"content"`      // Raw file content
 	ContentType string `json:"content_type"` // MIME type of the content
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIContainerFileDeleteRequest represents a request to delete a container file.
-type UnifAIContainerFileDeleteRequest struct {
+// RakshaContainerFileDeleteRequest represents a request to delete a container file.
+type RakshaContainerFileDeleteRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 	FileID      string        `json:"file_id"`      // ID of the file to delete
@@ -245,11 +245,11 @@ type UnifAIContainerFileDeleteRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIContainerFileDeleteResponse represents the response from deleting a container file.
-type UnifAIContainerFileDeleteResponse struct {
+// RakshaContainerFileDeleteResponse represents the response from deleting a container file.
+type RakshaContainerFileDeleteResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object,omitempty"` // "container.file.deleted"
 	Deleted bool   `json:"deleted"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }

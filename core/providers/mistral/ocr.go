@@ -1,11 +1,11 @@
 package mistral
 
 import (
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-// ToMistralOCRRequest converts a UnifAI OCR request to a Mistral OCR request.
-func ToMistralOCRRequest(req *schemas.UnifAIOCRRequest) *MistralOCRRequest {
+// ToMistralOCRRequest converts a Raksha OCR request to a Mistral OCR request.
+func ToMistralOCRRequest(req *schemas.RakshaOCRRequest) *MistralOCRRequest {
 	if req == nil {
 		return nil
 	}
@@ -49,13 +49,13 @@ func ToMistralOCRRequest(req *schemas.UnifAIOCRRequest) *MistralOCRRequest {
 	return mistralReq
 }
 
-// ToUnifAIOCRResponse converts a Mistral OCR response to a UnifAI OCR response.
-func (r *MistralOCRResponse) ToUnifAIOCRResponse() *schemas.UnifAIOCRResponse {
+// ToRakshaOCRResponse converts a Mistral OCR response to a Raksha OCR response.
+func (r *MistralOCRResponse) ToRakshaOCRResponse() *schemas.RakshaOCRResponse {
 	if r == nil {
 		return nil
 	}
 
-	resp := &schemas.UnifAIOCRResponse{
+	resp := &schemas.RakshaOCRResponse{
 		Model:              r.Model,
 		DocumentAnnotation: r.DocumentAnnotation,
 	}

@@ -11,8 +11,8 @@ const (
 	ImageEditEventTypeError           ImageEventType = "error"
 )
 
-// UnifAIImageGenerationRequest represents an image generation request in unifai format
-type UnifAIImageGenerationRequest struct {
+// RakshaImageGenerationRequest represents an image generation request in raksha format
+type RakshaImageGenerationRequest struct {
 	Provider       ModelProvider              `json:"provider"`
 	Model          string                     `json:"model"`
 	Input          *ImageGenerationInput      `json:"input"`
@@ -22,7 +22,7 @@ type UnifAIImageGenerationRequest struct {
 }
 
 // GetRawRequestBody implements utils.RequestBodyGetter.
-func (b *UnifAIImageGenerationRequest) GetRawRequestBody() []byte {
+func (b *RakshaImageGenerationRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
@@ -50,8 +50,8 @@ type ImageGenerationParameters struct {
 	ExtraParams       map[string]interface{} `json:"-"`
 }
 
-// UnifAIImageGenerationResponse represents the image generation response in unifai format
-type UnifAIImageGenerationResponse struct {
+// RakshaImageGenerationResponse represents the image generation response in raksha format
+type RakshaImageGenerationResponse struct {
 	ID      string      `json:"id,omitempty"`
 	Created int64       `json:"created,omitempty"`
 	Model   string      `json:"model,omitempty"`
@@ -60,7 +60,7 @@ type UnifAIImageGenerationResponse struct {
 	*ImageGenerationResponseParameters
 
 	Usage       *ImageUsage                `json:"usage,omitempty"`
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
 // BackfillParams populates response fields from the original request that are needed
@@ -69,7 +69,7 @@ type UnifAIImageGenerationResponse struct {
 // - Size on ImageGenerationResponseParameters (from request params if not in response)
 // - Quality (low, medium, high, auto) only
 // - AspectRatio on ImageGenerationResponseParameters (from request params if not in response)
-func (r *UnifAIImageGenerationResponse) BackfillParams(req *UnifAIRequest) {
+func (r *RakshaImageGenerationResponse) BackfillParams(req *RakshaRequest) {
 	if r == nil || req == nil {
 		return
 	}
@@ -124,7 +124,7 @@ func (r *UnifAIImageGenerationResponse) BackfillParams(req *UnifAIRequest) {
 // getNumInputImagesSizeQualityAndAspectRatioFromRequest extracts request params for cost
 // calculation and logging. Quality is only returned when it is one of low, medium, high, auto.
 // AspectRatio is only carried by image generation requests.
-func getNumInputImagesSizeQualityAndAspectRatioFromRequest(req *UnifAIRequest) (numInputImages int, size string, quality string, aspectRatio string) {
+func getNumInputImagesSizeQualityAndAspectRatioFromRequest(req *RakshaRequest) (numInputImages int, size string, quality string, aspectRatio string) {
 	if req == nil {
 		return 0, "", "", ""
 	}
@@ -202,11 +202,11 @@ type ImageUsage struct {
 	TotalTokens         int                `json:"total_tokens,omitempty"`
 	OutputTokens        int                `json:"output_tokens,omitempty"` // Always image tokens unless OutputTokensDetails is not nil
 	OutputTokensDetails *ImageTokenDetails `json:"output_tokens_details,omitempty"`
-	NumInputImages      int                `json:"-"` // Number of input images from the request (populated by UnifAI)
+	NumInputImages      int                `json:"-"` // Number of input images from the request (populated by Raksha)
 }
 
 type ImageTokenDetails struct {
-	NImages     int `json:"-"` // Number of images generated (used internally for unifai)
+	NImages     int `json:"-"` // Number of images generated (used internally for raksha)
 	ImageTokens int `json:"image_tokens,omitempty"`
 	TextTokens  int `json:"text_tokens,omitempty"`
 }
@@ -231,7 +231,7 @@ func (u *ImageUsage) DeepCopy() *ImageUsage {
 }
 
 // Streaming Response
-type UnifAIImageGenerationStreamResponse struct {
+type RakshaImageGenerationStreamResponse struct {
 	ID                string                     `json:"id,omitempty"`
 	Type              ImageEventType             `json:"type,omitempty"`
 	Index             int                        `json:"-"` // Which image (0-N)
@@ -248,10 +248,10 @@ type UnifAIImageGenerationStreamResponse struct {
 	OutputFormat      string                     `json:"output_format,omitempty"`
 	RevisedPrompt     string                     `json:"revised_prompt,omitempty"`
 	Usage             *ImageUsage                `json:"usage,omitempty"`
-	Error             *UnifAIError              `json:"error,omitempty"`
+	Error             *RakshaError              `json:"error,omitempty"`
 	RawRequest        string                     `json:"-"`
 	RawResponse       string                     `json:"-"`
-	ExtraFields       UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields       RakshaResponseExtraFields `json:"extra_fields"`
 }
 
 // BackfillParams populates response fields from the original request that are needed
@@ -260,7 +260,7 @@ type UnifAIImageGenerationStreamResponse struct {
 // - Size on ImageGenerationResponseParameters (from request params if not in response)
 // - Quality (low, medium, high, auto) only
 // - AspectRatio on ImageGenerationResponseParameters (from request params if not in response)
-func (r *UnifAIImageGenerationStreamResponse) BackfillParams(req *UnifAIRequest) {
+func (r *RakshaImageGenerationStreamResponse) BackfillParams(req *RakshaRequest) {
 	numInputImages, size, quality, aspectRatio := getNumInputImagesSizeQualityAndAspectRatioFromRequest(req)
 
 	// Backfill NumInputImages
@@ -287,8 +287,8 @@ func (r *UnifAIImageGenerationStreamResponse) BackfillParams(req *UnifAIRequest)
 	}
 }
 
-// UnifAIImageEditRequest represents an image edit request in unifai format
-type UnifAIImageEditRequest struct {
+// RakshaImageEditRequest represents an image edit request in raksha format
+type RakshaImageEditRequest struct {
 	Provider       ModelProvider        `json:"provider"`
 	Model          string               `json:"model"`
 	Input          *ImageEditInput      `json:"input"`
@@ -298,7 +298,7 @@ type UnifAIImageEditRequest struct {
 }
 
 // GetRawRequestBody implements [utils.RequestBodyGetter].
-func (b *UnifAIImageEditRequest) GetRawRequestBody() []byte {
+func (b *RakshaImageEditRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
@@ -330,8 +330,8 @@ type ImageEditParameters struct {
 	ExtraParams       map[string]interface{} `json:"-"`
 }
 
-// UnifAIImageVariationRequest represents an image variation request in unifai format
-type UnifAIImageVariationRequest struct {
+// RakshaImageVariationRequest represents an image variation request in raksha format
+type RakshaImageVariationRequest struct {
 	Provider       ModelProvider             `json:"provider"`
 	Model          string                    `json:"model"`
 	Input          *ImageVariationInput      `json:"input"`
@@ -341,7 +341,7 @@ type UnifAIImageVariationRequest struct {
 }
 
 // GetRawRequestBody implements [utils.RequestBodyGetter].
-func (b *UnifAIImageVariationRequest) GetRawRequestBody() []byte {
+func (b *RakshaImageVariationRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
@@ -357,6 +357,6 @@ type ImageVariationParameters struct {
 	ExtraParams    map[string]interface{} `json:"-"`
 }
 
-// UnifAIImageVariationResponse represents the image variation response in unifai format
+// RakshaImageVariationResponse represents the image variation response in raksha format
 // It uses the same structure as image generation response
-type UnifAIImageVariationResponse = UnifAIImageGenerationResponse
+type RakshaImageVariationResponse = RakshaImageGenerationResponse

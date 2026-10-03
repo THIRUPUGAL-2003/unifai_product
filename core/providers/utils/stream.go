@@ -3,7 +3,7 @@ package utils
 import (
 	"context"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // CheckFirstStreamChunkForError reads the first chunk from a streaming channel to detect
@@ -28,8 +28,8 @@ import (
 // source stream so the upstream provider's blocked send can exit cleanly.
 func CheckFirstStreamChunkForError(
 	ctx context.Context,
-	stream chan *schemas.UnifAIStreamChunk,
-) (chan *schemas.UnifAIStreamChunk, <-chan struct{}, *schemas.UnifAIError) {
+	stream chan *schemas.RakshaStreamChunk,
+) (chan *schemas.RakshaStreamChunk, <-chan struct{}, *schemas.RakshaError) {
 	firstChunk, ok := <-stream
 	if !ok {
 		// Channel closed immediately (empty stream) — return nil so callers
@@ -40,8 +40,8 @@ func CheckFirstStreamChunkForError(
 	}
 
 	// Check if first chunk is an error
-	if firstChunk.UnifAIError != nil && firstChunk.UnifAIError.Error != nil &&
-		(firstChunk.UnifAIError.Error.Message != "" || firstChunk.UnifAIError.Error.Code != nil || firstChunk.UnifAIError.Error.Type != nil) {
+	if firstChunk.RakshaError != nil && firstChunk.RakshaError.Error != nil &&
+		(firstChunk.RakshaError.Error.Message != "" || firstChunk.RakshaError.Error.Code != nil || firstChunk.RakshaError.Error.Type != nil) {
 		// Drain source channel to let the provider goroutine exit cleanly
 		done := make(chan struct{})
 		go func() {
@@ -49,12 +49,12 @@ func CheckFirstStreamChunkForError(
 			for range stream {
 			}
 		}()
-		return nil, done, firstChunk.UnifAIError
+		return nil, done, firstChunk.RakshaError
 	}
 
 	// First chunk is valid data — wrap channel to re-inject it
 	done := make(chan struct{})
-	wrapped := make(chan *schemas.UnifAIStreamChunk, max(cap(stream), 1))
+	wrapped := make(chan *schemas.RakshaStreamChunk, max(cap(stream), 1))
 	wrapped <- firstChunk
 	go func() {
 		defer close(done)

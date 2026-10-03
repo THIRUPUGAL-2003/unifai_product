@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // BedrockBatchJobRequest represents a request to create a batch inference job.
@@ -124,8 +124,8 @@ type BedrockBatchCancelResponse struct {
 	Status string `json:"status"`
 }
 
-// ToUnifAIBatchStatus converts Bedrock status to UnifAI status.
-func ToUnifAIBatchStatus(status string) schemas.BatchStatus {
+// ToRakshaBatchStatus converts Bedrock status to Raksha status.
+func ToRakshaBatchStatus(status string) schemas.BatchStatus {
 	switch status {
 	case "Submitted", "Validating":
 		return schemas.BatchStatusValidating
@@ -148,7 +148,7 @@ func ToUnifAIBatchStatus(status string) schemas.BatchStatus {
 	}
 }
 
-// parseBatchResultsJSONL parses JSONL content from Bedrock batch output into UnifAI format.
+// parseBatchResultsJSONL parses JSONL content from Bedrock batch output into Raksha format.
 // Returns the parsed results and any parse errors encountered.
 func parseBatchResultsJSONL(content []byte, provider *BedrockProvider) ([]schemas.BatchResultItem, []schemas.BatchError) {
 	var results []schemas.BatchResultItem
@@ -160,7 +160,7 @@ func parseBatchResultsJSONL(content []byte, provider *BedrockProvider) ([]schema
 			return err
 		}
 
-		// Convert Bedrock format to UnifAI format
+		// Convert Bedrock format to Raksha format
 		resultItem := schemas.BatchResultItem{
 			CustomID: bedrockResult.RecordID,
 		}
@@ -200,8 +200,8 @@ func parseBatchResultsJSONL(content []byte, provider *BedrockProvider) ([]schema
 	return results, parseResult.Errors
 }
 
-// ToBedrockBatchJobResponse converts a UnifAI batch create response to Bedrock format.
-func ToBedrockBatchJobResponse(resp *schemas.UnifAIBatchCreateResponse) *BedrockBatchJobResponse {
+// ToBedrockBatchJobResponse converts a Raksha batch create response to Bedrock format.
+func ToBedrockBatchJobResponse(resp *schemas.RakshaBatchCreateResponse) *BedrockBatchJobResponse {
 	// Here if the provider is not Bedrock - then we create a dummy arn and string using the batch ID
 	if resp.ExtraFields.Provider != schemas.Bedrock {
 		return &BedrockBatchJobResponse{
@@ -229,8 +229,8 @@ func ToBedrockBatchJobResponse(resp *schemas.UnifAIBatchCreateResponse) *Bedrock
 	return result
 }
 
-// ToBedrockBatchJobListResponse converts a UnifAI batch list response to Bedrock format.
-func ToBedrockBatchJobListResponse(resp *schemas.UnifAIBatchListResponse) *BedrockBatchJobListResponse {
+// ToBedrockBatchJobListResponse converts a Raksha batch list response to Bedrock format.
+func ToBedrockBatchJobListResponse(resp *schemas.RakshaBatchListResponse) *BedrockBatchJobListResponse {
 	result := &BedrockBatchJobListResponse{
 		InvocationJobSummaries: make([]BedrockBatchJobSummary, len(resp.Data)),
 	}
@@ -270,8 +270,8 @@ func ToBedrockBatchJobListResponse(resp *schemas.UnifAIBatchListResponse) *Bedro
 	return result
 }
 
-// ToBedrockBatchJobRetrieveResponse converts a UnifAI batch retrieve response to Bedrock format.
-func ToBedrockBatchJobRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse) *BedrockBatchJobResponse {
+// ToBedrockBatchJobRetrieveResponse converts a Raksha batch retrieve response to Bedrock format.
+func ToBedrockBatchJobRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *BedrockBatchJobResponse {
 	result := &BedrockBatchJobResponse{
 		JobArn: resp.ID,
 		Status: toBedrockBatchStatus(resp.Status),
@@ -318,7 +318,7 @@ func ToBedrockBatchJobRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse
 	return result
 }
 
-// toBedrockBatchStatus converts UnifAI batch status to Bedrock status.
+// toBedrockBatchStatus converts Raksha batch status to Bedrock status.
 func toBedrockBatchStatus(status schemas.BatchStatus) string {
 	switch status {
 	case schemas.BatchStatusValidating:
@@ -342,9 +342,9 @@ func toBedrockBatchStatus(status schemas.BatchStatus) string {
 	}
 }
 
-// ToUnifAIBatchListRequest converts a Bedrock batch list request to UnifAI format.
-func ToUnifAIBatchListRequest(req *BedrockBatchListRequest, provider schemas.ModelProvider) *schemas.UnifAIBatchListRequest {
-	result := &schemas.UnifAIBatchListRequest{
+// ToRakshaBatchListRequest converts a Bedrock batch list request to Raksha format.
+func ToRakshaBatchListRequest(req *BedrockBatchListRequest, provider schemas.ModelProvider) *schemas.RakshaBatchListRequest {
+	result := &schemas.RakshaBatchListRequest{
 		Provider: provider,
 		Limit:    req.MaxResults,
 	}
@@ -366,24 +366,24 @@ func ToUnifAIBatchListRequest(req *BedrockBatchListRequest, provider schemas.Mod
 	return result
 }
 
-// ToUnifAIBatchRetrieveRequest converts a Bedrock batch retrieve request to UnifAI format.
-func ToUnifAIBatchRetrieveRequest(req *BedrockBatchRetrieveRequest, provider schemas.ModelProvider) *schemas.UnifAIBatchRetrieveRequest {
-	return &schemas.UnifAIBatchRetrieveRequest{
+// ToRakshaBatchRetrieveRequest converts a Bedrock batch retrieve request to Raksha format.
+func ToRakshaBatchRetrieveRequest(req *BedrockBatchRetrieveRequest, provider schemas.ModelProvider) *schemas.RakshaBatchRetrieveRequest {
+	return &schemas.RakshaBatchRetrieveRequest{
 		Provider: provider,
 		BatchID:  req.JobIdentifier,
 	}
 }
 
-// ToUnifAIBatchCancelRequest converts a Bedrock batch cancel request to UnifAI format.
-func ToUnifAIBatchCancelRequest(req *BedrockBatchCancelRequest, provider schemas.ModelProvider) *schemas.UnifAIBatchCancelRequest {
-	return &schemas.UnifAIBatchCancelRequest{
+// ToRakshaBatchCancelRequest converts a Bedrock batch cancel request to Raksha format.
+func ToRakshaBatchCancelRequest(req *BedrockBatchCancelRequest, provider schemas.ModelProvider) *schemas.RakshaBatchCancelRequest {
+	return &schemas.RakshaBatchCancelRequest{
 		Provider: provider,
 		BatchID:  req.JobIdentifier,
 	}
 }
 
-// ToBedrockBatchCancelResponse converts a UnifAI batch cancel response to Bedrock format.
-func ToBedrockBatchCancelResponse(resp *schemas.UnifAIBatchCancelResponse) *BedrockBatchCancelResponse {
+// ToBedrockBatchCancelResponse converts a Raksha batch cancel response to Bedrock format.
+func ToBedrockBatchCancelResponse(resp *schemas.RakshaBatchCancelResponse) *BedrockBatchCancelResponse {
 	return &BedrockBatchCancelResponse{
 		JobArn: resp.ID,
 		Status: toBedrockBatchStatus(resp.Status),

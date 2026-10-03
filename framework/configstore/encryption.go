@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/encrypt"
+	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/encrypt"
 	"gorm.io/gorm"
 )
 

@@ -12,8 +12,8 @@ import (
 	"github.com/tidwall/sjson"
 	"github.com/valyala/fasthttp"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // vertexCachedContent mirrors Vertex AI's CachedContent resource shape.
@@ -41,7 +41,7 @@ type vertexCachedContentList struct {
 	NextPageToken  string                `json:"nextPageToken,omitempty"`
 }
 
-func (v *vertexCachedContent) toUnifAIObject() schemas.CachedContentObject {
+func (v *vertexCachedContent) toRakshaObject() schemas.CachedContentObject {
 	return schemas.CachedContentObject{
 		Name:              v.Name,
 		DisplayName:       v.DisplayName,
@@ -57,9 +57,9 @@ func (v *vertexCachedContent) toUnifAIObject() schemas.CachedContentObject {
 	}
 }
 
-func validateVertexTTLExpireMutex(ttl, expireTime *string) *schemas.UnifAIError {
+func validateVertexTTLExpireMutex(ttl, expireTime *string) *schemas.RakshaError {
 	if ttl != nil && *ttl != "" && expireTime != nil && *expireTime != "" {
-		return providerUtils.NewUnifAIOperationError("ttl and expire_time are mutually exclusive", nil)
+		return providerUtils.NewRakshaOperationError("ttl and expire_time are mutually exclusive", nil)
 	}
 	return nil
 }
@@ -86,14 +86,14 @@ func expandVertexModelPath(model, projectID, region string) string {
 }
 
 // vertexAuthHeaders pulls an OAuth bearer token from the key and applies it.
-func vertexAuthHeaders(req *fasthttp.Request, key schemas.Key) *schemas.UnifAIError {
+func vertexAuthHeaders(req *fasthttp.Request, key schemas.Key) *schemas.RakshaError {
 	tokenSource, err := getAuthTokenSource(key)
 	if err != nil {
-		return providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+		return providerUtils.NewRakshaOperationError("error creating auth token source", err)
 	}
 	token, err := tokenSource.Token()
 	if err != nil {
-		return providerUtils.NewUnifAIOperationError("error getting auth token", err)
+		return providerUtils.NewRakshaOperationError("error getting auth token", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	return nil
@@ -107,12 +107,12 @@ func vertexCachedContentBaseURL(region, projectID string) string {
 
 // CachedContentCreate creates a new cached content via Vertex AI's
 // /v1/projects/{p}/locations/{l}/cachedContents endpoint.
-func (provider *VertexProvider) CachedContentCreate(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentCreateRequest) (*schemas.UnifAICachedContentCreateResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) CachedContentCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentCreateRequest) (*schemas.RakshaCachedContentCreateResponse, *schemas.RakshaError) {
 	if err := validateVertexTTLExpireMutex(request.TTL, request.ExpireTime); err != nil {
 		return nil, err
 	}
 	if request.Model == "" {
-		return nil, providerUtils.NewUnifAIOperationError("model is required for cached content create", nil)
+		return nil, providerUtils.NewRakshaOperationError("model is required for cached content create", nil)
 	}
 
 	projectID := resolveVertexProjectID(ctx, key)
@@ -130,7 +130,7 @@ func (provider *VertexProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 		var err error
 		jsonBody, err = sjson.SetBytes(jsonBody, "model", model)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to set cached content model", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to set cached content model", err)
 		}
 	} else {
 		body := vertexCachedContent{
@@ -153,7 +153,7 @@ func (provider *VertexProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 		var err error
 		jsonBody, err = sonic.Marshal(body)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to marshal cached content create body", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to marshal cached content create body", err)
 		}
 	}
 
@@ -172,10 +172,10 @@ func (provider *VertexProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 	}
 	req.SetBody(jsonBody)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, providerUtils.SetErrorLatency(parseVertexCachedContentError(resp), latency)
@@ -183,15 +183,15 @@ func (provider *VertexProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var vResp vertexCachedContent
 	if err := sonic.Unmarshal(respBody, &vResp); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	return &schemas.UnifAICachedContentCreateResponse{
+	return &schemas.RakshaCachedContentCreateResponse{
 		Name:              vResp.Name,
 		DisplayName:       vResp.DisplayName,
 		Model:             vResp.Model,
@@ -203,13 +203,13 @@ func (provider *VertexProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 		UpdateTime:        vResp.UpdateTime,
 		ExpireTime:        vResp.ExpireTime,
 		UsageMetadata:     vResp.UsageMetadata,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
-func (provider *VertexProvider) cachedContentListByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentListRequest) (*schemas.UnifAICachedContentListResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *VertexProvider) cachedContentListByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentListRequest) (*schemas.RakshaCachedContentListResponse, time.Duration, *schemas.RakshaError) {
 	projectID := resolveVertexProjectID(ctx, key)
 	if projectID == "" {
 		return nil, 0, providerUtils.NewConfigurationError("project_id is not set")
@@ -244,10 +244,10 @@ func (provider *VertexProvider) cachedContentListByKey(ctx *schemas.UnifAIContex
 		return nil, 0, authErr
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseVertexCachedContentError(resp), latency)
@@ -255,43 +255,43 @@ func (provider *VertexProvider) cachedContentListByKey(ctx *schemas.UnifAIContex
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var vList vertexCachedContentList
 	if err := sonic.Unmarshal(respBody, &vList); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	unifaiObjects := make([]schemas.CachedContentObject, 0, len(vList.CachedContents))
+	rakshaObjects := make([]schemas.CachedContentObject, 0, len(vList.CachedContents))
 	for i := range vList.CachedContents {
-		unifaiObjects = append(unifaiObjects, vList.CachedContents[i].toUnifAIObject())
+		rakshaObjects = append(rakshaObjects, vList.CachedContents[i].toRakshaObject())
 	}
 
-	return &schemas.UnifAICachedContentListResponse{
-		CachedContents: unifaiObjects,
+	return &schemas.RakshaCachedContentListResponse{
+		CachedContents: rakshaObjects,
 		NextPageToken:  vList.NextPageToken,
 	}, latency, nil
 }
 
-func (provider *VertexProvider) CachedContentList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentListRequest) (*schemas.UnifAICachedContentListResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) CachedContentList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentListRequest) (*schemas.RakshaCachedContentListResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content list", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content list", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentListByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentListByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
-func (provider *VertexProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentRetrieveRequest) (*schemas.UnifAICachedContentRetrieveResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *VertexProvider) cachedContentRetrieveByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentRetrieveRequest) (*schemas.RakshaCachedContentRetrieveResponse, time.Duration, *schemas.RakshaError) {
 	projectID := resolveVertexProjectID(ctx, key)
 	if projectID == "" {
 		return nil, 0, providerUtils.NewConfigurationError("project_id is not set")
@@ -317,10 +317,10 @@ func (provider *VertexProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAICo
 		return nil, 0, authErr
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseVertexCachedContentError(resp), latency)
@@ -328,15 +328,15 @@ func (provider *VertexProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAICo
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var vResp vertexCachedContent
 	if err := sonic.Unmarshal(respBody, &vResp); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	return &schemas.UnifAICachedContentRetrieveResponse{
+	return &schemas.RakshaCachedContentRetrieveResponse{
 		Name:              vResp.Name,
 		DisplayName:       vResp.DisplayName,
 		Model:             vResp.Model,
@@ -351,27 +351,27 @@ func (provider *VertexProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAICo
 	}, latency, nil
 }
 
-func (provider *VertexProvider) CachedContentRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentRetrieveRequest) (*schemas.UnifAICachedContentRetrieveResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) CachedContentRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentRetrieveRequest) (*schemas.RakshaCachedContentRetrieveResponse, *schemas.RakshaError) {
 	if request.Name == "" {
-		return nil, providerUtils.NewUnifAIOperationError("name is required for cached content retrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("name is required for cached content retrieve", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content retrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content retrieve", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentRetrieveByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentRetrieveByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
-func (provider *VertexProvider) cachedContentUpdateByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentUpdateRequest) (*schemas.UnifAICachedContentUpdateResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *VertexProvider) cachedContentUpdateByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentUpdateRequest) (*schemas.RakshaCachedContentUpdateResponse, time.Duration, *schemas.RakshaError) {
 	projectID := resolveVertexProjectID(ctx, key)
 	if projectID == "" {
 		return nil, 0, providerUtils.NewConfigurationError("project_id is not set")
@@ -397,7 +397,7 @@ func (provider *VertexProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 		var marshalErr error
 		jsonBody, marshalErr = sonic.Marshal(body)
 		if marshalErr != nil {
-			return nil, 0, providerUtils.NewUnifAIOperationError("failed to marshal cached content update body", marshalErr)
+			return nil, 0, providerUtils.NewRakshaOperationError("failed to marshal cached content update body", marshalErr)
 		}
 	}
 
@@ -421,10 +421,10 @@ func (provider *VertexProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 	}
 	req.SetBody(jsonBody)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseVertexCachedContentError(resp), latency)
@@ -432,15 +432,15 @@ func (provider *VertexProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var vResp vertexCachedContent
 	if err := sonic.Unmarshal(respBody, &vResp); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	return &schemas.UnifAICachedContentUpdateResponse{
+	return &schemas.RakshaCachedContentUpdateResponse{
 		Name:              vResp.Name,
 		DisplayName:       vResp.DisplayName,
 		Model:             vResp.Model,
@@ -455,33 +455,33 @@ func (provider *VertexProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 	}, latency, nil
 }
 
-func (provider *VertexProvider) CachedContentUpdate(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentUpdateRequest) (*schemas.UnifAICachedContentUpdateResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) CachedContentUpdate(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentUpdateRequest) (*schemas.RakshaCachedContentUpdateResponse, *schemas.RakshaError) {
 	if request.Name == "" {
-		return nil, providerUtils.NewUnifAIOperationError("name is required for cached content update", nil)
+		return nil, providerUtils.NewRakshaOperationError("name is required for cached content update", nil)
 	}
 	if err := validateVertexTTLExpireMutex(request.TTL, request.ExpireTime); err != nil {
 		return nil, err
 	}
 	if (request.TTL == nil || *request.TTL == "") && (request.ExpireTime == nil || *request.ExpireTime == "") {
-		return nil, providerUtils.NewUnifAIOperationError("either ttl or expire_time must be set for cached content update", nil)
+		return nil, providerUtils.NewRakshaOperationError("either ttl or expire_time must be set for cached content update", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content update", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content update", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentUpdateByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentUpdateByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
-func (provider *VertexProvider) cachedContentDeleteByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentDeleteRequest) (*schemas.UnifAICachedContentDeleteResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *VertexProvider) cachedContentDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentDeleteRequest) (*schemas.RakshaCachedContentDeleteResponse, time.Duration, *schemas.RakshaError) {
 	projectID := resolveVertexProjectID(ctx, key)
 	if projectID == "" {
 		return nil, 0, providerUtils.NewConfigurationError("project_id is not set")
@@ -506,43 +506,43 @@ func (provider *VertexProvider) cachedContentDeleteByKey(ctx *schemas.UnifAICont
 		return nil, 0, authErr
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseVertexCachedContentError(resp), latency)
 	}
 
-	return &schemas.UnifAICachedContentDeleteResponse{
+	return &schemas.RakshaCachedContentDeleteResponse{
 		Name:    name,
 		Deleted: true,
 	}, latency, nil
 }
 
-func (provider *VertexProvider) CachedContentDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentDeleteRequest) (*schemas.UnifAICachedContentDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) CachedContentDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentDeleteRequest) (*schemas.RakshaCachedContentDeleteResponse, *schemas.RakshaError) {
 	if request.Name == "" {
-		return nil, providerUtils.NewUnifAIOperationError("name is required for cached content delete", nil)
+		return nil, providerUtils.NewRakshaOperationError("name is required for cached content delete", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content delete", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content delete", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentDeleteByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentDeleteByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
-// parseVertexCachedContentError parses a Vertex API error response into a UnifAIError.
-func parseVertexCachedContentError(resp *fasthttp.Response) *schemas.UnifAIError {
+// parseVertexCachedContentError parses a Vertex API error response into a RakshaError.
+func parseVertexCachedContentError(resp *fasthttp.Response) *schemas.RakshaError {
 	respBody := resp.Body()
 	statusCode := resp.StatusCode()
 

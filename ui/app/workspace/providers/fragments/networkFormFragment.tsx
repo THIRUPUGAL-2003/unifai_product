@@ -187,7 +187,7 @@ export function NetworkFormFragment({ provider }: NetworkFormFragmentProps) {
 										</FormControl>
 										{isCustomProvider ? (
 											<FormDescription>
-												Host only — do not include <code className="text-xs">/v1</code>. UnifAI appends paths like{" "}
+												Host only — do not include <code className="text-xs">/v1</code>. Raksha appends paths like{" "}
 												<code className="text-xs">/v1/models</code>. Example:{" "}
 												<code className="text-xs">https://api.siliconflow.com</code> (not{" "}
 												<code className="text-xs">…/v1</code>).

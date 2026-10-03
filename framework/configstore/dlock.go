@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore/tables"
 )
 
 // Default lock configuration values

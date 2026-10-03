@@ -1,4 +1,4 @@
-"""MitM proxy engine launcher for UnifAI Guard."""
+"""MitM proxy engine launcher for Raksha Guard."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def stop_proxy_worker() -> None:
 
 def _resolve_listen_host() -> str:
     # Endpoint mode stays on 127.0.0.1 so only this PC is intercepted.
-    # Server/network mode binds 0.0.0.0 (or UNIFAI_LISTEN_HOST) for corp PAC.
+    # Server/network mode binds 0.0.0.0 (or RAKSHA_LISTEN_HOST) for corp PAC.
     listen_host = (LISTEN_HOST or "127.0.0.1").strip() or "127.0.0.1"
     if not SERVER_MODE:
         # Force IPv4 localhost. On some Windows setups mitm binds [::]:port only;
@@ -69,7 +69,7 @@ def _force_ipv4_name_resolution() -> None:
     finishes CONNECT → Chrome ERR_TIMED_OUT / 502 for ChatGPT, Gemini, etc.
     Pin DNS to IPv4 in the MitM worker only.
     """
-    if getattr(socket, "_unifai_ipv4_only", False):
+    if getattr(socket, "_raksha_ipv4_only", False):
         return
     orig = socket.getaddrinfo
 
@@ -82,7 +82,7 @@ def _force_ipv4_name_resolution() -> None:
             return orig(host, port, family, type, proto, flags)
 
     socket.getaddrinfo = getaddrinfo  # type: ignore[assignment]
-    socket._unifai_ipv4_only = True  # type: ignore[attr-defined]
+    socket._raksha_ipv4_only = True  # type: ignore[attr-defined]
 
 
 def _run_mitmdump_inline(addon_script: str, listen_host: str, port: int) -> None:
@@ -90,8 +90,8 @@ def _run_mitmdump_inline(addon_script: str, listen_host: str, port: int) -> None
     from mitmproxy.tools.main import mitmdump
 
     _force_ipv4_name_resolution()
-    print("[UnifAI Guard] MitM upstream DNS: IPv4 only (avoids broken IPv6 CONNECT hang).")
-    ssl_insecure_val = "true" if os.environ.get("UNIFAI_SSL_INSECURE", "").lower() in ("1", "true", "yes") else "false"
+    print("[Raksha Guard] MitM upstream DNS: IPv4 only (avoids broken IPv6 CONNECT hang).")
+    ssl_insecure_val = "true" if os.environ.get("RAKSHA_SSL_INSECURE", "").lower() in ("1", "true", "yes") else "false"
     upstream_cert_val = "false" if ssl_insecure_val == "true" else "true"
     args = [
         "--listen-host", listen_host,
@@ -111,19 +111,19 @@ def _run_mitmdump_inline(addon_script: str, listen_host: str, port: int) -> None
             return None
 
     try:
-        print(f"[UnifAI Guard] MitM worker listening on {listen_host}:{port}...")
+        print(f"[Raksha Guard] MitM worker listening on {listen_host}:{port}...")
         signal.signal = _thread_safe_signal  # type: ignore[assignment]
         mitmdump(args)
     except SystemExit as e:
-        print(f"[UnifAI Guard WARNING] Proxy engine exited ({e})")
+        print(f"[Raksha Guard WARNING] Proxy engine exited ({e})")
     except Exception as e:
-        print(f"[UnifAI Guard ERROR] Proxy engine stopped: {e}")
+        print(f"[Raksha Guard ERROR] Proxy engine stopped: {e}")
     finally:
         signal.signal = _orig_signal  # type: ignore[assignment]
 
 
 def run_mitm_worker_main(argv: list[str] | None = None) -> int:
-    """CLI entry: UnifAI_Guard --mitm-worker <addon> <port> [listen_host]"""
+    """CLI entry: Raksha_Guard --mitm-worker <addon> <port> [listen_host]"""
     args = list(argv if argv is not None else sys.argv[1:])
     # args[0] == --mitm-worker
     addon = args[1] if len(args) >= 2 else ""
@@ -131,7 +131,7 @@ def run_mitm_worker_main(argv: list[str] | None = None) -> int:
     port = int(args[2]) if len(args) >= 3 else default_port
     listen_host = args[3] if len(args) >= 4 else _resolve_listen_host()
     if not addon or not os.path.exists(addon):
-        print(f"[UnifAI Guard ERROR] MitM worker missing addon: {addon!r}")
+        print(f"[Raksha Guard ERROR] MitM worker missing addon: {addon!r}")
         return 2
     _run_mitmdump_inline(addon, listen_host, port)
     return 0
@@ -150,7 +150,7 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
     listen_host = _resolve_listen_host()  # captured here, reused for health checks below
 
     # If we are already the worker child, run inline.
-    if os.environ.get("UNIFAI_MITM_WORKER") == "1":
+    if os.environ.get("RAKSHA_MITM_WORKER") == "1":
         _run_mitmdump_inline(addon_script, listen_host, port)
         return
 
@@ -164,13 +164,13 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
         raise RuntimeError(f"Proxy port {listen_host}:{port} still busy before launch")
 
     env = os.environ.copy()
-    env["UNIFAI_MITM_WORKER"] = "1"
+    env["RAKSHA_MITM_WORKER"] = "1"
     if getattr(sys, "frozen", False):
         cmd = [sys.executable, "--mitm-worker", addon_script, str(port), listen_host]
     else:
-        agent_main = os.path.join(os.path.dirname(os.path.abspath(__file__)), "unifai_agent.py")
+        agent_main = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raksha_agent.py")
         cmd = [sys.executable, agent_main, "--mitm-worker", addon_script, str(port), listen_host]
-    print(f"[UnifAI Guard] Launching MitM Security Interceptor on {listen_host}:{port}...")
+    print(f"[Raksha Guard] Launching MitM Security Interceptor on {listen_host}:{port}...")
     global _current_worker
     proc = subprocess.Popen(
         cmd,
@@ -194,7 +194,7 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
         time.sleep(0.25)
 
     if not listened:
-        print(f"[UnifAI Guard ERROR] MitM worker did not bind {listen_host}:{port} — killing child")
+        print(f"[Raksha Guard ERROR] MitM worker did not bind {listen_host}:{port} — killing child")
         try:
             proc.terminate()
             proc.wait(timeout=3)
@@ -206,7 +206,7 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
         free_proxy_port(port)
         raise RuntimeError(f"Proxy failed to listen on {listen_host}:{port}")
 
-    print(f"[UnifAI Guard] MitM worker ready pid={proc.pid} on {listen_host}:{port}")
+    print(f"[Raksha Guard] MitM worker ready pid={proc.pid} on {listen_host}:{port}")
 
     # Block until child exits (crash / sleep-wake / stop).
     def _proxy_is_open() -> bool:
@@ -222,14 +222,14 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
         while True:
             rc = proc.poll()
             if rc is not None:
-                print(f"[UnifAI Guard WARNING] MitM worker exited (code={rc})")
+                print(f"[Raksha Guard WARNING] MitM worker exited (code={rc})")
                 break
             # If listen socket vanished but process still alive → hung event loop.
             if not _proxy_is_open():
                 time.sleep(1.0)
                 if not _proxy_is_open() and proc.poll() is None:
                     print(
-                        "[UnifAI Guard ERROR] Proxy port lost while worker alive "
+                        "[Raksha Guard ERROR] Proxy port lost while worker alive "
                         "(likely Event loop hung) — killing worker for restart"
                     )
                     try:

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/unifai/unifai/framework/configstore"
+	"github.com/raksha/raksha/framework/configstore"
 )
 
 // PermissionSet maps resource -> operation -> allowed.

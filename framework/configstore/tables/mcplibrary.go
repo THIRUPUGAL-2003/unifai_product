@@ -3,7 +3,7 @@ package tables
 import (
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // TableMCPLibrary represents a single discoverable MCP server in the MCP

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/qdrant/go-client/qdrant"
 	"google.golang.org/grpc"
 )
@@ -49,9 +49,9 @@ func (s *QdrantStore) CreateNamespace(ctx context.Context, namespace string, dim
 		if infoErr != nil {
 			s.logger.Warn(fmt.Sprintf("could not inspect existing collection %q for dimension validation (check skipped): %v", namespace, infoErr))
 		} else if params := info.GetConfig().GetParams().GetVectorsConfig().GetParams(); params == nil {
-			// Named-vector collections use GetParamsMap(); UnifAI only creates unnamed vectors so
-			// this collection was not created by UnifAI. Dimension validation is skipped.
-			s.logger.Debug(fmt.Sprintf("collection %q uses named vectors — dimension check skipped (UnifAI always creates unnamed vectors)", namespace))
+			// Named-vector collections use GetParamsMap(); Raksha only creates unnamed vectors so
+			// this collection was not created by Raksha. Dimension validation is skipped.
+			s.logger.Debug(fmt.Sprintf("collection %q uses named vectors — dimension check skipped (Raksha always creates unnamed vectors)", namespace))
 		} else {
 			existingDim := int(params.GetSize())
 			if existingDim != dimension {

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunAutomaticFunctionCallingTest executes the automatic function calling test scenario using dual API testing framework
-func RunAutomaticFunctionCallingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunAutomaticFunctionCallingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.AutomaticFunctionCall {
 		t.Logf("Automatic function calling not supported for provider %s", testConfig.Provider)
 		return
@@ -64,9 +64,9 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *unifai.UnifAI, ctx co
 		}
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
@@ -89,9 +89,9 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *unifai.UnifAI, ctx co
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
@@ -102,7 +102,7 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *unifai.UnifAI, ctx co
 					ToolChoice: &schemas.ResponsesToolChoice{
 						ResponsesToolChoiceStruct: &schemas.ResponsesToolChoiceStruct{
 							Type: schemas.ResponsesToolChoiceTypeFunction,
-							Name: unifai.Ptr(string(SampleToolTypeTime)),
+							Name: raksha.Ptr(string(SampleToolTypeTime)),
 						},
 					},
 				},
@@ -137,12 +137,12 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *unifai.UnifAI, ctx co
 		}
 
 		// Additional validation specific to automatic function calling using universal tool extraction
-		validateChatAutomaticToolCall := func(response *schemas.UnifAIChatResponse, apiName string) {
+		validateChatAutomaticToolCall := func(response *schemas.RakshaChatResponse, apiName string) {
 			toolCalls := ExtractChatToolCalls(response)
 			validateAutomaticToolCall(t, toolCalls, apiName)
 		}
 
-		validateResponsesAutomaticToolCall := func(response *schemas.UnifAIResponsesResponse, apiName string) {
+		validateResponsesAutomaticToolCall := func(response *schemas.RakshaResponsesResponse, apiName string) {
 			toolCalls := ExtractResponsesToolCalls(response)
 			validateAutomaticToolCall(t, toolCalls, apiName)
 		}

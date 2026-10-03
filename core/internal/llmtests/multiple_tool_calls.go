@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // getKeysFromMap returns the keys of a map[string]bool as a slice
@@ -22,7 +22,7 @@ func getKeysFromMap(m map[string]bool) []string {
 }
 
 // RunMultipleToolCallsTest executes the multiple tool calls test scenario using dual API testing framework
-func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.MultipleToolCalls {
 		t.Logf("Multiple tool calls not supported for provider %s", testConfig.Provider)
 		return
@@ -75,9 +75,9 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 		expectations.ExpectedChoiceCount = 0 // to remove the check
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Params: &schemas.ChatParameters{
@@ -90,9 +90,9 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Params: &schemas.ResponsesParameters{
@@ -130,7 +130,7 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 		}
 
 		// Verify we got the expected tools using universal tool extraction
-		validateChatMultipleToolCalls := func(response *schemas.UnifAIChatResponse, apiName string) {
+		validateChatMultipleToolCalls := func(response *schemas.RakshaChatResponse, apiName string) {
 			toolCalls := ExtractChatToolCalls(response)
 			toolsFound := make(map[string]bool)
 			toolCallCount := len(toolCalls)
@@ -156,7 +156,7 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 			t.Logf("✅ %s API successfully found %d tool calls: %v", apiName, toolCallCount, getKeysFromMap(toolsFound))
 		}
 
-		validateResponsesMultipleToolCalls := func(response *schemas.UnifAIResponsesResponse, apiName string) {
+		validateResponsesMultipleToolCalls := func(response *schemas.RakshaResponsesResponse, apiName string) {
 			toolCalls := ExtractResponsesToolCalls(response)
 			toolsFound := make(map[string]bool)
 			toolCallCount := len(toolCalls)
@@ -209,12 +209,12 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 		chatWeatherTool := GetSampleChatTool(SampleToolTypeWeather)
 		chatCalculatorTool := GetSampleChatTool(SampleToolTypeCalculate)
 
-		request := &schemas.UnifAIChatRequest{
+		request := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(200),
+				MaxCompletionTokens: raksha.Ptr(200),
 				Tools:               []schemas.ChatTool{*chatWeatherTool, *chatCalculatorTool},
 				ParallelToolCalls:   schemas.Ptr(true),
 			},
@@ -238,11 +238,11 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 			t,
 			retryConfig,
 			retryContext,
-			func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ChatCompletionStreamRequest(bfCtx, request)
 			},
-			func(responseChannel chan *schemas.UnifAIStreamChunk) ChatStreamValidationResult {
+			func(responseChannel chan *schemas.RakshaStreamChunk) ChatStreamValidationResult {
 				accumulator := NewStreamingToolCallAccumulator()
 				var responseCount int
 				var streamErrors []string
@@ -257,18 +257,18 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 							goto streamComplete
 						}
 
-						if response == nil || response.UnifAIChatResponse == nil {
+						if response == nil || response.RakshaChatResponse == nil {
 							errMsg := "❌ Streaming response should not be nil"
-							if response != nil && response.UnifAIError != nil {
-								errMsg += fmt.Sprintf(" - error: %s", GetErrorMessage(response.UnifAIError))
+							if response != nil && response.RakshaError != nil {
+								errMsg += fmt.Sprintf(" - error: %s", GetErrorMessage(response.RakshaError))
 							}
 							streamErrors = append(streamErrors, errMsg)
 							continue
 						}
 						responseCount++
 
-						if response.UnifAIChatResponse.Choices != nil {
-							for _, choice := range response.UnifAIChatResponse.Choices {
+						if response.RakshaChatResponse.Choices != nil {
+							for _, choice := range response.RakshaChatResponse.Choices {
 								if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
 									delta := choice.ChatStreamResponseChoice.Delta
 									if len(delta.ToolCalls) > 0 {
@@ -359,7 +359,7 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 		responsesWeatherTool := GetSampleResponsesTool(SampleToolTypeWeather)
 		responsesCalculatorTool := GetSampleResponsesTool(SampleToolTypeCalculate)
 
-		request := &schemas.UnifAIResponsesRequest{
+		request := &schemas.RakshaResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    responsesMessages,
@@ -384,11 +384,11 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 		}
 
 		validationResult := WithResponsesStreamValidationRetry(t, retryConfig, retryContext,
-			func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			},
-			func(responseChannel chan *schemas.UnifAIStreamChunk) ResponsesStreamValidationResult {
+			func(responseChannel chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult {
 				accumulator := NewStreamingToolCallAccumulator()
 				var responseCount int
 				streamCtx, cancel := context.WithTimeout(ctx, 200*time.Second)
@@ -408,10 +408,10 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 						}
 						responseCount++
 
-						if response.UnifAIResponsesStreamResponse == nil {
+						if response.RakshaResponsesStreamResponse == nil {
 							errMsg := fmt.Sprintf("❌ Unexpected non-response chunk at chunk %d", responseCount)
-							if response.UnifAIError != nil {
-								errMsg += fmt.Sprintf(" - error: %s", GetErrorMessage(response.UnifAIError))
+							if response.RakshaError != nil {
+								errMsg += fmt.Sprintf(" - error: %s", GetErrorMessage(response.RakshaError))
 							}
 							return ResponsesStreamValidationResult{
 								Passed: false,
@@ -419,7 +419,7 @@ func RunMultipleToolCallsTest(t *testing.T, client *unifai.UnifAI, ctx context.C
 							}
 						}
 
-						streamResp := response.UnifAIResponsesStreamResponse
+						streamResp := response.RakshaResponsesStreamResponse
 						switch streamResp.Type {
 						case schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDelta:
 							var arguments *string

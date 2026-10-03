@@ -9,7 +9,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { useStoreSync } from "@/hooks/useStoreSync";
 import { WebSocketProvider } from "@/hooks/useWebSocket";
 import { getErrorMessage, ReduxProvider, useGetCoreConfigQuery, useIsAuthEnabledQuery } from "@/lib/store";
-import { UnifAIConfig } from "@/lib/types/config";
+import { RakshaConfig } from "@/lib/types/config";
 import { RbacProvider, useRbacContext } from "@enterprise/lib/contexts/rbacContext";
 import { useLocation, useMatches } from "@tanstack/react-router";
 import { NuqsAdapter } from "nuqs/adapters/tanstack-router";
@@ -71,7 +71,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 	const useMinimalShell = tempTokenScoped && !!authState?.is_auth_enabled && !authState?.has_valid_token && hadFragmentTempToken;
 
 	const {
-		data: unifaiConfig,
+		data: rakshaConfig,
 		error,
 		isLoading,
 		refetch: refetchConfig,
@@ -129,7 +129,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 							{isLoading ? (
 								<FullPageLoader />
 							) : (
-								<FullPage config={unifaiConfig} error={error} onRetry={refetchConfig}>
+								<FullPage config={rakshaConfig} error={error} onRetry={refetchConfig}>
 									{children}
 								</FullPage>
 							)}
@@ -164,7 +164,7 @@ function FullPage({
 	onRetry,
 	children,
 }: {
-	config: UnifAIConfig | undefined;
+	config: RakshaConfig | undefined;
 	error?: unknown;
 	onRetry?: () => void;
 	children: React.ReactNode;
@@ -227,7 +227,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 					<NuqsAdapter>
 						<RbacProvider>
 							<AppContent>{children}</AppContent>
-							{process.env.NODE_ENV === "development" && !process.env.UNIFAI_DISABLE_PROFILER && <DevProfiler />}
+							{process.env.NODE_ENV === "development" && !process.env.RAKSHA_DISABLE_PROFILER && <DevProfiler />}
 						</RbacProvider>
 					</NuqsAdapter>
 				</ReduxProvider>

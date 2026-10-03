@@ -239,7 +239,7 @@ export default function BrowserAiPage() {
 	// Plaintext company uninstall key display (stored in DB encrypted and cached in session/localStorage)
 	const [savedUninstallKeyDisplay, setSavedUninstallKeyDisplay] = useState(() => {
 		if (typeof window !== "undefined") {
-			return localStorage.getItem("unifai_company_uninstall_key") || "";
+			return localStorage.getItem("raksha_company_uninstall_key") || "";
 		}
 		return "";
 	});
@@ -581,7 +581,7 @@ export default function BrowserAiPage() {
 		if (agentSettingsData?.uninstall_key) {
 			setSavedUninstallKeyDisplay(agentSettingsData.uninstall_key);
 			if (typeof window !== "undefined") {
-				localStorage.setItem("unifai_company_uninstall_key", agentSettingsData.uninstall_key);
+				localStorage.setItem("raksha_company_uninstall_key", agentSettingsData.uninstall_key);
 			}
 		}
 	}, [agentSettingsData?.uninstall_key]);
@@ -744,13 +744,13 @@ export default function BrowserAiPage() {
 					? agent.username
 					: "") || ""
 		);
-		setWarningMailSubject(`[Security Alert] UnifAI Browser Guard Policy Warning — ${agent.hostname || "Device"}`);
+		setWarningMailSubject(`[Security Alert] Raksha Browser Guard Policy Warning — ${agent.hostname || "Device"}`);
 		const host = agent.hostname || "unknown-device";
 		const user = agent.username || "—";
 		const ip = agent.ip_address || "—";
 		setWarningMailMessage(
 			`Dear Employee,\n\n` +
-				`This is an official UnifAI Browser Guard security compliance report for your assigned workstation.\n\n` +
+				`This is an official Raksha Browser Guard security compliance report for your assigned workstation.\n\n` +
 				`--- DEVICE REPORT ---\n` +
 				`Hostname: ${host}\n` +
 				`User: ${user}\n` +
@@ -792,7 +792,7 @@ export default function BrowserAiPage() {
 		try {
 			const res = await sendWarningEmail({
 				to,
-				subject: warningMailSubject.trim() || "UnifAI Security Policy Warning",
+				subject: warningMailSubject.trim() || "Raksha Security Policy Warning",
 				message: warningMailMessage.trim(),
 				agent_id: warningMailTarget?.id,
 				agent_hostname: warningMailTarget?.hostname,
@@ -1695,7 +1695,7 @@ export default function BrowserAiPage() {
 			const url = window.URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = platform === "mac" ? "UnifAI_Guard_macOS.zip" : "UnifAI_Guard_Windows.zip";
+			link.download = platform === "mac" ? "Raksha_Guard_macOS.zip" : "Raksha_Guard_Windows.zip";
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -1777,7 +1777,7 @@ export default function BrowserAiPage() {
 			}).unwrap();
 			setSavedUninstallKeyDisplay(nextKey);
 			if (typeof window !== "undefined") {
-				localStorage.setItem("unifai_company_uninstall_key", nextKey);
+				localStorage.setItem("raksha_company_uninstall_key", nextKey);
 			}
 			setUninstallKeyInput("");
 			setUninstallKeyEditing(false);
@@ -2522,7 +2522,7 @@ export default function BrowserAiPage() {
 													No prompts intercepted yet. Guard agent must be running,
 													Target site Monitoring ON and Block Website OFF, then fully quit and reopen
 													the browser so PAC hits the local Guard proxy (proxy_addr from Guard config /
-													UNIFAI_PROXY_ADDR). If the AI site opens but logs stay 0,
+													RAKSHA_PROXY_ADDR). If the AI site opens but logs stay 0,
 													traffic is bypassing the proxy — check Guard Agents health / local
 													PAC status URL (from PAC_HTTP_PORT in .env / Guard config).
 												</TableCell>
@@ -3370,7 +3370,7 @@ export default function BrowserAiPage() {
 												Create Guard Rule
 											</DialogTitle>
 											<DialogDescription className="text-xs">
-												Add your own regex or AI policy. UnifAI does not ship default guard patterns — only what you save here is enforced.
+												Add your own regex or AI policy. Raksha does not ship default guard patterns — only what you save here is enforced.
 											</DialogDescription>
 										</DialogHeader>
 
@@ -4750,7 +4750,7 @@ export default function BrowserAiPage() {
 									{agents.length === 0 && (
 										<TableRow>
 											<TableCell colSpan={12} className="text-center py-10 text-muted-foreground text-sm">
-												No Guard agents yet. Install UnifAI_Guard_Setup.exe (Windows) or UnifAI_Guard_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d raksha_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
+												No Guard agents yet. Install Raksha_Guard_Setup.exe (Windows) or Raksha_Guard_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d raksha_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
 											</TableCell>
 										</TableRow>
 									)}
@@ -4886,7 +4886,7 @@ export default function BrowserAiPage() {
 													type={showUninstallKey ? "text" : "password"}
 													value={
 														showUninstallKey
-															? (savedUninstallKeyDisplay || agentSettingsData?.uninstall_key || (typeof window !== "undefined" ? localStorage.getItem("unifai_company_uninstall_key") : "") || "12345678")
+															? (savedUninstallKeyDisplay || agentSettingsData?.uninstall_key || (typeof window !== "undefined" ? localStorage.getItem("raksha_company_uninstall_key") : "") || "12345678")
 															: "••••••••••••••••••••"
 													}
 													className="pr-10 font-mono"
@@ -4899,7 +4899,7 @@ export default function BrowserAiPage() {
 													onClick={async () => {
 														let currentKey = savedUninstallKeyDisplay || agentSettingsData?.uninstall_key;
 														if (!currentKey && typeof window !== "undefined") {
-															currentKey = localStorage.getItem("unifai_company_uninstall_key") || "";
+															currentKey = localStorage.getItem("raksha_company_uninstall_key") || "";
 														}
 														if (!currentKey) {
 															try {
@@ -4910,7 +4910,7 @@ export default function BrowserAiPage() {
 																		currentKey = json.uninstall_key;
 																		setSavedUninstallKeyDisplay(json.uninstall_key);
 																		if (typeof window !== "undefined") {
-																			localStorage.setItem("unifai_company_uninstall_key", json.uninstall_key);
+																			localStorage.setItem("raksha_company_uninstall_key", json.uninstall_key);
 																		}
 																	}
 																}
@@ -5060,7 +5060,7 @@ export default function BrowserAiPage() {
 								{[
 									{
 										label: "Windows",
-										file: "UnifAI_Guard_Windows.zip",
+										file: "Raksha_Guard_Windows.zip",
 										contents: "Setup.exe · auto-start · proxy routing",
 										dot: "bg-sky-500",
 										ready: setupInfo?.windows_ready,
@@ -5069,8 +5069,8 @@ export default function BrowserAiPage() {
 									},
 									{
 										label: "macOS",
-										file: "UnifAI_Guard_macOS.zip",
-										contents: "UnifAI_Guard.app · Install .command",
+										file: "Raksha_Guard_macOS.zip",
+										contents: "Raksha_Guard.app · Install .command",
 										dot: "bg-primary",
 										ready: setupInfo?.macos_ready,
 										version: latestMacVersion,
@@ -5213,10 +5213,10 @@ export default function BrowserAiPage() {
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
 									Run{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										UnifAI_Guard_Setup.exe
+										Raksha_Guard_Setup.exe
 									</code>
 									. Keep autostart enabled so Guard starts at Windows login. To turn OFF / uninstall: Windows Settings → Apps →
-									UnifAI Guard → Uninstall (company uninstall key).
+									Raksha Guard → Uninstall (company uninstall key).
 								</p>
 							</div>
 
@@ -5228,17 +5228,17 @@ export default function BrowserAiPage() {
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
 									Unzip{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										UnifAI_Guard_macOS.zip
+										Raksha_Guard_macOS.zip
 									</code>
 									, then double-click{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Install_UnifAI_Guard.command
+										Install_Raksha_Guard.command
 									</code>{" "}
 									(Right-click → Open if Gatekeeper blocks). See{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">INSTALL_MACOS.txt</code>. To
 									turn OFF / uninstall: double-click{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Uninstall_UnifAI_Guard.command
+										Uninstall_Raksha_Guard.command
 									</code>{" "}
 									and enter the same company uninstall key (
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">UNINSTALL_MACOS.txt</code>
@@ -5261,20 +5261,20 @@ export default function BrowserAiPage() {
 								<ul className="list-disc pl-5 text-foreground/80 space-y-1.5">
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											UnifAI_Guard_Windows.zip
+											Raksha_Guard_Windows.zip
 										</code>{" "}
 										— Windows{" "}
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											UnifAI_Guard_Setup.exe
+											Raksha_Guard_Setup.exe
 										</code>{" "}
 										installer &amp; docs
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											UnifAI_Guard_macOS.zip
+											Raksha_Guard_macOS.zip
 										</code>{" "}
 										— macOS{" "}
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">UnifAI_Guard.app</code> +
+										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">Raksha_Guard.app</code> +
 										Install &amp; Uninstall scripts
 									</li>
 									<li>
@@ -5514,7 +5514,7 @@ export default function BrowserAiPage() {
 														</TableCell>
 														<TableCell className="text-muted-foreground">
 															<div className="font-medium text-foreground truncate max-w-[140px]">
-																{agent.transport_name || (agent.agent_type === "network" ? "Network Proxy" : "UnifAI Guard")}
+																{agent.transport_name || (agent.agent_type === "network" ? "Network Proxy" : "Raksha Guard")}
 															</div>
 															<div className="text-[10px] text-muted-foreground">v{agent.agent_version || "1.0"}</div>
 														</TableCell>
@@ -5668,7 +5668,7 @@ export default function BrowserAiPage() {
 								<div className="rounded-md border border-border bg-background p-3 space-y-1">
 									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Transport / OS / Version</p>
 									<p className="font-mono text-xs text-foreground">
-										{selectedTelemetryAgent.transport_name || "UnifAI Guard"} ({selectedTelemetryAgent.os_version || "OS"})
+										{selectedTelemetryAgent.transport_name || "Raksha Guard"} ({selectedTelemetryAgent.os_version || "OS"})
 									</p>
 									<p className="font-mono text-xs text-primary font-semibold mt-0.5">
 										Guard v{selectedTelemetryAgent.agent_version || "—"}

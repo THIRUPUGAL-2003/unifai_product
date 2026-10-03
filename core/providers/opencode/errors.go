@@ -6,8 +6,8 @@ import (
 
 	"github.com/bytedance/sonic"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -26,15 +26,15 @@ type opencodeErrorInner struct {
 // parseOpencodeError parses Opencode-specific error responses.
 // Opencode uses {"type":"error","error":{"type":"...","message":"..."}} instead
 // of OpenAI's {"error":{"message":"...","type":"...","code":...}}.
-func parseOpencodeError(resp *fasthttp.Response) *schemas.UnifAIError {
-	var unifaiErr schemas.UnifAIError
+func parseOpencodeError(resp *fasthttp.Response) *schemas.RakshaError {
+	var rakshaErr schemas.RakshaError
 
 	// First, let the generic handler parse HTTP status and set base fields.
-	_ = providerUtils.HandleProviderAPIError(resp, &unifaiErr)
+	_ = providerUtils.HandleProviderAPIError(resp, &rakshaErr)
 
 	// Ensure Error is non-nil before accessing its fields.
-	if unifaiErr.Error == nil {
-		unifaiErr.Error = &schemas.ErrorField{}
+	if rakshaErr.Error == nil {
+		rakshaErr.Error = &schemas.ErrorField{}
 	}
 
 	// Then overlay Opencode-specific error details from the body.
@@ -42,22 +42,22 @@ func parseOpencodeError(resp *fasthttp.Response) *schemas.UnifAIError {
 		var parsed opencodeErrorBody
 		if err := sonic.Unmarshal(body, &parsed); err == nil && parsed.Type == "error" {
 			if parsed.Error.Message != "" {
-				unifaiErr.Error.Message = parsed.Error.Message
+				rakshaErr.Error.Message = parsed.Error.Message
 			}
 			if parsed.Error.Type != "" {
-				unifaiErr.Error.Type = &parsed.Error.Type
+				rakshaErr.Error.Type = &parsed.Error.Type
 			}
 		}
 	}
 
 	// Ensure we always have a non-empty error message.
-	if strings.TrimSpace(unifaiErr.Error.Message) == "" {
-		if unifaiErr.StatusCode != nil {
-			unifaiErr.Error.Message = fmt.Sprintf("provider API error (status %d)", *unifaiErr.StatusCode)
+	if strings.TrimSpace(rakshaErr.Error.Message) == "" {
+		if rakshaErr.StatusCode != nil {
+			rakshaErr.Error.Message = fmt.Sprintf("provider API error (status %d)", *rakshaErr.StatusCode)
 		} else {
-			unifaiErr.Error.Message = "provider API error"
+			rakshaErr.Error.Message = "provider API error"
 		}
 	}
 
-	return &unifaiErr
+	return &rakshaErr
 }

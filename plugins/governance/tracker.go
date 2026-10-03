@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
 )
 
 // UsageUpdate contains data for VK-level usage tracking
@@ -229,7 +229,7 @@ func captureRequestAttribution(ctx context.Context, update *UsageUpdate) {
 	if ids, ok := ctx.Value(governanceUserTeamIDsContextKey).([]string); ok && len(ids) > 0 {
 		update.UserTeamIDs = append([]string(nil), ids...)
 	}
-	if scoped, ok := ctx.Value(schemas.UnifAIContextKeyGovernanceScopedCustomerID).(string); ok {
+	if scoped, ok := ctx.Value(schemas.RakshaContextKeyGovernanceScopedCustomerID).(string); ok {
 		update.ScopedCustomerID = scoped
 	}
 }
@@ -239,7 +239,7 @@ func withRequestAttribution(ctx context.Context, update *UsageUpdate) context.Co
 		ctx = context.WithValue(ctx, governanceUserTeamIDsContextKey, update.UserTeamIDs)
 	}
 	if update.ScopedCustomerID != "" {
-		ctx = context.WithValue(ctx, schemas.UnifAIContextKeyGovernanceScopedCustomerID, update.ScopedCustomerID)
+		ctx = context.WithValue(ctx, schemas.RakshaContextKeyGovernanceScopedCustomerID, update.ScopedCustomerID)
 	}
 	return ctx
 }

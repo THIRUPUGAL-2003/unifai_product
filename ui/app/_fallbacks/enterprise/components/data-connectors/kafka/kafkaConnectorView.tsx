@@ -13,7 +13,7 @@ export default function KafkaConnectorView({ onDelete, isDeleting }: KafkaConnec
 			description="Publish request and response events to a Kafka topic."
 			fields={[
 				{ key: "brokers", label: "Brokers", placeholder: "localhost:9092" },
-				{ key: "topic", label: "Topic", placeholder: "unifai-logs" },
+				{ key: "topic", label: "Topic", placeholder: "raksha-logs" },
 				{ key: "username", label: "Username" },
 				{ key: "password", label: "Password", type: "password" },
 			]}

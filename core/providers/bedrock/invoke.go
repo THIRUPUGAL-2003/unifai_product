@@ -10,8 +10,8 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // GetExtraParams implements the RequestBodyWithExtraParams interface
@@ -222,7 +222,7 @@ func (r *BedrockInvokeRequest) IsCohereCommandRRequest() bool {
 }
 
 // ToBedrockConverseRequest converts the invoke request to BedrockConverseRequest
-// so we can reuse ToUnifAIResponsesRequest() for messages-based requests.
+// so we can reuse ToRakshaResponsesRequest() for messages-based requests.
 func (r *BedrockInvokeRequest) ToBedrockConverseRequest() *BedrockConverseRequest {
 	converseReq := &BedrockConverseRequest{
 		ModelID:     r.ModelID,
@@ -335,9 +335,9 @@ func (r *BedrockInvokeRequest) ToBedrockConverseRequest() *BedrockConverseReques
 	return converseReq
 }
 
-// ToUnifAITextCompletionRequest handles ALL prompt-based families
+// ToRakshaTextCompletionRequest handles ALL prompt-based families
 // (Anthropic legacy, Mistral, Llama, Cohere Command, Cohere Command R).
-func (r *BedrockInvokeRequest) ToUnifAITextCompletionRequest(ctx *schemas.UnifAIContext) *schemas.UnifAITextCompletionRequest {
+func (r *BedrockInvokeRequest) ToRakshaTextCompletionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTextCompletionRequest {
 	// Normalize prompt: Cohere Command R uses "message" field, not "prompt"
 	prompt := r.Prompt
 	if prompt == "" && r.Message != "" {
@@ -360,7 +360,7 @@ func (r *BedrockInvokeRequest) ToUnifAITextCompletionRequest(ctx *schemas.UnifAI
 		topK = r.CohereK
 	}
 
-	// Build a BedrockTextCompletionRequest and delegate to its ToUnifAITextCompletionRequest
+	// Build a BedrockTextCompletionRequest and delegate to its ToRakshaTextCompletionRequest
 	textReq := &BedrockTextCompletionRequest{
 		ModelID:           r.ModelID,
 		Prompt:            prompt,
@@ -377,18 +377,18 @@ func (r *BedrockInvokeRequest) ToUnifAITextCompletionRequest(ctx *schemas.UnifAI
 		Stream:            r.Stream,
 		ExtraParams:       r.ExtraParams,
 	}
-	return textReq.ToUnifAITextCompletionRequest(ctx)
+	return textReq.ToRakshaTextCompletionRequest(ctx)
 }
 
-// ToUnifAIEmbeddingRequest converts the invoke request to a UnifAIEmbeddingRequest.
+// ToRakshaEmbeddingRequest converts the invoke request to a RakshaEmbeddingRequest.
 // Handles both Titan (inputText) and Cohere (texts) embedding formats.
-func (r *BedrockInvokeRequest) ToUnifAIEmbeddingRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIEmbeddingRequest {
+func (r *BedrockInvokeRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaContext) *schemas.RakshaEmbeddingRequest {
 	modelID := r.ModelID
 	if unescaped, err := url.PathUnescape(r.ModelID); err == nil {
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.UnifAIEmbeddingRequest{
+	req := &schemas.RakshaEmbeddingRequest{
 		Provider: provider,
 		Model:    model,
 	}
@@ -444,15 +444,15 @@ func (r *BedrockInvokeRequest) ToUnifAIEmbeddingRequest(ctx *schemas.UnifAIConte
 	return req
 }
 
-// ToUnifAIImageGenerationRequest converts the invoke request to a UnifAIImageGenerationRequest.
+// ToRakshaImageGenerationRequest converts the invoke request to a RakshaImageGenerationRequest.
 // Handles Titan/Nova Canvas (taskType=TEXT_IMAGE with textToImageParams) and Stability AI (flat prompt fields).
-func (r *BedrockInvokeRequest) ToUnifAIImageGenerationRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIImageGenerationRequest {
+func (r *BedrockInvokeRequest) ToRakshaImageGenerationRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageGenerationRequest {
 	modelID := r.ModelID
 	if unescaped, err := url.PathUnescape(r.ModelID); err == nil {
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.UnifAIImageGenerationRequest{
+	req := &schemas.RakshaImageGenerationRequest{
 		Provider: provider,
 		Model:    model,
 	}
@@ -508,15 +508,15 @@ func (r *BedrockInvokeRequest) ToUnifAIImageGenerationRequest(ctx *schemas.UnifA
 	return req
 }
 
-// ToUnifAIImageEditRequest converts the invoke request to a UnifAIImageEditRequest.
+// ToRakshaImageEditRequest converts the invoke request to a RakshaImageEditRequest.
 // Handles Titan/Nova Canvas (taskType in INPAINTING/OUTPAINTING/BACKGROUND_REMOVAL) and Stability AI (flat image/mask fields).
-func (r *BedrockInvokeRequest) ToUnifAIImageEditRequest(ctx *schemas.UnifAIContext) (*schemas.UnifAIImageEditRequest, error) {
+func (r *BedrockInvokeRequest) ToRakshaImageEditRequest(ctx *schemas.RakshaContext) (*schemas.RakshaImageEditRequest, error) {
 	modelID := r.ModelID
 	if unescaped, err := url.PathUnescape(r.ModelID); err == nil {
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.UnifAIImageEditRequest{
+	req := &schemas.RakshaImageEditRequest{
 		Provider: provider,
 		Model:    model,
 	}
@@ -674,9 +674,9 @@ func (r *BedrockInvokeRequest) ToUnifAIImageEditRequest(ctx *schemas.UnifAIConte
 	return req, nil
 }
 
-// ToUnifAIImageVariationRequest converts the invoke request to a UnifAIImageVariationRequest.
+// ToRakshaImageVariationRequest converts the invoke request to a RakshaImageVariationRequest.
 // Reads from imageVariationParams (Titan/Nova Canvas format).
-func (r *BedrockInvokeRequest) ToUnifAIImageVariationRequest(ctx *schemas.UnifAIContext) (*schemas.UnifAIImageVariationRequest, error) {
+func (r *BedrockInvokeRequest) ToRakshaImageVariationRequest(ctx *schemas.RakshaContext) (*schemas.RakshaImageVariationRequest, error) {
 	if r.ImageVariationParams == nil || len(r.ImageVariationParams.Images) == 0 {
 		return nil, fmt.Errorf("imageVariationParams.images is required for IMAGE_VARIATION")
 	}
@@ -691,7 +691,7 @@ func (r *BedrockInvokeRequest) ToUnifAIImageVariationRequest(ctx *schemas.UnifAI
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.UnifAIImageVariationRequest{
+	req := &schemas.RakshaImageVariationRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.ImageVariationInput{
@@ -887,11 +887,11 @@ func convertAnthropicToolChoice(choice interface{}) *BedrockToolChoice {
 	return nil
 }
 
-// ToBedrockInvokeMessagesResponse converts a UnifAIResponsesResponse to the model-family-specific
+// ToBedrockInvokeMessagesResponse converts a RakshaResponsesResponse to the model-family-specific
 // InvokeModel response format. Switches on model family to produce the correct JSON structure.
-func ToBedrockInvokeMessagesResponse(ctx *schemas.UnifAIContext, resp *schemas.UnifAIResponsesResponse) (interface{}, error) {
+func ToBedrockInvokeMessagesResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
 	if resp == nil {
-		return nil, fmt.Errorf("unifai response is nil")
+		return nil, fmt.Errorf("raksha response is nil")
 	}
 
 	model := ""
@@ -920,9 +920,9 @@ func ToBedrockInvokeMessagesResponse(ctx *schemas.UnifAIContext, resp *schemas.U
 	return toBedrockInvokeAnthropicResponse(resp, model), nil
 }
 
-func ToBedrockInvokeImagesResponse(ctx *schemas.UnifAIContext, resp *schemas.UnifAIImageGenerationResponse) (interface{}, error) {
+func ToBedrockInvokeImagesResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
 	if resp == nil {
-		return nil, fmt.Errorf("unifai response is nil")
+		return nil, fmt.Errorf("raksha response is nil")
 	}
 
 	// If the provider stored the raw Bedrock response, return it verbatim (preserves seeds, finish_reasons, etc.)
@@ -944,7 +944,7 @@ func ToBedrockInvokeImagesResponse(ctx *schemas.UnifAIContext, resp *schemas.Uni
 		return ToStabilityAIImageGenerationResponse(resp)
 	}
 
-	// Default: Titan Image Generator v1/v2, Nova Canvas — reconstruct from UnifAI data
+	// Default: Titan Image Generator v1/v2, Nova Canvas — reconstruct from Raksha data
 	result := &BedrockImageGenerationResponse{}
 	for _, d := range resp.Data {
 		result.Images = append(result.Images, d.B64JSON)
@@ -952,13 +952,13 @@ func ToBedrockInvokeImagesResponse(ctx *schemas.UnifAIContext, resp *schemas.Uni
 	return result, nil
 }
 
-// ToBedrockEmbeddingInvokeResponse converts a UnifAIEmbeddingResponse back to the native
+// ToBedrockEmbeddingInvokeResponse converts a RakshaEmbeddingResponse back to the native
 // Bedrock invoke API response format.
 // Single-embedding (Titan) responses use: {"embedding": [...], "inputTextTokenCount": N}
 // Multi-embedding (Cohere) responses use:  {"embeddings": [[...],[...]], "response_type": "embeddings_floats"}
-func ToBedrockEmbeddingInvokeResponse(ctx *schemas.UnifAIContext, resp *schemas.UnifAIEmbeddingResponse) (interface{}, error) {
+func ToBedrockEmbeddingInvokeResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaEmbeddingResponse) (interface{}, error) {
 	if resp == nil {
-		return nil, fmt.Errorf("unifai embedding response is nil")
+		return nil, fmt.Errorf("raksha embedding response is nil")
 	}
 
 	// If the provider stored the raw Bedrock response, return it verbatim
@@ -1015,8 +1015,8 @@ func ToBedrockEmbeddingInvokeResponse(ctx *schemas.UnifAIContext, resp *schemas.
 	}, nil
 }
 
-// toBedrockInvokeAnthropicResponse converts UnifAIResponsesResponse to Anthropic Messages API format.
-func toBedrockInvokeAnthropicResponse(resp *schemas.UnifAIResponsesResponse, model string) *BedrockInvokeMessagesResponse {
+// toBedrockInvokeAnthropicResponse converts RakshaResponsesResponse to Anthropic Messages API format.
+func toBedrockInvokeAnthropicResponse(resp *schemas.RakshaResponsesResponse, model string) *BedrockInvokeMessagesResponse {
 	result := &BedrockInvokeMessagesResponse{
 		Type: "message",
 		Role: "assistant",
@@ -1110,8 +1110,8 @@ func toBedrockInvokeAnthropicResponse(resp *schemas.UnifAIResponsesResponse, mod
 	return result
 }
 
-// toBedrockInvokeAI21Response converts UnifAIResponsesResponse to AI21 Jamba format.
-func toBedrockInvokeAI21Response(resp *schemas.UnifAIResponsesResponse) *BedrockInvokeAI21Response {
+// toBedrockInvokeAI21Response converts RakshaResponsesResponse to AI21 Jamba format.
+func toBedrockInvokeAI21Response(resp *schemas.RakshaResponsesResponse) *BedrockInvokeAI21Response {
 	result := &BedrockInvokeAI21Response{}
 
 	if resp.ID != nil {
@@ -1159,11 +1159,11 @@ func toBedrockInvokeAI21Response(resp *schemas.UnifAIResponsesResponse) *Bedrock
 	return result
 }
 
-// ToBedrockInvokeMessagesStreamResponse converts a UnifAI Responses stream event to
+// ToBedrockInvokeMessagesStreamResponse converts a Raksha Responses stream event to
 // a BedrockStreamEvent with InvokeModelRawChunk for the invoke-with-response-stream endpoint.
-func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.UnifAIContext, resp *schemas.UnifAIResponsesStreamResponse) (string, interface{}, error) {
+func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
 	if resp == nil {
-		return "", nil, fmt.Errorf("unifai stream response is nil")
+		return "", nil, fmt.Errorf("raksha stream response is nil")
 	}
 
 	// Get model from the stream chunk's ExtraFields first (set on every chunk by the
@@ -1197,7 +1197,7 @@ func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.UnifAIContext, resp *sch
 	}
 
 	// For Anthropic models (and default): serialize as Anthropic Messages API SSE events,
-	// then wrap in InvokeModelRawChunks. Some UnifAI events map to multiple Anthropic events
+	// then wrap in InvokeModelRawChunks. Some Raksha events map to multiple Anthropic events
 	// (e.g., Completed → message_delta + message_stop).
 	rawChunks, err := toAnthropicInvokeStreamBytes(resp)
 	if err != nil {
@@ -1214,11 +1214,11 @@ func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.UnifAIContext, resp *sch
 	return "", bedrockEvent, nil
 }
 
-// toAnthropicInvokeStreamBytes converts a UnifAI stream event into raw bytes representing
+// toAnthropicInvokeStreamBytes converts a Raksha stream event into raw bytes representing
 // the Anthropic Messages API streaming event JSON, suitable for wrapping in InvokeModelRawChunks.
-// Returns a slice of byte slices since some UnifAI events map to multiple Anthropic events
+// Returns a slice of byte slices since some Raksha events map to multiple Anthropic events
 // (e.g., Completed → message_delta + message_stop).
-func toAnthropicInvokeStreamBytes(resp *schemas.UnifAIResponsesStreamResponse) ([][]byte, error) {
+func toAnthropicInvokeStreamBytes(resp *schemas.RakshaResponsesStreamResponse) ([][]byte, error) {
 	var event interface{}
 
 	switch resp.Type {

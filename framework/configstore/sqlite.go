@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

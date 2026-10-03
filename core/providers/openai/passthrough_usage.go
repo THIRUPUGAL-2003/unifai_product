@@ -7,15 +7,15 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // ExtractOpenAIPassthroughUsage extracts usage from a passthrough response payload. method is the
 // HTTP method (used to bill only generation routes); path is the stripped request path; reqBody is
 // the original request body (needed for speech char count and image/video parameters); body is a
 // single SSE data event (streaming) or the full response body (non-streaming).
-func ExtractOpenAIPassthroughUsage(method, path string, reqBody, body []byte) *schemas.UnifAIPassthroughUsage {
+func ExtractOpenAIPassthroughUsage(method, path string, reqBody, body []byte) *schemas.RakshaPassthroughUsage {
 	if idx := strings.IndexByte(path, '?'); idx >= 0 {
 		path = path[:idx]
 	}
@@ -67,7 +67,7 @@ func HasOpenAIPassthroughUsage(event []byte) bool {
 // ---- video generation ----
 const openAIVideoDefaultSeconds = 4
 
-func extractOAIVideoUsage(reqBody []byte) *schemas.UnifAIPassthroughUsage {
+func extractOAIVideoUsage(reqBody []byte) *schemas.RakshaPassthroughUsage {
 	secs := openAIVideoDefaultSeconds
 	if len(reqBody) > 0 {
 		// JSON body: OpenAI documents `seconds` as a top-level request field. gjson .Float()
@@ -83,7 +83,7 @@ func extractOAIVideoUsage(reqBody []byte) *schemas.UnifAIPassthroughUsage {
 			}
 		}
 	}
-	return &schemas.UnifAIPassthroughUsage{VideoSeconds: &secs}
+	return &schemas.RakshaPassthroughUsage{VideoSeconds: &secs}
 }
 
 // parseMultipartFormValues sniffs the multipart boundary from the first line of body and returns
@@ -118,14 +118,14 @@ func firstFormValue(form map[string][]string, key string) string {
 }
 
 // ---- chat / text completions ----
-// UnifAILLMUsage is OpenAI-compatible so we can unmarshal directly.
+// RakshaLLMUsage is OpenAI-compatible so we can unmarshal directly.
 
 type oaiChatUsageWrapper struct {
-	Usage       *schemas.UnifAILLMUsage `json:"usage"`
+	Usage       *schemas.RakshaLLMUsage `json:"usage"`
 	ServiceTier *string                  `json:"service_tier"`
 }
 
-func extractOAIChatUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractOAIChatUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -133,9 +133,9 @@ func extractOAIChatUsage(body []byte) *schemas.UnifAIPassthroughUsage {
 	if err := sonic.Unmarshal(body, &w); err != nil || w.Usage == nil || w.Usage.TotalTokens == 0 {
 		return nil
 	}
-	u := &schemas.UnifAIPassthroughUsage{LLMUsage: w.Usage}
+	u := &schemas.RakshaPassthroughUsage{LLMUsage: w.Usage}
 	if w.ServiceTier != nil {
-		t := schemas.UnifAIServiceTier(*w.ServiceTier)
+		t := schemas.RakshaServiceTier(*w.ServiceTier)
 		u.ServiceTier = &t
 	}
 	return u
@@ -154,7 +154,7 @@ type oaiResponsesWrapper struct {
 	ServiceTier *string                         `json:"service_tier"`
 }
 
-func extractOAIResponsesUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractOAIResponsesUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -175,8 +175,8 @@ func extractOAIResponsesUsage(body []byte) *schemas.UnifAIPassthroughUsage {
 	return buildOAIResponsesUsage(ru, tier)
 }
 
-func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *string) *schemas.UnifAIPassthroughUsage {
-	usage := &schemas.UnifAILLMUsage{
+func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *string) *schemas.RakshaPassthroughUsage {
+	usage := &schemas.RakshaLLMUsage{
 		PromptTokens:     ru.InputTokens,
 		CompletionTokens: ru.OutputTokens,
 		TotalTokens:      ru.TotalTokens,
@@ -195,9 +195,9 @@ func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *str
 			usage.CompletionTokensDetails.NumSearchQueries = ru.OutputTokensDetails.NumSearchQueries
 		}
 	}
-	u := &schemas.UnifAIPassthroughUsage{LLMUsage: usage}
+	u := &schemas.RakshaPassthroughUsage{LLMUsage: usage}
 	if serviceTier != nil {
-		t := schemas.UnifAIServiceTier(*serviceTier)
+		t := schemas.RakshaServiceTier(*serviceTier)
 		u.ServiceTier = &t
 	}
 	return u
@@ -206,7 +206,7 @@ func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *str
 // ---- embeddings ----
 // Embeddings are not typically streamed; body is plain JSON.
 
-func extractOAIEmbeddingUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractOAIEmbeddingUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -214,13 +214,13 @@ func extractOAIEmbeddingUsage(body []byte) *schemas.UnifAIPassthroughUsage {
 	if err := sonic.Unmarshal(body, &w); err != nil || w.Usage == nil || w.Usage.TotalTokens == 0 {
 		return nil
 	}
-	return &schemas.UnifAIPassthroughUsage{LLMUsage: w.Usage}
+	return &schemas.RakshaPassthroughUsage{LLMUsage: w.Usage}
 }
 
 // ---- speech (TTS) ----
 // Response is binary audio; pricing is based on input character count from the request.
 
-func extractOAISpeechUsage(reqBody []byte) *schemas.UnifAIPassthroughUsage {
+func extractOAISpeechUsage(reqBody []byte) *schemas.RakshaPassthroughUsage {
 	if len(reqBody) == 0 {
 		return nil
 	}
@@ -228,7 +228,7 @@ func extractOAISpeechUsage(reqBody []byte) *schemas.UnifAIPassthroughUsage {
 	if err := sonic.Unmarshal(reqBody, &req); err != nil || req.Input == "" {
 		return nil
 	}
-	return &schemas.UnifAIPassthroughUsage{
+	return &schemas.RakshaPassthroughUsage{
 		AudioInputChars: len([]rune(req.Input)),
 	}
 }
@@ -240,18 +240,18 @@ type oaiTranscriptionResponseWrapper struct {
 	Duration float64                     `json:"duration"` // seconds fallback for older models
 }
 
-func extractOAITranscriptionUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractOAITranscriptionUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	var r oaiTranscriptionResponseWrapper
 	if err := sonic.Unmarshal(body, &r); err != nil {
 		return nil
 	}
-	u := &schemas.UnifAIPassthroughUsage{}
+	u := &schemas.RakshaPassthroughUsage{}
 	if r.Usage != nil && r.Usage.TotalTokens != nil && *r.Usage.TotalTokens > 0 {
 		promptTokens := 0
 		if r.Usage.InputTokens != nil {
 			promptTokens = *r.Usage.InputTokens
 		}
-		u.LLMUsage = &schemas.UnifAILLMUsage{
+		u.LLMUsage = &schemas.RakshaLLMUsage{
 			PromptTokens: promptTokens,
 			TotalTokens:  *r.Usage.TotalTokens,
 		}
@@ -275,8 +275,8 @@ func extractOAITranscriptionUsage(body []byte) *schemas.UnifAIPassthroughUsage {
 // ---- image generation / edit / variation ----
 // Size, Quality, N come from the request body; usage/data count from the response.
 
-func extractOAIImageUsage(reqBody, body []byte) *schemas.UnifAIPassthroughUsage {
-	u := &schemas.UnifAIPassthroughUsage{}
+func extractOAIImageUsage(reqBody, body []byte) *schemas.RakshaPassthroughUsage {
+	u := &schemas.RakshaPassthroughUsage{}
 
 	// Request body: size, quality, n. /v1/images/{edits,variations} are sent as
 	// multipart/form-data (binary image upload) with these as form fields; /v1/images/generations
@@ -359,7 +359,7 @@ func extractOAIImageUsage(reqBody, body []byte) *schemas.UnifAIPassthroughUsage 
 	}
 	// Populate LLMUsage from image token counts so logs show token totals.
 	if u.ImageUsage.TotalTokens > 0 {
-		u.LLMUsage = &schemas.UnifAILLMUsage{
+		u.LLMUsage = &schemas.RakshaLLMUsage{
 			PromptTokens:     u.ImageUsage.InputTokens,
 			CompletionTokens: u.ImageUsage.OutputTokens,
 			TotalTokens:      u.ImageUsage.TotalTokens,
@@ -376,7 +376,7 @@ func extractOAIImageUsage(reqBody, body []byte) *schemas.UnifAIPassthroughUsage 
 // returns {"object":"list", "data":[...]}. Retrieve/delete hit /containers/{id} and never
 // reach this extractor. Containers are never streamed, so body is plain JSON.
 
-func extractOAIContainerUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractOAIContainerUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -396,5 +396,5 @@ func extractOAIContainerUsage(body []byte) *schemas.UnifAIPassthroughUsage {
 	if resp.MemoryLimit != "" {
 		identifier = "container-" + resp.MemoryLimit
 	}
-	return &schemas.UnifAIPassthroughUsage{ContainerIdentifier: identifier}
+	return &schemas.RakshaPassthroughUsage{ContainerIdentifier: identifier}
 }

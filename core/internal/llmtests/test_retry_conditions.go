@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // =============================================================================
@@ -15,7 +15,7 @@ import (
 // EmptyResponseCondition checks for empty or missing response content
 type EmptyResponseCondition struct{}
 
-func (c *EmptyResponseCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *EmptyResponseCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	// If there's an error, let the HTTP retry logic handle it
 	if err != nil {
 		return false, ""
@@ -78,7 +78,7 @@ type MissingToolCallCondition struct {
 	ExpectedToolName string // Name of the tool that should have been called
 }
 
-func (c *MissingToolCallCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *MissingToolCallCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -118,7 +118,7 @@ func (c *MissingToolCallCondition) GetConditionName() string {
 // MalformedToolArgsCondition checks for malformed tool call arguments
 type MalformedToolArgsCondition struct{}
 
-func (c *MalformedToolArgsCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *MalformedToolArgsCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -171,7 +171,7 @@ type WrongToolCalledCondition struct {
 	ForbiddenTools   []string // Tools that should not be called
 }
 
-func (c *WrongToolCalledCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *WrongToolCalledCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -227,7 +227,7 @@ type PartialToolCallCondition struct {
 	ExpectedCount int // Expected number of tool calls
 }
 
-func (c *PartialToolCallCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *PartialToolCallCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -266,7 +266,7 @@ type WrongToolSequenceCondition struct {
 	ExpectedTools []string // Expected sequence of tool names
 }
 
-func (c *WrongToolSequenceCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *WrongToolSequenceCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -322,7 +322,7 @@ func (c *WrongToolSequenceCondition) GetConditionName() string {
 // ImageNotProcessedCondition checks if image content was actually processed
 type ImageNotProcessedCondition struct{}
 
-func (c *ImageNotProcessedCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *ImageNotProcessedCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -373,7 +373,7 @@ func (c *ImageNotProcessedCondition) GetConditionName() string {
 // FileNotProcessedCondition checks if file/document was not properly processed
 type FileNotProcessedCondition struct{}
 
-func (c *FileNotProcessedCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *FileNotProcessedCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -430,7 +430,7 @@ func (c *FileNotProcessedCondition) GetConditionName() string {
 // GenericResponseCondition checks for generic/template responses
 type GenericResponseCondition struct{}
 
-func (c *GenericResponseCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *GenericResponseCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -487,7 +487,7 @@ func (c *GenericResponseCondition) GetConditionName() string {
 // This is crucial for vision tests where the AI might give different descriptions
 type ContentValidationCondition struct{}
 
-func (c *ContentValidationCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *ContentValidationCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -597,7 +597,7 @@ func (c *ContentValidationCondition) GetConditionName() string {
 // StreamErrorCondition checks for streaming-specific errors that should trigger retries
 type StreamErrorCondition struct{}
 
-func (c *StreamErrorCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *StreamErrorCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	// Only retry on actual stream errors, not when stream is successful but response is nil
 	if err == nil {
 		return false, ""
@@ -642,7 +642,7 @@ func (c *StreamErrorCondition) GetConditionName() string {
 // IncompleteStreamCondition checks for incomplete streaming responses
 type IncompleteStreamCondition struct{}
 
-func (c *IncompleteStreamCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *IncompleteStreamCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -663,9 +663,9 @@ func (c *IncompleteStreamCondition) ShouldRetry(response *schemas.UnifAIResponse
 			finishReason := string(*choice.FinishReason)
 			if finishReason == "length" {
 				// This might be okay depending on context, but could indicate truncation
-				singleChoiceResponse := &schemas.UnifAIResponse{
-					ChatResponse: &schemas.UnifAIChatResponse{
-						Choices: []schemas.UnifAIResponseChoice{choice},
+				singleChoiceResponse := &schemas.RakshaResponse{
+					ChatResponse: &schemas.RakshaChatResponse{
+						Choices: []schemas.RakshaResponseChoice{choice},
 					},
 				}
 				choiceContent := GetResultContent(singleChoiceResponse)
@@ -685,9 +685,9 @@ func (c *IncompleteStreamCondition) ShouldRetry(response *schemas.UnifAIResponse
 			finishReason := string(*choice.FinishReason)
 			if finishReason == "length" {
 				// This might be okay depending on context, but could indicate truncation
-				singleChoiceResponse := &schemas.UnifAIResponse{
-					TextCompletionResponse: &schemas.UnifAITextCompletionResponse{
-						Choices: []schemas.UnifAIResponseChoice{choice},
+				singleChoiceResponse := &schemas.RakshaResponse{
+					TextCompletionResponse: &schemas.RakshaTextCompletionResponse{
+						Choices: []schemas.RakshaResponseChoice{choice},
 					},
 				}
 				choiceContent := GetResultContent(singleChoiceResponse)
@@ -727,7 +727,7 @@ func (c *IncompleteStreamCondition) GetConditionName() string {
 // EmptySpeechCondition checks for missing or invalid audio data in speech synthesis responses
 type EmptySpeechCondition struct{}
 
-func (c *EmptySpeechCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *EmptySpeechCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	// If there's an error, let other conditions handle it
 	if err != nil {
 		return false, ""
@@ -767,7 +767,7 @@ func (c *EmptySpeechCondition) GetConditionName() string {
 // EmptyTranscriptionCondition checks for missing or invalid transcription text
 type EmptyTranscriptionCondition struct{}
 
-func (c *EmptyTranscriptionCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *EmptyTranscriptionCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	// If there's an error, let other conditions handle it
 	if err != nil {
 		return false, ""
@@ -808,7 +808,7 @@ func (c *EmptyTranscriptionCondition) GetConditionName() string {
 // EmptyEmbeddingCondition checks for missing or empty embeddings
 type EmptyEmbeddingCondition struct{}
 
-func (c *EmptyEmbeddingCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *EmptyEmbeddingCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -855,7 +855,7 @@ type InvalidEmbeddingDimensionCondition struct {
 	ExpectedDimension int // Expected vector dimension (0 means any)
 }
 
-func (c *InvalidEmbeddingDimensionCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *InvalidEmbeddingDimensionCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil || response.EmbeddingResponse == nil || len(response.EmbeddingResponse.Data) == 0 {
 		return false, ""
 	}
@@ -911,7 +911,7 @@ func (c *InvalidEmbeddingDimensionCondition) GetConditionName() string {
 // EmptyImageGenerationCondition checks for missing or invalid image data
 type EmptyImageGenerationCondition struct{}
 
-func (c *EmptyImageGenerationCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *EmptyImageGenerationCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	// If there's an error, let other conditions handle it
 	if err != nil {
 		return false, ""
@@ -962,7 +962,7 @@ func (c *EmptyImageGenerationCondition) GetConditionName() string {
 // EmptyCountTokensCondition checks for missing or invalid token counts
 type EmptyCountTokensCondition struct{}
 
-func (c *EmptyCountTokensCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *EmptyCountTokensCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	// If there's an error, let other conditions handle it
 	if err != nil {
 		return false, ""
@@ -1002,7 +1002,7 @@ func (c *EmptyCountTokensCondition) GetConditionName() string {
 // InvalidCountTokensCondition checks for invalid token count data
 type InvalidCountTokensCondition struct{}
 
-func (c *InvalidCountTokensCondition) ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *InvalidCountTokensCondition) ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -1039,7 +1039,7 @@ func (c *InvalidCountTokensCondition) GetConditionName() string {
 // ResponsesEmptyCondition checks for empty Responses API responses
 type ResponsesEmptyCondition struct{}
 
-func (c *ResponsesEmptyCondition) ShouldRetry(response *schemas.UnifAIResponsesResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *ResponsesEmptyCondition) ShouldRetry(response *schemas.RakshaResponsesResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil {
 		return false, ""
 	}
@@ -1060,7 +1060,7 @@ func (c *ResponsesEmptyCondition) GetConditionName() string {
 // ResponsesFileNotProcessedCondition checks if file/document was not properly processed in Responses API
 type ResponsesFileNotProcessedCondition struct{}
 
-func (c *ResponsesFileNotProcessedCondition) ShouldRetry(response *schemas.UnifAIResponsesResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *ResponsesFileNotProcessedCondition) ShouldRetry(response *schemas.RakshaResponsesResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -1111,7 +1111,7 @@ func (c *ResponsesFileNotProcessedCondition) GetConditionName() string {
 // ResponsesGenericResponseCondition checks for generic/template responses in Responses API
 type ResponsesGenericResponseCondition struct{}
 
-func (c *ResponsesGenericResponseCondition) ShouldRetry(response *schemas.UnifAIResponsesResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *ResponsesGenericResponseCondition) ShouldRetry(response *schemas.RakshaResponsesResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}
@@ -1158,7 +1158,7 @@ func (c *ResponsesGenericResponseCondition) GetConditionName() string {
 // ResponsesContentValidationCondition checks if response fails basic content validation for Responses API
 type ResponsesContentValidationCondition struct{}
 
-func (c *ResponsesContentValidationCondition) ShouldRetry(response *schemas.UnifAIResponsesResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string) {
+func (c *ResponsesContentValidationCondition) ShouldRetry(response *schemas.RakshaResponsesResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string) {
 	if err != nil || response == nil {
 		return false, ""
 	}

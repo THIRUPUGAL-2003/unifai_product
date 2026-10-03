@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/unifai/unifai/scripts/unifai-migration-cli/litellm"
+	"github.com/raksha/raksha/scripts/raksha-migration-cli/litellm"
 )
 
-// LiteLLMTeamToUnifAITeam transforms a LiteLLM team into a UnifAI
+// LiteLLMTeamToRakshaTeam transforms a LiteLLM team into a Raksha
 // create-team request. The mapping is pure (no I/O); customerID is resolved by
-// the caller (team.organization_id -> org alias -> UnifAI customer id) and is
+// the caller (team.organization_id -> org alias -> Raksha customer id) and is
 // nil for a standalone team or one whose customer could not be resolved.
 //
-// Mapping (mirrors LiteLLMOrganizationToUnifAICustomer; budget/rate-limit
+// Mapping (mirrors LiteLLMOrganizationToRakshaCustomer; budget/rate-limit
 // fields are inline on the team rather than in a budget table):
 //   - team_alias       -> name (required)
 //   - max_budget       -> budgets[0].max_limit       (omitted when <= 0)
@@ -20,13 +20,13 @@ import (
 //   - tpm_limit        -> rate_limit.token_max_limit   (reset "1m")
 //   - rpm_limit        -> rate_limit.request_max_limit (reset "1m")
 //   - organization_id  -> customer_id (via the resolved customerID)
-func LiteLLMTeamToUnifAITeam(team litellm.LiteLLMTeam, customerID *string, cfg MigrationRunConfig) (*UnifAICreateTeamRequest, error) {
+func LiteLLMTeamToRakshaTeam(team litellm.LiteLLMTeam, customerID *string, cfg MigrationRunConfig) (*RakshaCreateTeamRequest, error) {
 	name := strings.TrimSpace(team.TeamAlias)
 	if name == "" {
 		return nil, fmt.Errorf("team %q has no team_alias; a team name is required", team.TeamID)
 	}
 
-	req := &UnifAICreateTeamRequest{Name: name, CustomerID: customerID}
+	req := &RakshaCreateTeamRequest{Name: name, CustomerID: customerID}
 
 	// A team's budget/rate-limit fields are inline; adapt them to the same
 	// LiteLLMBudget shape the organization migration maps, so the spend-cap and
@@ -43,7 +43,7 @@ func LiteLLMTeamToUnifAITeam(team litellm.LiteLLMTeam, customerID *string, cfg M
 		return nil, fmt.Errorf("team %q: %w", team.TeamID, err)
 	}
 	if budget != nil {
-		req.Budgets = []UnifAICreateBudgetRequest{*budget}
+		req.Budgets = []RakshaCreateBudgetRequest{*budget}
 	}
 	req.RateLimit = toRateLimit(b)
 

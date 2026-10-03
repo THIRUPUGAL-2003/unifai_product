@@ -21,8 +21,8 @@ import { toast } from "sonner";
 
 export default function ProxyView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const proxyConfig = unifaiConfig?.proxy_config;
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const proxyConfig = rakshaConfig?.proxy_config;
 	const [updateProxyConfig, { isLoading }] = useUpdateProxyConfigMutation();
 
 	const form = useForm<GlobalProxyConfig>({
@@ -345,7 +345,7 @@ export default function ProxyView() {
 							{!IS_ENTERPRISE && (
 								<Alert>
 									<Info className="h-4 w-4" />
-									<AlertDescription>SCIM proxy support is available in UnifAI Enterprise.</AlertDescription>
+									<AlertDescription>SCIM proxy support is available in Raksha Enterprise.</AlertDescription>
 								</Alert>
 							)}
 						</div>

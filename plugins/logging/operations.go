@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/logstore"
-	"github.com/unifai/unifai/framework/modelcatalog"
-	"github.com/unifai/unifai/framework/streaming"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/logstore"
+	"github.com/raksha/raksha/framework/modelcatalog"
+	"github.com/raksha/raksha/framework/streaming"
 )
 
 const realtimeMissingTranscriptText = "[Audio transcription unavailable]"
@@ -24,7 +24,7 @@ const (
 	logStatusWarning    = "warning"
 )
 
-func logStatusForError(err *schemas.UnifAIError) string {
+func logStatusForError(err *schemas.RakshaError) string {
 	if isCancelledLogError(err) {
 		return logStatusCancelled
 	}
@@ -34,7 +34,7 @@ func logStatusForError(err *schemas.UnifAIError) string {
 	return logStatusError
 }
 
-func isRateLimitLogError(err *schemas.UnifAIError) bool {
+func isRateLimitLogError(err *schemas.RakshaError) bool {
 	if err == nil {
 		return false
 	}
@@ -56,7 +56,7 @@ func isRateLimitLogError(err *schemas.UnifAIError) bool {
 	return false
 }
 
-func isCancelledLogError(err *schemas.UnifAIError) bool {
+func isCancelledLogError(err *schemas.RakshaError) bool {
 	if err == nil {
 		return false
 	}
@@ -76,7 +76,7 @@ func isCancelledLogError(err *schemas.UnifAIError) bool {
 	}
 }
 
-func isContextTimeoutLogError(err *schemas.UnifAIError) bool {
+func isContextTimeoutLogError(err *schemas.RakshaError) bool {
 	if err == nil || err.Error == nil {
 		return false
 	}
@@ -136,7 +136,7 @@ func applySerializedLogUpdates(
 	updates map[string]interface{},
 	entry *logstore.Log,
 	data *UpdateLogData,
-	cacheDebug *schemas.UnifAICacheDebug,
+	cacheDebug *schemas.RakshaCacheDebug,
 	contentLoggingEnabled bool,
 ) {
 	if data.ChatOutput != nil && contentLoggingEnabled {
@@ -216,7 +216,7 @@ func (p *LoggerPlugin) updateLogEntry(
 	routingRuleID string,
 	routingRuleName string,
 	numberOfRetries int,
-	cacheDebug *schemas.UnifAICacheDebug,
+	cacheDebug *schemas.RakshaCacheDebug,
 	routingEngineLogs string,
 	data *UpdateLogData,
 	contentLoggingEnabled bool,
@@ -345,7 +345,7 @@ func (p *LoggerPlugin) updateLogEntry(
 	}
 
 	if data.ErrorDetails != nil {
-		shouldStoreRaw, _ := ctx.Value(schemas.UnifAIContextKeyShouldStoreRawInLogs).(bool)
+		shouldStoreRaw, _ := ctx.Value(schemas.RakshaContextKeyShouldStoreRawInLogs).(bool)
 		tempEntry.ErrorDetailsParsed = sanitizeErrorForLogging(data.ErrorDetails, contentLoggingEnabled, shouldStoreRaw)
 		needsSerialization = true
 	}
@@ -503,7 +503,7 @@ func (p *LoggerPlugin) applyStreamingOutputToEntry(entry *logstore.Log, streamRe
 
 // isPassthroughErrorResponse returns true when the result is a passthrough
 // response with a provider-reported HTTP error status (4xx or 5xx).
-func isPassthroughErrorResponse(result *schemas.UnifAIResponse) bool {
+func isPassthroughErrorResponse(result *schemas.RakshaResponse) bool {
 	return result != nil &&
 		result.PassthroughResponse != nil &&
 		result.PassthroughResponse.StatusCode >= 400
@@ -511,25 +511,25 @@ func isPassthroughErrorResponse(result *schemas.UnifAIResponse) bool {
 
 // applyNonStreamingOutputToEntry applies non-streaming response data to a log entry.
 // shouldStoreRaw gates whether raw request/response bytes are written to the entry.
-func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, result *schemas.UnifAIResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
+func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, result *schemas.RakshaResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
 	if result == nil {
 		return
 	}
 	// Token usage
-	var usage *schemas.UnifAILLMUsage
+	var usage *schemas.RakshaLLMUsage
 	switch {
 	case result.TextCompletionResponse != nil && result.TextCompletionResponse.Usage != nil:
 		usage = result.TextCompletionResponse.Usage
 	case result.ChatResponse != nil && result.ChatResponse.Usage != nil:
 		usage = result.ChatResponse.Usage
 	case result.ResponsesResponse != nil && result.ResponsesResponse.Usage != nil:
-		usage = result.ResponsesResponse.Usage.ToUnifAILLMUsage()
+		usage = result.ResponsesResponse.Usage.ToRakshaLLMUsage()
 	case result.CompactionResponse != nil && result.CompactionResponse.Usage != nil:
-		usage = result.CompactionResponse.Usage.ToUnifAILLMUsage()
+		usage = result.CompactionResponse.Usage.ToRakshaLLMUsage()
 	case result.EmbeddingResponse != nil && result.EmbeddingResponse.Usage != nil:
 		usage = result.EmbeddingResponse.Usage
 	case result.TranscriptionResponse != nil && result.TranscriptionResponse.Usage != nil:
-		usage = &schemas.UnifAILLMUsage{}
+		usage = &schemas.RakshaLLMUsage{}
 		if result.TranscriptionResponse.Usage.InputTokens != nil {
 			usage.PromptTokens = *result.TranscriptionResponse.Usage.InputTokens
 		}
@@ -542,7 +542,7 @@ func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, resul
 			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		}
 	case result.ImageGenerationResponse != nil && result.ImageGenerationResponse.Usage != nil:
-		usage = &schemas.UnifAILLMUsage{}
+		usage = &schemas.RakshaLLMUsage{}
 		usage.PromptTokens = result.ImageGenerationResponse.Usage.InputTokens
 		usage.CompletionTokens = result.ImageGenerationResponse.Usage.OutputTokens
 		if result.ImageGenerationResponse.Usage.TotalTokens > 0 {
@@ -655,7 +655,7 @@ func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, resul
 	}
 }
 
-func (p *LoggerPlugin) applyRealtimeOutputToEntry(entry *logstore.Log, result *schemas.UnifAIResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
+func (p *LoggerPlugin) applyRealtimeOutputToEntry(entry *logstore.Log, result *schemas.RakshaResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
 	if result == nil || result.ResponsesResponse == nil {
 		return
 	}
@@ -666,11 +666,11 @@ func (p *LoggerPlugin) applyRealtimeOutputToEntry(entry *logstore.Log, result *s
 	}
 
 	if usage := result.ResponsesResponse.Usage; usage != nil {
-		unifaiUsage := usage.ToUnifAILLMUsage()
-		entry.TokenUsageParsed = unifaiUsage
-		entry.PromptTokens = unifaiUsage.PromptTokens
-		entry.CompletionTokens = unifaiUsage.CompletionTokens
-		entry.TotalTokens = unifaiUsage.TotalTokens
+		rakshaUsage := usage.ToRakshaLLMUsage()
+		entry.TokenUsageParsed = rakshaUsage
+		entry.PromptTokens = rakshaUsage.PromptTokens
+		entry.CompletionTokens = rakshaUsage.CompletionTokens
+		entry.TotalTokens = rakshaUsage.TotalTokens
 	}
 
 	if contentLoggingEnabled {
@@ -843,7 +843,7 @@ func realtimeInputHistoryToolCallID(message schemas.ChatMessage) string {
 	return *message.ChatToolMessage.ToolCallID
 }
 
-func extractRealtimeTranscript(event *schemas.UnifAIRealtimeEvent) string {
+func extractRealtimeTranscript(event *schemas.RakshaRealtimeEvent) string {
 	if event == nil || event.ExtraParams == nil {
 		return realtimeMissingTranscriptText
 	}
@@ -1439,14 +1439,14 @@ func (p *LoggerPlugin) calculateCostForLog(logEntry *logstore.Log) (float64, err
 		return 0, fmt.Errorf("object type is empty for log %s", logEntry.ID)
 	}
 
-	// Build a minimal UnifAIResponse matching the request type so that
+	// Build a minimal RakshaResponse matching the request type so that
 	// extractCostInput routes usage into the correct field for each compute function.
 	originalModelRequested := logEntry.Model
 	if logEntry.Alias != nil && *logEntry.Alias != "" {
 		originalModelRequested = *logEntry.Alias
 	}
 
-	extraFields := schemas.UnifAIResponseExtraFields{
+	extraFields := schemas.RakshaResponseExtraFields{
 		RequestType:            requestType,
 		Provider:               schemas.ModelProvider(logEntry.Provider),
 		OriginalModelRequested: originalModelRequested,
@@ -1456,7 +1456,7 @@ func (p *LoggerPlugin) calculateCostForLog(logEntry *logstore.Log) (float64, err
 
 	resp := buildResponseForRequestType(requestType, usage, extraFields)
 
-	// Patch modality-specific output fields that are not captured in UnifAILLMUsage
+	// Patch modality-specific output fields that are not captured in RakshaLLMUsage
 	// but are required for accurate cost calculation.
 
 	// Transcription: restore Seconds (duration billing) and InputTokenDetails
@@ -1501,39 +1501,39 @@ func (p *LoggerPlugin) calculateCostForLog(logEntry *logstore.Log) (float64, err
 	return p.pricingManager.CalculateCost(resp, &scopes), nil
 }
 
-// buildResponseForRequestType wraps UnifAILLMUsage into the correct response
+// buildResponseForRequestType wraps RakshaLLMUsage into the correct response
 // field so that CalculateCost's extractCostInput routes it properly.
-func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas.UnifAILLMUsage, extra schemas.UnifAIResponseExtraFields) *schemas.UnifAIResponse {
+func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas.RakshaLLMUsage, extra schemas.RakshaResponseExtraFields) *schemas.RakshaResponse {
 	switch requestType {
 	case schemas.TextCompletionRequest, schemas.TextCompletionStreamRequest:
-		return &schemas.UnifAIResponse{
-			TextCompletionResponse: &schemas.UnifAITextCompletionResponse{
+		return &schemas.RakshaResponse{
+			TextCompletionResponse: &schemas.RakshaTextCompletionResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.EmbeddingRequest:
-		return &schemas.UnifAIResponse{
-			EmbeddingResponse: &schemas.UnifAIEmbeddingResponse{
+		return &schemas.RakshaResponse{
+			EmbeddingResponse: &schemas.RakshaEmbeddingResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.RerankRequest:
-		return &schemas.UnifAIResponse{
-			RerankResponse: &schemas.UnifAIRerankResponse{
+		return &schemas.RakshaResponse{
+			RerankResponse: &schemas.RakshaRerankResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.OCRRequest:
-		return &schemas.UnifAIResponse{
-			OCRResponse: &schemas.UnifAIOCRResponse{
+		return &schemas.RakshaResponse{
+			OCRResponse: &schemas.RakshaOCRResponse{
 				ExtraFields: extra,
 			},
 		}
 	case schemas.ResponsesRequest, schemas.ResponsesStreamRequest:
-		// Convert UnifAILLMUsage back to ResponsesResponseUsage, preserving token
+		// Convert RakshaLLMUsage back to ResponsesResponseUsage, preserving token
 		// detail breakdowns so CalculateCost can apply cache and search-query pricing.
 		var respUsage *schemas.ResponsesResponseUsage
 		if usage != nil {
@@ -1565,8 +1565,8 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				}
 			}
 		}
-		return &schemas.UnifAIResponse{
-			ResponsesResponse: &schemas.UnifAIResponsesResponse{
+		return &schemas.RakshaResponse{
+			ResponsesResponse: &schemas.RakshaResponsesResponse{
 				Usage:       respUsage,
 				ExtraFields: extra,
 			},
@@ -1580,8 +1580,8 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				TotalTokens:  usage.TotalTokens,
 			}
 		}
-		return &schemas.UnifAIResponse{
-			SpeechResponse: &schemas.UnifAISpeechResponse{
+		return &schemas.RakshaResponse{
+			SpeechResponse: &schemas.RakshaSpeechResponse{
 				Usage:       speechUsage,
 				ExtraFields: extra,
 			},
@@ -1595,15 +1595,15 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				TotalTokens:  &usage.TotalTokens,
 			}
 		}
-		return &schemas.UnifAIResponse{
-			TranscriptionResponse: &schemas.UnifAITranscriptionResponse{
+		return &schemas.RakshaResponse{
+			TranscriptionResponse: &schemas.RakshaTranscriptionResponse{
 				Usage:       txUsage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
 		schemas.ImageEditRequest, schemas.ImageEditStreamRequest, schemas.ImageVariationRequest:
-		// Log entries only store UnifAILLMUsage; convert to ImageUsage for proper routing
+		// Log entries only store RakshaLLMUsage; convert to ImageUsage for proper routing
 		var imgUsage *schemas.ImageUsage
 		if usage != nil {
 			imgUsage = &schemas.ImageUsage{
@@ -1612,24 +1612,24 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				TotalTokens:  usage.TotalTokens,
 			}
 		}
-		return &schemas.UnifAIResponse{
-			ImageGenerationResponse: &schemas.UnifAIImageGenerationResponse{
+		return &schemas.RakshaResponse{
+			ImageGenerationResponse: &schemas.RakshaImageGenerationResponse{
 				Usage:       imgUsage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.VideoGenerationRequest, schemas.VideoRemixRequest:
-		// Seconds is not stored in UnifAILLMUsage; the caller must patch it in from
+		// Seconds is not stored in RakshaLLMUsage; the caller must patch it in from
 		// the stored VideoGenerationOutputParsed after this function returns.
-		return &schemas.UnifAIResponse{
-			VideoGenerationResponse: &schemas.UnifAIVideoGenerationResponse{
+		return &schemas.RakshaResponse{
+			VideoGenerationResponse: &schemas.RakshaVideoGenerationResponse{
 				ExtraFields: extra,
 			},
 		}
 	default:
 		// Default to chat response for unknown or chat request types
-		return &schemas.UnifAIResponse{
-			ChatResponse: &schemas.UnifAIChatResponse{
+		return &schemas.RakshaResponse{
+			ChatResponse: &schemas.RakshaChatResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},

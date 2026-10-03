@@ -104,7 +104,7 @@ import { Badge } from "./ui/badge";
 import { PromoCardStack } from "./ui/promoCardStack";
 
 // Cookie name for dismissing production setup card
-const PRODUCTION_SETUP_DISMISSED_COOKIE = "unifai_production_setup_dismissed";
+const PRODUCTION_SETUP_DISMISSED_COOKIE = "raksha_production_setup_dismissed";
 
 const newBadgeClassName =
 	"relative overflow-hidden after:pointer-events-none after:absolute after:inset-y-0 after:-left-full after:w-full after:skew-x-[-18deg] after:bg-gradient-to-r after:from-transparent after:via-primary/25 after:to-transparent after:opacity-0 after:content-[''] after:animate-[sidebar-new-badge-shine_1200ms_cubic-bezier(0.22,1,0.36,1)_260ms_both]";
@@ -1408,9 +1408,9 @@ export default function AppSidebar() {
 				title: `${latestRelease.name} is now available.`,
 				description: (
 					<div className="flex h-full flex-col gap-2">
-						<img src={newReleaseImage} alt="UnifAI" className="h-[95px] rounded-md object-cover" />
+						<img src={newReleaseImage} alt="Raksha" className="h-[95px] rounded-md object-cover" />
 						<a
-							href={`https://docs.unifai.ai/changelogs/${latestRelease.name}`}
+							href={`https://docs.raksha.ai/changelogs/${latestRelease.name}`}
 							target="_blank"
 							rel="noopener noreferrer"
 							className="text-primary mt-auto pb-1 font-medium underline"
@@ -1525,7 +1525,7 @@ export default function AppSidebar() {
 					<input
 						ref={searchInputRef}
 						type="search"
-						name="unifai-sidebar-nav-search"
+						name="raksha-sidebar-nav-search"
 						autoComplete="off"
 						autoCorrect="off"
 						autoCapitalize="off"

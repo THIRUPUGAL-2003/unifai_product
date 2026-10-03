@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	nebiusProvider "github.com/unifai/unifai/core/providers/nebius"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	nebiusProvider "github.com/raksha/raksha/core/providers/nebius"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // Models that support multiple images (image_urls)
@@ -25,13 +25,13 @@ var falAISingleImageEditModels = map[string]bool{
 	"fal-ai/flux/dev/image-to-image": true,
 }
 
-// ToHuggingFaceImageGenerationRequest converts a UnifAI image generation request to provider-specific format
-func ToHuggingFaceImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request is nil or input is nil")
+// ToHuggingFaceImageGenerationRequest converts a Raksha image generation request to provider-specific format
+func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request is nil or input is nil")
 	}
 
-	inferenceProvider, model, nameErr := splitIntoModelProvider(unifaiReq.Model)
+	inferenceProvider, model, nameErr := splitIntoModelProvider(rakshaReq.Model)
 	if nameErr != nil {
 		return nil, nameErr
 	}
@@ -40,35 +40,35 @@ func ToHuggingFaceImageGenerationRequest(unifaiReq *schemas.UnifAIImageGeneratio
 	case nebius:
 		req := &nebiusProvider.NebiusImageGenerationRequest{
 			Model:  &model,
-			Prompt: &unifaiReq.Input.Prompt,
+			Prompt: &rakshaReq.Input.Prompt,
 		}
 
-		if unifaiReq.Params != nil {
-			if unifaiReq.Params.ResponseFormat != nil {
-				req.ResponseFormat = unifaiReq.Params.ResponseFormat
+		if rakshaReq.Params != nil {
+			if rakshaReq.Params.ResponseFormat != nil {
+				req.ResponseFormat = rakshaReq.Params.ResponseFormat
 			}
 
-			if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-				size := strings.Split(strings.ToLower(*unifaiReq.Params.Size), "x")
+			if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+				size := strings.Split(strings.ToLower(*rakshaReq.Params.Size), "x")
 				if len(size) != 2 {
-					return nil, fmt.Errorf("invalid size format: expected 'WIDTHxHEIGHT', got %q", *unifaiReq.Params.Size)
+					return nil, fmt.Errorf("invalid size format: expected 'WIDTHxHEIGHT', got %q", *rakshaReq.Params.Size)
 				}
 
 				width, err := strconv.Atoi(size[0])
 				if err != nil {
-					return nil, fmt.Errorf("invalid width in size %q: %w", *unifaiReq.Params.Size, err)
+					return nil, fmt.Errorf("invalid width in size %q: %w", *rakshaReq.Params.Size, err)
 				}
 
 				height, err := strconv.Atoi(size[1])
 				if err != nil {
-					return nil, fmt.Errorf("invalid height in size %q: %w", *unifaiReq.Params.Size, err)
+					return nil, fmt.Errorf("invalid height in size %q: %w", *rakshaReq.Params.Size, err)
 				}
 
 				req.Width = &width
 				req.Height = &height
 			}
-			if unifaiReq.Params.OutputFormat != nil {
-				req.ResponseExtension = unifaiReq.Params.OutputFormat
+			if rakshaReq.Params.OutputFormat != nil {
+				req.ResponseExtension = rakshaReq.Params.OutputFormat
 			}
 
 			// Handle nebius inconsistency - normalize ResponseExtension case-insensitively
@@ -77,32 +77,32 @@ func ToHuggingFaceImageGenerationRequest(unifaiReq *schemas.UnifAIImageGeneratio
 			}
 
 			// Map seed from direct field
-			if unifaiReq.Params.Seed != nil {
-				req.Seed = unifaiReq.Params.Seed
+			if rakshaReq.Params.Seed != nil {
+				req.Seed = rakshaReq.Params.Seed
 			}
 
 			// Map negative_prompt from direct field
-			if unifaiReq.Params.NegativePrompt != nil {
-				req.NegativePrompt = unifaiReq.Params.NegativePrompt
+			if rakshaReq.Params.NegativePrompt != nil {
+				req.NegativePrompt = rakshaReq.Params.NegativePrompt
 			}
 
 			// Handle extra params for nebius
-			if unifaiReq.Params.ExtraParams != nil {
-				req.ExtraParams = unifaiReq.Params.ExtraParams
+			if rakshaReq.Params.ExtraParams != nil {
+				req.ExtraParams = rakshaReq.Params.ExtraParams
 				// Map num_inference_steps
-				if v, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["num_inference_steps"]); ok {
+				if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["num_inference_steps"]); ok {
 					delete(req.ExtraParams, "num_inference_steps")
 					req.NumInferenceSteps = v
 				}
 
 				// Map guidance_scale
-				if v, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["guidance_scale"]); ok {
+				if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
 					delete(req.ExtraParams, "guidance_scale")
 					req.GuidanceScale = v
 				}
 
 				// Map loras
-				if lorasValue, exists := unifaiReq.Params.ExtraParams["loras"]; exists && lorasValue != nil {
+				if lorasValue, exists := rakshaReq.Params.ExtraParams["loras"]; exists && lorasValue != nil {
 					delete(req.ExtraParams, "loras")
 					if lorasArray, ok := lorasValue.([]interface{}); ok {
 						for _, item := range lorasArray {
@@ -122,41 +122,41 @@ func ToHuggingFaceImageGenerationRequest(unifaiReq *schemas.UnifAIImageGeneratio
 
 	case hfInference:
 		req := &HuggingFaceHFInferenceImageGenerationRequest{
-			Inputs: unifaiReq.Input.Prompt,
+			Inputs: rakshaReq.Input.Prompt,
 		}
-		if unifaiReq.Params != nil {
-			req.ExtraParams = unifaiReq.Params.ExtraParams
+		if rakshaReq.Params != nil {
+			req.ExtraParams = rakshaReq.Params.ExtraParams
 		}
 		return req, nil
 
 	case falAI:
 		req := &HuggingFaceFalAIImageGenerationRequest{
-			Prompt: unifaiReq.Input.Prompt,
+			Prompt: rakshaReq.Input.Prompt,
 		}
 
-		if unifaiReq.Params != nil {
+		if rakshaReq.Params != nil {
 			// Map n to num_images for fal-ai
-			if unifaiReq.Params.N != nil {
-				req.NumImages = unifaiReq.Params.N
+			if rakshaReq.Params.N != nil {
+				req.NumImages = rakshaReq.Params.N
 			}
 
 			// Pass through response_format
-			if unifaiReq.Params.ResponseFormat != nil {
-				req.ResponseFormat = unifaiReq.Params.ResponseFormat
+			if rakshaReq.Params.ResponseFormat != nil {
+				req.ResponseFormat = rakshaReq.Params.ResponseFormat
 			}
 
 			// Pass through output_format
-			if unifaiReq.Params.OutputFormat != nil {
-				if strings.ToLower(*unifaiReq.Params.OutputFormat) == "jpg" {
+			if rakshaReq.Params.OutputFormat != nil {
+				if strings.ToLower(*rakshaReq.Params.OutputFormat) == "jpg" {
 					req.OutputFormat = schemas.Ptr("jpeg")
 				} else {
-					req.OutputFormat = unifaiReq.Params.OutputFormat
+					req.OutputFormat = rakshaReq.Params.OutputFormat
 				}
 			}
 
 			// Convert size from "WxH" format to fal-ai's image_size object
-			if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-				size := strings.Split(*unifaiReq.Params.Size, "x")
+			if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+				size := strings.Split(*rakshaReq.Params.Size, "x")
 				if len(size) == 2 {
 					width, err := strconv.Atoi(size[0])
 					if err == nil {
@@ -171,52 +171,52 @@ func ToHuggingFaceImageGenerationRequest(unifaiReq *schemas.UnifAIImageGeneratio
 				}
 			}
 
-			if unifaiReq.Params.ResponseFormat != nil && *unifaiReq.Params.ResponseFormat == "b64_json" {
+			if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
 				req.SyncMode = schemas.Ptr(true)
 			}
 
-			if unifaiReq.Params.Moderation != nil && *unifaiReq.Params.Moderation == "low" {
+			if rakshaReq.Params.Moderation != nil && *rakshaReq.Params.Moderation == "low" {
 				req.EnableSafetyChecker = schemas.Ptr(false)
 			}
 
 			// Map seed from direct field
-			if unifaiReq.Params.Seed != nil {
-				req.Seed = unifaiReq.Params.Seed
+			if rakshaReq.Params.Seed != nil {
+				req.Seed = rakshaReq.Params.Seed
 			}
 
 			// Map negative_prompt from direct field
-			if unifaiReq.Params.NegativePrompt != nil {
-				req.NegativePrompt = unifaiReq.Params.NegativePrompt
+			if rakshaReq.Params.NegativePrompt != nil {
+				req.NegativePrompt = rakshaReq.Params.NegativePrompt
 			}
 
 			// Map num_inference_steps from direct field
-			if unifaiReq.Params.NumInferenceSteps != nil {
-				req.NumInferenceSteps = unifaiReq.Params.NumInferenceSteps
+			if rakshaReq.Params.NumInferenceSteps != nil {
+				req.NumInferenceSteps = rakshaReq.Params.NumInferenceSteps
 			}
 
 			// Parse fal-ai specific params from ExtraParams
-			if unifaiReq.Params.ExtraParams != nil {
-				req.ExtraParams = unifaiReq.Params.ExtraParams
+			if rakshaReq.Params.ExtraParams != nil {
+				req.ExtraParams = rakshaReq.Params.ExtraParams
 				// Map guidance_scale
-				if v, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["guidance_scale"]); ok {
+				if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
 					delete(req.ExtraParams, "guidance_scale")
 					req.GuidanceScale = v
 				}
 
 				// Map acceleration
-				if v, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["acceleration"]); ok {
+				if v, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["acceleration"]); ok {
 					delete(req.ExtraParams, "acceleration")
 					req.Acceleration = v
 				}
 
 				// Map enable_prompt_expansion
-				if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
+				if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
 					delete(req.ExtraParams, "enable_prompt_expansion")
 					req.EnablePromptExpansion = v
 				}
 
 				// Map enable_safety_checker
-				if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enable_safety_checker"]); ok {
+				if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_safety_checker"]); ok {
 					delete(req.ExtraParams, "enable_safety_checker")
 					req.EnableSafetyChecker = v
 				}
@@ -226,28 +226,28 @@ func ToHuggingFaceImageGenerationRequest(unifaiReq *schemas.UnifAIImageGeneratio
 
 	case together:
 		req := &HuggingFaceTogetherImageGenerationRequest{
-			Prompt: unifaiReq.Input.Prompt,
+			Prompt: rakshaReq.Input.Prompt,
 			Model:  model,
 		}
 
-		if unifaiReq.Params != nil {
-			req.ExtraParams = unifaiReq.Params.ExtraParams
-			if unifaiReq.Params.ResponseFormat != nil {
-				req.ResponseFormat = unifaiReq.Params.ResponseFormat
+		if rakshaReq.Params != nil {
+			req.ExtraParams = rakshaReq.Params.ExtraParams
+			if rakshaReq.Params.ResponseFormat != nil {
+				req.ResponseFormat = rakshaReq.Params.ResponseFormat
 			}
 
-			if unifaiReq.Params.Size != nil {
-				req.Size = unifaiReq.Params.Size
+			if rakshaReq.Params.Size != nil {
+				req.Size = rakshaReq.Params.Size
 			}
 
-			if unifaiReq.Params.N != nil {
-				req.N = unifaiReq.Params.N
+			if rakshaReq.Params.N != nil {
+				req.N = rakshaReq.Params.N
 			}
-			if unifaiReq.Params.ResponseFormat != nil && *unifaiReq.Params.ResponseFormat == "b64_json" {
+			if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
 				req.ResponseFormat = schemas.Ptr("base64")
 			}
-			if unifaiReq.Params.NumInferenceSteps != nil {
-				req.Steps = unifaiReq.Params.NumInferenceSteps
+			if rakshaReq.Params.NumInferenceSteps != nil {
+				req.Steps = rakshaReq.Params.NumInferenceSteps
 			}
 		}
 		return req, nil
@@ -257,41 +257,41 @@ func ToHuggingFaceImageGenerationRequest(unifaiReq *schemas.UnifAIImageGeneratio
 	}
 }
 
-// ToHuggingFaceImageStreamRequest converts a UnifAI image generation request to fal-ai streaming format
-func ToHuggingFaceImageStreamRequest(unifaiReq *schemas.UnifAIImageGenerationRequest) (*HuggingFaceFalAIImageStreamRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request is nil or input is nil")
+// ToHuggingFaceImageStreamRequest converts a Raksha image generation request to fal-ai streaming format
+func ToHuggingFaceImageStreamRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (*HuggingFaceFalAIImageStreamRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request is nil or input is nil")
 	}
 
 	req := &HuggingFaceFalAIImageStreamRequest{
-		Prompt: unifaiReq.Input.Prompt,
+		Prompt: rakshaReq.Input.Prompt,
 	}
 
-	if unifaiReq.Params != nil {
-		req.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		req.ExtraParams = rakshaReq.Params.ExtraParams
 		// Map n to num_images for fal-ai
-		if unifaiReq.Params.N != nil {
-			req.NumImages = unifaiReq.Params.N
+		if rakshaReq.Params.N != nil {
+			req.NumImages = rakshaReq.Params.N
 		}
 
 		// Pass through response_format
-		if unifaiReq.Params.ResponseFormat != nil {
-			req.ResponseFormat = unifaiReq.Params.ResponseFormat
+		if rakshaReq.Params.ResponseFormat != nil {
+			req.ResponseFormat = rakshaReq.Params.ResponseFormat
 		}
 
 		// Pass through output_format
 		// Convert "jpg" to "jpeg" for fal-ai (fal-ai only accepts "jpeg", "png", "webp")
-		if unifaiReq.Params.OutputFormat != nil {
-			if strings.ToLower(*unifaiReq.Params.OutputFormat) == "jpg" {
+		if rakshaReq.Params.OutputFormat != nil {
+			if strings.ToLower(*rakshaReq.Params.OutputFormat) == "jpg" {
 				req.OutputFormat = schemas.Ptr("jpeg")
 			} else {
-				req.OutputFormat = unifaiReq.Params.OutputFormat
+				req.OutputFormat = rakshaReq.Params.OutputFormat
 			}
 		}
 
 		// Convert size from "WxH" format to fal-ai's image_size object
-		if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-			size := strings.Split(*unifaiReq.Params.Size, "x")
+		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+			size := strings.Split(*rakshaReq.Params.Size, "x")
 			if len(size) == 2 {
 				width, err := strconv.Atoi(size[0])
 				if err == nil {
@@ -305,34 +305,34 @@ func ToHuggingFaceImageStreamRequest(unifaiReq *schemas.UnifAIImageGenerationReq
 				}
 			}
 		}
-		if unifaiReq.Params.Seed != nil {
-			req.Seed = unifaiReq.Params.Seed
+		if rakshaReq.Params.Seed != nil {
+			req.Seed = rakshaReq.Params.Seed
 		}
-		if unifaiReq.Params.NumInferenceSteps != nil {
-			req.NumInferenceSteps = unifaiReq.Params.NumInferenceSteps
+		if rakshaReq.Params.NumInferenceSteps != nil {
+			req.NumInferenceSteps = rakshaReq.Params.NumInferenceSteps
 		}
-		if unifaiReq.Params.ResponseFormat != nil && *unifaiReq.Params.ResponseFormat == "b64_json" {
+		if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
 			req.SyncMode = schemas.Ptr(true)
 		}
-		if unifaiReq.Params.Moderation != nil && *unifaiReq.Params.Moderation == "low" {
+		if rakshaReq.Params.Moderation != nil && *rakshaReq.Params.Moderation == "low" {
 			req.EnableSafetyChecker = schemas.Ptr(false)
 		}
 
 		// Parse fal-ai specific params from ExtraParams
-		if unifaiReq.Params.ExtraParams != nil {
-			if v, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["guidance_scale"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
 				delete(req.ExtraParams, "guidance_scale")
 				req.GuidanceScale = v
 			}
-			if v, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["acceleration"]); ok {
+			if v, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["acceleration"]); ok {
 				delete(req.ExtraParams, "acceleration")
 				req.Acceleration = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
 				delete(req.ExtraParams, "enable_prompt_expansion")
 				req.EnablePromptExpansion = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enable_safety_checker"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_safety_checker"]); ok {
 				delete(req.ExtraParams, "enable_safety_checker")
 				req.EnableSafetyChecker = v
 			}
@@ -342,8 +342,8 @@ func ToHuggingFaceImageStreamRequest(unifaiReq *schemas.UnifAIImageGenerationReq
 	return req, nil
 }
 
-// UnmarshalHuggingFaceImageGenerationResponse unmarshals HuggingFace image generation response to UnifAI format
-func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*schemas.UnifAIImageGenerationResponse, error) {
+// UnmarshalHuggingFaceImageGenerationResponse unmarshals HuggingFace image generation response to Raksha format
+func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*schemas.RakshaImageGenerationResponse, error) {
 	if data == nil {
 		return nil, fmt.Errorf("response data is nil")
 	}
@@ -360,23 +360,23 @@ func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*sc
 			return nil, fmt.Errorf("failed to unmarshal Nebius response: %w", err)
 		}
 
-		// Convert to UnifAI format using Nebius converter
-		unifaiResponse := nebiusProvider.ToUnifAIImageResponse(&nebiusResponse)
-		if unifaiResponse == nil {
-			return nil, fmt.Errorf("failed to convert Nebius response to UnifAI format")
+		// Convert to Raksha format using Nebius converter
+		rakshaResponse := nebiusProvider.ToRakshaImageResponse(&nebiusResponse)
+		if rakshaResponse == nil {
+			return nil, fmt.Errorf("failed to convert Nebius response to Raksha format")
 		}
 
 		// Set model field (Nebius converter doesn't set it, similar to embeddings pattern)
-		if unifaiResponse.Model == "" {
-			unifaiResponse.Model = model
+		if rakshaResponse.Model == "" {
+			rakshaResponse.Model = model
 		}
 
-		return unifaiResponse, nil
+		return rakshaResponse, nil
 
 	case hfInference:
 		// Handle raw byte data - encode to base64
 		b64Data := base64.StdEncoding.EncodeToString(data)
-		return &schemas.UnifAIImageGenerationResponse{
+		return &schemas.RakshaImageGenerationResponse{
 			Model: model,
 			Data: []schemas.ImageData{
 				{
@@ -403,7 +403,7 @@ func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*sc
 			}
 		}
 
-		return &schemas.UnifAIImageGenerationResponse{
+		return &schemas.RakshaImageGenerationResponse{
 			Model: model,
 			Data:  imageData,
 		}, nil
@@ -424,7 +424,7 @@ func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*sc
 			}
 		}
 
-		return &schemas.UnifAIImageGenerationResponse{
+		return &schemas.RakshaImageGenerationResponse{
 			Model: model,
 			Data:  imageData,
 		}, nil
@@ -441,33 +441,33 @@ func imageBytesToBase64DataURL(imageBytes []byte) string {
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, b64Data)
 }
 
-// mapFalAIImageEditParams maps common parameters from UnifAI request to fal-ai request
-func mapFalAIImageEditParams(unifaiReq *schemas.UnifAIImageEditRequest, req *HuggingFaceFalAIImageEditRequest) {
-	if unifaiReq.Params == nil {
+// mapFalAIImageEditParams maps common parameters from Raksha request to fal-ai request
+func mapFalAIImageEditParams(rakshaReq *schemas.RakshaImageEditRequest, req *HuggingFaceFalAIImageEditRequest) {
+	if rakshaReq.Params == nil {
 		return
 	}
 
 	// Map n to num_images for fal-ai
-	if unifaiReq.Params.N != nil {
-		req.NumImages = unifaiReq.Params.N
+	if rakshaReq.Params.N != nil {
+		req.NumImages = rakshaReq.Params.N
 	}
 
 	// Pass through output_format
-	if unifaiReq.Params.OutputFormat != nil {
-		if strings.ToLower(*unifaiReq.Params.OutputFormat) == "jpg" {
+	if rakshaReq.Params.OutputFormat != nil {
+		if strings.ToLower(*rakshaReq.Params.OutputFormat) == "jpg" {
 			req.OutputFormat = schemas.Ptr("jpeg")
 		} else {
-			req.OutputFormat = unifaiReq.Params.OutputFormat
+			req.OutputFormat = rakshaReq.Params.OutputFormat
 		}
 	}
 
-	if unifaiReq.Params.ResponseFormat != nil && *unifaiReq.Params.ResponseFormat == "b64_json" {
+	if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
 		req.SyncMode = schemas.Ptr(true)
 	}
 
 	// Convert size from "WxH" format to fal-ai's image_size object
-	if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-		size := strings.Split(*unifaiReq.Params.Size, "x")
+	if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+		size := strings.Split(*rakshaReq.Params.Size, "x")
 		if len(size) == 2 {
 			width, err := strconv.Atoi(size[0])
 			if err == nil {
@@ -483,50 +483,50 @@ func mapFalAIImageEditParams(unifaiReq *schemas.UnifAIImageEditRequest, req *Hug
 	}
 
 	// Pass-through num_inference_steps
-	if unifaiReq.Params.NumInferenceSteps != nil {
-		req.NumInferenceSteps = unifaiReq.Params.NumInferenceSteps
+	if rakshaReq.Params.NumInferenceSteps != nil {
+		req.NumInferenceSteps = rakshaReq.Params.NumInferenceSteps
 	}
 
 	// Pass-through seed
-	if unifaiReq.Params.Seed != nil {
-		req.Seed = unifaiReq.Params.Seed
+	if rakshaReq.Params.Seed != nil {
+		req.Seed = rakshaReq.Params.Seed
 	}
 
 	// Parse fal-ai specific params from ExtraParams
-	if unifaiReq.Params.ExtraParams != nil {
+	if rakshaReq.Params.ExtraParams != nil {
 		// Map guidance_scale
-		if v, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["guidance_scale"]); ok {
+		if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
 			delete(req.ExtraParams, "guidance_scale")
 			req.GuidanceScale = v
 		}
 
 		// Map acceleration
-		if v, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["acceleration"]); ok {
+		if v, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["acceleration"]); ok {
 			delete(req.ExtraParams, "acceleration")
 			req.Acceleration = v
 		}
 
 		// Map enable_safety_checker
-		if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enable_safety_checker"]); ok {
+		if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_safety_checker"]); ok {
 			delete(req.ExtraParams, "enable_safety_checker")
 			req.EnableSafetyChecker = v
 		}
 	}
 }
 
-// ToHuggingFaceImageEditRequest converts a UnifAI image edit request to fal-ai format
-func ToHuggingFaceImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*HuggingFaceFalAIImageEditRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request is nil or input is nil")
+// ToHuggingFaceImageEditRequest converts a Raksha image edit request to fal-ai format
+func ToHuggingFaceImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*HuggingFaceFalAIImageEditRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request is nil or input is nil")
 	}
 
-	if len(unifaiReq.Input.Images) == 0 {
+	if len(rakshaReq.Input.Images) == 0 {
 		return nil, fmt.Errorf("at least one image is required")
 	}
 
 	// Convert images to base64 data URLs
-	imageURLs := make([]string, 0, len(unifaiReq.Input.Images))
-	for _, img := range unifaiReq.Input.Images {
+	imageURLs := make([]string, 0, len(rakshaReq.Input.Images))
+	for _, img := range rakshaReq.Input.Images {
 		if len(img.Image) == 0 {
 			continue
 		}
@@ -538,20 +538,20 @@ func ToHuggingFaceImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*
 	}
 
 	// Extract model name to determine image field strategy
-	_, modelName, err := splitIntoModelProvider(unifaiReq.Model)
+	_, modelName, err := splitIntoModelProvider(rakshaReq.Model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to split model name: %w", err)
 	}
 
 	req := &HuggingFaceFalAIImageEditRequest{
-		Prompt: unifaiReq.Input.Prompt,
+		Prompt: rakshaReq.Input.Prompt,
 	}
 
 	// Check for explicit override in ExtraParams
 	var useMultiImage *bool
-	if unifaiReq.Params != nil && unifaiReq.Params.ExtraParams != nil {
-		req.ExtraParams = unifaiReq.Params.ExtraParams
-		if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["use_image_urls"]); ok {
+	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
+		req.ExtraParams = rakshaReq.Params.ExtraParams
+		if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["use_image_urls"]); ok {
 			delete(req.ExtraParams, "use_image_urls")
 			useMultiImage = v
 		}
@@ -587,7 +587,7 @@ func ToHuggingFaceImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*
 	}
 
 	// Map common parameters
-	mapFalAIImageEditParams(unifaiReq, req)
+	mapFalAIImageEditParams(rakshaReq, req)
 	return req, nil
 }
 

@@ -3,17 +3,17 @@ package openai
 import (
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAIListModelsResponse converts an OpenAI list models response to a UnifAI list models response
-func (response *OpenAIListModelsResponse) ToUnifAIListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.UnifAIListModelsResponse {
+// ToRakshaListModelsResponse converts an OpenAI list models response to a Raksha list models response
+func (response *OpenAIListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIListModelsResponse{
+	rakshaResponse := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.Data)),
 	}
 
@@ -26,7 +26,7 @@ func (response *OpenAIListModelsResponse) ToUnifAIListModelsResponse(providerKey
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return unifaiResponse
+		return rakshaResponse
 	}
 
 	included := make(map[string]bool)
@@ -50,19 +50,19 @@ func (response *OpenAIListModelsResponse) ToUnifAIListModelsResponse(providerKey
 			if result.AliasValue != "" {
 				entry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			unifaiResponse.Data = append(unifaiResponse.Data, entry)
+			rakshaResponse.Data = append(rakshaResponse.Data, entry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	unifaiResponse.Data = append(unifaiResponse.Data,
+	rakshaResponse.Data = append(rakshaResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
-// ToOpenAIListModelsResponse converts a UnifAI list models response to an OpenAI list models response
-func ToOpenAIListModelsResponse(response *schemas.UnifAIListModelsResponse) *OpenAIListModelsResponse {
+// ToOpenAIListModelsResponse converts a Raksha list models response to an OpenAI list models response
+func ToOpenAIListModelsResponse(response *schemas.RakshaListModelsResponse) *OpenAIListModelsResponse {
 	if response == nil {
 		return nil
 	}

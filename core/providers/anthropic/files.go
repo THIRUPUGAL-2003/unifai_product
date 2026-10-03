@@ -3,11 +3,11 @@ package anthropic
 import (
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToAnthropicFileUploadResponse converts a UnifAI file upload response to Anthropic format.
-func ToAnthropicFileUploadResponse(resp *schemas.UnifAIFileUploadResponse) *AnthropicFileResponse {
+// ToAnthropicFileUploadResponse converts a Raksha file upload response to Anthropic format.
+func ToAnthropicFileUploadResponse(resp *schemas.RakshaFileUploadResponse) *AnthropicFileResponse {
 	return &AnthropicFileResponse{
 		ID:        resp.ID,
 		Type:      resp.Object,
@@ -18,8 +18,8 @@ func ToAnthropicFileUploadResponse(resp *schemas.UnifAIFileUploadResponse) *Anth
 	}
 }
 
-// ToAnthropicFileListResponse converts a UnifAI file list response to Anthropic format.
-func ToAnthropicFileListResponse(resp *schemas.UnifAIFileListResponse) *AnthropicFileListResponse {
+// ToAnthropicFileListResponse converts a Raksha file list response to Anthropic format.
+func ToAnthropicFileListResponse(resp *schemas.RakshaFileListResponse) *AnthropicFileListResponse {
 	data := make([]AnthropicFileResponse, len(resp.Data))
 	for i, file := range resp.Data {
 		data[i] = AnthropicFileResponse{
@@ -38,20 +38,20 @@ func ToAnthropicFileListResponse(resp *schemas.UnifAIFileListResponse) *Anthropi
 	}
 }
 
-// ToAnthropicFileRetrieveResponse converts a UnifAI file retrieve response to Anthropic format.
-func ToAnthropicFileRetrieveResponse(resp *schemas.UnifAIFileRetrieveResponse) *AnthropicFileResponse {
+// ToAnthropicFileRetrieveResponse converts a Raksha file retrieve response to Anthropic format.
+func ToAnthropicFileRetrieveResponse(resp *schemas.RakshaFileRetrieveResponse) *AnthropicFileResponse {
 	return &AnthropicFileResponse{
 		ID:        resp.ID,
 		Type:      resp.Object,
 		Filename:  resp.Filename,
-		MimeType:  "", // Not supported in UnifAI responses
+		MimeType:  "", // Not supported in Raksha responses
 		SizeBytes: resp.Bytes,
 		CreatedAt: formatAnthropicFileTimestamp(resp.CreatedAt),
 	}
 }
 
-// ToAnthropicFileDeleteResponse converts a UnifAI file delete response to Anthropic format.
-func ToAnthropicFileDeleteResponse(resp *schemas.UnifAIFileDeleteResponse) *AnthropicFileDeleteResponse {
+// ToAnthropicFileDeleteResponse converts a Raksha file delete response to Anthropic format.
+func ToAnthropicFileDeleteResponse(resp *schemas.RakshaFileDeleteResponse) *AnthropicFileDeleteResponse {
 	respType := "file"
 	if resp.Deleted {
 		respType = "file_deleted"

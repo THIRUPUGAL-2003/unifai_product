@@ -1,11 +1,11 @@
 package compat
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // applyParameterConversion rewrites request fields in place for provider compatibility.
-func applyParameterConversion(req *schemas.UnifAIRequest) {
+func applyParameterConversion(req *schemas.RakshaRequest) {
 	if req == nil {
 		return
 	}
@@ -19,7 +19,7 @@ func applyParameterConversion(req *schemas.UnifAIRequest) {
 }
 
 // disableThinkingWithToolChoice disables thinking when tool_choice forces a tool call.
-func disableThinkingWithToolChoice(req *schemas.UnifAIChatRequest) {
+func disableThinkingWithToolChoice(req *schemas.RakshaChatRequest) {
 	if req.Provider != schemas.DeepSeek || req.Params == nil || req.Params.ToolChoice == nil {
 		return
 	}
@@ -30,7 +30,7 @@ func disableThinkingWithToolChoice(req *schemas.UnifAIChatRequest) {
 }
 
 // disableThinkingWithToolChoiceForResponses disables thinking when tool_choice forces a tool call.
-func disableThinkingWithToolChoiceForResponses(req *schemas.UnifAIResponsesRequest) {
+func disableThinkingWithToolChoiceForResponses(req *schemas.RakshaResponsesRequest) {
 	if req.Provider != schemas.DeepSeek || req.Params == nil || req.Params.ToolChoice == nil {
 		return
 	}
@@ -53,7 +53,7 @@ func disableThinking(extraParams map[string]any) map[string]any {
 }
 
 // flattenNamespaceTools expands namespace scoped tools into a flat list of tools.
-func flattenNamespaceTools(req *schemas.UnifAIResponsesRequest) {
+func flattenNamespaceTools(req *schemas.RakshaResponsesRequest) {
 	if req == nil || req.Params == nil {
 		return
 	}

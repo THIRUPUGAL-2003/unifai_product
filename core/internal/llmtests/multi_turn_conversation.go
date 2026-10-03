@@ -5,12 +5,12 @@ import (
 	"os"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunMultiTurnConversationTest executes the multi-turn conversation test scenario
-func RunMultiTurnConversationTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunMultiTurnConversationTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.MultiTurnConversation {
 		t.Logf("Multi-turn conversation not supported for provider %s", testConfig.Provider)
 		return
@@ -27,12 +27,12 @@ func RunMultiTurnConversationTest(t *testing.T, client *unifai.UnifAI, ctx conte
 			userMessage1,
 		}
 
-		firstRequest := &schemas.UnifAIChatRequest{
+		firstRequest := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    messages1,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(150),
+				MaxCompletionTokens: raksha.Ptr(150),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -65,13 +65,13 @@ func RunMultiTurnConversationTest(t *testing.T, client *unifai.UnifAI, ctx conte
 		expectations1 := ConversationExpectations([]string{"alice"})
 		expectations1 = ModifyExpectationsForProvider(expectations1, testConfig.Provider)
 
-		response1, unifaiErr := WithChatTestRetry(t, chatRetryConfig1, retryContext1, expectations1, "MultiTurnConversation_Step1", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		response1, rakshaErr := WithChatTestRetry(t, chatRetryConfig1, retryContext1, expectations1, "MultiTurnConversation_Step1", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, firstRequest)
 		})
 
-		if unifaiErr != nil {
-			t.Fatalf("❌ MultiTurnConversation_Step1 request failed after retries: %v", GetErrorMessage(unifaiErr))
+		if rakshaErr != nil {
+			t.Fatalf("❌ MultiTurnConversation_Step1 request failed after retries: %v", GetErrorMessage(rakshaErr))
 		}
 
 		t.Logf("✅ First turn acknowledged: %s", GetChatContent(response1))
@@ -93,12 +93,12 @@ func RunMultiTurnConversationTest(t *testing.T, client *unifai.UnifAI, ctx conte
 		// Add the follow-up question to test memory
 		messages2 = append(messages2, CreateBasicChatMessage("What's my name?"))
 
-		secondRequest := &schemas.UnifAIChatRequest{
+		secondRequest := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    messages2,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(150),
+				MaxCompletionTokens: raksha.Ptr(150),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -133,13 +133,13 @@ func RunMultiTurnConversationTest(t *testing.T, client *unifai.UnifAI, ctx conte
 		expectations2.ShouldContainKeywords = []string{"alice"}                                  // Case insensitive
 		expectations2.ShouldNotContainWords = []string{"don't know", "can't remember", "forgot"} // Memory failure indicators
 
-	response2, unifaiErr := WithChatTestRetry(t, chatRetryConfig2, retryContext2, expectations2, "MultiTurnConversation_Step2", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-		bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+	response2, rakshaErr := WithChatTestRetry(t, chatRetryConfig2, retryContext2, expectations2, "MultiTurnConversation_Step2", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 		return client.ChatCompletionRequest(bfCtx, secondRequest)
 	})
 
-	if unifaiErr != nil {
-		t.Fatalf("❌ MultiTurnConversation_Step2 request failed after retries: %v", GetErrorMessage(unifaiErr))
+	if rakshaErr != nil {
+		t.Fatalf("❌ MultiTurnConversation_Step2 request failed after retries: %v", GetErrorMessage(rakshaErr))
 	}
 
 	// Validation already happened inside WithChatTestRetry via expectations2

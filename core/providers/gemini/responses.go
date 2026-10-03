@@ -9,19 +9,19 @@ import (
 	"sync"
 	"time"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func (request *GeminiGenerationRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIResponsesRequest {
+func (request *GeminiGenerationRequest) ToRakshaResponsesRequest(ctx *schemas.RakshaContext) *schemas.RakshaResponsesRequest {
 	if request == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	// Create the UnifAIResponsesRequest
-	unifaiReq := &schemas.UnifAIResponsesRequest{
+	// Create the RakshaResponsesRequest
+	rakshaReq := &schemas.RakshaResponsesRequest{
 		Provider:  provider,
 		Model:     model,
 		Fallbacks: schemas.ParseFallbacks(request.Fallbacks),
@@ -47,7 +47,7 @@ func (request *GeminiGenerationRequest) ToUnifAIResponsesRequest(ctx *schemas.Un
 	}
 
 	if len(inputMessages) > 0 {
-		unifaiReq.Input = inputMessages
+		rakshaReq.Input = inputMessages
 	}
 
 	if len(request.Tools) > 0 {
@@ -63,7 +63,7 @@ func (request *GeminiGenerationRequest) ToUnifAIResponsesRequest(ctx *schemas.Un
 	}
 
 	if request.ServiceTier != "" {
-		mapped := mapGeminiServiceTierToUnifAI(request.ServiceTier)
+		mapped := mapGeminiServiceTierToRaksha(request.ServiceTier)
 		params.ServiceTier = &mapped
 	}
 
@@ -71,61 +71,61 @@ func (request *GeminiGenerationRequest) ToUnifAIResponsesRequest(ctx *schemas.Un
 		params.ExtraParams["cached_content"] = request.CachedContent
 	}
 
-	unifaiReq.Params = params
+	rakshaReq.Params = params
 
-	return unifaiReq
+	return rakshaReq
 }
 
-func ToGeminiResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIResponsesRequest) (*GeminiGenerationRequest, error) {
-	return ToGeminiResponsesRequestWithImageURLSchemes(ctx, unifaiReq, defaultGeminiImageURLSchemes...)
+func ToGeminiResponsesRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaResponsesRequest) (*GeminiGenerationRequest, error) {
+	return ToGeminiResponsesRequestWithImageURLSchemes(ctx, rakshaReq, defaultGeminiImageURLSchemes...)
 }
 
-// ToGeminiResponsesRequestWithImageURLSchemes converts a UnifAI Responses request
+// ToGeminiResponsesRequestWithImageURLSchemes converts a Raksha Responses request
 // to Gemini format using the provider-specific allowlist for non-data image URLs.
-func ToGeminiResponsesRequestWithImageURLSchemes(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIResponsesRequest, allowedImageURLSchemes ...string) (*GeminiGenerationRequest, error) {
-	if unifaiReq == nil {
+func ToGeminiResponsesRequestWithImageURLSchemes(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaResponsesRequest, allowedImageURLSchemes ...string) (*GeminiGenerationRequest, error) {
+	if rakshaReq == nil {
 		return nil, nil
 	}
 
-	unifaiReq.Model = NormalizeModelName(unifaiReq.Model)
+	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
 
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
 
 	// Canonical model for capability gating only; wire model is untouched.
-	capModel := NormalizeModelName(schemas.ResolveCanonicalModel(ctx, unifaiReq.Model))
+	capModel := NormalizeModelName(schemas.ResolveCanonicalModel(ctx, rakshaReq.Model))
 
 	// Convert parameters to generation config
-	if unifaiReq.Params != nil {
+	if rakshaReq.Params != nil {
 		var err error
-		geminiReq.GenerationConfig, err = geminiReq.convertParamsToGenerationConfigResponses(unifaiReq.Params, capModel)
+		geminiReq.GenerationConfig, err = geminiReq.convertParamsToGenerationConfigResponses(rakshaReq.Params, capModel)
 		if err != nil {
 			return nil, err
 		}
-		geminiReq.ExtraParams = unifaiReq.Params.ExtraParams
+		geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
 		// Handle tool-related parameters
-		if len(unifaiReq.Params.Tools) > 0 {
-			geminiReq.Tools, err = convertResponsesToolsToGemini(unifaiReq.Params.Tools)
+		if len(rakshaReq.Params.Tools) > 0 {
+			geminiReq.Tools, err = convertResponsesToolsToGemini(rakshaReq.Params.Tools)
 			if err != nil {
 				return nil, err
 			}
 
 			// Convert tool choice if present
-			if unifaiReq.Params.ToolChoice != nil {
-				geminiReq.ToolConfig = convertResponsesToolChoiceToGemini(unifaiReq.Params.ToolChoice)
+			if rakshaReq.Params.ToolChoice != nil {
+				geminiReq.ToolConfig = convertResponsesToolChoiceToGemini(rakshaReq.Params.ToolChoice)
 			}
 		}
 
-		if unifaiReq.Params.ServiceTier != nil {
-			geminiReq.ServiceTier = mapUnifAIServiceTierToGemini(*unifaiReq.Params.ServiceTier)
+		if rakshaReq.Params.ServiceTier != nil {
+			geminiReq.ServiceTier = mapRakshaServiceTierToGemini(*rakshaReq.Params.ServiceTier)
 		}
 	}
 
 	// Convert ResponsesInput messages to Gemini contents
-	if unifaiReq.Input != nil {
-		contents, systemInstruction, err := convertResponsesMessagesToGeminiContents(unifaiReq.Input, capModel, unifaiReq.Provider, allowedImageURLSchemes...)
+	if rakshaReq.Input != nil {
+		contents, systemInstruction, err := convertResponsesMessagesToGeminiContents(rakshaReq.Input, capModel, rakshaReq.Provider, allowedImageURLSchemes...)
 		if err != nil {
 			return nil, err
 		}
@@ -136,26 +136,26 @@ func ToGeminiResponsesRequestWithImageURLSchemes(ctx *schemas.UnifAIContext, uni
 		}
 	}
 
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.Instructions != nil {
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.Instructions != nil {
 			// check if system instruction is already set
 			if geminiReq.SystemInstruction == nil {
 				geminiReq.SystemInstruction = &Content{
 					Parts: []*Part{
-						{Text: *unifaiReq.Params.Instructions},
+						{Text: *rakshaReq.Params.Instructions},
 					},
 				}
 			}
 		}
 
-		if unifaiReq.Params.ExtraParams != nil {
-			if safetySettings, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "safety_settings"); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safety_settings"); ok {
 				delete(geminiReq.ExtraParams, "safety_settings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
 				}
 			}
-			if cachedContent, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["cached_content"]); ok {
+			if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cached_content"]); ok {
 				delete(geminiReq.ExtraParams, "cached_content")
 				geminiReq.CachedContent = cachedContent
 			}
@@ -165,28 +165,28 @@ func ToGeminiResponsesRequestWithImageURLSchemes(ctx *schemas.UnifAIContext, uni
 	return geminiReq, nil
 }
 
-// ToResponsesUnifAIResponsesResponse converts a Gemini GenerateContentResponse to a UnifAIResponsesResponse
-func (response *GenerateContentResponse) ToResponsesUnifAIResponsesResponse() *schemas.UnifAIResponsesResponse {
+// ToResponsesRakshaResponsesResponse converts a Gemini GenerateContentResponse to a RakshaResponsesResponse
+func (response *GenerateContentResponse) ToResponsesRakshaResponsesResponse() *schemas.RakshaResponsesResponse {
 	if response == nil {
 		return nil
 	}
 
-	// Create the UnifAIResponse with Responses structure
-	unifaiResp := &schemas.UnifAIResponsesResponse{
+	// Create the RakshaResponse with Responses structure
+	rakshaResp := &schemas.RakshaResponsesResponse{
 		ID:        schemas.Ptr("resp_" + providerUtils.GetRandomString(50)),
 		CreatedAt: int(time.Now().Unix()),
 		Model:     response.ModelVersion,
 	}
 
 	// Convert usage information
-	unifaiResp.Usage = ConvertGeminiUsageMetadataToResponsesUsage(response.UsageMetadata)
+	rakshaResp.Usage = ConvertGeminiUsageMetadataToResponsesUsage(response.UsageMetadata)
 
 	if response.UsageMetadata != nil {
-		if t := mapGeminiTrafficTypeToUnifAI(response.UsageMetadata.TrafficType); t != nil {
-			unifaiResp.ServiceTier = t
+		if t := mapGeminiTrafficTypeToRaksha(response.UsageMetadata.TrafficType); t != nil {
+			rakshaResp.ServiceTier = t
 		} else if response.UsageMetadata.ServiceTier != "" {
-			tier := mapGeminiServiceTierToUnifAI(response.UsageMetadata.ServiceTier)
-			unifaiResp.ServiceTier = &tier
+			tier := mapGeminiServiceTierToRaksha(response.UsageMetadata.ServiceTier)
+			rakshaResp.ServiceTier = &tier
 		}
 	}
 
@@ -194,58 +194,58 @@ func (response *GenerateContentResponse) ToResponsesUnifAIResponsesResponse() *s
 	if len(response.Candidates) > 0 {
 		candidate := response.Candidates[0]
 
-		// Persist finish reason as UnifAI canonical stop_reason
+		// Persist finish reason as Raksha canonical stop_reason
 		if candidate.FinishReason != "" && candidate.FinishReason != FinishReasonUnspecified {
-			stopReason := ConvertGeminiFinishReasonToUnifAI(candidate.FinishReason)
-			unifaiResp.StopReason = &stopReason
+			stopReason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
+			rakshaResp.StopReason = &stopReason
 
 			if isErrorFinishReason(candidate.FinishReason) {
 				failedStatus := "failed"
-				unifaiResp.Status = &failedStatus
+				rakshaResp.Status = &failedStatus
 
 				errMsg := candidate.FinishMessage
 				if errMsg == "" {
 					errMsg = string(candidate.FinishReason)
 				}
-				unifaiResp.Error = &schemas.ResponsesResponseError{
+				rakshaResp.Error = &schemas.ResponsesResponseError{
 					Code:    stopReason,
 					Message: errMsg,
 				}
 
-				return unifaiResp
+				return rakshaResp
 			}
 		}
 
 		outputMessages := convertGeminiCandidatesToResponsesOutput(response.Candidates)
 		if len(outputMessages) > 0 {
-			unifaiResp.Output = outputMessages
+			rakshaResp.Output = outputMessages
 		}
 	}
 
-	return unifaiResp
+	return rakshaResp
 }
 
-func ToGeminiResponsesResponse(unifaiResp *schemas.UnifAIResponsesResponse) *GenerateContentResponse {
-	if unifaiResp == nil {
+func ToGeminiResponsesResponse(rakshaResp *schemas.RakshaResponsesResponse) *GenerateContentResponse {
+	if rakshaResp == nil {
 		return nil
 	}
 
 	geminiResp := &GenerateContentResponse{
-		ModelVersion: unifaiResp.Model,
+		ModelVersion: rakshaResp.Model,
 	}
 
 	// Set response ID if available
-	if unifaiResp.ID != nil {
-		geminiResp.ResponseID = *unifaiResp.ID
+	if rakshaResp.ID != nil {
+		geminiResp.ResponseID = *rakshaResp.ID
 	}
 
 	// Set creation time
-	if unifaiResp.CreatedAt > 0 {
-		geminiResp.CreateTime = time.Unix(int64(unifaiResp.CreatedAt), 0)
+	if rakshaResp.CreatedAt > 0 {
+		geminiResp.CreateTime = time.Unix(int64(rakshaResp.CreatedAt), 0)
 	}
 
 	// Convert output messages to candidates
-	if len(unifaiResp.Output) > 0 {
+	if len(rakshaResp.Output) > 0 {
 		candidates := []*Candidate{}
 
 		// Group messages by their role to create candidates
@@ -259,8 +259,8 @@ func ToGeminiResponsesResponse(unifaiResp *schemas.UnifAIResponsesResponse) *Gen
 		var lastWebSearchCall *schemas.ResponsesMessage
 		var webSearchAnnotations []schemas.ResponsesOutputMessageContentTextAnnotation
 		var lastRenderedContent *string
-		for i := range unifaiResp.Output {
-			msg := &unifaiResp.Output[i]
+		for i := range rakshaResp.Output {
+			msg := &rakshaResp.Output[i]
 			if msg.Type != nil && *msg.Type == schemas.ResponsesMessageTypeWebSearchCall {
 				lastWebSearchCall = msg
 				consumedIndices[i] = true
@@ -282,7 +282,7 @@ func ToGeminiResponsesResponse(unifaiResp *schemas.UnifAIResponsesResponse) *Gen
 			}
 		}
 
-		for i, msg := range unifaiResp.Output {
+		for i, msg := range rakshaResp.Output {
 			// Skip web_search_call messages as they're converted to grounding metadata
 			if consumedIndices[i] {
 				continue
@@ -376,8 +376,8 @@ func ToGeminiResponsesResponse(unifaiResp *schemas.UnifAIResponsesResponse) *Gen
 				} else {
 					// Otherwise, look ahead to see if the next message is a reasoning message with encrypted content
 					// (thought signature for this function call)
-					if i+1 < len(unifaiResp.Output) {
-						nextMsg := unifaiResp.Output[i+1]
+					if i+1 < len(rakshaResp.Output) {
+						nextMsg := rakshaResp.Output[i+1]
 						if nextMsg.Type != nil && *nextMsg.Type == schemas.ResponsesMessageTypeReasoning &&
 							nextMsg.ResponsesReasoning != nil && nextMsg.ResponsesReasoning.EncryptedContent != nil {
 							decodedSig, err := base64.StdEncoding.DecodeString(*nextMsg.ResponsesReasoning.EncryptedContent)
@@ -465,11 +465,11 @@ func ToGeminiResponsesResponse(unifaiResp *schemas.UnifAIResponsesResponse) *Gen
 				},
 			}
 
-			// Determine finish reason: prefer StopReason (UnifAI canonical), fall back to IncompleteDetails
-			if unifaiResp.StopReason != nil {
-				candidate.FinishReason = ConvertUnifAIFinishReasonToGemini(*unifaiResp.StopReason)
-			} else if unifaiResp.IncompleteDetails != nil {
-				switch unifaiResp.IncompleteDetails.Reason {
+			// Determine finish reason: prefer StopReason (Raksha canonical), fall back to IncompleteDetails
+			if rakshaResp.StopReason != nil {
+				candidate.FinishReason = ConvertRakshaFinishReasonToGemini(*rakshaResp.StopReason)
+			} else if rakshaResp.IncompleteDetails != nil {
+				switch rakshaResp.IncompleteDetails.Reason {
 				case "max_tokens":
 					candidate.FinishReason = FinishReasonMaxTokens
 				case "content_filter":
@@ -493,25 +493,25 @@ func ToGeminiResponsesResponse(unifaiResp *schemas.UnifAIResponsesResponse) *Gen
 	}
 
 	// Convert usage metadata
-	if unifaiResp.Usage != nil {
-		geminiResp.UsageMetadata = ConvertUnifAIResponsesUsageToGeminiUsageMetadata(unifaiResp.Usage)
+	if rakshaResp.Usage != nil {
+		geminiResp.UsageMetadata = ConvertRakshaResponsesUsageToGeminiUsageMetadata(rakshaResp.Usage)
 	}
-	if unifaiResp.ServiceTier != nil {
+	if rakshaResp.ServiceTier != nil {
 		if geminiResp.UsageMetadata == nil {
 			geminiResp.UsageMetadata = &GenerateContentResponseUsageMetadata{}
 		}
-		if unifaiResp.ExtraFields.Provider == schemas.Vertex {
-			geminiResp.UsageMetadata.TrafficType = mapUnifAIServiceTierToVertexTrafficType(*unifaiResp.ServiceTier)
+		if rakshaResp.ExtraFields.Provider == schemas.Vertex {
+			geminiResp.UsageMetadata.TrafficType = mapRakshaServiceTierToVertexTrafficType(*rakshaResp.ServiceTier)
 		} else {
-			geminiResp.UsageMetadata.ServiceTier = mapUnifAIServiceTierToGemini(*unifaiResp.ServiceTier)
+			geminiResp.UsageMetadata.ServiceTier = mapRakshaServiceTierToGemini(*rakshaResp.ServiceTier)
 		}
 	}
 
 	return geminiResp
 }
 
-// UnifAIToGeminiStreamState tracks state when converting UnifAI streams to Gemini format
-type UnifAIToGeminiStreamState struct {
+// RakshaToGeminiStreamState tracks state when converting Raksha streams to Gemini format
+type RakshaToGeminiStreamState struct {
 	// Web search buffering
 	WebSearchCall   *schemas.ResponsesMessage                             // Buffered web_search_call
 	Annotations     []schemas.ResponsesOutputMessageContentTextAnnotation // Buffered annotations
@@ -523,48 +523,48 @@ type UnifAIToGeminiStreamState struct {
 	ToolCallIDs   map[int]string // Maps output_index to tool call ID
 }
 
-// NewUnifAIToGeminiStreamState creates a new state for UnifAI→Gemini streaming
-func NewUnifAIToGeminiStreamState() *UnifAIToGeminiStreamState {
-	return &UnifAIToGeminiStreamState{
+// NewRakshaToGeminiStreamState creates a new state for Raksha→Gemini streaming
+func NewRakshaToGeminiStreamState() *RakshaToGeminiStreamState {
+	return &RakshaToGeminiStreamState{
 		Annotations:   make([]schemas.ResponsesOutputMessageContentTextAnnotation, 0),
 		ToolCallNames: make(map[int]string),
 		ToolCallIDs:   make(map[int]string),
 	}
 }
 
-func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamResponse, state *UnifAIToGeminiStreamState) *GenerateContentResponse {
-	if unifaiResp == nil {
+func ToGeminiResponsesStreamResponse(rakshaResp *schemas.RakshaResponsesStreamResponse, state *RakshaToGeminiStreamState) *GenerateContentResponse {
+	if rakshaResp == nil {
 		return nil
 	}
 
 	// Initialize state if not provided (backward compatibility)
 	if state == nil {
-		state = NewUnifAIToGeminiStreamState()
+		state = NewRakshaToGeminiStreamState()
 	}
 
 	// Buffer web search call
-	if unifaiResp.Type == schemas.ResponsesStreamResponseTypeOutputItemDone &&
-		unifaiResp.Item != nil &&
-		unifaiResp.Item.Type != nil &&
-		*unifaiResp.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
-		state.WebSearchCall = unifaiResp.Item
+	if rakshaResp.Type == schemas.ResponsesStreamResponseTypeOutputItemDone &&
+		rakshaResp.Item != nil &&
+		rakshaResp.Item.Type != nil &&
+		*rakshaResp.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
+		state.WebSearchCall = rakshaResp.Item
 		state.HasWebSearch = true
 		return nil // Don't emit yet, wait for completion
 	}
 
 	// Buffer annotations
-	if unifaiResp.Type == schemas.ResponsesStreamResponseTypeOutputTextAnnotationAdded &&
-		unifaiResp.Annotation != nil {
-		state.Annotations = append(state.Annotations, *unifaiResp.Annotation)
+	if rakshaResp.Type == schemas.ResponsesStreamResponseTypeOutputTextAnnotationAdded &&
+		rakshaResp.Annotation != nil {
+		state.Annotations = append(state.Annotations, *rakshaResp.Annotation)
 		return nil // Don't emit yet, wait for completion
 	}
 
 	// Buffer rendered_content messages
-	if unifaiResp.Type == schemas.ResponsesStreamResponseTypeOutputItemDone &&
-		unifaiResp.Item != nil &&
-		unifaiResp.Item.Content != nil &&
-		unifaiResp.Item.Content.ContentBlocks != nil {
-		for _, block := range unifaiResp.Item.Content.ContentBlocks {
+	if rakshaResp.Type == schemas.ResponsesStreamResponseTypeOutputItemDone &&
+		rakshaResp.Item != nil &&
+		rakshaResp.Item.Content != nil &&
+		rakshaResp.Item.Content.ContentBlocks != nil {
+		for _, block := range rakshaResp.Item.Content.ContentBlocks {
 			if block.Type == schemas.ResponsesOutputMessageContentTypeRenderedContent &&
 				block.ResponsesOutputMessageContentRenderedContent != nil &&
 				block.ResponsesOutputMessageContentRenderedContent.RenderedContent != "" {
@@ -575,7 +575,7 @@ func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamRe
 	}
 
 	// Skip lifecycle events that don't have corresponding Gemini equivalents
-	switch unifaiResp.Type {
+	switch rakshaResp.Type {
 	case schemas.ResponsesStreamResponseTypePing,
 		schemas.ResponsesStreamResponseTypeCreated,
 		schemas.ResponsesStreamResponseTypeInProgress,
@@ -604,18 +604,18 @@ func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamRe
 
 	candidate := streamResp.Candidates[0]
 
-	switch unifaiResp.Type {
+	switch rakshaResp.Type {
 	case schemas.ResponsesStreamResponseTypeOutputTextDelta:
-		if unifaiResp.Delta != nil && *unifaiResp.Delta != "" {
+		if rakshaResp.Delta != nil && *rakshaResp.Delta != "" {
 			candidate.Content.Parts = append(candidate.Content.Parts, &Part{
-				Text: *unifaiResp.Delta,
+				Text: *rakshaResp.Delta,
 			})
 		}
 
 	case schemas.ResponsesStreamResponseTypeReasoningSummaryTextDelta:
-		if unifaiResp.Delta != nil && *unifaiResp.Delta != "" {
+		if rakshaResp.Delta != nil && *rakshaResp.Delta != "" {
 			candidate.Content.Parts = append(candidate.Content.Parts, &Part{
-				Text:    *unifaiResp.Delta,
+				Text:    *rakshaResp.Delta,
 				Thought: true,
 			})
 		}
@@ -632,19 +632,19 @@ func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamRe
 		var name *string
 		var callID *string
 
-		if unifaiResp.Item != nil && unifaiResp.Item.ResponsesToolMessage != nil {
-			argsStr = unifaiResp.Item.ResponsesToolMessage.Arguments
-			name = unifaiResp.Item.ResponsesToolMessage.Name
-			callID = unifaiResp.Item.ResponsesToolMessage.CallID
+		if rakshaResp.Item != nil && rakshaResp.Item.ResponsesToolMessage != nil {
+			argsStr = rakshaResp.Item.ResponsesToolMessage.Arguments
+			name = rakshaResp.Item.ResponsesToolMessage.Name
+			callID = rakshaResp.Item.ResponsesToolMessage.CallID
 		}
-		if argsStr == nil && unifaiResp.Arguments != nil {
+		if argsStr == nil && rakshaResp.Arguments != nil {
 			// Some providers (e.g., Anthropic) send Arguments directly on the response
-			argsStr = unifaiResp.Arguments
+			argsStr = rakshaResp.Arguments
 			// Try to get name and callID from state if available
 			if state != nil {
 				outputIndex := 0
-				if unifaiResp.OutputIndex != nil {
-					outputIndex = *unifaiResp.OutputIndex
+				if rakshaResp.OutputIndex != nil {
+					outputIndex = *rakshaResp.OutputIndex
 				}
 				if name == nil {
 					if n, ok := state.ToolCallNames[outputIndex]; ok {
@@ -710,24 +710,24 @@ func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamRe
 		// Already handled via deltas, skip
 		return nil
 	case schemas.ResponsesStreamResponseTypeOutputItemAdded:
-		if unifaiResp.Item != nil && unifaiResp.Item.ResponsesReasoning != nil && unifaiResp.Item.EncryptedContent != nil {
+		if rakshaResp.Item != nil && rakshaResp.Item.ResponsesReasoning != nil && rakshaResp.Item.EncryptedContent != nil {
 			candidate.Content.Parts = append(candidate.Content.Parts, &Part{
-				ThoughtSignature: []byte(*unifaiResp.Item.ResponsesReasoning.EncryptedContent),
+				ThoughtSignature: []byte(*rakshaResp.Item.ResponsesReasoning.EncryptedContent),
 			})
 		}
 		// Track function call metadata for later use in FunctionCallArgumentsDone
-		if unifaiResp.Item != nil && unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeFunctionCall &&
-			unifaiResp.Item.ResponsesToolMessage != nil {
+		if rakshaResp.Item != nil && rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeFunctionCall &&
+			rakshaResp.Item.ResponsesToolMessage != nil {
 			outputIndex := 0
-			if unifaiResp.OutputIndex != nil {
-				outputIndex = *unifaiResp.OutputIndex
+			if rakshaResp.OutputIndex != nil {
+				outputIndex = *rakshaResp.OutputIndex
 			}
-			if unifaiResp.Item.ResponsesToolMessage.Name != nil {
-				state.ToolCallNames[outputIndex] = *unifaiResp.Item.ResponsesToolMessage.Name
+			if rakshaResp.Item.ResponsesToolMessage.Name != nil {
+				state.ToolCallNames[outputIndex] = *rakshaResp.Item.ResponsesToolMessage.Name
 			}
-			if unifaiResp.Item.ResponsesToolMessage.CallID != nil {
-				state.ToolCallIDs[outputIndex] = *unifaiResp.Item.ResponsesToolMessage.CallID
+			if rakshaResp.Item.ResponsesToolMessage.CallID != nil {
+				state.ToolCallIDs[outputIndex] = *rakshaResp.Item.ResponsesToolMessage.CallID
 			}
 		}
 		return nil
@@ -737,8 +737,8 @@ func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamRe
 
 	case schemas.ResponsesStreamResponseTypeContentPartAdded:
 		// Handle content parts that contain images, audio, or files
-		if unifaiResp.Part != nil {
-			part, err := convertContentBlockToGeminiPart(*unifaiResp.Part)
+		if rakshaResp.Part != nil {
+			part, err := convertContentBlockToGeminiPart(*rakshaResp.Part)
 			if err == nil && part != nil {
 				candidate.Content.Parts = append(candidate.Content.Parts, part)
 			}
@@ -749,30 +749,30 @@ func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamRe
 		return nil
 
 	case schemas.ResponsesStreamResponseTypeCompleted:
-		if unifaiResp.Response != nil {
+		if rakshaResp.Response != nil {
 			// Set model version if available
-			if unifaiResp.Response.Model != "" {
-				streamResp.ModelVersion = unifaiResp.Response.Model
+			if rakshaResp.Response.Model != "" {
+				streamResp.ModelVersion = rakshaResp.Response.Model
 			}
 
 			// Convert usage metadata if available
-			if unifaiResp.Response.Usage != nil {
-				streamResp.UsageMetadata = ConvertUnifAIResponsesUsageToGeminiUsageMetadata(unifaiResp.Response.Usage)
+			if rakshaResp.Response.Usage != nil {
+				streamResp.UsageMetadata = ConvertRakshaResponsesUsageToGeminiUsageMetadata(rakshaResp.Response.Usage)
 			}
-			if unifaiResp.Response.ServiceTier != nil {
+			if rakshaResp.Response.ServiceTier != nil {
 				if streamResp.UsageMetadata == nil {
 					streamResp.UsageMetadata = &GenerateContentResponseUsageMetadata{}
 				}
-				if unifaiResp.Response.ExtraFields.Provider == schemas.Vertex {
-					streamResp.UsageMetadata.TrafficType = mapUnifAIServiceTierToVertexTrafficType(*unifaiResp.Response.ServiceTier)
+				if rakshaResp.Response.ExtraFields.Provider == schemas.Vertex {
+					streamResp.UsageMetadata.TrafficType = mapRakshaServiceTierToVertexTrafficType(*rakshaResp.Response.ServiceTier)
 				} else {
-					streamResp.UsageMetadata.ServiceTier = mapUnifAIServiceTierToGemini(*unifaiResp.Response.ServiceTier)
+					streamResp.UsageMetadata.ServiceTier = mapRakshaServiceTierToGemini(*rakshaResp.Response.ServiceTier)
 				}
 			}
 
 			// Derive finish reason from StopReason when present
-			if unifaiResp.Response.StopReason != nil {
-				candidate.FinishReason = ConvertUnifAIFinishReasonToGemini(*unifaiResp.Response.StopReason)
+			if rakshaResp.Response.StopReason != nil {
+				candidate.FinishReason = ConvertRakshaFinishReasonToGemini(*rakshaResp.Response.StopReason)
 			} else {
 				candidate.FinishReason = FinishReasonStop
 			}
@@ -786,23 +786,23 @@ func ToGeminiResponsesStreamResponse(unifaiResp *schemas.UnifAIResponsesStreamRe
 	// Response failed
 	case schemas.ResponsesStreamResponseTypeFailed:
 		candidate.FinishReason = FinishReasonOther
-		if unifaiResp.Response != nil && unifaiResp.Response.Error != nil {
+		if rakshaResp.Response != nil && rakshaResp.Response.Error != nil {
 			streamResp.PromptFeedback = &GenerateContentResponsePromptFeedback{
 				BlockReason:        "ERROR",
-				BlockReasonMessage: unifaiResp.Response.Error.Message,
+				BlockReasonMessage: rakshaResp.Response.Error.Message,
 			}
 		}
 
 	// Refusal
 	case schemas.ResponsesStreamResponseTypeRefusalDelta:
-		if unifaiResp.Delta != nil && *unifaiResp.Delta != "" {
+		if rakshaResp.Delta != nil && *rakshaResp.Delta != "" {
 			candidate.Content.Parts = append(candidate.Content.Parts, &Part{
-				Text: *unifaiResp.Delta,
+				Text: *rakshaResp.Delta,
 			})
 		}
 
 	case schemas.ResponsesStreamResponseTypeRefusalDone:
-		if unifaiResp.Refusal != nil && *unifaiResp.Refusal != "" {
+		if rakshaResp.Refusal != nil && *rakshaResp.Refusal != "" {
 			candidate.FinishReason = FinishReasonSafety
 		}
 
@@ -929,7 +929,7 @@ func (state *GeminiResponsesStreamState) flush() {
 
 // closeTextItemIfOpen closes the text item if it's open and returns the responses.
 // Returns nil if no text item was open.
-func (state *GeminiResponsesStreamState) closeTextItemIfOpen(sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
+func (state *GeminiResponsesStreamState) closeTextItemIfOpen(sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
 	if state.HasStartedText && !state.TextItemClosed {
 		return closeGeminiTextItem(state, sequenceNumber)
 	}
@@ -952,9 +952,9 @@ func (state *GeminiResponsesStreamState) generateItemID(suffix string, outputInd
 	return fmt.Sprintf("%s_%d", suffix, outputIndex)
 }
 
-// ToUnifAIResponsesStream converts a Gemini stream event to UnifAI Responses Stream responses
-func (response *GenerateContentResponse) ToUnifAIResponsesStream(sequenceNumber int, state *GeminiResponsesStreamState) ([]*schemas.UnifAIResponsesStreamResponse, *schemas.UnifAIError) {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+// ToRakshaResponsesStream converts a Gemini stream event to Raksha Responses Stream responses
+func (response *GenerateContentResponse) ToRakshaResponsesStream(sequenceNumber int, state *GeminiResponsesStreamState) ([]*schemas.RakshaResponsesStreamResponse, *schemas.RakshaError) {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// First event: Emit response.created and response.in_progress
 	if !state.HasEmittedCreated {
@@ -973,14 +973,14 @@ func (response *GenerateContentResponse) ToUnifAIResponsesStream(sequenceNumber 
 		}
 
 		// Emit response.created
-		createdResp := &schemas.UnifAIResponsesResponse{
+		createdResp := &schemas.RakshaResponsesResponse{
 			ID:        state.MessageID,
 			CreatedAt: state.CreatedAt,
 		}
 		if state.Model != nil {
 			createdResp.Model = *state.Model
 		}
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeCreated,
 			SequenceNumber: sequenceNumber + len(responses),
 			Response:       createdResp,
@@ -988,14 +988,14 @@ func (response *GenerateContentResponse) ToUnifAIResponsesStream(sequenceNumber 
 		state.HasEmittedCreated = true
 
 		// Emit response.in_progress
-		inProgressResp := &schemas.UnifAIResponsesResponse{
+		inProgressResp := &schemas.RakshaResponsesResponse{
 			ID:        state.MessageID,
 			CreatedAt: state.CreatedAt,
 		}
 		if state.Model != nil {
 			inProgressResp.Model = *state.Model
 		}
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeInProgress,
 			SequenceNumber: sequenceNumber + len(responses),
 			Response:       inProgressResp,
@@ -1039,8 +1039,8 @@ func (response *GenerateContentResponse) ToUnifAIResponsesStream(sequenceNumber 
 }
 
 // processGeminiPart processes a single Gemini part and returns appropriate lifecycle events
-func processGeminiPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	switch {
 	case part.Thought && part.Text != "":
@@ -1073,8 +1073,8 @@ func processGeminiPart(part *Part, state *GeminiResponsesStreamState, sequenceNu
 }
 
 // processGeminiTextPart handles regular text parts
-func processGeminiTextPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiTextPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	var outputIndex int
 	// If this is the first text, emit output_item.added and content_part.added
@@ -1085,7 +1085,7 @@ func processGeminiTextPart(part *Part, state *GeminiResponsesStreamState, sequen
 		state.ItemIDs[outputIndex] = itemID
 
 		// Emit output_item.added
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1103,7 +1103,7 @@ func processGeminiTextPart(part *Part, state *GeminiResponsesStreamState, sequen
 
 		// Emit content_part.added
 		contentIndex := 0
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1134,7 +1134,7 @@ func processGeminiTextPart(part *Part, state *GeminiResponsesStreamState, sequen
 		// Accumulate text for output_text.done
 		state.TextBuffer.WriteString(text)
 
-		streamResponse := &schemas.UnifAIResponsesStreamResponse{
+		streamResponse := &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1155,8 +1155,8 @@ func processGeminiTextPart(part *Part, state *GeminiResponsesStreamState, sequen
 }
 
 // processGeminiThoughtPart handles reasoning/thought parts
-func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// Close text item if open
 	if closeResponses := state.closeTextItemIfOpen(sequenceNumber); closeResponses != nil {
@@ -1169,7 +1169,7 @@ func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, seq
 	state.ItemIDs[outputIndex] = itemID
 
 	// Emit output_item.added for reasoning
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1182,7 +1182,7 @@ func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, seq
 	})
 
 	// Emit reasoning summary part added
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryPartAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1192,7 +1192,7 @@ func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, seq
 	// Emit reasoning summary text delta with the thought content
 	if part.Text != "" {
 		text := part.Text
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryTextDelta,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1202,7 +1202,7 @@ func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, seq
 	}
 
 	// Emit reasoning summary text done
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryTextDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1210,7 +1210,7 @@ func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, seq
 	})
 
 	// Emit reasoning summary part done
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryPartDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1219,7 +1219,7 @@ func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, seq
 
 	// Emit output_item.done for reasoning
 	statusCompleted := "completed"
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1239,8 +1239,8 @@ func processGeminiThoughtPart(part *Part, state *GeminiResponsesStreamState, seq
 }
 
 // processGeminiThoughtSignaturePart handles encrypted reasoning content (thoughtSignature)
-func processGeminiThoughtSignaturePart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiThoughtSignaturePart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// Close text item if open
 	if closeResponses := state.closeTextItemIfOpen(sequenceNumber); closeResponses != nil {
@@ -1256,7 +1256,7 @@ func processGeminiThoughtSignaturePart(part *Part, state *GeminiResponsesStreamS
 	thoughtSig := base64.StdEncoding.EncodeToString(part.ThoughtSignature)
 
 	// Emit output_item.added for reasoning with encrypted content
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1274,7 +1274,7 @@ func processGeminiThoughtSignaturePart(part *Part, state *GeminiResponsesStreamS
 
 	// Emit output_item.done for reasoning (thought signature is complete)
 	statusCompleted := "completed"
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1295,8 +1295,8 @@ func processGeminiThoughtSignaturePart(part *Part, state *GeminiResponsesStreamS
 }
 
 // processGeminiFunctionCallPart handles function call parts
-func processGeminiFunctionCallPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiFunctionCallPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// Close text item if open
 	if closeResponses := state.closeTextItemIfOpen(sequenceNumber); closeResponses != nil {
@@ -1330,7 +1330,7 @@ func processGeminiFunctionCallPart(part *Part, state *GeminiResponsesStreamState
 
 	// Emit output_item.added for function call
 	status := "in_progress"
-	addedEvent := &schemas.UnifAIResponsesStreamResponse{
+	addedEvent := &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1361,7 +1361,7 @@ func processGeminiFunctionCallPart(part *Part, state *GeminiResponsesStreamState
 	}
 
 	// Gemini sends complete function calls, so emit done event after synthetic deltas
-	doneEvent := &schemas.UnifAIResponsesStreamResponse{
+	doneEvent := &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1377,7 +1377,7 @@ func processGeminiFunctionCallPart(part *Part, state *GeminiResponsesStreamState
 
 	responses = append(responses, doneEvent)
 
-	outputItemDone := &schemas.UnifAIResponsesStreamResponse{
+	outputItemDone := &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1404,8 +1404,8 @@ func processGeminiFunctionCallPart(part *Part, state *GeminiResponsesStreamState
 }
 
 // processGeminiFunctionResponsePart handles function response (tool result) parts
-func processGeminiFunctionResponsePart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiFunctionResponsePart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// Close text item if open
 	if closeResponses := state.closeTextItemIfOpen(sequenceNumber); closeResponses != nil {
@@ -1446,7 +1446,7 @@ func processGeminiFunctionResponsePart(part *Part, state *GeminiResponsesStreamS
 		item.ResponsesToolMessage.Name = schemas.Ptr(name)
 	}
 
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1455,7 +1455,7 @@ func processGeminiFunctionResponsePart(part *Part, state *GeminiResponsesStreamS
 	})
 
 	// Immediately emit output_item.done since function responses are complete
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1485,8 +1485,8 @@ func processGeminiFunctionResponsePart(part *Part, state *GeminiResponsesStreamS
 }
 
 // processGeminiInlineDataPart handles inline data parts
-func processGeminiInlineDataPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiInlineDataPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// Close text item if open
 	if closeResponses := state.closeTextItemIfOpen(sequenceNumber); closeResponses != nil {
@@ -1505,7 +1505,7 @@ func processGeminiInlineDataPart(part *Part, state *GeminiResponsesStreamState, 
 	state.ItemIDs[outputIndex] = itemID
 
 	// Emit output_item.added with the inline data content block
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1522,7 +1522,7 @@ func processGeminiInlineDataPart(part *Part, state *GeminiResponsesStreamState, 
 
 	// Emit content_part.added
 	contentIndex := 0
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1532,7 +1532,7 @@ func processGeminiInlineDataPart(part *Part, state *GeminiResponsesStreamState, 
 	})
 
 	// Emit content_part.done
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1543,7 +1543,7 @@ func processGeminiInlineDataPart(part *Part, state *GeminiResponsesStreamState, 
 
 	// Emit output_item.done
 	statusCompleted := "completed"
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1563,8 +1563,8 @@ func processGeminiInlineDataPart(part *Part, state *GeminiResponsesStreamState, 
 }
 
 // processGeminiFileDataPart handles file data parts
-func processGeminiFileDataPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func processGeminiFileDataPart(part *Part, state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// Close text item if open
 	if closeResponses := state.closeTextItemIfOpen(sequenceNumber); closeResponses != nil {
@@ -1583,7 +1583,7 @@ func processGeminiFileDataPart(part *Part, state *GeminiResponsesStreamState, se
 	state.ItemIDs[outputIndex] = itemID
 
 	// Emit output_item.added with the file data content block
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1600,7 +1600,7 @@ func processGeminiFileDataPart(part *Part, state *GeminiResponsesStreamState, se
 
 	// Emit content_part.added
 	contentIndex := 0
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1610,7 +1610,7 @@ func processGeminiFileDataPart(part *Part, state *GeminiResponsesStreamState, se
 	})
 
 	// Emit content_part.done
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1621,7 +1621,7 @@ func processGeminiFileDataPart(part *Part, state *GeminiResponsesStreamState, se
 
 	// Emit output_item.done
 	statusCompleted := "completed"
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1641,8 +1641,8 @@ func processGeminiFileDataPart(part *Part, state *GeminiResponsesStreamState, se
 }
 
 // closeGeminiTextItem closes the text item and emits appropriate done events
-func closeGeminiTextItem(state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+func closeGeminiTextItem(state *GeminiResponsesStreamState, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	outputIndex := state.TextOutputIndex
 	itemID := state.ItemIDs[outputIndex]
@@ -1650,7 +1650,7 @@ func closeGeminiTextItem(state *GeminiResponsesStreamState, sequenceNumber int) 
 
 	// Emit output_text.done
 	fullText := state.TextBuffer.String()
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1670,7 +1670,7 @@ func closeGeminiTextItem(state *GeminiResponsesStreamState, sequenceNumber int) 
 			Annotations: []schemas.ResponsesOutputMessageContentTextAnnotation{},
 		},
 	}
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1701,7 +1701,7 @@ func closeGeminiTextItem(state *GeminiResponsesStreamState, sequenceNumber int) 
 	if itemID != "" {
 		doneItem.ID = &itemID
 	}
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -1715,12 +1715,12 @@ func closeGeminiTextItem(state *GeminiResponsesStreamState, sequenceNumber int) 
 }
 
 // closeGeminiOpenItems closes any open items and emits the final completed event
-func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *GroundingMetadata, usage *GenerateContentResponseUsageMetadata, sequenceNumber int, finishReason FinishReason, finishMessage string) []*schemas.UnifAIResponsesStreamResponse {
+func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *GroundingMetadata, usage *GenerateContentResponseUsageMetadata, sequenceNumber int, finishReason FinishReason, finishMessage string) []*schemas.RakshaResponsesStreamResponse {
 	if state.HasEmittedCompleted {
 		return nil
 	}
 
-	var responses []*schemas.UnifAIResponsesStreamResponse
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	// Close text item if still open
 	if closeResponses := state.closeTextItemIfOpen(sequenceNumber); closeResponses != nil {
@@ -1748,7 +1748,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		}
 
 		// Emit output_item.done for tool call
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1776,7 +1776,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		contentIndex := 0
 
 		// Emit output_item.added for error message
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1793,7 +1793,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		})
 
 		// Emit content_part.added
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1806,7 +1806,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		})
 
 		// Emit output_text.delta with the error message
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1816,7 +1816,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		})
 
 		// Emit output_text.done
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1826,7 +1826,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		})
 
 		// Emit content_part.done
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1839,7 +1839,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		})
 
 		// Emit output_item.done for error message
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &outputIndex,
@@ -1862,18 +1862,18 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 	}
 
 	// Emit response.completed with usage
-	unifaiUsage := ConvertGeminiUsageMetadataToResponsesUsage(usage)
+	rakshaUsage := ConvertGeminiUsageMetadataToResponsesUsage(usage)
 
-	completedResp := &schemas.UnifAIResponsesResponse{
+	completedResp := &schemas.RakshaResponsesResponse{
 		ID:        state.MessageID,
 		CreatedAt: state.CreatedAt,
-		Usage:     unifaiUsage,
+		Usage:     rakshaUsage,
 	}
 	if usage != nil {
-		if t := mapGeminiTrafficTypeToUnifAI(usage.TrafficType); t != nil {
+		if t := mapGeminiTrafficTypeToRaksha(usage.TrafficType); t != nil {
 			completedResp.ServiceTier = t
 		} else if usage.ServiceTier != "" {
-			tier := mapGeminiServiceTierToUnifAI(usage.ServiceTier)
+			tier := mapGeminiServiceTierToRaksha(usage.ServiceTier)
 			completedResp.ServiceTier = &tier
 		}
 	}
@@ -1883,7 +1883,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 
 	// Set stop reason from finish reason
 	if finishReason != "" {
-		stopReason := ConvertGeminiFinishReasonToUnifAI(finishReason)
+		stopReason := ConvertGeminiFinishReasonToRaksha(finishReason)
 		completedResp.StopReason = &stopReason
 
 		// For error finish reasons, set status to failed
@@ -1893,7 +1893,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 		}
 	}
 
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeCompleted,
 		SequenceNumber: sequenceNumber + len(responses),
 		Response:       completedResp,
@@ -1905,7 +1905,7 @@ func closeGeminiOpenItems(state *GeminiResponsesStreamState, groundingMetadata *
 }
 
 // FinalizeGeminiResponsesStream finalizes the stream by closing any open items and emitting completed event
-func FinalizeGeminiResponsesStream(state *GeminiResponsesStreamState, usage *GenerateContentResponseUsageMetadata, sequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
+func FinalizeGeminiResponsesStream(state *GeminiResponsesStreamState, usage *GenerateContentResponseUsageMetadata, sequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
 	return closeGeminiOpenItems(state, nil, usage, sequenceNumber, "", "")
 }
 
@@ -3561,7 +3561,7 @@ func convertContentBlockToGeminiPart(block schemas.ResponsesMessageContentBlock,
 	return nil, nil
 }
 
-// buildGroundingMetadataFromWebSearch converts a UnifAI web_search_call message to Gemini GroundingMetadata
+// buildGroundingMetadataFromWebSearch converts a Raksha web_search_call message to Gemini GroundingMetadata
 func buildGroundingMetadataFromWebSearch(webSearchCall *schemas.ResponsesMessage, annotations []schemas.ResponsesOutputMessageContentTextAnnotation, renderedContent *string) *GroundingMetadata {
 	if webSearchCall == nil || webSearchCall.ResponsesToolMessage == nil || webSearchCall.ResponsesToolMessage.Action == nil {
 		return nil
@@ -3670,8 +3670,8 @@ func emitWebSearchFromGroundingMetadata(
 	metadata *GroundingMetadata,
 	state *GeminiResponsesStreamState,
 	sequenceNumber int,
-) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	if metadata == nil || len(metadata.WebSearchQueries) == 0 {
 		return responses
@@ -3709,7 +3709,7 @@ func emitWebSearchFromGroundingMetadata(
 	action.Sources = sources
 
 	// 1. output_item.added (web_search_call, in_progress)
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -3728,7 +3728,7 @@ func emitWebSearchFromGroundingMetadata(
 	})
 
 	// 2. web_search_call.in_progress
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeWebSearchCallInProgress,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -3736,7 +3736,7 @@ func emitWebSearchFromGroundingMetadata(
 	})
 
 	// 3. web_search_call.searching
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeWebSearchCallSearching,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -3744,7 +3744,7 @@ func emitWebSearchFromGroundingMetadata(
 	})
 
 	// 4. web_search_call.completed
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeWebSearchCallCompleted,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -3752,7 +3752,7 @@ func emitWebSearchFromGroundingMetadata(
 	})
 
 	// 5. output_item.done (with full action including sources)
-	responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+	responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 		SequenceNumber: sequenceNumber + len(responses),
 		OutputIndex:    &outputIndex,
@@ -3778,7 +3778,7 @@ func emitWebSearchFromGroundingMetadata(
 		state.ItemIDs[renderedIndex] = renderedItemID
 
 		// output_item.added with rendered_content
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &renderedIndex,
@@ -3800,7 +3800,7 @@ func emitWebSearchFromGroundingMetadata(
 		})
 
 		// output_item.done for rendered content
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 			SequenceNumber: sequenceNumber + len(responses),
 			OutputIndex:    &renderedIndex,
@@ -3816,8 +3816,8 @@ func emitAnnotationsFromGroundingSupports(
 	metadata *GroundingMetadata,
 	state *GeminiResponsesStreamState,
 	sequenceNumber int,
-) []*schemas.UnifAIResponsesStreamResponse {
-	var responses []*schemas.UnifAIResponsesStreamResponse
+) []*schemas.RakshaResponsesStreamResponse {
+	var responses []*schemas.RakshaResponsesStreamResponse
 
 	if metadata == nil || len(metadata.GroundingSupports) == 0 || state.TextOutputIndex < 0 {
 		return responses
@@ -3862,7 +3862,7 @@ func emitAnnotationsFromGroundingSupports(
 		}
 
 		// Emit annotation.added event
-		responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+		responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 			Type:            schemas.ResponsesStreamResponseTypeOutputTextAnnotationAdded,
 			SequenceNumber:  sequenceNumber + len(responses),
 			OutputIndex:     &state.TextOutputIndex,
@@ -3879,8 +3879,8 @@ func emitAnnotationsFromGroundingSupports(
 
 // generateSyntheticFunctionCallArgumentDeltas creates synthetic FunctionCallArgumentsDelta events
 // from complete JSON arguments to simulate streaming behavior for providers that don't natively stream
-func generateSyntheticFunctionCallArgumentDeltas(argumentsJSON string, outputIndex *int, itemID *string, baseSequenceNumber int) []*schemas.UnifAIResponsesStreamResponse {
-	var events []*schemas.UnifAIResponsesStreamResponse
+func generateSyntheticFunctionCallArgumentDeltas(argumentsJSON string, outputIndex *int, itemID *string, baseSequenceNumber int) []*schemas.RakshaResponsesStreamResponse {
+	var events []*schemas.RakshaResponsesStreamResponse
 
 	// Chunk size for synthetic streaming (matching realistic streaming patterns)
 	chunkSize := 8 // Small chunks to simulate realistic streaming
@@ -3891,7 +3891,7 @@ func generateSyntheticFunctionCallArgumentDeltas(argumentsJSON string, outputInd
 		end := min(i+chunkSize, len(runes))
 
 		chunk := string(runes[i:end])
-		deltaEvent := &schemas.UnifAIResponsesStreamResponse{
+		deltaEvent := &schemas.RakshaResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDelta,
 			SequenceNumber: baseSequenceNumber + len(events),
 			OutputIndex:    outputIndex,

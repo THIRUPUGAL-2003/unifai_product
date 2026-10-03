@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // unsupportedSystemPromptModels is a set of models that don't support the system_prompt field.
@@ -18,28 +18,28 @@ var unsupportedSystemPromptModels = []string{
 	"xai/grok-4",
 }
 
-func ToReplicateChatRequest(unifaiReq *schemas.UnifAIChatRequest) (*ReplicatePredictionRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request is nil or input is nil")
+func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePredictionRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request is nil or input is nil")
 	}
 
 	// Build the input from messages
 	input := &ReplicatePredictionRequestInput{}
 
-	isGPT5Structured := strings.HasPrefix(unifaiReq.Model, string(schemas.OpenAI)) && strings.Contains(unifaiReq.Model, "gpt-5-structured")
+	isGPT5Structured := strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) && strings.Contains(rakshaReq.Model, "gpt-5-structured")
 
 	// openai models support messages
-	if len(unifaiReq.Input) > 0 && strings.HasPrefix(unifaiReq.Model, string(schemas.OpenAI)) {
+	if len(rakshaReq.Input) > 0 && strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
 		if isGPT5Structured {
 			responsesMessages := []schemas.ResponsesMessage{}
-			for _, msg := range unifaiReq.Input {
+			for _, msg := range rakshaReq.Input {
 				responsesMessages = append(responsesMessages, msg.ToResponsesMessages()...)
 			}
 			if len(responsesMessages) > 0 {
 				input.InputItemList = responsesMessages
 			}
 		} else {
-			input.Messages = unifaiReq.Input
+			input.Messages = rakshaReq.Input
 		}
 	} else {
 		// Extract system prompt and build conversation prompt
@@ -47,7 +47,7 @@ func ToReplicateChatRequest(unifaiReq *schemas.UnifAIChatRequest) (*ReplicatePre
 		var conversationParts []string
 		var imageInput []string
 
-		for _, msg := range unifaiReq.Input {
+		for _, msg := range rakshaReq.Input {
 			if msg.Content == nil {
 				continue
 			}
@@ -91,7 +91,7 @@ func ToReplicateChatRequest(unifaiReq *schemas.UnifAIChatRequest) (*ReplicatePre
 		}
 
 		// Set system prompt if present and model supports it
-		modelSupportsSystemPrompt := supportsSystemPrompt(unifaiReq.Model)
+		modelSupportsSystemPrompt := supportsSystemPrompt(rakshaReq.Model)
 
 		if systemPrompt != "" {
 			if modelSupportsSystemPrompt {
@@ -126,8 +126,8 @@ func ToReplicateChatRequest(unifaiReq *schemas.UnifAIChatRequest) (*ReplicatePre
 	}
 
 	// Map parameters if present
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		// Temperature
 		if params.Temperature != nil {
@@ -143,7 +143,7 @@ func ToReplicateChatRequest(unifaiReq *schemas.UnifAIChatRequest) (*ReplicatePre
 		if params.MaxCompletionTokens != nil {
 			if isGPT5Structured {
 				input.MaxOutputTokens = params.MaxCompletionTokens
-			} else if strings.HasPrefix(unifaiReq.Model, string(schemas.OpenAI)) {
+			} else if strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
 				input.MaxCompletionTokens = params.MaxCompletionTokens
 			} else {
 				input.MaxTokens = params.MaxCompletionTokens
@@ -193,15 +193,15 @@ func ToReplicateChatRequest(unifaiReq *schemas.UnifAIChatRequest) (*ReplicatePre
 		Input: input,
 	}
 
-	if isVersionID(unifaiReq.Model) {
-		req.Version = &unifaiReq.Model
+	if isVersionID(rakshaReq.Model) {
+		req.Version = &rakshaReq.Model
 	}
 
-	if unifaiReq.Params != nil && unifaiReq.Params.ExtraParams != nil {
-		if webhook, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["webhook"]); ok {
+	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
+		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
 			req.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			req.WebhookEventsFilter = webhookEventsFilter
 		}
 	}
@@ -209,8 +209,8 @@ func ToReplicateChatRequest(unifaiReq *schemas.UnifAIChatRequest) (*ReplicatePre
 	return req, nil
 }
 
-// ToUnifAIChatResponse converts a Replicate prediction response to UnifAI format
-func (response *ReplicatePredictionResponse) ToUnifAIChatResponse() *schemas.UnifAIChatResponse {
+// ToRakshaChatResponse converts a Replicate prediction response to Raksha format
+func (response *ReplicatePredictionResponse) ToRakshaChatResponse() *schemas.RakshaChatResponse {
 	if response == nil {
 		return nil
 	}
@@ -221,8 +221,8 @@ func (response *ReplicatePredictionResponse) ToUnifAIChatResponse() *schemas.Uni
 		createdAt = time.Now().Unix()
 	}
 
-	// Initialize UnifAI response
-	unifaiResponse := &schemas.UnifAIChatResponse{
+	// Initialize Raksha response
+	rakshaResponse := &schemas.RakshaChatResponse{
 		ID:      response.ID,
 		Model:   response.Model,
 		Object:  "chat.completion",
@@ -269,7 +269,7 @@ func (response *ReplicatePredictionResponse) ToUnifAIChatResponse() *schemas.Uni
 	}
 
 	// Create choice
-	choice := schemas.UnifAIResponseChoice{
+	choice := schemas.RakshaResponseChoice{
 		Index: 0,
 		ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
 			Message: &message,
@@ -277,13 +277,13 @@ func (response *ReplicatePredictionResponse) ToUnifAIChatResponse() *schemas.Uni
 		FinishReason: finishReason,
 	}
 
-	unifaiResponse.Choices = []schemas.UnifAIResponseChoice{choice}
+	rakshaResponse.Choices = []schemas.RakshaResponseChoice{choice}
 
 	// Extract usage information from logs
 	if response.Logs != nil {
 		inputTokens, outputTokens, totalTokens, found := parseTokenUsageFromLogs(response.Logs, schemas.ChatCompletionRequest)
 		if found {
-			unifaiResponse.Usage = &schemas.UnifAILLMUsage{
+			rakshaResponse.Usage = &schemas.RakshaLLMUsage{
 				PromptTokens:     inputTokens,
 				CompletionTokens: outputTokens,
 				TotalTokens:      totalTokens,
@@ -291,7 +291,7 @@ func (response *ReplicatePredictionResponse) ToUnifAIChatResponse() *schemas.Uni
 		}
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
 // supportsSystemPrompt checks if a model supports the system_prompt field.

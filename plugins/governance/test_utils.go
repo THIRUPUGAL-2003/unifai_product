@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/modelcatalog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -194,7 +194,7 @@ func buildProviderConfig(provider string, allowedModels []string) configstoreTab
 	return configstoreTables.TableVirtualKeyProviderConfig{
 		Provider:      provider,
 		AllowedModels: allowedModels,
-		Weight:        unifai.Ptr(1.0),
+		Weight:        raksha.Ptr(1.0),
 		RateLimit:     nil,
 		Keys:          []configstoreTables.TableKey{},
 	}

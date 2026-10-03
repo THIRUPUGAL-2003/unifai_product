@@ -15,7 +15,7 @@ export default function NewRelicConnectorView({ onDelete, isDeleting }: NewRelic
 				{ key: "api_key", label: "License / API key", type: "password", placeholder: "env.NEW_RELIC_LICENSE_KEY" },
 				{ key: "account_id", label: "Account ID", placeholder: "1234567" },
 				{ key: "region", label: "Region", placeholder: "US or EU" },
-				{ key: "service", label: "Service name", placeholder: "unifai" },
+				{ key: "service", label: "Service name", placeholder: "raksha" },
 			]}
 			onDelete={onDelete}
 			isDeleting={isDeleting}

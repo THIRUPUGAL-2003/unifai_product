@@ -6,7 +6,7 @@ import (
 	"plugin"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // SharedObjectPluginLoader is the loader for shared object plugins
@@ -61,7 +61,7 @@ func (l *SharedObjectPluginLoader) LoadPlugin(path string, config any) (schemas.
 	}
 	var ok bool
 	if dp.getName, ok = getNameSym.(func() string); !ok {
-		return nil, fmt.Errorf("failed to cast GetName to func() string\nSee docs for more information: https://docs.unifai.ai/plugins/writing-go-plugin")
+		return nil, fmt.Errorf("failed to cast GetName to func() string\nSee docs for more information: https://docs.raksha.ai/plugins/writing-go-plugin")
 	}
 
 	// Required: Cleanup
@@ -70,26 +70,26 @@ func (l *SharedObjectPluginLoader) LoadPlugin(path string, config any) (schemas.
 		return nil, fmt.Errorf("required symbol Cleanup not found: %w", err)
 	}
 	if dp.cleanup, ok = cleanupSym.(func() error); !ok {
-		return nil, fmt.Errorf("failed to cast Cleanup to func() error\nSee docs for more information: https://docs.unifai.ai/plugins/writing-go-plugin")
+		return nil, fmt.Errorf("failed to cast Cleanup to func() error\nSee docs for more information: https://docs.raksha.ai/plugins/writing-go-plugin")
 	}
 
 	// Optional: HTTPTransportPreHook
 	if sym, err := pluginObj.Lookup("HTTPTransportPreHook"); err == nil {
-		if dp.httpTransportPreHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error)); !ok {
+		if dp.httpTransportPreHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error)); !ok {
 			return nil, fmt.Errorf("failed to cast HTTPTransportPreHook to expected signature")
 		}
 	}
 
 	// Optional: HTTPTransportPostHook
 	if sym, err := pluginObj.Lookup("HTTPTransportPostHook"); err == nil {
-		if dp.httpTransportPostHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error); !ok {
+		if dp.httpTransportPostHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error); !ok {
 			return nil, fmt.Errorf("failed to cast HTTPTransportPostHook to expected signature")
 		}
 	}
 
 	// Optional: HTTPTransportStreamChunkHook
 	if sym, err := pluginObj.Lookup("HTTPTransportStreamChunkHook"); err == nil {
-		if dp.httpTransportStreamChunkHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, chunk *schemas.UnifAIStreamChunk) (*schemas.UnifAIStreamChunk, error)); !ok {
+		if dp.httpTransportStreamChunkHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error)); !ok {
 			return nil, fmt.Errorf("failed to cast HTTPTransportStreamChunkHook to expected signature")
 		}
 	}
@@ -98,45 +98,45 @@ func (l *SharedObjectPluginLoader) LoadPlugin(path string, config any) (schemas.
 	// to participate in routing. Legacy plugins predating PreRequestHook keep working;
 	// DynamicPlugin's default PreRequestHook is a no-op passthrough.
 	if sym, err := pluginObj.Lookup("PreRequestHook"); err == nil {
-		if dp.preRequestHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) error); !ok {
+		if dp.preRequestHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error); !ok {
 			return nil, fmt.Errorf("failed to cast PreRequestHook to expected signature")
 		}
 	}
 
 	// Optional: PreLLMHook (with backward compatibility for legacy PreHook)
 	if sym, err := pluginObj.Lookup("PreLLMHook"); err == nil {
-		if dp.preLLMHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error)); !ok {
+		if dp.preLLMHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PreLLMHook to expected signature")
 		}
 	} else if sym, err := pluginObj.Lookup("PreHook"); err == nil {
 		// Legacy backward compatibility (v1.3.x): treat PreHook as PreLLMHook
-		if dp.preLLMHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error)); !ok {
+		if dp.preLLMHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PreHook to expected signature (legacy backward compatibility)")
 		}
 	}
 
 	// Optional: PostLLMHook (with backward compatibility for legacy PostHook)
 	if sym, err := pluginObj.Lookup("PostLLMHook"); err == nil {
-		if dp.postLLMHook, ok = sym.(func(ctx *schemas.UnifAIContext, resp *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error)); !ok {
+		if dp.postLLMHook, ok = sym.(func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PostLLMHook to expected signature")
 		}
 	} else if sym, err := pluginObj.Lookup("PostHook"); err == nil {
 		// Legacy backward compatibility (v1.3.x): treat PostHook as PostLLMHook
-		if dp.postLLMHook, ok = sym.(func(ctx *schemas.UnifAIContext, resp *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error)); !ok {
+		if dp.postLLMHook, ok = sym.(func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PostHook to expected signature (legacy backward compatibility)")
 		}
 	}
 
 	// Optional: PreMCPHook
 	if sym, err := pluginObj.Lookup("PreMCPHook"); err == nil {
-		if dp.preMCPHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, error)); !ok {
+		if dp.preMCPHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PreMCPHook to expected signature")
 		}
 	}
 
 	// Optional: PostMCPHook
 	if sym, err := pluginObj.Lookup("PostMCPHook"); err == nil {
-		if dp.postMCPHook, ok = sym.(func(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError, error)); !ok {
+		if dp.postMCPHook, ok = sym.(func(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PostMCPHook to expected signature")
 		}
 	}
@@ -146,14 +146,14 @@ func (l *SharedObjectPluginLoader) LoadPlugin(path string, config any) (schemas.
 	// observe Connect events. Legacy plugins that don't export it keep working;
 	// DynamicPlugin's default PreMCPConnectionHook is a no-op passthrough.
 	if sym, err := pluginObj.Lookup("PreMCPConnectionHook"); err == nil {
-		if dp.preMCPConnectionHook, ok = sym.(func(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPConnectRequest) (*schemas.UnifAIMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error)); !ok {
+		if dp.preMCPConnectionHook, ok = sym.(func(ctx *schemas.RakshaContext, req *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PreMCPConnectionHook to expected signature")
 		}
 	}
 
 	// Optional: PostMCPConnectionHook (MCPConnectionPlugin — typed Connect hook).
 	if sym, err := pluginObj.Lookup("PostMCPConnectionHook"); err == nil {
-		if dp.postMCPConnectionHook, ok = sym.(func(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPConnectResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIMCPConnectResponse, *schemas.UnifAIError, error)); !ok {
+		if dp.postMCPConnectionHook, ok = sym.(func(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPConnectResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError, error)); !ok {
 			return nil, fmt.Errorf("failed to cast PostMCPConnectionHook to expected signature")
 		}
 	}

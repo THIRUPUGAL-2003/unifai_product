@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // =============================================================================
@@ -69,7 +69,7 @@ type ValidationResult struct {
 // =============================================================================
 
 // ValidateChatResponse performs comprehensive validation for chat completion responses
-func ValidateChatResponse(t *testing.T, response *schemas.UnifAIChatResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateChatResponse(t *testing.T, response *schemas.RakshaChatResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -80,7 +80,7 @@ func ValidateChatResponse(t *testing.T, response *schemas.UnifAIChatResponse, er
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -115,7 +115,7 @@ func ValidateChatResponse(t *testing.T, response *schemas.UnifAIChatResponse, er
 }
 
 // ValidateTextCompletionResponse performs comprehensive validation for text completion responses
-func ValidateTextCompletionResponse(t *testing.T, response *schemas.UnifAITextCompletionResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateTextCompletionResponse(t *testing.T, response *schemas.RakshaTextCompletionResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -126,7 +126,7 @@ func ValidateTextCompletionResponse(t *testing.T, response *schemas.UnifAITextCo
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -158,7 +158,7 @@ func ValidateTextCompletionResponse(t *testing.T, response *schemas.UnifAITextCo
 }
 
 // ValidateResponsesResponse performs comprehensive validation for Responses API responses
-func ValidateResponsesResponse(t *testing.T, response *schemas.UnifAIResponsesResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateResponsesResponse(t *testing.T, response *schemas.RakshaResponsesResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -169,7 +169,7 @@ func ValidateResponsesResponse(t *testing.T, response *schemas.UnifAIResponsesRe
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -204,7 +204,7 @@ func ValidateResponsesResponse(t *testing.T, response *schemas.UnifAIResponsesRe
 }
 
 // ValidateSpeechResponse performs comprehensive validation for speech synthesis responses
-func ValidateSpeechResponse(t *testing.T, response *schemas.UnifAISpeechResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateSpeechResponse(t *testing.T, response *schemas.RakshaSpeechResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -215,7 +215,7 @@ func ValidateSpeechResponse(t *testing.T, response *schemas.UnifAISpeechResponse
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -245,7 +245,7 @@ func ValidateSpeechResponse(t *testing.T, response *schemas.UnifAISpeechResponse
 }
 
 // ValidateImageGenerationResponse performs comprehensive validation for image generation responses
-func ValidateImageGenerationResponse(t *testing.T, response *schemas.UnifAIImageGenerationResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateImageGenerationResponse(t *testing.T, response *schemas.RakshaImageGenerationResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -256,7 +256,7 @@ func ValidateImageGenerationResponse(t *testing.T, response *schemas.UnifAIImage
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -285,7 +285,7 @@ func ValidateImageGenerationResponse(t *testing.T, response *schemas.UnifAIImage
 }
 
 // ValidateTranscriptionResponse performs comprehensive validation for transcription responses
-func ValidateTranscriptionResponse(t *testing.T, response *schemas.UnifAITranscriptionResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateTranscriptionResponse(t *testing.T, response *schemas.RakshaTranscriptionResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -296,7 +296,7 @@ func ValidateTranscriptionResponse(t *testing.T, response *schemas.UnifAITranscr
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -325,7 +325,7 @@ func ValidateTranscriptionResponse(t *testing.T, response *schemas.UnifAITranscr
 }
 
 // ValidateListModelsResponse performs comprehensive validation for list models responses
-func ValidateListModelsResponse(t *testing.T, response *schemas.UnifAIListModelsResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateListModelsResponse(t *testing.T, response *schemas.RakshaListModelsResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -336,7 +336,7 @@ func ValidateListModelsResponse(t *testing.T, response *schemas.UnifAIListModels
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -365,7 +365,7 @@ func ValidateListModelsResponse(t *testing.T, response *schemas.UnifAIListModels
 }
 
 // ValidateEmbeddingResponse performs comprehensive validation for embedding responses
-func ValidateEmbeddingResponse(t *testing.T, response *schemas.UnifAIEmbeddingResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateEmbeddingResponse(t *testing.T, response *schemas.RakshaEmbeddingResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -376,7 +376,7 @@ func ValidateEmbeddingResponse(t *testing.T, response *schemas.UnifAIEmbeddingRe
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -405,7 +405,7 @@ func ValidateEmbeddingResponse(t *testing.T, response *schemas.UnifAIEmbeddingRe
 }
 
 // ValidateCountTokensResponse performs comprehensive validation for count tokens responses
-func ValidateCountTokensResponse(t *testing.T, response *schemas.UnifAICountTokensResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateCountTokensResponse(t *testing.T, response *schemas.RakshaCountTokensResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -416,7 +416,7 @@ func ValidateCountTokensResponse(t *testing.T, response *schemas.UnifAICountToke
 	// If there's an error when we expected success, that's a failure
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -445,8 +445,8 @@ func ValidateCountTokensResponse(t *testing.T, response *schemas.UnifAICountToke
 // =============================================================================
 
 // validateChatBasicStructure checks the basic structure of the chat response
-func validateChatBasicStructure(t *testing.T, response *schemas.UnifAIChatResponse, expectations ResponseExpectations, result *ValidationResult, scenarioName string) {
-	// Object is a constant unifai schema marker ("chat.completion" / "chat.completion.chunk").
+func validateChatBasicStructure(t *testing.T, response *schemas.RakshaChatResponse, expectations ResponseExpectations, result *ValidationResult, scenarioName string) {
+	// Object is a constant raksha schema marker ("chat.completion" / "chat.completion.chunk").
 	// For streaming scenarios, per-chunk validation in chat_completion_stream.go covers this —
 	// the aggregated/consolidated response built by the harness is a synthetic construct and
 	// does not carry provider-originating semantics. Skip the check there to avoid asserting
@@ -487,7 +487,7 @@ func validateChatBasicStructure(t *testing.T, response *schemas.UnifAIChatRespon
 }
 
 // validateChatContent checks the content of the chat response
-func validateChatContent(t *testing.T, response *schemas.UnifAIChatResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateChatContent(t *testing.T, response *schemas.RakshaChatResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Skip content validation for responses that don't have text content
 	if !expectations.ShouldHaveContent {
 		return
@@ -554,7 +554,7 @@ func validateChatContent(t *testing.T, response *schemas.UnifAIChatResponse, exp
 }
 
 // validateChatToolCalls checks tool calling aspects of chat response
-func validateChatToolCalls(t *testing.T, response *schemas.UnifAIChatResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateChatToolCalls(t *testing.T, response *schemas.RakshaChatResponse, expectations ResponseExpectations, result *ValidationResult) {
 	totalToolCalls := 0
 
 	// Count tool calls from Chat Completions API
@@ -583,7 +583,7 @@ func validateChatToolCalls(t *testing.T, response *schemas.UnifAIChatResponse, e
 }
 
 // validateChatTechnicalFields checks technical aspects of the chat response
-func validateChatTechnicalFields(t *testing.T, response *schemas.UnifAIChatResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateChatTechnicalFields(t *testing.T, response *schemas.RakshaChatResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Strict checks: these fields must always be populated
 	if response.ExtraFields.RequestType == "" {
 		result.Passed = false
@@ -681,7 +681,7 @@ func validateChatTechnicalFields(t *testing.T, response *schemas.UnifAIChatRespo
 }
 
 // collectChatResponseMetrics collects metrics from the chat response for analysis
-func collectChatResponseMetrics(response *schemas.UnifAIChatResponse, result *ValidationResult) {
+func collectChatResponseMetrics(response *schemas.RakshaChatResponse, result *ValidationResult) {
 	result.MetricsCollected["choice_count"] = len(response.Choices)
 	result.MetricsCollected["has_usage"] = response.Usage != nil
 	result.MetricsCollected["has_model"] = response.Model != ""
@@ -699,7 +699,7 @@ func collectChatResponseMetrics(response *schemas.UnifAIChatResponse, result *Va
 // =============================================================================
 
 // validateTextCompletionBasicStructure checks the basic structure of the text completion response
-func validateTextCompletionBasicStructure(t *testing.T, response *schemas.UnifAITextCompletionResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateTextCompletionBasicStructure(t *testing.T, response *schemas.RakshaTextCompletionResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check choice count
 	if expectations.ExpectedChoiceCount > 0 {
 		actualCount := 0
@@ -729,7 +729,7 @@ func validateTextCompletionBasicStructure(t *testing.T, response *schemas.UnifAI
 }
 
 // validateTextCompletionContent checks the content of the text completion response
-func validateTextCompletionContent(t *testing.T, response *schemas.UnifAITextCompletionResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateTextCompletionContent(t *testing.T, response *schemas.RakshaTextCompletionResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Skip content validation for responses that don't have text content
 	if !expectations.ShouldHaveContent {
 		return
@@ -797,7 +797,7 @@ func validateTextCompletionContent(t *testing.T, response *schemas.UnifAITextCom
 }
 
 // validateTextCompletionTechnicalFields checks technical aspects of the text completion response
-func validateTextCompletionTechnicalFields(t *testing.T, response *schemas.UnifAITextCompletionResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateTextCompletionTechnicalFields(t *testing.T, response *schemas.RakshaTextCompletionResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check usage stats
 	if expectations.ShouldHaveUsageStats {
 		if response.Usage == nil {
@@ -842,7 +842,7 @@ func validateTextCompletionTechnicalFields(t *testing.T, response *schemas.UnifA
 }
 
 // collectTextCompletionResponseMetrics collects metrics from the text completion response for analysis
-func collectTextCompletionResponseMetrics(response *schemas.UnifAITextCompletionResponse, result *ValidationResult) {
+func collectTextCompletionResponseMetrics(response *schemas.RakshaTextCompletionResponse, result *ValidationResult) {
 	result.MetricsCollected["choice_count"] = len(response.Choices)
 	result.MetricsCollected["has_usage"] = response.Usage != nil
 	result.MetricsCollected["has_model"] = response.Model != ""
@@ -860,7 +860,7 @@ func collectTextCompletionResponseMetrics(response *schemas.UnifAITextCompletion
 // =============================================================================
 
 // validateResponsesBasicStructure checks the basic structure of the Responses API response
-func validateResponsesBasicStructure(response *schemas.UnifAIResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateResponsesBasicStructure(response *schemas.RakshaResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check that Object field is not empty (should be "response")
 	if response.Object == "" {
 		result.Passed = false
@@ -895,7 +895,7 @@ func validateResponsesBasicStructure(response *schemas.UnifAIResponsesResponse, 
 }
 
 // validateResponsesContent checks the content of the Responses API response
-func validateResponsesContent(t *testing.T, response *schemas.UnifAIResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateResponsesContent(t *testing.T, response *schemas.RakshaResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Skip content validation for responses that don't have text content
 	if !expectations.ShouldHaveContent {
 		return
@@ -963,7 +963,7 @@ func validateResponsesContent(t *testing.T, response *schemas.UnifAIResponsesRes
 }
 
 // validateResponsesToolCalls checks tool calling aspects of Responses API response
-func validateResponsesToolCalls(t *testing.T, response *schemas.UnifAIResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateResponsesToolCalls(t *testing.T, response *schemas.RakshaResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
 	totalToolCalls := 0
 
 	// Count tool calls from Responses API
@@ -993,7 +993,7 @@ func validateResponsesToolCalls(t *testing.T, response *schemas.UnifAIResponsesR
 }
 
 // validateResponsesTechnicalFields checks technical aspects of the Responses API response
-func validateResponsesTechnicalFields(t *testing.T, response *schemas.UnifAIResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateResponsesTechnicalFields(t *testing.T, response *schemas.RakshaResponsesResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Strict checks: these fields must always be populated
 	if response.ExtraFields.RequestType == "" {
 		result.Passed = false
@@ -1051,7 +1051,7 @@ func validateResponsesTechnicalFields(t *testing.T, response *schemas.UnifAIResp
 }
 
 // collectResponsesResponseMetrics collects metrics from the Responses API response for analysis
-func collectResponsesResponseMetrics(response *schemas.UnifAIResponsesResponse, result *ValidationResult) {
+func collectResponsesResponseMetrics(response *schemas.RakshaResponsesResponse, result *ValidationResult) {
 	if response.Output != nil {
 		result.MetricsCollected["choice_count"] = len(response.Output)
 	}
@@ -1069,7 +1069,7 @@ func collectResponsesResponseMetrics(response *schemas.UnifAIResponsesResponse, 
 // =============================================================================
 
 // validateSpeechSynthesisResponse validates speech synthesis responses
-func validateSpeechSynthesisResponse(t *testing.T, response *schemas.UnifAISpeechResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateSpeechSynthesisResponse(t *testing.T, response *schemas.RakshaSpeechResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check if response has speech data
 	if response.Audio == nil {
 		result.Passed = false
@@ -1119,7 +1119,7 @@ func validateSpeechSynthesisResponse(t *testing.T, response *schemas.UnifAISpeec
 }
 
 // collectSpeechResponseMetrics collects metrics from the speech response for analysis
-func collectSpeechResponseMetrics(response *schemas.UnifAISpeechResponse, result *ValidationResult) {
+func collectSpeechResponseMetrics(response *schemas.RakshaSpeechResponse, result *ValidationResult) {
 	result.MetricsCollected["has_audio"] = response.Audio != nil
 	if response.Audio != nil {
 		result.MetricsCollected["audio_size"] = len(response.Audio)
@@ -1131,7 +1131,7 @@ func collectSpeechResponseMetrics(response *schemas.UnifAISpeechResponse, result
 // =============================================================================
 
 // validateTranscriptionFields validates transcription responses
-func validateTranscriptionFields(t *testing.T, response *schemas.UnifAITranscriptionResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateTranscriptionFields(t *testing.T, response *schemas.RakshaTranscriptionResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check if transcribed text exists
 	shouldHaveTranscription, _ := expectations.ProviderSpecific["should_have_transcription"].(bool)
 	if shouldHaveTranscription && response.Text == "" {
@@ -1184,7 +1184,7 @@ func validateTranscriptionFields(t *testing.T, response *schemas.UnifAITranscrip
 }
 
 // collectTranscriptionResponseMetrics collects metrics from the transcription response for analysis
-func collectTranscriptionResponseMetrics(response *schemas.UnifAITranscriptionResponse, result *ValidationResult) {
+func collectTranscriptionResponseMetrics(response *schemas.RakshaTranscriptionResponse, result *ValidationResult) {
 	result.MetricsCollected["has_text"] = response.Text != ""
 	result.MetricsCollected["text_length"] = len(response.Text)
 	result.MetricsCollected["has_language"] = response.Language != nil
@@ -1195,7 +1195,7 @@ func collectTranscriptionResponseMetrics(response *schemas.UnifAITranscriptionRe
 // VALIDATION HELPER FUNCTIONS - IMAGE GENERATION RESPONSE
 // =============================================================================
 
-func validateImageGenerationFields(t *testing.T, response *schemas.UnifAIImageGenerationResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateImageGenerationFields(t *testing.T, response *schemas.RakshaImageGenerationResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check if response has image data
 	if len(response.Data) == 0 {
 		result.Passed = false
@@ -1278,7 +1278,7 @@ func validateImageGenerationFields(t *testing.T, response *schemas.UnifAIImageGe
 	result.MetricsCollected["image_generation_validation"] = "completed"
 }
 
-func collectImageGenerationResponseMetrics(response *schemas.UnifAIImageGenerationResponse, result *ValidationResult) {
+func collectImageGenerationResponseMetrics(response *schemas.RakshaImageGenerationResponse, result *ValidationResult) {
 	result.MetricsCollected["image_count"] = len(response.Data)
 	result.MetricsCollected["has_images"] = len(response.Data) > 0
 
@@ -1351,7 +1351,7 @@ func intFromProviderSpecific(v any) (int, bool) {
 }
 
 // validateEmbeddingFields validates embedding responses
-func validateEmbeddingFields(t *testing.T, response *schemas.UnifAIEmbeddingResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateEmbeddingFields(t *testing.T, response *schemas.RakshaEmbeddingResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check if response has embedding data
 	if len(response.Data) == 0 {
 		result.Passed = false
@@ -1428,7 +1428,7 @@ func validateEmbeddingFields(t *testing.T, response *schemas.UnifAIEmbeddingResp
 // VALIDATION HELPER FUNCTIONS - COUNT TOKENS RESPONSE
 // =============================================================================
 
-func validateCountTokensFields(t *testing.T, response *schemas.UnifAICountTokensResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateCountTokensFields(t *testing.T, response *schemas.RakshaCountTokensResponse, expectations ResponseExpectations, result *ValidationResult) {
 	_ = t
 
 	if strings.TrimSpace(response.Model) == "" && expectations.ShouldHaveModel {
@@ -1486,7 +1486,7 @@ func validateCountTokensFields(t *testing.T, response *schemas.UnifAICountTokens
 // =============================================================================
 
 // validateListModelsFields validates list models responses
-func validateListModelsFields(t *testing.T, response *schemas.UnifAIListModelsResponse, expectations ResponseExpectations, result *ValidationResult) {
+func validateListModelsFields(t *testing.T, response *schemas.RakshaListModelsResponse, expectations ResponseExpectations, result *ValidationResult) {
 	// Check that we have models in the response
 	if len(response.Data) == 0 {
 		result.Passed = false
@@ -1551,7 +1551,7 @@ func validateListModelsFields(t *testing.T, response *schemas.UnifAIListModelsRe
 }
 
 // collectListModelsResponseMetrics collects metrics from the list models response for analysis
-func collectListModelsResponseMetrics(response *schemas.UnifAIListModelsResponse, result *ValidationResult) {
+func collectListModelsResponseMetrics(response *schemas.RakshaListModelsResponse, result *ValidationResult) {
 	result.MetricsCollected["model_count"] = len(response.Data)
 	result.MetricsCollected["has_next_page_token"] = response.NextPageToken != ""
 	result.MetricsCollected["has_provider"] = response.ExtraFields.Provider != ""
@@ -1560,7 +1560,7 @@ func collectListModelsResponseMetrics(response *schemas.UnifAIListModelsResponse
 }
 
 // collectEmbeddingResponseMetrics collects metrics from the embedding response for analysis
-func collectEmbeddingResponseMetrics(response *schemas.UnifAIEmbeddingResponse, result *ValidationResult) {
+func collectEmbeddingResponseMetrics(response *schemas.RakshaEmbeddingResponse, result *ValidationResult) {
 	result.MetricsCollected["has_data"] = response.Data != nil
 	result.MetricsCollected["embedding_count"] = len(response.Data)
 	result.MetricsCollected["has_usage"] = response.Usage != nil
@@ -1575,7 +1575,7 @@ func collectEmbeddingResponseMetrics(response *schemas.UnifAIEmbeddingResponse, 
 	}
 }
 
-func collectCountTokensResponseMetrics(response *schemas.UnifAICountTokensResponse, result *ValidationResult) {
+func collectCountTokensResponseMetrics(response *schemas.RakshaCountTokensResponse, result *ValidationResult) {
 	result.MetricsCollected["input_tokens"] = response.InputTokens
 	result.MetricsCollected["has_total_tokens"] = response.TotalTokens != nil
 	if response.TotalTokens != nil {
@@ -1590,7 +1590,7 @@ func collectCountTokensResponseMetrics(response *schemas.UnifAICountTokensRespon
 // =============================================================================
 
 // ValidateBatchCreateResponse performs comprehensive validation for batch create responses
-func ValidateBatchCreateResponse(t *testing.T, response *schemas.UnifAIBatchCreateResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateBatchCreateResponse(t *testing.T, response *schemas.RakshaBatchCreateResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1600,7 +1600,7 @@ func ValidateBatchCreateResponse(t *testing.T, response *schemas.UnifAIBatchCrea
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1641,7 +1641,7 @@ func ValidateBatchCreateResponse(t *testing.T, response *schemas.UnifAIBatchCrea
 }
 
 // ValidateBatchListResponse performs comprehensive validation for batch list responses
-func ValidateBatchListResponse(t *testing.T, response *schemas.UnifAIBatchListResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateBatchListResponse(t *testing.T, response *schemas.RakshaBatchListResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1651,7 +1651,7 @@ func ValidateBatchListResponse(t *testing.T, response *schemas.UnifAIBatchListRe
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1685,7 +1685,7 @@ func ValidateBatchListResponse(t *testing.T, response *schemas.UnifAIBatchListRe
 }
 
 // ValidateBatchRetrieveResponse performs comprehensive validation for batch retrieve responses
-func ValidateBatchRetrieveResponse(t *testing.T, response *schemas.UnifAIBatchRetrieveResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateBatchRetrieveResponse(t *testing.T, response *schemas.RakshaBatchRetrieveResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1695,7 +1695,7 @@ func ValidateBatchRetrieveResponse(t *testing.T, response *schemas.UnifAIBatchRe
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1736,7 +1736,7 @@ func ValidateBatchRetrieveResponse(t *testing.T, response *schemas.UnifAIBatchRe
 }
 
 // ValidateBatchCancelResponse performs comprehensive validation for batch cancel responses
-func ValidateBatchCancelResponse(t *testing.T, response *schemas.UnifAIBatchCancelResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateBatchCancelResponse(t *testing.T, response *schemas.RakshaBatchCancelResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1746,7 +1746,7 @@ func ValidateBatchCancelResponse(t *testing.T, response *schemas.UnifAIBatchCanc
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1786,7 +1786,7 @@ func ValidateBatchCancelResponse(t *testing.T, response *schemas.UnifAIBatchCanc
 }
 
 // ValidateBatchResultsResponse performs comprehensive validation for batch results responses
-func ValidateBatchResultsResponse(t *testing.T, response *schemas.UnifAIBatchResultsResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateBatchResultsResponse(t *testing.T, response *schemas.RakshaBatchResultsResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1796,7 +1796,7 @@ func ValidateBatchResultsResponse(t *testing.T, response *schemas.UnifAIBatchRes
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1841,7 +1841,7 @@ func ValidateBatchResultsResponse(t *testing.T, response *schemas.UnifAIBatchRes
 // =============================================================================
 
 // ValidateFileUploadResponse performs comprehensive validation for file upload responses
-func ValidateFileUploadResponse(t *testing.T, response *schemas.UnifAIFileUploadResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateFileUploadResponse(t *testing.T, response *schemas.RakshaFileUploadResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1851,7 +1851,7 @@ func ValidateFileUploadResponse(t *testing.T, response *schemas.UnifAIFileUpload
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1893,7 +1893,7 @@ func ValidateFileUploadResponse(t *testing.T, response *schemas.UnifAIFileUpload
 }
 
 // ValidateFileListResponse performs comprehensive validation for file list responses
-func ValidateFileListResponse(t *testing.T, response *schemas.UnifAIFileListResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateFileListResponse(t *testing.T, response *schemas.RakshaFileListResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1903,7 +1903,7 @@ func ValidateFileListResponse(t *testing.T, response *schemas.UnifAIFileListResp
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1937,7 +1937,7 @@ func ValidateFileListResponse(t *testing.T, response *schemas.UnifAIFileListResp
 }
 
 // ValidateFileRetrieveResponse performs comprehensive validation for file retrieve responses
-func ValidateFileRetrieveResponse(t *testing.T, response *schemas.UnifAIFileRetrieveResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateFileRetrieveResponse(t *testing.T, response *schemas.RakshaFileRetrieveResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1947,7 +1947,7 @@ func ValidateFileRetrieveResponse(t *testing.T, response *schemas.UnifAIFileRetr
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -1989,7 +1989,7 @@ func ValidateFileRetrieveResponse(t *testing.T, response *schemas.UnifAIFileRetr
 }
 
 // ValidateFileDeleteResponse performs comprehensive validation for file delete responses
-func ValidateFileDeleteResponse(t *testing.T, response *schemas.UnifAIFileDeleteResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateFileDeleteResponse(t *testing.T, response *schemas.RakshaFileDeleteResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -1999,7 +1999,7 @@ func ValidateFileDeleteResponse(t *testing.T, response *schemas.UnifAIFileDelete
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -2045,7 +2045,7 @@ func ValidateFileDeleteResponse(t *testing.T, response *schemas.UnifAIFileDelete
 }
 
 // ValidateFileContentResponse performs comprehensive validation for file content responses
-func ValidateFileContentResponse(t *testing.T, response *schemas.UnifAIFileContentResponse, err *schemas.UnifAIError, expectations ResponseExpectations, scenarioName string) ValidationResult {
+func ValidateFileContentResponse(t *testing.T, response *schemas.RakshaFileContentResponse, err *schemas.RakshaError, expectations ResponseExpectations, scenarioName string) ValidationResult {
 	result := ValidationResult{
 		Passed:           true,
 		Errors:           make([]string, 0),
@@ -2055,7 +2055,7 @@ func ValidateFileContentResponse(t *testing.T, response *schemas.UnifAIFileConte
 
 	if err != nil {
 		result.Passed = false
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		result.Errors = append(result.Errors, fmt.Sprintf("Got error when expecting success: %s", FormatErrorConcise(parsed)))
 		LogError(t, err, scenarioName)
 		return result
@@ -2102,7 +2102,7 @@ func ValidateFileContentResponse(t *testing.T, response *schemas.UnifAIFileConte
 }
 
 // extractChatToolCallNames extracts tool call function names from chat response for error messages
-func extractChatToolCallNames(response *schemas.UnifAIChatResponse) []string {
+func extractChatToolCallNames(response *schemas.RakshaChatResponse) []string {
 	var toolNames []string
 
 	if response.Choices != nil {
@@ -2120,7 +2120,7 @@ func extractChatToolCallNames(response *schemas.UnifAIChatResponse) []string {
 }
 
 // extractResponsesToolCallNames extracts tool call function names from Responses API response for error messages
-func extractResponsesToolCallNames(response *schemas.UnifAIResponsesResponse) []string {
+func extractResponsesToolCallNames(response *schemas.RakshaResponsesResponse) []string {
 	var toolNames []string
 
 	if response.Output != nil {
@@ -2134,7 +2134,7 @@ func extractResponsesToolCallNames(response *schemas.UnifAIResponsesResponse) []
 }
 
 // validateChatSpecificToolCalls validates individual tool call expectations for chat response
-func validateChatSpecificToolCalls(response *schemas.UnifAIChatResponse, expectedCalls []ToolCallExpectation, result *ValidationResult) {
+func validateChatSpecificToolCalls(response *schemas.RakshaChatResponse, expectedCalls []ToolCallExpectation, result *ValidationResult) {
 	for _, expected := range expectedCalls {
 		found := false
 
@@ -2169,7 +2169,7 @@ func validateChatSpecificToolCalls(response *schemas.UnifAIChatResponse, expecte
 }
 
 // validateResponsesSpecificToolCalls validates individual tool call expectations for Responses API response
-func validateResponsesSpecificToolCalls(response *schemas.UnifAIResponsesResponse, expectedCalls []ToolCallExpectation, result *ValidationResult) {
+func validateResponsesSpecificToolCalls(response *schemas.RakshaResponsesResponse, expectedCalls []ToolCallExpectation, result *ValidationResult) {
 	for _, expected := range expectedCalls {
 		found := false
 

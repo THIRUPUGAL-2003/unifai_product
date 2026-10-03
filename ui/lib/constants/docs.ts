@@ -1,4 +1,4 @@
-const DOCS_BASE = "https://docs.unifai.ai";
+const DOCS_BASE = "https://docs.raksha.ai";
 
 /** Canonical documentation URLs used across the workspace UI. */
 export const DOCS = {

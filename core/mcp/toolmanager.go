@@ -13,8 +13,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/unifai/unifai/core/mcp/credstore"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/mcp/credstore"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // ClientManager interface for accessing MCP clients and tools
@@ -31,33 +31,33 @@ type ClientManager interface {
 	// types a fresh ephemeral connection is opened (with the caller-resolved
 	// credentials) and closed on release. The credential-resolution error path
 	// (e.g. *MCPUserOAuthRequiredError) surfaces here.
-	AcquireClientConn(ctx *schemas.UnifAIContext, state *schemas.MCPClientState) (*client.Client, func(), error)
+	AcquireClientConn(ctx *schemas.RakshaContext, state *schemas.MCPClientState) (*client.Client, func(), error)
 	// RunWithPluginPipeline wraps an MCP wire operation in the canonical plugin
 	// gate (PreMCPHooks → op → PostMCPHooks). It owns the tracing span,
 	// MCPRequestType/ClientName/ToolName stamping, plugin log draining, and
 	// short-circuit semantics. Use this from any call site that needs to invoke
 	// an MCP tool/list/ping outside the gateway path — e.g. nested tool calls
 	// from the Starlark codemode sandbox — to stay in sync with the gateway.
-	RunWithPluginPipeline(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest, op MCPOpFunc) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError)
+	RunWithPluginPipeline(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest, op MCPOpFunc) (*schemas.RakshaMCPResponse, *schemas.RakshaError)
 }
 
 // MCPToolExecutor is the per-call executor signature used by the agent loop.
 // Callers (e.g. MCPManager.executeToolForAgent) handle client lifecycle
 // internally — the agent itself is decoupled from connection management.
-type MCPToolExecutor func(ctx *schemas.UnifAIContext, request *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPResponse, error)
+type MCPToolExecutor func(ctx *schemas.RakshaContext, request *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error)
 
 // PluginPipeline represents the plugin execution pipeline interface
-// This allows ToolsManager to run plugin hooks without direct dependency on UnifAI.
+// This allows ToolsManager to run plugin hooks without direct dependency on Raksha.
 // Two parallel pipelines exist: the envelope-based MCP pipeline for Ping/ListTools/
 // ExecuteTool variants, and the typed Connect pipeline for MCPConnectionPlugin.
 type PluginPipeline interface {
 	// Envelope pipeline (Ping / ListTools / ExecuteTool variants)
-	RunMCPPreHooks(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRequest, *schemas.MCPPluginShortCircuit, int)
-	RunMCPPostHooks(ctx *schemas.UnifAIContext, mcpResp *schemas.UnifAIMCPResponse, unifaiErr *schemas.UnifAIError, runFrom int) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError)
+	RunMCPPreHooks(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, int)
+	RunMCPPostHooks(ctx *schemas.RakshaContext, mcpResp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError, runFrom int) (*schemas.RakshaMCPResponse, *schemas.RakshaError)
 
 	// Typed Connect pipeline (MCPConnectionPlugin)
-	RunMCPPreConnectionHooks(ctx *schemas.UnifAIContext, req *schemas.UnifAIMCPConnectRequest) (*schemas.UnifAIMCPConnectRequest, *schemas.MCPConnectionShortCircuit, int)
-	RunMCPPostConnectionHooks(ctx *schemas.UnifAIContext, resp *schemas.UnifAIMCPConnectResponse, unifaiErr *schemas.UnifAIError, runFrom int) (*schemas.UnifAIMCPConnectResponse, *schemas.UnifAIError)
+	RunMCPPreConnectionHooks(ctx *schemas.RakshaContext, req *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectRequest, *schemas.MCPConnectionShortCircuit, int)
+	RunMCPPostConnectionHooks(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPConnectResponse, rakshaErr *schemas.RakshaError, runFrom int) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError)
 }
 
 // ToolsManager manages MCP tool execution and agent mode.
@@ -78,9 +78,9 @@ type ToolsManager struct {
 
 	// Function to fetch a new request ID for each tool call result message in agent mode,
 	// this is used to ensure that the tool call result messages are unique and can be tracked in plugins or by the user.
-	// This id is attached to ctx.Value(schemas.UnifAIContextKeyRequestID) in the agent mode.
+	// This id is attached to ctx.Value(schemas.RakshaContextKeyRequestID) in the agent mode.
 	// If not provided, same request ID is used for all tool call result messages without any overrides.
-	fetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string
+	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string
 }
 
 // NewToolsManager creates and initializes a new tools manager instance.
@@ -97,7 +97,7 @@ type ToolsManager struct {
 func NewToolsManager(
 	config *schemas.MCPToolManagerConfig,
 	clientManager ClientManager,
-	fetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string,
+	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
 	credStore schemas.MCPCredentialStore,
 	logger schemas.Logger,
 ) *ToolsManager {
@@ -125,7 +125,7 @@ func NewToolsManager(
 func NewToolsManagerWithCodeMode(
 	config *schemas.MCPToolManagerConfig,
 	clientManager ClientManager,
-	fetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string,
+	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
 	codeMode CodeMode,
 	credStore schemas.MCPCredentialStore,
 	logger schemas.Logger,
@@ -207,7 +207,7 @@ func (m *ToolsManager) GetCodeModeDependencies() *CodeModeDependencies {
 }
 
 // GetAvailableTools returns the available tools for the given context.
-func (m *ToolsManager) GetAvailableTools(ctx *schemas.UnifAIContext) []schemas.ChatTool {
+func (m *ToolsManager) GetAvailableTools(ctx *schemas.RakshaContext) []schemas.ChatTool {
 	availableToolsPerClient := m.clientManager.GetToolPerClient(ctx)
 	// Flatten tools from all clients into a single slice, avoiding duplicates
 	var availableTools []schemas.ChatTool
@@ -236,7 +236,7 @@ func (m *ToolsManager) GetAvailableTools(ctx *schemas.UnifAIContext) []schemas.C
 		for _, tool := range clientTools {
 			if tool.Function != nil && tool.Function.Name != "" && !seenToolNames[tool.Function.Name] {
 				seenToolNames[tool.Function.Name] = true
-				schemas.AppendToContextList(ctx, schemas.UnifAIContextKeyMCPAddedTools, tool.Function.Name)
+				schemas.AppendToContextList(ctx, schemas.RakshaContextKeyMCPAddedTools, tool.Function.Name)
 				if !client.ExecutionConfig.IsCodeModeClient {
 					availableTools = append(availableTools, tool)
 				}
@@ -287,9 +287,9 @@ func buildIntegrationDuplicateCheckMap(existingTools []schemas.ChatTool, integra
 		// Claude CLI uses pattern: mcp__{foreign_name}__{tool_name}
 		// The middle part is a foreign name we cannot check for, so we extract the last part
 		// Examples:
-		//   mcp__unifai__executeToolCode -> executeToolCode
-		//   mcp__unifai__listToolFiles -> listToolFiles
-		//   mcp__unifai__readToolFile -> readToolFile
+		//   mcp__raksha__executeToolCode -> executeToolCode
+		//   mcp__raksha__listToolFiles -> listToolFiles
+		//   mcp__raksha__readToolFile -> readToolFile
 		//   mcp__calculator__calculator_add -> calculator_add
 		for _, tool := range existingTools {
 			if tool.Function != nil && tool.Function.Name != "" {
@@ -314,11 +314,11 @@ func buildIntegrationDuplicateCheckMap(existingTools []schemas.ChatTool, integra
 	case schemas.GeminiCLI.Matches(integrationUserAgent):
 		// Gemini CLI uses pattern: mcp_{server_name}_{tool_name}
 		// where {server_name} is the user-configured MCP server name (no underscores)
-		// and {tool_name} is UnifAI's full tool name (may contain hyphens and underscores).
+		// and {tool_name} is Raksha's full tool name (may contain hyphens and underscores).
 		// Extract by stripping "mcp_" then skipping to the first "_" (server name boundary).
-		// mcp_unifai_testing_exa-web_fetch_exa -> testing_exa-web_fetch_exa
-		// mcp_unifai_ctx7-resolve-library-id   -> ctx7-resolve-library-id
-		// mcp_unifai_testing_websets-cancel_enrichment -> testing_websets-cancel_enrichment
+		// mcp_raksha_testing_exa-web_fetch_exa -> testing_exa-web_fetch_exa
+		// mcp_raksha_ctx7-resolve-library-id   -> ctx7-resolve-library-id
+		// mcp_raksha_testing_websets-cancel_enrichment -> testing_websets-cancel_enrichment
 		for _, tool := range existingTools {
 			if tool.Function != nil && tool.Function.Name != "" {
 				existingToolName := tool.Function.Name
@@ -339,9 +339,9 @@ func buildIntegrationDuplicateCheckMap(existingTools []schemas.ChatTool, integra
 	case schemas.QwenCodeCLI.Matches(integrationUserAgent):
 		// Qwen CLI uses pattern: mcp__{server_name}__{tool_name}  (double underscores)
 		// Strip "mcp__" then skip past the first "__" (server name boundary) to get tool_name.
-		// Hyphens in the original UnifAI tool name are preserved.
-		// mcp__unifai__testing_exa-web_search_exa -> testing_exa-web_search_exa
-		// mcp__unifai__ctx7-resolve-library-id    -> ctx7-resolve-library-id
+		// Hyphens in the original Raksha tool name are preserved.
+		// mcp__raksha__testing_exa-web_search_exa -> testing_exa-web_search_exa
+		// mcp__raksha__ctx7-resolve-library-id    -> ctx7-resolve-library-id
 		for _, tool := range existingTools {
 			if tool.Function != nil && tool.Function.Name != "" {
 				existingToolName := tool.Function.Name
@@ -360,11 +360,11 @@ func buildIntegrationDuplicateCheckMap(existingTools []schemas.ChatTool, integra
 		}
 	case schemas.CodexCLI.Matches(integrationUserAgent):
 		// Codex CLI uses pattern: mcp__{server_name}__{tool_name} (double underscores)
-		// but ALL hyphens in the original UnifAI tool name are converted to underscores.
+		// but ALL hyphens in the original Raksha tool name are converted to underscores.
 		// Strip "mcp__" then skip past the first "__" to get the all-underscore tool name.
-		// mcp__unifai__testing_exa_web_fetch_exa -> testing_exa_web_fetch_exa
-		// mcp__unifai__ctx7_query_docs           -> ctx7_query_docs
-		// Callers must also normalize UnifAI tool names (replace "-" with "_") before lookup.
+		// mcp__raksha__testing_exa_web_fetch_exa -> testing_exa_web_fetch_exa
+		// mcp__raksha__ctx7_query_docs           -> ctx7_query_docs
+		// Callers must also normalize Raksha tool names (replace "-" with "_") before lookup.
 		for _, tool := range existingTools {
 			if tool.Function != nil && tool.Function.Name != "" {
 				existingToolName := tool.Function.Name
@@ -383,10 +383,10 @@ func buildIntegrationDuplicateCheckMap(existingTools []schemas.ChatTool, integra
 		}
 	case schemas.OpenCode.Matches(integrationUserAgent):
 		// OpenCode uses pattern: {server_name}_{tool_name} (no mcp_ prefix, single underscore, hyphens preserved)
-		// Strip up to and including the first "_" to extract the UnifAI tool name.
-		// unifai_testing_exa-web_fetch_exa    -> testing_exa-web_fetch_exa
-		// unifai_ctx7-query-docs              -> ctx7-query-docs
-		// unifai_filesystem-create_directory  -> filesystem-create_directory
+		// Strip up to and including the first "_" to extract the Raksha tool name.
+		// raksha_testing_exa-web_fetch_exa    -> testing_exa-web_fetch_exa
+		// raksha_ctx7-query-docs              -> ctx7-query-docs
+		// raksha_filesystem-create_directory  -> filesystem-create_directory
 		for _, tool := range existingTools {
 			if tool.Function != nil && tool.Function.Name != "" {
 				existingToolName := tool.Function.Name
@@ -427,16 +427,16 @@ func markToolSeenInDuplicateCheckMap(duplicateCheckMap map[string]bool, toolName
 	}
 }
 
-// ParseAndAddToolsToRequest parses the available tools per client and adds them to the UnifAI request.
+// ParseAndAddToolsToRequest parses the available tools per client and adds them to the Raksha request.
 //
 // Parameters:
 //   - ctx: Execution context
-//   - req: UnifAI request
+//   - req: Raksha request
 //   - availableToolsPerClient: Map of client name to its available tools
 //
 // Returns:
-//   - *schemas.UnifAIRequest: UnifAI request with MCP tools added
-func (m *ToolsManager) ParseAndAddToolsToRequest(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) *schemas.UnifAIRequest {
+//   - *schemas.RakshaRequest: Raksha request with MCP tools added
+func (m *ToolsManager) ParseAndAddToolsToRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) *schemas.RakshaRequest {
 	// MCP is only supported for chat and responses requests
 	if req.ChatRequest == nil && req.ResponsesRequest == nil {
 		return req
@@ -460,7 +460,7 @@ func (m *ToolsManager) ParseAndAddToolsToRequest(ctx *schemas.UnifAIContext, req
 
 	// Get integration user agent for duplicate checking
 	var integrationUserAgentStr string
-	integrationUserAgent := ctx.Value(schemas.UnifAIContextKeyUserAgent)
+	integrationUserAgent := ctx.Value(schemas.RakshaContextKeyUserAgent)
 	if integrationUserAgent != nil {
 		if str, ok := integrationUserAgent.(string); ok {
 			integrationUserAgentStr = str
@@ -561,15 +561,15 @@ func (m *ToolsManager) ParseAndAddToolsToRequest(ctx *schemas.UnifAIContext, req
 //   - toolNameMapping: Mapping of sanitized tool names to original MCP tool names for accurate logging and response metadata
 //
 // Returns:
-//   - *schemas.UnifAIMCPResponse: Tool execution result (Chat or Responses format)
+//   - *schemas.RakshaMCPResponse: Tool execution result (Chat or Responses format)
 //   - error: Any execution error
 func (m *ToolsManager) ExecuteTool(
-	ctx *schemas.UnifAIContext,
-	request *schemas.UnifAIMCPRequest,
+	ctx *schemas.RakshaContext,
+	request *schemas.RakshaMCPRequest,
 	clientConn *client.Client,
 	executionConfig *schemas.MCPClientConfig,
 	toolNameMapping map[string]string,
-) (*schemas.UnifAIMCPResponse, error) {
+) (*schemas.RakshaMCPResponse, error) {
 	// Validate request is not nil
 	if request == nil {
 		return nil, fmt.Errorf("request cannot be nil")
@@ -613,7 +613,7 @@ func (m *ToolsManager) ExecuteTool(
 
 	latency := time.Since(now).Milliseconds()
 
-	extraFields := schemas.UnifAIMCPResponseExtraFields{
+	extraFields := schemas.RakshaMCPResponseExtraFields{
 		ClientName: clientName,
 		ToolName:   originalToolName,
 		Latency:    latency,
@@ -622,7 +622,7 @@ func (m *ToolsManager) ExecuteTool(
 	// Return result in the appropriate format
 	switch request.RequestType {
 	case schemas.MCPRequestTypeChatToolCall:
-		return &schemas.UnifAIMCPResponse{
+		return &schemas.RakshaMCPResponse{
 			ChatMessage: chatResult,
 			ExtraFields: extraFields,
 		}, nil
@@ -635,7 +635,7 @@ func (m *ToolsManager) ExecuteTool(
 		if responsesMessage == nil {
 			return nil, fmt.Errorf("failed to convert tool result to Responses format")
 		}
-		return &schemas.UnifAIMCPResponse{
+		return &schemas.RakshaMCPResponse{
 			ResponsesMessage: responsesMessage,
 			ExtraFields:      extraFields,
 		}, nil
@@ -648,7 +648,7 @@ func (m *ToolsManager) ExecuteTool(
 // This is used internally by ExecuteTool after format conversion.
 // Returns: (message, clientName, originalToolName, error)
 func (m *ToolsManager) executeToolInternal(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	toolCall *schemas.ChatAssistantMessageToolCall,
 	clientConn *client.Client,
 	executionConfig *schemas.MCPClientConfig,
@@ -730,15 +730,15 @@ func (m *ToolsManager) executeToolInternal(
 // the agent loop are dispatched through the executeTool callback the caller provides
 // (typically MCPManager.executeToolForAgent, which routes through the plugin gate).
 func (m *ToolsManager) ExecuteAgentForChatRequest(
-	ctx *schemas.UnifAIContext,
-	req *schemas.UnifAIChatRequest,
-	resp *schemas.UnifAIChatResponse,
-	makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError),
+	ctx *schemas.RakshaContext,
+	req *schemas.RakshaChatRequest,
+	resp *schemas.RakshaChatResponse,
+	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError),
 	executeTool MCPToolExecutor,
-) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	if executeTool == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "executeTool is required for agent mode"},
 		}
 	}
@@ -756,15 +756,15 @@ func (m *ToolsManager) ExecuteAgentForChatRequest(
 
 // ExecuteAgentForResponsesRequest mirrors ExecuteAgentForChatRequest for the Responses API.
 func (m *ToolsManager) ExecuteAgentForResponsesRequest(
-	ctx *schemas.UnifAIContext,
-	req *schemas.UnifAIResponsesRequest,
-	resp *schemas.UnifAIResponsesResponse,
-	makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError),
+	ctx *schemas.RakshaContext,
+	req *schemas.RakshaResponsesRequest,
+	resp *schemas.RakshaResponsesResponse,
+	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
 	executeTool MCPToolExecutor,
-) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	if executeTool == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "executeTool is required for agent mode"},
 		}
 	}

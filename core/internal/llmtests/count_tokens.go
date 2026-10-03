@@ -5,13 +5,13 @@ import (
 	"os"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunCountTokenTest validates the CountTokens API for the configured provider/model.
 // It sends a simple prompt as Responses messages and asserts token counts and metadata.
-func RunCountTokenTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunCountTokenTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.CountTokens {
 		t.Logf("Count tokens not supported for provider %s", testConfig.Provider)
 		return
@@ -26,7 +26,7 @@ func RunCountTokenTest(t *testing.T, client *unifai.UnifAI, ctx context.Context,
 			CreateBasicResponsesMessage("Hello! What's the capital of France?"),
 		}
 
-		countTokensReq := &schemas.UnifAIResponsesRequest{
+		countTokensReq := &schemas.RakshaResponsesRequest{
 			Provider:  testConfig.Provider,
 			Model:     testConfig.ChatModel,
 			Input:     messages,
@@ -69,8 +69,8 @@ func RunCountTokenTest(t *testing.T, client *unifai.UnifAI, ctx context.Context,
 			retryContext,
 			expectations,
 			"CountTokens",
-			func() (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			func() (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.CountTokensRequest(bfCtx, countTokensReq)
 			},
 		)

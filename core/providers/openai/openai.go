@@ -1,4 +1,4 @@
-// Package openai provides the OpenAI provider implementation for the UnifAI framework.
+// Package openai provides the OpenAI provider implementation for the Raksha framework.
 package openai
 
 import (
@@ -17,8 +17,8 @@ import (
 
 	"github.com/bytedance/sonic"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -28,8 +28,8 @@ type OpenAIProvider struct {
 	client               *fasthttp.Client              // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient      *fasthttp.Client              // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig         // Network configuration including extra headers
-	sendBackRawRequest   bool                          // Whether to include raw request in UnifAIResponse
-	sendBackRawResponse  bool                          // Whether to include raw response in UnifAIResponse
+	sendBackRawRequest   bool                          // Whether to include raw request in RakshaResponse
+	sendBackRawResponse  bool                          // Whether to include raw response in RakshaResponse
 	customProviderConfig *schemas.CustomProviderConfig // Custom provider config
 	disableStore         bool                          // Whether to force store=false on outgoing requests
 }
@@ -53,7 +53,7 @@ func NewOpenAIProvider(config *schemas.ProviderConfig, logger schemas.Logger) *O
 
 	// // Pre-warm response pools
 	// for range config.ConcurrencyAndBufferSize.Concurrency {
-	// 	openAIResponsePool.Put(&schemas.UnifAIResponse{})
+	// 	openAIResponsePool.Put(&schemas.RakshaResponse{})
 	// }
 
 	// Configure proxy and retry policy
@@ -86,7 +86,7 @@ func (provider *OpenAIProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // buildRequestURL constructs the full request URL using the provider's configuration.
-func (provider *OpenAIProvider) buildRequestURL(ctx *schemas.UnifAIContext, defaultPath string, requestType schemas.RequestType) string {
+func (provider *OpenAIProvider) buildRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType) string {
 	path, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 	if isCompleteURL {
 		return path
@@ -94,14 +94,14 @@ func (provider *OpenAIProvider) buildRequestURL(ctx *schemas.UnifAIContext, defa
 	return provider.networkConfig.BaseURL + path
 }
 
-func (provider *OpenAIProvider) ListModels(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
 	providerName := provider.GetProviderKey()
 
 	if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
-		return providerUtils.HandleKeylessListModelsRequest(providerName, func() (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+		return providerUtils.HandleKeylessListModelsRequest(providerName, func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 			return ListModelsByKey(
 				ctx,
 				provider.client,
@@ -131,7 +131,7 @@ func (provider *OpenAIProvider) ListModels(ctx *schemas.UnifAIContext, keys []sc
 // ListModelsByKey performs a list models request for a single key.
 // Returns the list-models response, or an error if the request fails.
 func ListModelsByKey(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
 	key schemas.Key,
@@ -140,7 +140,7 @@ func ListModelsByKey(
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -159,19 +159,19 @@ func ListModelsByKey(
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
-		unifaiErr := ParseOpenAIError(resp)
-		return nil, providerUtils.SetErrorLatency(unifaiErr, latency)
+		rakshaErr := ParseOpenAIError(resp)
+		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
 	}
 
 	// Copy response body before releasing
@@ -179,10 +179,10 @@ func ListModelsByKey(
 
 	openaiResponse, parseErr := parseOpenAIListModelsBody(responseBody)
 	if parseErr != nil {
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, parseErr), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, parseErr), latency)
 	}
 
-	response := openaiResponse.ToUnifAIListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, unfiltered)
+	response := openaiResponse.ToRakshaListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, unfiltered)
 
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
@@ -230,20 +230,20 @@ func BearerAuthHeader(key schemas.Key) map[string]string {
 
 // HandleOpenAIListModelsRequest handles a list models request to OpenAI's API.
 func HandleOpenAIListModelsRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
-	request *schemas.UnifAIListModelsRequest,
+	request *schemas.RakshaListModelsRequest,
 	url string,
 	keys []schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
 		return ListModelsByKey(ctx, client, url, schemas.Key{}, request.Unfiltered, extraHeaders, providerName, sendBackRawRequest, sendBackRawResponse)
 	}
-	listModelsByKeyWrapper := func(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+	listModelsByKeyWrapper := func(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 		return ListModelsByKey(ctx, client, url, key, request.Unfiltered, extraHeaders, providerName, sendBackRawRequest, sendBackRawResponse)
 	}
 	return providerUtils.HandleMultipleListModelsRequests(
@@ -256,7 +256,7 @@ func HandleOpenAIListModelsRequest(
 
 // TextCompletion is not supported by the OpenAI provider.
 // Returns an error indicating that text completion is not available.
-func (provider *OpenAIProvider) TextCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITextCompletionRequest) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TextCompletionRequest); err != nil {
 		return nil, err
 	}
@@ -278,19 +278,19 @@ func (provider *OpenAIProvider) TextCompletion(ctx *schemas.UnifAIContext, key s
 
 // HandleOpenAITextCompletionRequest handles a text completion request to OpenAI's API.
 func HandleOpenAITextCompletionRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAITextCompletionRequest,
+	request *schemas.RakshaTextCompletionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.UnifAITextCompletionResponse],
+	customResponseHandler responseHandler[schemas.RakshaTextCompletionResponse],
 	customErrorConverter ErrorConverter,
 	logger schemas.Logger,
-) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -321,41 +321,41 @@ func HandleOpenAITextCompletionRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAITextCompletionResponse{}
+			response := &schemas.RakshaTextCompletionResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAITextCompletionResponse{
+		return &schemas.RakshaTextCompletionResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAITextCompletionRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -372,25 +372,25 @@ func HandleOpenAITextCompletionRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.UnifAITextCompletionResponse{
+		return &schemas.RakshaTextCompletionResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAITextCompletionResponse{}
+	response := &schemas.RakshaTextCompletionResponse{}
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, unifaiErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, unifaiErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -411,8 +411,8 @@ func HandleOpenAITextCompletionRequest(
 
 // TextCompletionStream performs a streaming text completion request to OpenAI's API.
 // It formats the request, sends it to OpenAI, and processes the response.
-// Returns a channel of UnifAIStreamChunk objects or an error if the request fails.
-func (provider *OpenAIProvider) TextCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITextCompletionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
+func (provider *OpenAIProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TextCompletionStreamRequest); err != nil {
 		return nil, err
 	}
@@ -439,10 +439,10 @@ func (provider *OpenAIProvider) TextCompletionStream(ctx *schemas.UnifAIContext,
 // HandleOpenAITextCompletionStreaming handles text completion streaming for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE format.
 func HandleOpenAITextCompletionStreaming(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAITextCompletionRequest,
+	request *schemas.RakshaTextCompletionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -451,11 +451,11 @@ func HandleOpenAITextCompletionStreaming(
 	providerName schemas.ModelProvider,
 	customErrorConverter ErrorConverter,
 	postHookRunner schemas.PostHookRunner,
-	customResponseHandler responseHandler[schemas.UnifAITextCompletionResponse],
-	postResponseConverter func(*schemas.UnifAITextCompletionResponse) *schemas.UnifAITextCompletionResponse,
+	customResponseHandler responseHandler[schemas.RakshaTextCompletionResponse],
+	postResponseConverter func(*schemas.RakshaTextCompletionResponse) *schemas.RakshaTextCompletionResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	headers := map[string]string{
 		"Content-Type":  "application/json",
@@ -467,7 +467,7 @@ func HandleOpenAITextCompletionStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -481,8 +481,8 @@ func HandleOpenAITextCompletionStreaming(
 			return reqBody, nil
 		})
 
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -516,8 +516,8 @@ func HandleOpenAITextCompletionStreaming(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		latency := time.Since(startTime)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -526,20 +526,20 @@ func HandleOpenAITextCompletionStreaming(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsUnifAIError=false) rather than NewUnifAIOperationError
-		// (500, IsUnifAIError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsUnifAIError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
+		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsRakshaError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -556,13 +556,13 @@ func HandleOpenAITextCompletionStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -593,7 +593,7 @@ func HandleOpenAITextCompletionStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -601,10 +601,10 @@ func HandleOpenAITextCompletionStreaming(
 		sseReader := providerUtils.GetSSEDataReader(ctx, reader)
 
 		chunkIndex := -1
-		usage := &schemas.UnifAILLMUsage{}
+		usage := &schemas.RakshaLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream
 		// cancel/timeout can bill for tokens the provider already processed.
-		ctx.SetValue(schemas.UnifAIContextKeyStreamAccumulatedUsage, usage)
+		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, usage)
 
 		var finishReason *string
 		var messageID string
@@ -621,7 +621,7 @@ func HandleOpenAITextCompletionStreaming(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 					return
@@ -629,7 +629,7 @@ func HandleOpenAITextCompletionStreaming(
 				break
 			}
 			jsonData := string(data)
-			var response schemas.UnifAITextCompletionResponse
+			var response schemas.RakshaTextCompletionResponse
 			if customResponseHandler != nil {
 				rawRequest, rawResponse, handlerErr := customResponseHandler([]byte(jsonData), &response, nil, sendBackRawRequest, sendBackRawResponse)
 				if handlerErr != nil {
@@ -640,8 +640,8 @@ func HandleOpenAITextCompletionStreaming(
 					if sendBackRawResponse {
 						handlerErr.ExtraFields.RawResponse = rawResponse
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
@@ -649,17 +649,17 @@ func HandleOpenAITextCompletionStreaming(
 				// Quick check for error field (allocation-free using sonic.GetFromString)
 				if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 					// Only unmarshal when we know there's an error
-					var unifaiErr schemas.UnifAIError
-					if err := sonic.UnmarshalString(jsonData, &unifaiErr); err == nil {
-						if unifaiErr.Error != nil && unifaiErr.Error.Message != "" {
-							ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-							providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					var rakshaErr schemas.RakshaError
+					if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
+						if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
+							ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+							providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 							return
 						}
 					}
 				}
 
-				// Parse into unifai response
+				// Parse into raksha response
 				if err := sonic.UnmarshalString(jsonData, &response); err != nil {
 					logger.Warn("Failed to parse stream response: %v", err)
 					continue
@@ -668,7 +668,7 @@ func HandleOpenAITextCompletionStreaming(
 
 			// choices be array if nil
 			if response.Choices == nil {
-				response.Choices = []schemas.UnifAIResponseChoice{}
+				response.Choices = []schemas.RakshaResponseChoice{}
 			}
 
 			if postResponseConverter != nil {
@@ -736,7 +736,7 @@ func HandleOpenAITextCompletionStreaming(
 					response.ExtraFields.RawResponse = jsonData
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(&response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(&response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 
 			// For providers that don't send [DONE] marker break on finish_reason
@@ -745,7 +745,7 @@ func HandleOpenAITextCompletionStreaming(
 			}
 		}
 
-		response := providerUtils.CreateUnifAITextCompletionChunkResponse(messageID, usage, finishReason, chunkIndex, schemas.TextCompletionStreamRequest, request.Model)
+		response := providerUtils.CreateRakshaTextCompletionChunkResponse(messageID, usage, finishReason, chunkIndex, schemas.TextCompletionStreamRequest, request.Model)
 		if postResponseConverter != nil {
 			response = postResponseConverter(response)
 			if response == nil {
@@ -758,8 +758,8 @@ func HandleOpenAITextCompletionStreaming(
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 		}
 		response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-		ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 	}()
 
 	return responseChan, nil
@@ -767,8 +767,8 @@ func HandleOpenAITextCompletionStreaming(
 
 // ChatCompletion performs a chat completion request to the OpenAI API.
 // It supports both text and image content in messages.
-// Returns a UnifAIResponse containing the completion results or an error if the request fails.
-func (provider *OpenAIProvider) ChatCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+// Returns a RakshaResponse containing the completion results or an error if the request fails.
+func (provider *OpenAIProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	// Check if chat completion is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
@@ -800,20 +800,20 @@ func (provider *OpenAIProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 
 // HandleOpenAIChatCompletionRequest handles a chat completion request to OpenAI's API.
 func HandleOpenAIChatCompletionRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIChatRequest,
+	request *schemas.RakshaChatRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
-	customResponseHandler responseHandler[schemas.UnifAIChatResponse],
+	customResponseHandler responseHandler[schemas.RakshaChatResponse],
 	customErrorConverter ErrorConverter,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
-) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -844,28 +844,28 @@ func HandleOpenAIChatCompletionRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAIChatResponse{}
+			response := &schemas.RakshaChatResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAIChatResponse{
+		return &schemas.RakshaChatResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIChatRequest(ctx, request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if signer != nil {
@@ -881,14 +881,14 @@ func HandleOpenAIChatCompletionRequest(
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -906,25 +906,25 @@ func HandleOpenAIChatCompletionRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.UnifAIChatResponse{
+		return &schemas.RakshaChatResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
-	response := &schemas.UnifAIChatResponse{}
+	response := &schemas.RakshaChatResponse{}
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, unifaiErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, unifaiErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -945,7 +945,7 @@ func HandleOpenAIChatCompletionRequest(
 // ChatCompletionStream handles streaming for OpenAI chat completions.
 // It formats messages, prepares request body, and uses shared streaming logic.
 // Returns a channel for streaming responses and any error that occurred.
-func (provider *OpenAIProvider) ChatCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIChatRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	// Check if chat completion stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
@@ -984,10 +984,10 @@ func (provider *OpenAIProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 // HandleOpenAIChatCompletionStreaming handles streaming for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE format.
 func HandleOpenAIChatCompletionStreaming(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIChatRequest,
+	request *schemas.RakshaChatRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -995,21 +995,21 @@ func HandleOpenAIChatCompletionStreaming(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customRequestConverter func(*schemas.UnifAIChatRequest) (providerUtils.RequestBodyWithExtraParams, error),
-	customResponseHandler responseHandler[schemas.UnifAIChatResponse],
+	customRequestConverter func(*schemas.RakshaChatRequest) (providerUtils.RequestBodyWithExtraParams, error),
+	customResponseHandler responseHandler[schemas.RakshaChatResponse],
 	customErrorConverter ErrorConverter,
 	postRequestConverter func(*OpenAIChatRequest) *OpenAIChatRequest,
-	postResponseConverter func(*schemas.UnifAIChatResponse) *schemas.UnifAIChatResponse,
+	postResponseConverter func(*schemas.RakshaChatResponse) *schemas.RakshaChatResponse,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Check if the request is a redirect from ResponsesStream to ChatCompletionStream
 	isResponsesToChatCompletionsFallback := false
 	var responsesStreamState *schemas.ChatToResponsesStreamState
-	if ctx.Value(schemas.UnifAIContextKeyIsResponsesToChatCompletionFallback) != nil {
-		isResponsesToChatCompletionsFallbackValue, ok := ctx.Value(schemas.UnifAIContextKeyIsResponsesToChatCompletionFallback).(bool)
+	if ctx.Value(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback) != nil {
+		isResponsesToChatCompletionsFallbackValue, ok := ctx.Value(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback).(bool)
 		if ok && isResponsesToChatCompletionsFallbackValue {
 			isResponsesToChatCompletionsFallback = true
 			responsesStreamState = schemas.AcquireChatToResponsesStreamState()
@@ -1027,7 +1027,7 @@ func HandleOpenAIChatCompletionStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1046,8 +1046,8 @@ func HandleOpenAIChatCompletionStreaming(
 			}
 			return reqBody, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -1093,8 +1093,8 @@ func HandleOpenAIChatCompletionStreaming(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1103,20 +1103,20 @@ func HandleOpenAIChatCompletionStreaming(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsUnifAIError=false) rather than NewUnifAIOperationError
-		// (500, IsUnifAIError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsUnifAIError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
+		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsRakshaError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1130,13 +1130,13 @@ func HandleOpenAIChatCompletionStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -1169,7 +1169,7 @@ func HandleOpenAIChatCompletionStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -1177,10 +1177,10 @@ func HandleOpenAIChatCompletionStreaming(
 		sseReader := providerUtils.GetSSEDataReader(ctx, reader)
 
 		chunkIndex := -1
-		usage := &schemas.UnifAILLMUsage{}
+		usage := &schemas.RakshaLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream
 		// cancel/timeout can bill for tokens the provider already processed.
-		ctx.SetValue(schemas.UnifAIContextKeyStreamAccumulatedUsage, usage)
+		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, usage)
 
 		lastChunkTime := startTime
 
@@ -1190,7 +1190,7 @@ func HandleOpenAIChatCompletionStreaming(
 		var created int
 		forwardedTerminalFinishReason := false
 		// Defer final completed/incomplete event until usage chunk arrives (fallback path only).
-		var pendingFinalEvent *schemas.UnifAIResponsesStreamResponse
+		var pendingFinalEvent *schemas.RakshaResponsesStreamResponse
 		usageSeen := false
 
 		for {
@@ -1204,7 +1204,7 @@ func HandleOpenAIChatCompletionStreaming(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 					return
@@ -1216,18 +1216,18 @@ func HandleOpenAIChatCompletionStreaming(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var unifaiErr schemas.UnifAIError
-				if err := sonic.UnmarshalString(jsonData, &unifaiErr); err == nil {
-					if unifaiErr.Error != nil && unifaiErr.Error.Message != "" {
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var rakshaErr schemas.RakshaError
+				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
+					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
 			}
 
-			// Parse into unifai response
-			var response schemas.UnifAIChatResponse
+			// Parse into raksha response
+			var response schemas.RakshaChatResponse
 			if customResponseHandler != nil {
 				rawRequest, rawResponse, handlerErr := customResponseHandler([]byte(jsonData), &response, nil, sendBackRawRequest, sendBackRawResponse)
 				if handlerErr != nil {
@@ -1237,8 +1237,8 @@ func HandleOpenAIChatCompletionStreaming(
 					if sendBackRawResponse {
 						handlerErr.ExtraFields.RawResponse = rawResponse
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
@@ -1250,7 +1250,7 @@ func HandleOpenAIChatCompletionStreaming(
 
 			// choices be array if nil
 			if response.Choices == nil {
-				response.Choices = []schemas.UnifAIResponseChoice{}
+				response.Choices = []schemas.RakshaResponseChoice{}
 			}
 
 			if isResponsesToChatCompletionsFallback {
@@ -1280,27 +1280,27 @@ func HandleOpenAIChatCompletionStreaming(
 					}
 				}
 
-				spreadResponses := response.ToUnifAIResponsesStreamResponse(responsesStreamState)
+				spreadResponses := response.ToRakshaResponsesStreamResponse(responsesStreamState)
 				for _, response := range spreadResponses {
 					if response.Type == schemas.ResponsesStreamResponseTypeError {
-						unifaiErr := &schemas.UnifAIError{
+						rakshaErr := &schemas.RakshaError{
 							Type:           schemas.Ptr(string(schemas.ResponsesStreamResponseTypeError)),
-							IsUnifAIError: false,
+							IsRakshaError: false,
 							Error:          &schemas.ErrorField{},
 						}
 
 						if response.Message != nil {
-							unifaiErr.Error.Message = *response.Message
+							rakshaErr.Error.Message = *response.Message
 						}
 						if response.Param != nil {
-							unifaiErr.Error.Param = *response.Param
+							rakshaErr.Error.Param = *response.Param
 						}
 						if response.Code != nil {
-							unifaiErr.Error.Code = response.Code
+							rakshaErr.Error.Code = response.Code
 						}
 
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 
@@ -1319,7 +1319,7 @@ func HandleOpenAIChatCompletionStreaming(
 					response.ExtraFields.Latency = time.Since(lastChunkTime).Milliseconds()
 					lastChunkTime = time.Now()
 
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 			} else {
 				if postResponseConverter != nil {
@@ -1405,7 +1405,7 @@ func HandleOpenAIChatCompletionStreaming(
 						response.ExtraFields.RawResponse = jsonData
 					}
 
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, &response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, &response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 
 				// For providers that don't send [DONE] marker break on finish_reason
@@ -1424,15 +1424,15 @@ func HandleOpenAIChatCompletionStreaming(
 					providerUtils.ParseAndSetRawRequest(&pendingFinalEvent.ExtraFields, jsonBody)
 				}
 				pendingFinalEvent.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, pendingFinalEvent, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, pendingFinalEvent, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		} else {
 			finalFinishReason := finishReason
 			if forwardedTerminalFinishReason {
 				finalFinishReason = nil
 			}
-			response := providerUtils.CreateUnifAIChatCompletionChunkResponse(messageID, usage, finalFinishReason, chunkIndex, modelName, created)
+			response := providerUtils.CreateRakshaChatCompletionChunkResponse(messageID, usage, finalFinishReason, chunkIndex, modelName, created)
 			if postResponseConverter != nil {
 				response = postResponseConverter(response)
 			}
@@ -1441,8 +1441,8 @@ func HandleOpenAIChatCompletionStreaming(
 				providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 			}
 			response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -1450,13 +1450,13 @@ func HandleOpenAIChatCompletionStreaming(
 }
 
 // Responses performs a responses request to the OpenAI API.
-func (provider *OpenAIProvider) Responses(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	if provider.shouldFallbackResponsesToChat(schemas.ResponsesRequest, schemas.ChatCompletionRequest) {
 		chatResponse, err := provider.ChatCompletion(ctx, key, request.ToChatRequest())
 		if err != nil {
 			return nil, err
 		}
-		return chatResponse.ToUnifAIResponsesResponse(), nil
+		return chatResponse.ToRakshaResponsesResponse(), nil
 	}
 
 	// Check if chat completion is allowed for this provider
@@ -1490,20 +1490,20 @@ func (provider *OpenAIProvider) Responses(ctx *schemas.UnifAIContext, key schema
 
 // HandleOpenAIResponsesRequest handles a responses request to OpenAI's API.
 func HandleOpenAIResponsesRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIResponsesRequest,
+	request *schemas.RakshaResponsesRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
-	customResponseHandler responseHandler[schemas.UnifAIResponsesResponse],
+	customResponseHandler responseHandler[schemas.RakshaResponsesResponse],
 	customErrorConverter ErrorConverter,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
-) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -1534,28 +1534,28 @@ func HandleOpenAIResponsesRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAIResponsesResponse{}
+			response := &schemas.RakshaResponsesResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAIResponsesResponse{
+		return &schemas.RakshaResponsesResponse{
 			Model:       request.Model,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Use centralized converter
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIResponsesRequest(ctx, request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if signer != nil {
@@ -1571,14 +1571,14 @@ func HandleOpenAIResponsesRequest(
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1596,24 +1596,24 @@ func HandleOpenAIResponsesRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.UnifAIResponsesResponse{
+		return &schemas.RakshaResponsesResponse{
 			Model:       request.Model,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAIResponsesResponse{}
+	response := &schemas.RakshaResponsesResponse{}
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, unifaiErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, unifaiErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -1633,9 +1633,9 @@ func HandleOpenAIResponsesRequest(
 }
 
 // ResponsesStream performs a streaming responses request to the OpenAI API.
-func (provider *OpenAIProvider) ResponsesStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIResponsesRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if provider.shouldFallbackResponsesToChat(schemas.ResponsesStreamRequest, schemas.ChatCompletionStreamRequest) {
-		ctx.SetValue(schemas.UnifAIContextKeyIsResponsesToChatCompletionFallback, true)
+		ctx.SetValue(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback, true)
 		return provider.ChatCompletionStream(ctx, postHookRunner, postHookSpanFinalizer, key, request.ToChatRequest())
 	}
 
@@ -1676,10 +1676,10 @@ func (provider *OpenAIProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 // HandleOpenAIResponsesStreaming handles streaming for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE format.
 func HandleOpenAIResponsesStreaming(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIResponsesRequest,
+	request *schemas.RakshaResponsesRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -1687,14 +1687,14 @@ func HandleOpenAIResponsesStreaming(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customResponseHandler responseHandler[schemas.UnifAIResponsesStreamResponse],
+	customResponseHandler responseHandler[schemas.RakshaResponsesStreamResponse],
 	customErrorConverter ErrorConverter,
 	postRequestConverter func(*OpenAIResponsesRequest) *OpenAIResponsesRequest,
-	postResponseConverter func(*schemas.UnifAIResponsesStreamResponse) *schemas.UnifAIResponsesStreamResponse,
+	postResponseConverter func(*schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Prepare SGL headers (SGL typically doesn't require authorization, but we include it if provided)
 	headers := map[string]string{
@@ -1708,7 +1708,7 @@ func HandleOpenAIResponsesStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1721,8 +1721,8 @@ func HandleOpenAIResponsesStreaming(
 			}
 			return reqBody, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -1767,8 +1767,8 @@ func HandleOpenAIResponsesStreaming(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1777,20 +1777,20 @@ func HandleOpenAIResponsesStreaming(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsUnifAIError=false) rather than NewUnifAIOperationError
-		// (500, IsUnifAIError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsUnifAIError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
+		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsRakshaError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1804,13 +1804,13 @@ func HandleOpenAIResponsesStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -1841,7 +1841,7 @@ func HandleOpenAIResponsesStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -1861,7 +1861,7 @@ func HandleOpenAIResponsesStreaming(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				}
@@ -1869,20 +1869,20 @@ func HandleOpenAIResponsesStreaming(
 			}
 			jsonData := string(data)
 
-			// Parse into unifai response
-			var response schemas.UnifAIResponsesStreamResponse
+			// Parse into raksha response
+			var response schemas.RakshaResponsesStreamResponse
 			// TODO fix this
 			if customResponseHandler != nil {
-				rawRequest, rawResponse, unifaiErr := customResponseHandler([]byte(jsonData), &response, nil, false, false)
-				if unifaiErr != nil {
+				rawRequest, rawResponse, rakshaErr := customResponseHandler([]byte(jsonData), &response, nil, false, false)
+				if rakshaErr != nil {
 					if sendBackRawRequest {
-						unifaiErr.ExtraFields.RawRequest = rawRequest
+						rakshaErr.ExtraFields.RawRequest = rawRequest
 					}
 					if sendBackRawResponse {
-						unifaiErr.ExtraFields.RawResponse = rawResponse
+						rakshaErr.ExtraFields.RawResponse = rawResponse
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
@@ -1904,57 +1904,57 @@ func HandleOpenAIResponsesStreaming(
 				}
 
 				if response.Type == schemas.ResponsesStreamResponseTypeError {
-					unifaiErr := &schemas.UnifAIError{
+					rakshaErr := &schemas.RakshaError{
 						Type:           schemas.Ptr(string(schemas.ResponsesStreamResponseTypeError)),
-						IsUnifAIError: false,
+						IsRakshaError: false,
 						Error:          &schemas.ErrorField{},
 					}
 
 					if response.Message != nil {
-						unifaiErr.Error.Message = *response.Message
+						rakshaErr.Error.Message = *response.Message
 					}
 					if response.Param != nil {
-						unifaiErr.Error.Param = *response.Param
+						rakshaErr.Error.Param = *response.Param
 					}
 					if response.Code != nil {
-						unifaiErr.Error.Code = response.Code
+						rakshaErr.Error.Code = response.Code
 					}
 					if response.Error != nil {
-						if response.Error.Message != "" && unifaiErr.Error.Message == "" {
-							unifaiErr.Error.Message = response.Error.Message
+						if response.Error.Message != "" && rakshaErr.Error.Message == "" {
+							rakshaErr.Error.Message = response.Error.Message
 						}
-						if response.Error.Code != "" && (unifaiErr.Error.Code == nil || *unifaiErr.Error.Code == "") {
-							unifaiErr.Error.Code = &response.Error.Code
+						if response.Error.Code != "" && (rakshaErr.Error.Code == nil || *rakshaErr.Error.Code == "") {
+							rakshaErr.Error.Code = &response.Error.Code
 						}
 					}
 					if response.Response != nil && response.Response.Error != nil {
-						if response.Response.Error.Message != "" && unifaiErr.Error.Message == "" {
-							unifaiErr.Error.Message = response.Response.Error.Message
+						if response.Response.Error.Message != "" && rakshaErr.Error.Message == "" {
+							rakshaErr.Error.Message = response.Response.Error.Message
 						}
-						if response.Response.Error.Code != "" && (unifaiErr.Error.Code == nil || *unifaiErr.Error.Code == "") {
-							unifaiErr.Error.Code = schemas.Ptr(response.Response.Error.Code)
+						if response.Response.Error.Code != "" && (rakshaErr.Error.Code == nil || *rakshaErr.Error.Code == "") {
+							rakshaErr.Error.Code = schemas.Ptr(response.Response.Error.Code)
 						}
 					}
 
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 
 				// Some providers (e.g. Fireworks) send response.failed on HTTP 200 streams
-				// instead of a pre-stream 4xx. Convert to UnifAIError for consistent handling.
+				// instead of a pre-stream 4xx. Convert to RakshaError for consistent handling.
 				if response.Type == schemas.ResponsesStreamResponseTypeFailed {
-					unifaiErr := &schemas.UnifAIError{
+					rakshaErr := &schemas.RakshaError{
 						Type:           schemas.Ptr(string(schemas.ResponsesStreamResponseTypeFailed)),
-						IsUnifAIError: false,
+						IsRakshaError: false,
 						Error:          &schemas.ErrorField{},
 					}
 					if response.Response != nil && response.Response.Error != nil {
-						unifaiErr.Error.Message = response.Response.Error.Message
-						unifaiErr.Error.Code = &response.Response.Error.Code
+						rakshaErr.Error.Message = response.Response.Error.Message
+						rakshaErr.Error.Code = &response.Response.Error.Code
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 
@@ -1965,15 +1965,15 @@ func HandleOpenAIResponsesStreaming(
 						providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 					}
 					response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 					return
 				}
 
 				response.ExtraFields.Latency = time.Since(lastChunkTime).Milliseconds()
 				lastChunkTime = time.Now()
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
 	}()
@@ -1983,8 +1983,8 @@ func HandleOpenAIResponsesStreaming(
 
 // Embedding generates embeddings for the given input text(s).
 // The input can be either a single string or a slice of strings for batch embedding.
-// Returns a UnifAIResponse containing the embedding(s) and any error that occurred.
-func (provider *OpenAIProvider) Embedding(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIEmbeddingRequest) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+// Returns a RakshaResponse containing the embedding(s) and any error that occurred.
+func (provider *OpenAIProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 	// Check if embedding is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.EmbeddingRequest); err != nil {
 		return nil, err
@@ -2009,18 +2009,18 @@ func (provider *OpenAIProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 // HandleOpenAIEmbeddingRequest handles embedding requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same embedding request format.
 func HandleOpenAIEmbeddingRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIEmbeddingRequest,
+	request *schemas.RakshaEmbeddingRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.UnifAIEmbeddingResponse],
+	customResponseHandler responseHandler[schemas.RakshaEmbeddingResponse],
 	logger schemas.Logger,
-) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2051,42 +2051,42 @@ func HandleOpenAIEmbeddingRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAIEmbeddingResponse{}
+			response := &schemas.RakshaEmbeddingResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAIEmbeddingResponse{
+		return &schemas.RakshaEmbeddingResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Use centralized converter
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIEmbeddingRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2101,25 +2101,25 @@ func HandleOpenAIEmbeddingRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.UnifAIEmbeddingResponse{
+		return &schemas.RakshaEmbeddingResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAIEmbeddingResponse{}
+	response := &schemas.RakshaEmbeddingResponse{}
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, unifaiErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, unifaiErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -2152,7 +2152,7 @@ func (provider *OpenAIProvider) shouldFallbackResponsesToChat(responsesOp, chatO
 // Speech handles non-streaming speech synthesis requests.
 // It formats the request body, makes the API call, and returns the response.
 // Returns the response and any error that occurred.
-func (provider *OpenAIProvider) Speech(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAISpeechRequest) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.SpeechRequest); err != nil {
 		return nil, err
 	}
@@ -2175,18 +2175,18 @@ func (provider *OpenAIProvider) Speech(ctx *schemas.UnifAIContext, key schemas.K
 // HandleOpenAISpeechRequest handles speech requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same speech request format.
 func HandleOpenAISpeechRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAISpeechRequest,
+	request *schemas.RakshaSpeechRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.UnifAISpeechResponse],
+	customResponseHandler responseHandler[schemas.RakshaSpeechResponse],
 	logger schemas.Logger,
-) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2216,31 +2216,31 @@ func HandleOpenAISpeechRequest(
 			return nil, lpErr
 		}
 		// Speech response is raw audio bytes (MP3/WAV), not JSON
-		return &schemas.UnifAISpeechResponse{
+		return &schemas.RakshaSpeechResponse{
 			Audio:       lpResult.ResponseBody,
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToOpenAISpeechRequest(request), nil })
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2256,40 +2256,40 @@ func HandleOpenAISpeechRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.UnifAISpeechResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaSpeechResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Create final response with the audio data
 	// Note: For speech synthesis, we return the binary audio data in the raw response
 	// The audio data is typically in MP3, WAV, or other audio formats as specified by response_format
-	unifaiResponse := &schemas.UnifAISpeechResponse{
+	rakshaResponse := &schemas.RakshaSpeechResponse{
 		Audio: body,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerResponseHeaders,
 		},
 	}
 
 	if sendBackRawRequest {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // SpeechStream handles streaming for speech synthesis.
 // It formats the request body, creates HTTP request, and uses shared streaming logic.
 // Returns a channel for streaming responses and any error that occurred.
-func (provider *OpenAIProvider) SpeechStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAISpeechRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.SpeechStreamRequest); err != nil {
 		return nil, err
 	}
 
 	for _, model := range providerUtils.UnsupportedSpeechStreamModels {
 		if model == request.Model {
-			return nil, providerUtils.NewUnifAIOperationError(fmt.Sprintf("model %s is not supported for streaming speech synthesis", model), nil)
+			return nil, providerUtils.NewRakshaOperationError(fmt.Sprintf("model %s is not supported for streaming speech synthesis", model), nil)
 		}
 	}
 
@@ -2315,10 +2315,10 @@ func (provider *OpenAIProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 // HandleOpenAISpeechStreamRequest handles speech stream requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same speech stream request format.
 func HandleOpenAISpeechStreamRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAISpeechRequest,
+	request *schemas.RakshaSpeechRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -2327,10 +2327,10 @@ func HandleOpenAISpeechStreamRequest(
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
 	postRequestConverter func(*OpenAISpeechRequest) *OpenAISpeechRequest,
-	postResponseConverter func(*schemas.UnifAISpeechStreamResponse) *schemas.UnifAISpeechStreamResponse,
+	postResponseConverter func(*schemas.RakshaSpeechStreamResponse) *schemas.RakshaSpeechStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Create HTTP request for streaming
 	req := fasthttp.AcquireRequest()
@@ -2362,7 +2362,7 @@ func HandleOpenAISpeechStreamRequest(
 	}
 
 	// Use centralized converter
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -2375,8 +2375,8 @@ func HandleOpenAISpeechStreamRequest(
 			}
 			return reqBody, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	setStreamingRequestBody(ctx, req, jsonBody, providerName)
@@ -2392,8 +2392,8 @@ func HandleOpenAISpeechStreamRequest(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -2402,20 +2402,20 @@ func HandleOpenAISpeechStreamRequest(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsUnifAIError=false) rather than NewUnifAIOperationError
-		// (500, IsUnifAIError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsUnifAIError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
+		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsRakshaError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2426,13 +2426,13 @@ func HandleOpenAISpeechStreamRequest(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -2463,7 +2463,7 @@ func HandleOpenAISpeechStreamRequest(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -2485,7 +2485,7 @@ func HandleOpenAISpeechStreamRequest(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				}
@@ -2496,18 +2496,18 @@ func HandleOpenAISpeechStreamRequest(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var unifaiErr schemas.UnifAIError
-				if err := sonic.UnmarshalString(jsonData, &unifaiErr); err == nil {
-					if unifaiErr.Error != nil && unifaiErr.Error.Message != "" {
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var rakshaErr schemas.RakshaError
+				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
+					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
 			}
 
-			// Parse into unifai response
-			var response schemas.UnifAISpeechStreamResponse
+			// Parse into raksha response
+			var response schemas.RakshaSpeechStreamResponse
 			if err := sonic.UnmarshalString(jsonData, &response); err != nil {
 				logger.Warn("Failed to parse stream response: %v", err)
 				continue
@@ -2523,7 +2523,7 @@ func HandleOpenAISpeechStreamRequest(
 
 			chunkIndex++
 
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{
+			response.ExtraFields = schemas.RakshaResponseExtraFields{
 				ChunkIndex: chunkIndex,
 				Latency:    time.Since(lastChunkTime).Milliseconds(),
 			}
@@ -2539,12 +2539,12 @@ func HandleOpenAISpeechStreamRequest(
 					providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 				}
 				response.BackfillParams(request)
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
 				return
 			}
 
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -2554,7 +2554,7 @@ func HandleOpenAISpeechStreamRequest(
 // Transcription handles non-streaming transcription requests.
 // It creates a multipart form, adds fields, makes the API call, and returns the response.
 // Returns the response and any error that occurred.
-func (provider *OpenAIProvider) Transcription(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITranscriptionRequest) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TranscriptionRequest); err != nil {
 		return nil, err
 	}
@@ -2574,17 +2574,17 @@ func (provider *OpenAIProvider) Transcription(ctx *schemas.UnifAIContext, key sc
 }
 
 func HandleOpenAITranscriptionRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAITranscriptionRequest,
+	request *schemas.RakshaTranscriptionRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.UnifAITranscriptionResponse],
+	customResponseHandler responseHandler[schemas.RakshaTranscriptionResponse],
 	logger schemas.Logger,
-) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
 	// Large payload passthrough: stream multipart body directly without parsing
 	if lpResult, lpErr, handled := handleOpenAILargePayloadPassthrough(ctx, client, url, BearerAuthHeader(key), extraHeaders, providerName, logger); handled {
 		if lpErr != nil {
@@ -2592,15 +2592,15 @@ func HandleOpenAITranscriptionRequest(
 		}
 		// Unmarshal the upstream response body to preserve transcription text and fields
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAITranscriptionResponse{}
+			response := &schemas.RakshaTranscriptionResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAITranscriptionResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaTranscriptionResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
@@ -2629,7 +2629,7 @@ func HandleOpenAITranscriptionRequest(
 	// Use centralized converter
 	reqBody := ToOpenAITranscriptionRequest(request)
 	if reqBody == nil {
-		return nil, providerUtils.NewUnifAIOperationError("transcription input is not provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("transcription input is not provided", nil)
 	}
 
 	// Create multipart form
@@ -2643,14 +2643,14 @@ func HandleOpenAITranscriptionRequest(
 	req.SetBody(body.Bytes())
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.SetErrorLatency(unifaiErr, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2665,16 +2665,16 @@ func HandleOpenAITranscriptionRequest(
 		return nil, providerUtils.SetErrorLatency(finalErr, latency)
 	}
 	if lpResult != nil {
-		return &schemas.UnifAITranscriptionResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaTranscriptionResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+			IsRakshaError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -2683,8 +2683,8 @@ func HandleOpenAITranscriptionRequest(
 
 	copiedResponseBody := append([]byte(nil), responseBody...)
 
-	// Parse OpenAI's transcription response directly into UnifAITranscribe
-	response := &schemas.UnifAITranscriptionResponse{}
+	// Parse OpenAI's transcription response directly into RakshaTranscribe
+	response := &schemas.RakshaTranscriptionResponse{}
 	var rawResponse interface{}
 	if request.Params != nil && schemas.IsPlainTextTranscriptionFormat(request.Params.ResponseFormat) {
 		response.Text = string(copiedResponseBody)
@@ -2692,20 +2692,20 @@ func HandleOpenAITranscriptionRequest(
 			rawResponse = string(copiedResponseBody)
 		}
 	} else if customResponseHandler != nil {
-		_, rawResponse, unifaiErr = customResponseHandler(copiedResponseBody, response, nil, false, sendBackRawResponse)
+		_, rawResponse, rakshaErr = customResponseHandler(copiedResponseBody, response, nil, false, sendBackRawResponse)
 	} else {
 		if err := sonic.Unmarshal(copiedResponseBody, response); err != nil {
 			// Check if it's an HTML response
 			if providerUtils.IsHTMLResponse(resp, copiedResponseBody) {
-				return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-					IsUnifAIError: false,
+				return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+					IsRakshaError: false,
 					Error: &schemas.ErrorField{
 						Message: schemas.ErrProviderResponseHTML,
 						Error:   errors.New(string(copiedResponseBody)),
 					},
 				}, latency)
 			}
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), latency)
 		}
 
 		// TODO: add HandleProviderResponse here
@@ -2713,16 +2713,16 @@ func HandleOpenAITranscriptionRequest(
 		// Parse raw response for RawResponse field
 		if sendBackRawResponse {
 			if err := sonic.Unmarshal(copiedResponseBody, &rawResponse); err != nil {
-				return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(schemas.ErrProviderRawResponseUnmarshal, err), latency)
+				return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderRawResponseUnmarshal, err), latency)
 			}
 		}
 	}
 
-	if unifaiErr != nil {
-		return nil, providerUtils.SetErrorLatency(unifaiErr, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
 	}
 
-	response.ExtraFields = schemas.UnifAIResponseExtraFields{
+	response.ExtraFields = schemas.RakshaResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -2735,7 +2735,7 @@ func HandleOpenAITranscriptionRequest(
 }
 
 // TranscriptionStream performs a streaming transcription request to the OpenAI API.
-func (provider *OpenAIProvider) TranscriptionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITranscriptionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TranscriptionStreamRequest); err != nil {
 		return nil, err
 	}
@@ -2763,10 +2763,10 @@ func (provider *OpenAIProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 // HandleOpenAITranscriptionStreamRequest handles transcription stream requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same transcription stream request format.
 func HandleOpenAITranscriptionStreamRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAITranscriptionRequest,
+	request *schemas.RakshaTranscriptionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -2774,17 +2774,17 @@ func HandleOpenAITranscriptionStreamRequest(
 	accumulateText bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customResponseHandler responseHandler[schemas.UnifAITranscriptionStreamResponse],
+	customResponseHandler responseHandler[schemas.RakshaTranscriptionStreamResponse],
 	postRequestConverter func(*OpenAITranscriptionRequest) *OpenAITranscriptionRequest,
-	postResponseConverter func(*schemas.UnifAITranscriptionStreamResponse) *schemas.UnifAITranscriptionStreamResponse,
+	postResponseConverter func(*schemas.RakshaTranscriptionStreamResponse) *schemas.RakshaTranscriptionStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Use centralized converter
 	reqBody := ToOpenAITranscriptionRequest(request)
 	if reqBody == nil {
-		return nil, providerUtils.NewUnifAIOperationError("transcription input is not provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("transcription input is not provided", nil)
 	}
 	reqBody.Stream = schemas.Ptr(true)
 	if postRequestConverter != nil {
@@ -2795,8 +2795,8 @@ func HandleOpenAITranscriptionStreamRequest(
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	if unifaiErr := ParseTranscriptionFormDataBodyFromRequest(writer, reqBody, providerName); unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr := ParseTranscriptionFormDataBodyFromRequest(writer, reqBody, providerName); rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Prepare OpenAI headers
@@ -2837,8 +2837,8 @@ func HandleOpenAITranscriptionStreamRequest(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -2847,13 +2847,13 @@ func HandleOpenAITranscriptionStreamRequest(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2864,13 +2864,13 @@ func HandleOpenAITranscriptionStreamRequest(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -2901,7 +2901,7 @@ func HandleOpenAITranscriptionStreamRequest(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -2924,7 +2924,7 @@ func HandleOpenAITranscriptionStreamRequest(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				}
@@ -2932,28 +2932,28 @@ func HandleOpenAITranscriptionStreamRequest(
 			}
 			jsonData := string(data)
 			// TODo fix this
-			response := &schemas.UnifAITranscriptionStreamResponse{}
-			var unifaiErr *schemas.UnifAIError
+			response := &schemas.RakshaTranscriptionStreamResponse{}
+			var rakshaErr *schemas.RakshaError
 			if customResponseHandler != nil {
-				_, _, unifaiErr = customResponseHandler([]byte(jsonData), response, nil, false, false)
-				if unifaiErr != nil {
+				_, _, rakshaErr = customResponseHandler([]byte(jsonData), response, nil, false, false)
+				if rakshaErr != nil {
 					if sendBackRawResponse {
-						unifaiErr.ExtraFields.RawResponse = jsonData
+						rakshaErr.ExtraFields.RawResponse = jsonData
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, body.Bytes(), []byte(jsonData), false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, body.Bytes(), []byte(jsonData), false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
 				// Quick check for error field (allocation-free using sonic.GetFromString)
 				if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 					// Only unmarshal when we know there's an error
-					var unifaiErrVal schemas.UnifAIError
-					if err := sonic.UnmarshalString(jsonData, &unifaiErrVal); err == nil {
-						if unifaiErrVal.Error != nil && unifaiErrVal.Error.Message != "" {
-							ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					var rakshaErrVal schemas.RakshaError
+					if err := sonic.UnmarshalString(jsonData, &rakshaErrVal); err == nil {
+						if rakshaErrVal.Error != nil && rakshaErrVal.Error.Message != "" {
+							ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 							respBody := append([]byte(nil), resp.Body()...)
-							providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &unifaiErrVal, body.Bytes(), respBody, false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+							providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErrVal, body.Bytes(), respBody, false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 							return
 						}
 					}
@@ -2976,7 +2976,7 @@ func HandleOpenAITranscriptionStreamRequest(
 
 			chunkIndex++
 
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{
+			response.ExtraFields = schemas.RakshaResponseExtraFields{
 				ChunkIndex: chunkIndex,
 				Latency:    time.Since(lastChunkTime).Milliseconds(),
 			}
@@ -2988,17 +2988,17 @@ func HandleOpenAITranscriptionStreamRequest(
 
 			if response.Usage != nil || response.Type == schemas.TranscriptionStreamResponseTypeDone {
 				response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 
 				if accumulateText {
 					response.Text = fullTranscriptionText
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 				return
 			}
 
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -3007,10 +3007,10 @@ func HandleOpenAITranscriptionStreamRequest(
 
 // ImageGeneration performs an Image Generation request to OpenAI's API.
 // It formats the request, sends it to OpenAI, and processes the response.
-// Returns a UnifAIResponse containing the unifai response or an error if the request fails.
-func (provider *OpenAIProvider) ImageGeneration(ctx *schemas.UnifAIContext, key schemas.Key,
-	req *schemas.UnifAIImageGenerationRequest,
-) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+// Returns a RakshaResponse containing the raksha response or an error if the request fails.
+func (provider *OpenAIProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key,
+	req *schemas.RakshaImageGenerationRequest,
+) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
 	}
@@ -3032,17 +3032,17 @@ func (provider *OpenAIProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 // HandleOpenAIImageGenerationRequest handles image generation requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same image generation request format.
 func HandleOpenAIImageGenerationRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIImageGenerationRequest,
+	request *schemas.RakshaImageGenerationRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3073,40 +3073,40 @@ func HandleOpenAIImageGenerationRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAIImageGenerationResponse{}
+			response := &schemas.RakshaImageGenerationResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Use centralized converter
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIImageGenerationRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3121,17 +3121,17 @@ func HandleOpenAIImageGenerationRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAIImageGenerationResponse{}
+	response := &schemas.RakshaImageGenerationResponse{}
 
 	// Use enhanced response handler with pre-allocated response
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -3154,14 +3154,14 @@ func HandleOpenAIImageGenerationRequest(
 // It formats the request body, creates HTTP request, and uses shared streaming logic.
 // Returns a channel for streaming responses and any error that occurred.
 func (provider *OpenAIProvider) ImageGenerationStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	request *schemas.UnifAIImageGenerationRequest,
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+	request *schemas.RakshaImageGenerationRequest,
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 
 	// Check if image generation stream is allowed for this provider
@@ -3191,10 +3191,10 @@ func (provider *OpenAIProvider) ImageGenerationStream(
 }
 
 func HandleOpenAIImageGenerationStreaming(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIImageGenerationRequest,
+	request *schemas.RakshaImageGenerationRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -3202,12 +3202,12 @@ func HandleOpenAIImageGenerationStreaming(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customRequestConverter func(*schemas.UnifAIImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error),
+	customRequestConverter func(*schemas.RakshaImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error),
 	postRequestConverter func(*OpenAIImageGenerationRequest) *OpenAIImageGenerationRequest,
-	postResponseConverter func(*schemas.UnifAIImageGenerationStreamResponse) *schemas.UnifAIImageGenerationStreamResponse,
+	postResponseConverter func(*schemas.RakshaImageGenerationStreamResponse) *schemas.RakshaImageGenerationStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Set headers
 	headers := map[string]string{
@@ -3221,7 +3221,7 @@ func HandleOpenAIImageGenerationStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -3237,8 +3237,8 @@ func HandleOpenAIImageGenerationStreaming(
 			}
 			return reqBody, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -3273,8 +3273,8 @@ func HandleOpenAIImageGenerationStreaming(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -3283,13 +3283,13 @@ func HandleOpenAIImageGenerationStreaming(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3300,13 +3300,13 @@ func HandleOpenAIImageGenerationStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -3337,7 +3337,7 @@ func HandleOpenAIImageGenerationStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -3374,11 +3374,11 @@ func HandleOpenAIImageGenerationStreaming(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var unifaiErr schemas.UnifAIError
-				if err := sonic.UnmarshalString(jsonData, &unifaiErr); err == nil {
-					if unifaiErr.Error != nil && unifaiErr.Error.Message != "" {
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var rakshaErr schemas.RakshaError
+				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
+					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -3393,25 +3393,25 @@ func HandleOpenAIImageGenerationStreaming(
 
 			// Check if response type indicates an error
 			if response.Type == "error" {
-				unifaiErr := &schemas.UnifAIError{
-					IsUnifAIError: false,
+				rakshaErr := &schemas.RakshaError{
+					IsRakshaError: false,
 					Error:          &schemas.ErrorField{},
 				}
 				// Guard access to response.Error fields
 				if response.Error != nil {
-					unifaiErr.Error.Message = response.Error.Message
+					rakshaErr.Error.Message = response.Error.Message
 					if response.Error.Code != nil {
-						unifaiErr.Error.Code = response.Error.Code
+						rakshaErr.Error.Code = response.Error.Code
 					}
 					if response.Error.Param != nil {
-						unifaiErr.Error.Param = response.Error.Param
+						rakshaErr.Error.Param = response.Error.Param
 					}
 					if response.Error.Type != nil {
-						unifaiErr.Error.Type = response.Error.Type
+						rakshaErr.Error.Type = response.Error.Type
 					}
 				}
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, logger, postHookSpanFinalizer)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
@@ -3477,7 +3477,7 @@ func HandleOpenAIImageGenerationStreaming(
 			}
 			chunkIndex := imageChunkIndices[imageIndex]
 			// Build chunk with all OpenAI fields
-			chunk := &schemas.UnifAIImageGenerationStreamResponse{
+			chunk := &schemas.RakshaImageGenerationStreamResponse{
 				Type:         response.Type,
 				Index:        imageIndex, // Which image (0-N)
 				ChunkIndex:   chunkIndex, // Chunk order within this image (top-level)
@@ -3486,7 +3486,7 @@ func HandleOpenAIImageGenerationStreaming(
 				Quality:      response.Quality,
 				Background:   response.Background,
 				OutputFormat: response.OutputFormat,
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					ChunkIndex: chunkIndex, // Chunk order within this image
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				},
@@ -3532,18 +3532,18 @@ func HandleOpenAIImageGenerationStreaming(
 				chunk.Usage = response.Usage
 				// For completed chunk, use total latency from start
 				chunk.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				chunk.BackfillParams(&schemas.UnifAIRequest{
+				chunk.BackfillParams(&schemas.RakshaRequest{
 					ImageGenerationRequest: request,
 				})
 				// Set raw request only on final chunk if enabled
 				if sendBackRawRequest {
 					providerUtils.ParseAndSetRawRequest(&chunk.ExtraFields, jsonBody)
 				}
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			}
 
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 				responseChan, postHookSpanFinalizer)
 
 			if isCompleted {
@@ -3556,17 +3556,17 @@ func HandleOpenAIImageGenerationStreaming(
 }
 
 // Rerank is not supported by the OpenAI provider.
-func (provider *OpenAIProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIRerankRequest) (*schemas.UnifAIRerankResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Openai provider.
-func (provider *OpenAIProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIOCRRequest) (*schemas.UnifAIOCRResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration performs a video generation request via the OpenAI API.
-func (provider *OpenAIProvider) VideoGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoGenerationRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoGenerationRequest); err != nil {
 		return nil, err
 	}
@@ -3586,14 +3586,14 @@ func (provider *OpenAIProvider) VideoGeneration(ctx *schemas.UnifAIContext, key 
 }
 
 // VideoRetrieve retrieves a video generation job from the OpenAI API.
-func (provider *OpenAIProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoRetrieveRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	providerName := provider.GetProviderKey()
 	if request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -3614,7 +3614,7 @@ func (provider *OpenAIProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 }
 
 // VideoDownload downloads video content from OpenAI.
-func (provider *OpenAIProvider) VideoDownload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoDownloadRequest) (*schemas.UnifAIVideoDownloadResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoDownloadRequest); err != nil {
 		return nil, err
 	}
@@ -3622,7 +3622,7 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -3651,14 +3651,14 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3668,7 +3668,7 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Get content type from response
@@ -3681,11 +3681,11 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 	// Copy the binary content
 	content := append([]byte(nil), body...)
 
-	return &schemas.UnifAIVideoDownloadResponse{
+	return &schemas.RakshaVideoDownloadResponse{
 		VideoID:     providerUtils.AddVideoIDProviderSuffix(videoID, providerName),
 		Content:     content,
 		ContentType: contentType,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerResponseHeaders,
 		},
@@ -3693,7 +3693,7 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 }
 
 // VideoDelete deletes a video generation job from the OpenAI API.
-func (provider *OpenAIProvider) VideoDelete(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoDeleteRequest) (*schemas.UnifAIVideoDeleteResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) VideoDelete(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoDeleteRequest); err != nil {
 		return nil, err
 	}
@@ -3701,7 +3701,7 @@ func (provider *OpenAIProvider) VideoDelete(ctx *schemas.UnifAIContext, key sche
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -3720,7 +3720,7 @@ func (provider *OpenAIProvider) VideoDelete(ctx *schemas.UnifAIContext, key sche
 }
 
 // VideoList lists videos from OpenAI.
-func (provider *OpenAIProvider) VideoList(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoListRequest) (*schemas.UnifAIVideoListResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) VideoList(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoListRequest); err != nil {
 		return nil, err
 	}
@@ -3742,17 +3742,17 @@ func (provider *OpenAIProvider) VideoList(ctx *schemas.UnifAIContext, key schema
 // HandleOpenAIVideoGenerationRequest handles video generation requests for OpenAI-compatible APIs.
 // It creates a multipart form, adds fields, makes the API call, and returns the response.
 func HandleOpenAIVideoGenerationRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIVideoGenerationRequest,
+	request *schemas.RakshaVideoGenerationRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3771,10 +3771,10 @@ func HandleOpenAIVideoGenerationRequest(
 	// Use centralized converter
 	reqBody, err := ToOpenAIVideoGenerationRequest(request)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to convert video generation request to openai format", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to convert video generation request to openai format", err)
 	}
 	if reqBody == nil {
-		return nil, providerUtils.NewUnifAIOperationError("video generation input is not provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("video generation input is not provided", nil)
 	}
 
 	// Create multipart form
@@ -3788,14 +3788,14 @@ func HandleOpenAIVideoGenerationRequest(
 	req.SetBody(body.Bytes())
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3805,14 +3805,14 @@ func HandleOpenAIVideoGenerationRequest(
 
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -3820,17 +3820,17 @@ func HandleOpenAIVideoGenerationRequest(
 	}
 
 	// Parse OpenAI's video generation response
-	response := &schemas.UnifAIVideoGenerationResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response := &schemas.RakshaVideoGenerationResponse{}
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
 	}
 
-	response.ExtraFields = schemas.UnifAIResponseExtraFields{
+	response.ExtraFields = schemas.RakshaResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -3847,16 +3847,16 @@ func HandleOpenAIVideoGenerationRequest(
 }
 
 // VideoDownloadFunc downloads video content. Used by HandleOpenAIVideoRetrieveRequest for enrichment.
-type VideoDownloadHandler func(ctx *schemas.UnifAIContext, key schemas.Key, req *schemas.UnifAIVideoDownloadRequest) (*schemas.UnifAIVideoDownloadResponse, *schemas.UnifAIError)
+type VideoDownloadHandler func(ctx *schemas.RakshaContext, key schemas.Key, req *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError)
 
 // HandleOpenAIVideoRetrieveRequest handles video retrieve requests for OpenAI-compatible APIs.
 // When authHeaders is non-nil, they are applied for authentication (e.g. Azure api-key); otherwise Bearer from key is used.
 // When videoDownloadFunc is non-nil and ctx has VideoOutputRequested with status completed, the handler fetches video content and appends to response.
 func HandleOpenAIVideoRetrieveRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIVideoRetrieveRequest,
+	request *schemas.RakshaVideoRetrieveRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	authHeaders map[string]string,
@@ -3865,7 +3865,7 @@ func HandleOpenAIVideoRetrieveRequest(
 	sendBackRawResponse bool,
 	videoDownloaddHandler VideoDownloadHandler,
 	logger schemas.Logger,
-) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -3884,14 +3884,14 @@ func HandleOpenAIVideoRetrieveRequest(
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		logger.Debug("error from %s provider: %s", providerName, string(resp.Body()))
@@ -3900,13 +3900,13 @@ func HandleOpenAIVideoRetrieveRequest(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
-	response := &schemas.UnifAIVideoGenerationResponse{}
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response := &schemas.RakshaVideoGenerationResponse{}
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
@@ -3917,15 +3917,15 @@ func HandleOpenAIVideoRetrieveRequest(
 	}
 
 	if videoDownloaddHandler != nil {
-		downloadVideo, ok := ctx.Value(schemas.UnifAIContextKeyVideoOutputRequested).(bool)
+		downloadVideo, ok := ctx.Value(schemas.RakshaContextKeyVideoOutputRequested).(bool)
 		if ok && downloadVideo && response.Status == schemas.VideoStatusCompleted {
-			videoDownloadRequest := &schemas.UnifAIVideoDownloadRequest{
+			videoDownloadRequest := &schemas.RakshaVideoDownloadRequest{
 				Provider: providerName,
 				ID:       response.ID,
 			}
-			videoDownloadResponse, unifaiErr := videoDownloaddHandler(ctx, key, videoDownloadRequest)
-			if unifaiErr != nil {
-				return nil, unifaiErr
+			videoDownloadResponse, rakshaErr := videoDownloaddHandler(ctx, key, videoDownloadRequest)
+			if rakshaErr != nil {
+				return nil, rakshaErr
 			}
 			if len(videoDownloadResponse.Content) > 0 {
 				output := schemas.VideoOutput{
@@ -3941,7 +3941,7 @@ func HandleOpenAIVideoRetrieveRequest(
 		}
 	}
 
-	response.ExtraFields = schemas.UnifAIResponseExtraFields{
+	response.ExtraFields = schemas.RakshaResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -3953,7 +3953,7 @@ func HandleOpenAIVideoRetrieveRequest(
 
 // HandleOpenAIVideoDeleteRequest handles video deletion requests for OpenAI-compatible APIs.
 func HandleOpenAIVideoDeleteRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
 	videoID string,
@@ -3963,7 +3963,7 @@ func HandleOpenAIVideoDeleteRequest(
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.UnifAIVideoDeleteResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3981,14 +3981,14 @@ func HandleOpenAIVideoDeleteRequest(
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3998,20 +3998,20 @@ func HandleOpenAIVideoDeleteRequest(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Parse OpenAI's video response
-	response := &schemas.UnifAIVideoDeleteResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response := &schemas.RakshaVideoDeleteResponse{}
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
 	}
 
-	response.ExtraFields = schemas.UnifAIResponseExtraFields{
+	response.ExtraFields = schemas.RakshaResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -4028,17 +4028,17 @@ func HandleOpenAIVideoDeleteRequest(
 
 // HandleOpenAIVideoListRequest handles video list requests for OpenAI-compatible APIs.
 func HandleOpenAIVideoListRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	baseURL string,
-	request *schemas.UnifAIVideoListRequest,
+	request *schemas.RakshaVideoListRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.UnifAIVideoListResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -4072,14 +4072,14 @@ func HandleOpenAIVideoListRequest(
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -4089,13 +4089,13 @@ func HandleOpenAIVideoListRequest(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
-	response := &schemas.UnifAIVideoListResponse{}
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response := &schemas.RakshaVideoListResponse{}
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	for i := range response.Data {
 		if response.Data[i].ID != "" {
@@ -4115,7 +4115,7 @@ func HandleOpenAIVideoListRequest(
 		response.LastID = &lastID
 	}
 
-	response.ExtraFields = schemas.UnifAIResponseExtraFields{
+	response.ExtraFields = schemas.RakshaResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -4128,7 +4128,7 @@ func HandleOpenAIVideoListRequest(
 }
 
 // CountTokens performs a count tokens request to the OpenAI API.
-func (provider *OpenAIProvider) CountTokens(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) CountTokens(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.CountTokensRequest); err != nil {
 		return nil, err
 	}
@@ -4148,7 +4148,7 @@ func (provider *OpenAIProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 }
 
 // Compaction compacts a conversation context window using OpenAI's /v1/responses/compact endpoint.
-func (provider *OpenAIProvider) Compaction(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICompactionRequest) (*schemas.UnifAICompactionResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.CompactionRequest); err != nil {
 		return nil, err
 	}
@@ -4169,17 +4169,17 @@ func (provider *OpenAIProvider) Compaction(ctx *schemas.UnifAIContext, key schem
 
 // HandleOpenAICompactionRequest handles a compaction request to OpenAI's /v1/responses/compact endpoint.
 func HandleOpenAICompactionRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAICompactionRequest,
+	request *schemas.RakshaCompactionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.UnifAICompactionResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -4205,38 +4205,38 @@ func HandleOpenAICompactionRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAICompactionResponse{}
+			response := &schemas.RakshaCompactionResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAICompactionResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaCompactionResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAICompactionRequest(ctx, request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	req.SetBody(jsonData)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -4250,15 +4250,15 @@ func HandleOpenAICompactionRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.UnifAICompactionResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaCompactionResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAICompactionResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	response := &schemas.RakshaCompactionResponse{}
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -4276,17 +4276,17 @@ func HandleOpenAICompactionRequest(
 
 // HandleOpenAICountTokensRequest handles a count tokens request to OpenAI's API.
 func HandleOpenAICountTokensRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIResponsesRequest,
+	request *schemas.RakshaResponsesRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -4317,39 +4317,39 @@ func HandleOpenAICountTokensRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAICountTokensResponse{}
+			response := &schemas.RakshaCountTokensResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAICountTokensResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaCountTokensResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIResponsesRequest(ctx, request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -4364,17 +4364,17 @@ func HandleOpenAICountTokensRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.UnifAICountTokensResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaCountTokensResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAICountTokensResponse{}
+	response := &schemas.RakshaCountTokensResponse{}
 
 	// Use enhanced response handler with pre-allocated response
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	response.Model = request.Model
@@ -4393,7 +4393,7 @@ func HandleOpenAICountTokensRequest(
 }
 
 // ImageEdit performs image editing via the OpenAI Images API.
-func (provider *OpenAIProvider) ImageEdit(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageEditRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
@@ -4413,38 +4413,38 @@ func (provider *OpenAIProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 }
 
 func HandleOpenAIImageEditRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIImageEditRequest,
+	request *schemas.RakshaImageEditRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	// Large payload passthrough: stream multipart body directly without parsing
 	if lpResult, lpErr, handled := handleOpenAILargePayloadPassthrough(ctx, client, url, BearerAuthHeader(key), extraHeaders, providerName, logger); handled {
 		if lpErr != nil {
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAIImageGenerationResponse{}
+			response := &schemas.RakshaImageGenerationResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	openaiReq := ToOpenAIImageEditRequest(request)
 	if openaiReq == nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to convert request to OpenAI format", nil)
+		return nil, providerUtils.NewRakshaOperationError("failed to convert request to OpenAI format", nil)
 	}
 
 	// Create request
@@ -4480,14 +4480,14 @@ func HandleOpenAIImageEditRequest(
 	bodyData := body.Bytes()
 	req.SetBody(bodyData)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -4500,15 +4500,15 @@ func HandleOpenAIImageEditRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAIImageGenerationResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response := &schemas.RakshaImageGenerationResponse{}
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
@@ -4526,7 +4526,7 @@ func HandleOpenAIImageEditRequest(
 }
 
 // ImageEditStream streams image edits via the OpenAI Images API.
-func (provider *OpenAIProvider) ImageEditStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageEditRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	// Check if image generation stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageEditStreamRequest); err != nil {
 		return nil, err
@@ -4553,10 +4553,10 @@ func (provider *OpenAIProvider) ImageEditStream(ctx *schemas.UnifAIContext, post
 }
 
 func HandleOpenAIImageEditStreamRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIImageEditRequest,
+	request *schemas.RakshaImageEditRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -4564,16 +4564,16 @@ func HandleOpenAIImageEditStreamRequest(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customRequestConverter func(*schemas.UnifAIImageEditRequest) (providerUtils.RequestBodyWithExtraParams, error),
+	customRequestConverter func(*schemas.RakshaImageEditRequest) (providerUtils.RequestBodyWithExtraParams, error),
 	postRequestConverter func(*OpenAIImageEditRequest) *OpenAIImageEditRequest,
-	postResponseConverter func(*schemas.UnifAIImageGenerationStreamResponse) *schemas.UnifAIImageGenerationStreamResponse,
+	postResponseConverter func(*schemas.RakshaImageGenerationStreamResponse) *schemas.RakshaImageGenerationStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	reqBody := ToOpenAIImageEditRequest(request)
 	if reqBody == nil {
-		return nil, providerUtils.NewUnifAIOperationError("image edit input is not provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("image edit input is not provided", nil)
 	}
 
 	reqBody.Stream = schemas.Ptr(true)
@@ -4584,8 +4584,8 @@ func HandleOpenAIImageEditStreamRequest(
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	if unifaiErr := parseImageEditFormDataBodyFromRequest(writer, reqBody, providerName); unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr := parseImageEditFormDataBodyFromRequest(writer, reqBody, providerName); rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Prepare OpenAI headers
@@ -4625,8 +4625,8 @@ func HandleOpenAIImageEditStreamRequest(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -4635,12 +4635,12 @@ func HandleOpenAIImageEditStreamRequest(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -4651,13 +4651,13 @@ func HandleOpenAIImageEditStreamRequest(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -4688,7 +4688,7 @@ func HandleOpenAIImageEditStreamRequest(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -4726,11 +4726,11 @@ func HandleOpenAIImageEditStreamRequest(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var unifaiErr schemas.UnifAIError
-				if err := sonic.UnmarshalString(jsonData, &unifaiErr); err == nil {
-					if unifaiErr.Error != nil && unifaiErr.Error.Message != "" {
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &unifaiErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var rakshaErr schemas.RakshaError
+				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
+					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -4745,25 +4745,25 @@ func HandleOpenAIImageEditStreamRequest(
 
 			// Check if response type indicates an error
 			if response.Type == "error" {
-				unifaiErr := &schemas.UnifAIError{
-					IsUnifAIError: false,
+				rakshaErr := &schemas.RakshaError{
+					IsRakshaError: false,
 					Error:          &schemas.ErrorField{},
 				}
 				// Guard access to response.Error fields
 				if response.Error != nil {
-					unifaiErr.Error.Message = response.Error.Message
+					rakshaErr.Error.Message = response.Error.Message
 					if response.Error.Code != nil {
-						unifaiErr.Error.Code = response.Error.Code
+						rakshaErr.Error.Code = response.Error.Code
 					}
 					if response.Error.Param != nil {
-						unifaiErr.Error.Param = response.Error.Param
+						rakshaErr.Error.Param = response.Error.Param
 					}
 					if response.Error.Type != nil {
-						unifaiErr.Error.Type = response.Error.Type
+						rakshaErr.Error.Type = response.Error.Type
 					}
 				}
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, logger, postHookSpanFinalizer)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
@@ -4829,7 +4829,7 @@ func HandleOpenAIImageEditStreamRequest(
 			}
 			chunkIndex := imageChunkIndices[imageIndex]
 			// Build chunk with all OpenAI fields
-			chunk := &schemas.UnifAIImageGenerationStreamResponse{
+			chunk := &schemas.RakshaImageGenerationStreamResponse{
 				Type:         response.Type,
 				Index:        imageIndex, // Which image (0-N)
 				ChunkIndex:   chunkIndex, // Chunk order within this image (top-level)
@@ -4838,7 +4838,7 @@ func HandleOpenAIImageEditStreamRequest(
 				Quality:      response.Quality,
 				Background:   response.Background,
 				OutputFormat: response.OutputFormat,
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					ChunkIndex: chunkIndex, // Chunk order within this image
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				},
@@ -4884,14 +4884,14 @@ func HandleOpenAIImageEditStreamRequest(
 				chunk.Usage = response.Usage
 				// For completed chunk, use total latency from start
 				chunk.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				chunk.BackfillParams(&schemas.UnifAIRequest{
+				chunk.BackfillParams(&schemas.RakshaRequest{
 					ImageEditRequest: request,
 				})
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 			}
 
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 				responseChan, postHookSpanFinalizer)
 
 			if isCompleted {
@@ -4904,7 +4904,7 @@ func HandleOpenAIImageEditStreamRequest(
 }
 
 // ImageVariation performs an image variation request to openai's images api.
-func (provider *OpenAIProvider) ImageVariation(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageVariationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageVariationRequest); err != nil {
 		return nil, err
 	}
@@ -4927,38 +4927,38 @@ func (provider *OpenAIProvider) ImageVariation(ctx *schemas.UnifAIContext, key s
 // ImageVariation performs an image variation request
 // HandleOpenAIImageVariationRequest handles image variation requests for OpenAI-compatible providers
 func HandleOpenAIImageVariationRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.UnifAIImageVariationRequest,
+	request *schemas.RakshaImageVariationRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	// Large payload passthrough: stream multipart body directly without parsing
 	if lpResult, lpErr, handled := handleOpenAILargePayloadPassthrough(ctx, client, url, BearerAuthHeader(key), extraHeaders, providerName, logger); handled {
 		if lpErr != nil {
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.UnifAIImageGenerationResponse{}
+			response := &schemas.RakshaImageGenerationResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	openaiReq := ToOpenAIImageVariationRequest(request)
 	if openaiReq == nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to convert request to OpenAI format", nil)
+		return nil, providerUtils.NewRakshaOperationError("failed to convert request to OpenAI format", nil)
 	}
 
 	// Create request
@@ -4993,14 +4993,14 @@ func HandleOpenAIImageVariationRequest(
 	bodyData := body.Bytes()
 	req.SetBody(bodyData)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -5013,15 +5013,15 @@ func HandleOpenAIImageVariationRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.UnifAIImageGenerationResponse{}
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response := &schemas.RakshaImageGenerationResponse{}
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
@@ -5034,17 +5034,17 @@ func HandleOpenAIImageVariationRequest(
 }
 
 // FileUpload uploads a file to OpenAI.
-func (provider *OpenAIProvider) FileUpload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileUploadRequest) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileUploadRequest); err != nil {
 		return nil, err
 	}
 
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("file content is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
 	}
 
 	if request.Purpose == "" {
-		return nil, providerUtils.NewUnifAIOperationError("purpose is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("purpose is required", nil)
 	}
 
 	// Create multipart form data
@@ -5053,16 +5053,16 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 
 	// Add purpose field
 	if err := writer.WriteField("purpose", string(request.Purpose)); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write purpose field", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write purpose field", err)
 	}
 
 	// Add expires_after fields if provided
 	if request.ExpiresAfter != nil {
 		if err := writer.WriteField("expires_after[anchor]", request.ExpiresAfter.Anchor); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to write expires_after[anchor] field", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to write expires_after[anchor] field", err)
 		}
 		if err := writer.WriteField("expires_after[seconds]", fmt.Sprintf("%d", request.ExpiresAfter.Seconds)); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to write expires_after[seconds] field", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to write expires_after[seconds] field", err)
 		}
 	}
 
@@ -5073,14 +5073,14 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 	}
 	part, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create form file", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write file content", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -5102,10 +5102,10 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -5116,25 +5116,25 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var openAIResp OpenAIFileResponse
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	fileResponse := openAIResp.ToUnifAIFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+	fileResponse := openAIResp.ToRakshaFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 	fileResponse.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 	return fileResponse, nil
 }
 
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *OpenAIProvider) FileList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileListRequest) (*schemas.UnifAIFileListResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileListRequest); err != nil {
 		return nil, err
 	}
@@ -5146,14 +5146,14 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIFileListResponse{
+		return &schemas.RakshaFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -5197,10 +5197,10 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -5211,16 +5211,16 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var openAIResp OpenAIFileListResponse
-	_, _, unifaiErr = providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, _, rakshaErr = providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	// Convert files to UnifAI format
+	// Convert files to Raksha format
 	files := make([]schemas.FileObject, 0, len(openAIResp.Data))
 	var lastFileID string
 	for _, file := range openAIResp.Data {
@@ -5231,7 +5231,7 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 			CreatedAt:     file.CreatedAt,
 			Filename:      file.Filename,
 			Purpose:       schemas.FilePurpose(file.Purpose),
-			Status:        ToUnifAIFileStatus(file.Status),
+			Status:        ToRakshaFileStatus(file.Status),
 			StatusDetails: file.StatusDetails,
 		})
 		lastFileID = file.ID
@@ -5241,25 +5241,25 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 	// OpenAI uses LastID as the cursor for pagination
 	nextCursor, hasMore := helper.BuildNextCursor(openAIResp.HasMore, lastFileID)
 
-	// Convert to UnifAI response
-	unifaiResp := &schemas.UnifAIFileListResponse{
+	// Convert to Raksha response
+	rakshaResp := &schemas.RakshaFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: hasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 		},
 	}
 	if nextCursor != "" {
-		unifaiResp.After = &nextCursor
+		rakshaResp.After = &nextCursor
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // FileRetrieve retrieves file metadata from OpenAI by trying each key until found.
-func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileRetrieveRequest); err != nil {
 		return nil, err
 	}
@@ -5267,13 +5267,13 @@ func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5290,12 +5290,12 @@ func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -5312,30 +5312,30 @@ func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIFileResponse
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return openAIResp.ToUnifAIFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+		return openAIResp.ToRakshaFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 	}
 
 	return nil, lastErr
 }
 
 // FileDelete deletes a file from OpenAI by trying each key until successful.
-func (provider *OpenAIProvider) FileDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileDeleteRequest); err != nil {
 		return nil, err
 	}
@@ -5343,13 +5343,13 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.UnifAIContext, keys []sc
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5366,12 +5366,12 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.UnifAIContext, keys []sc
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -5388,27 +5388,27 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.UnifAIContext, keys []sc
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIFileDeleteResponse
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.UnifAIFileDeleteResponse{
+		result := &schemas.RakshaFileDeleteResponse{
 			ID:      openAIResp.ID,
 			Object:  openAIResp.Object,
 			Deleted: openAIResp.Deleted,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -5428,7 +5428,7 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.UnifAIContext, keys []sc
 }
 
 // FileContent downloads file content from OpenAI by trying each key until found.
-func (provider *OpenAIProvider) FileContent(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileContentRequest) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileContentRequest); err != nil {
 		return nil, err
 	}
@@ -5436,10 +5436,10 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.UnifAIContext, keys []s
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5455,12 +5455,12 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.UnifAIContext, keys []s
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -5477,7 +5477,7 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.UnifAIContext, keys []s
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
@@ -5491,11 +5491,11 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.UnifAIContext, keys []s
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return &schemas.UnifAIFileContentResponse{
+		return &schemas.RakshaFileContentResponse{
 			FileID:      request.FileID,
 			Content:     content,
 			ContentType: contentType,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -5505,7 +5505,7 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.UnifAIContext, keys []s
 }
 
 // VideoRemix remixes an existing video from the OpenAI provider.
-func (provider *OpenAIProvider) VideoRemix(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoRemixRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) VideoRemix(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoRemixRequest); err != nil {
 		return nil, err
 	}
@@ -5513,20 +5513,20 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.UnifAIContext, key schem
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 	if request.Input == nil || request.Input.Prompt == "" {
-		return nil, providerUtils.NewUnifAIOperationError("prompt is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("prompt is required", nil)
 	}
 
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIVideoRemixRequest(request)
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
@@ -5553,10 +5553,10 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.UnifAIContext, key schem
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -5567,14 +5567,14 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.UnifAIContext, key schem
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Parse OpenAI's video response
-	response := &schemas.UnifAIVideoGenerationResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response := &schemas.RakshaVideoGenerationResponse{}
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
@@ -5584,7 +5584,7 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.UnifAIContext, key schem
 		response.RemixedFromVideoID = &remixID
 	}
 
-	response.ExtraFields = schemas.UnifAIResponseExtraFields{
+	response.ExtraFields = schemas.RakshaResponseExtraFields{
 		Latency: latency.Milliseconds(),
 	}
 
@@ -5599,7 +5599,7 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.UnifAIContext, key schem
 }
 
 // BatchCreate creates a new batch job.
-func (provider *OpenAIProvider) BatchCreate(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchCreateRequest) (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchCreateRequest); err != nil {
 		return nil, err
 	}
@@ -5611,18 +5611,18 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 		// Convert inline requests to JSONL format
 		jsonlData, err := ConvertRequestsToJSONL(request.Requests)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to convert requests to JSONL", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to convert requests to JSONL", err)
 		}
 
 		// Upload the file with purpose "batch"
-		uploadResp, unifaiErr := provider.FileUpload(ctx, key, &schemas.UnifAIFileUploadRequest{
+		uploadResp, rakshaErr := provider.FileUpload(ctx, key, &schemas.RakshaFileUploadRequest{
 			Provider: schemas.OpenAI,
 			File:     jsonlData,
 			Filename: "batch_requests.jsonl",
 			Purpose:  "batch",
 		})
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
 		inputFileID = uploadResp.ID
@@ -5630,12 +5630,12 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 
 	// Validate that we have a file ID (either provided or uploaded)
 	if inputFileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("either input_file_id or requests array is required for OpenAI batch API", nil)
+		return nil, providerUtils.NewRakshaOperationError("either input_file_id or requests array is required for OpenAI batch API", nil)
 	}
 
 	// Validate that we have an endpoint
 	if request.Endpoint == "" {
-		return nil, providerUtils.NewUnifAIOperationError("endpoint is required for OpenAI batch API", nil)
+		return nil, providerUtils.NewRakshaOperationError("endpoint is required for OpenAI batch API", nil)
 	}
 
 	// Create request
@@ -5670,7 +5670,7 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 
 	jsonData, err := providerUtils.MarshalSorted(openAIReq)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 	req.SetBody(jsonData)
 
@@ -5678,10 +5678,10 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Handle error response
@@ -5691,21 +5691,21 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	var openAIResp OpenAIBatchResponse
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &openAIResp, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
-	return openAIResp.ToUnifAIBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+	return openAIResp.ToRakshaBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 }
 
 // BatchList lists batch jobs using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *OpenAIProvider) BatchList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchListRequest); err != nil {
 		return nil, err
 	}
@@ -5716,16 +5716,16 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIBatchListResponse{
+		return &schemas.RakshaBatchListResponse{
 			Object:  "list",
-			Data:    []schemas.UnifAIBatchRetrieveResponse{},
+			Data:    []schemas.RakshaBatchRetrieveResponse{},
 			HasMore: false,
 		}, nil
 	}
@@ -5762,10 +5762,10 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -5775,20 +5775,20 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var openAIResp OpenAIBatchListResponse
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	// Convert batches to UnifAI format
-	batches := make([]schemas.UnifAIBatchRetrieveResponse, 0, len(openAIResp.Data))
+	// Convert batches to Raksha format
+	batches := make([]schemas.RakshaBatchRetrieveResponse, 0, len(openAIResp.Data))
 	var lastBatchID string
 	for _, batch := range openAIResp.Data {
-		batches = append(batches, *batch.ToUnifAIBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse))
+		batches = append(batches, *batch.ToRakshaBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse))
 		lastBatchID = batch.ID
 	}
 
@@ -5796,36 +5796,36 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 	// OpenAI uses LastID as the cursor for pagination
 	nextCursor, hasMore := helper.BuildNextCursor(openAIResp.HasMore, lastBatchID)
 
-	// Convert to UnifAI response
-	unifaiResp := &schemas.UnifAIBatchListResponse{
+	// Convert to Raksha response
+	rakshaResp := &schemas.RakshaBatchListResponse{
 		Object:  "list",
 		Data:    batches,
 		HasMore: hasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		unifaiResp.NextCursor = &nextCursor
+		rakshaResp.NextCursor = &nextCursor
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // BatchRetrieve retrieves a specific batch job by trying each key until found.
-func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchRetrieveRequest) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5842,12 +5842,12 @@ func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys [
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -5863,23 +5863,23 @@ func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys [
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIBatchResponse
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := openAIResp.ToUnifAIBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+		result := openAIResp.ToRakshaBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 		return result, nil
 	}
 
@@ -5887,19 +5887,19 @@ func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys [
 }
 
 // BatchCancel cancels a batch job by trying each key until successful.
-func (provider *OpenAIProvider) BatchCancel(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchCancelRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5916,12 +5916,12 @@ func (provider *OpenAIProvider) BatchCancel(ctx *schemas.UnifAIContext, keys []s
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -5937,29 +5937,29 @@ func (provider *OpenAIProvider) BatchCancel(ctx *schemas.UnifAIContext, keys []s
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIBatchResponse
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.UnifAIBatchCancelResponse{
+		result := &schemas.RakshaBatchCancelResponse{
 			ID:           openAIResp.ID,
 			Object:       openAIResp.Object,
-			Status:       ToUnifAIBatchStatus(openAIResp.Status),
+			Status:       ToRakshaBatchStatus(openAIResp.Status),
 			CancellingAt: openAIResp.CancellingAt,
 			CancelledAt:  openAIResp.CancelledAt,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -5987,37 +5987,37 @@ func (provider *OpenAIProvider) BatchCancel(ctx *schemas.UnifAIContext, keys []s
 }
 
 // BatchDelete is not supported by the OpenAI provider.
-func (provider *OpenAIProvider) BatchDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults retrieves batch results by trying each key until successful.
 // Note: For OpenAI, batch results are obtained by downloading the output_file_id.
 // This method returns the file content parsed as batch results.
-func (provider *OpenAIProvider) BatchResults(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchResultsRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
 	}
 
 	// First, retrieve the batch to get the output_file_id (this already iterates over keys)
-	batchResp, unifaiErr := provider.BatchRetrieve(ctx, keys, &schemas.UnifAIBatchRetrieveRequest{
+	batchResp, rakshaErr := provider.BatchRetrieve(ctx, keys, &schemas.RakshaBatchRetrieveRequest{
 		Provider: request.Provider,
 		BatchID:  request.BatchID,
 	})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if batchResp.OutputFileID == nil || *batchResp.OutputFileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch results not available: output_file_id is empty (batch may not be completed)", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch results not available: output_file_id is empty (batch may not be completed)", nil)
 	}
 
 	// Download the output file - try each key
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -6032,12 +6032,12 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.UnifAIContext, keys []
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -6053,7 +6053,7 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.UnifAIContext, keys []
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
@@ -6073,10 +6073,10 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.UnifAIContext, keys []
 			return nil
 		})
 
-		batchResultsResp := &schemas.UnifAIBatchResultsResponse{
+		batchResultsResp := &schemas.RakshaBatchResultsResponse{
 			BatchID: request.BatchID,
 			Results: results,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6092,17 +6092,17 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.UnifAIContext, keys []
 }
 
 // ContainerCreate creates a new container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIContainerCreateRequest) (*schemas.UnifAIContainerCreateResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerCreateRequest); err != nil {
 		return nil, err
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 
 	if request.Name == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: name is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: name is required", nil)
 	}
 
 	// Build request body
@@ -6138,7 +6138,7 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.UnifAIContext, key 
 
 	jsonBody, err := providerUtils.MarshalSorted(reqBody)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 
 	// Create request
@@ -6159,10 +6159,10 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.UnifAIContext, key 
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -6185,12 +6185,12 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.UnifAIContext, key 
 		Metadata     map[string]string              `json:"metadata"`
 	}
 
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	response := &schemas.UnifAIContainerCreateResponse{
+	response := &schemas.RakshaContainerCreateResponse{
 		ID:           containerResp.ID,
 		Object:       containerResp.Object,
 		Name:         containerResp.Name,
@@ -6200,7 +6200,7 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.UnifAIContext, key 
 		LastActiveAt: containerResp.LastActiveAt,
 		MemoryLimit:  containerResp.MemoryLimit,
 		Metadata:     containerResp.Metadata,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6217,15 +6217,15 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.UnifAIContext, key 
 
 // ContainerList lists containers via OpenAI's API.
 // Uses SerialListHelper for multi-key pagination - exhausts all pages from one key before moving to next.
-func (provider *OpenAIProvider) ContainerList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIContainerListRequest) (*schemas.UnifAIContainerListResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewUnifAIOperationError("provider config not found", nil)
+			return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
 		}
 	}
 
@@ -6239,14 +6239,14 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.UnifAIContext, keys [
 	// Initialize serial pagination helper for multi-key support
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIContainerListResponse{
+		return &schemas.RakshaContainerListResponse{
 			Object:  "list",
 			Data:    []schemas.ContainerObject{},
 			HasMore: false,
@@ -6288,10 +6288,10 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.UnifAIContext, keys [
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -6310,9 +6310,9 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.UnifAIContext, keys [
 		HasMore bool                      `json:"has_more"`
 	}
 
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Track last container ID for pagination cursor
@@ -6324,13 +6324,13 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.UnifAIContext, keys [
 	// Build cursor for next request (handles cross-key pagination)
 	nextCursor, hasMore := helper.BuildNextCursor(listResp.HasMore, lastContainerID)
 
-	response := &schemas.UnifAIContainerListResponse{
+	response := &schemas.RakshaContainerListResponse{
 		Object:  listResp.Object,
 		Data:    listResp.Data,
 		FirstID: listResp.FirstID,
 		LastID:  listResp.LastID,
 		HasMore: hasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6351,26 +6351,26 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.UnifAIContext, keys [
 }
 
 // ContainerRetrieve retrieves a specific container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIContainerRetrieveRequest) (*schemas.UnifAIContainerRetrieveResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewUnifAIOperationError("provider config not found", nil)
+			return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
 		}
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("container_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("container_id is required", nil)
 	}
 
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerRetrieveRequest); err != nil {
 		return nil, err
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -6387,12 +6387,12 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.UnifAIContext, ke
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -6419,15 +6419,15 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.UnifAIContext, ke
 			Metadata     map[string]string              `json:"metadata"`
 		}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
-		response := &schemas.UnifAIContainerRetrieveResponse{
+		response := &schemas.RakshaContainerRetrieveResponse{
 			ID:           containerResp.ID,
 			Object:       containerResp.Object,
 			Name:         containerResp.Name,
@@ -6437,7 +6437,7 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.UnifAIContext, ke
 			LastActiveAt: containerResp.LastActiveAt,
 			MemoryLimit:  containerResp.MemoryLimit,
 			Metadata:     containerResp.Metadata,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6458,26 +6458,26 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.UnifAIContext, ke
 }
 
 // ContainerDelete deletes a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIContainerDeleteRequest) (*schemas.UnifAIContainerDeleteResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewUnifAIOperationError("provider config not found", nil)
+			return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
 		}
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("container_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("container_id is required", nil)
 	}
 
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerDeleteRequest); err != nil {
 		return nil, err
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -6494,12 +6494,12 @@ func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.UnifAIContext, keys
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -6520,19 +6520,19 @@ func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.UnifAIContext, keys
 			Deleted bool   `json:"deleted"`
 		}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
-		response := &schemas.UnifAIContainerDeleteResponse{
+		response := &schemas.RakshaContainerDeleteResponse{
 			ID:      deleteResp.ID,
 			Object:  deleteResp.Object,
 			Deleted: deleteResp.Deleted,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6557,17 +6557,17 @@ func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.UnifAIContext, keys
 // =============================================================================
 
 // ContainerFileCreate creates a file in a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIContainerFileCreateRequest) (*schemas.UnifAIContainerFileCreateResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerFileCreateRequest); err != nil {
 		return nil, err
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
 	}
 
 	// Create request
@@ -6584,7 +6584,7 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, 
 
 	// Handle file upload (multipart only)
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: file is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: file is required", nil)
 	}
 
 	// Multipart file upload
@@ -6594,13 +6594,13 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, 
 	// Add file
 	part, err := writer.CreateFormFile("file", "file")
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create multipart form", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create multipart form", err)
 	}
 	if _, err = part.Write(request.File); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write file to multipart form", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write file to multipart form", err)
 	}
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to close multipart form", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to close multipart form", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.SetBody(body.Bytes())
@@ -6610,10 +6610,10 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, 
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -6624,7 +6624,7 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, 
 	// Decode response body (handles content-encoding like gzip)
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
@@ -6639,12 +6639,12 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, 
 		Source      string `json:"source"`
 	}
 
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, false, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, false, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	containerFileCreateResponse := &schemas.UnifAIContainerFileCreateResponse{
+	containerFileCreateResponse := &schemas.RakshaContainerFileCreateResponse{
 		ID:          fileResp.ID,
 		Object:      fileResp.Object,
 		Bytes:       fileResp.Bytes,
@@ -6652,7 +6652,7 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, 
 		ContainerID: fileResp.ContainerID,
 		Path:        fileResp.Path,
 		Source:      fileResp.Source,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6670,20 +6670,20 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.UnifAIContext, 
 
 // ContainerFileList lists files in a container via OpenAI's API.
 // Uses SerialListHelper for multi-key pagination - exhausts all pages from one key before moving to next.
-func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIContainerFileListRequest) (*schemas.UnifAIContainerFileListResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
 	}
 
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewUnifAIOperationError("no keys provided", nil)
+			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
 		}
 	}
 
@@ -6697,14 +6697,14 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.UnifAIContext, ke
 	// Initialize serial pagination helper for multi-key support
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIContainerFileListResponse{
+		return &schemas.RakshaContainerFileListResponse{
 			Object:  "list",
 			Data:    []schemas.ContainerFileObject{},
 			HasMore: false,
@@ -6746,10 +6746,10 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.UnifAIContext, ke
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() >= 400 {
@@ -6759,7 +6759,7 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.UnifAIContext, ke
 	// Decode response body (handles content-encoding like gzip)
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var listResp struct {
@@ -6770,9 +6770,9 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.UnifAIContext, ke
 		HasMore bool                          `json:"has_more"`
 	}
 
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Track last file ID for pagination cursor
@@ -6784,13 +6784,13 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.UnifAIContext, ke
 	// Build cursor for next request (handles cross-key pagination)
 	nextCursor, hasMore := helper.BuildNextCursor(listResp.HasMore, lastFileID)
 
-	containerFileListResponse := &schemas.UnifAIContainerFileListResponse{
+	containerFileListResponse := &schemas.RakshaContainerFileListResponse{
 		Object:  listResp.Object,
 		Data:    listResp.Data,
 		FirstID: listResp.FirstID,
 		LastID:  listResp.LastID,
 		HasMore: hasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6811,12 +6811,12 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.UnifAIContext, ke
 }
 
 // ContainerFileRetrieve retrieves a file from a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIContainerFileRetrieveRequest) (*schemas.UnifAIContainerFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewUnifAIOperationError("no keys provided", nil)
+			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
 		}
 	}
 
@@ -6825,18 +6825,18 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.UnifAIContext
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -6851,10 +6851,10 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.UnifAIContext
 			req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 		}
 
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
-			lastErr = unifaiErr
+		if rakshaErr != nil {
+			lastErr = rakshaErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -6870,7 +6870,7 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.UnifAIContext
 		// Decode response body (handles content-encoding like gzip)
 		responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -6888,15 +6888,15 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.UnifAIContext
 			Source      string `json:"source"`
 		}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
-			lastErr = unifaiErr
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
+			lastErr = rakshaErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
 		}
 
-		containerFileRetrieveResponse := &schemas.UnifAIContainerFileRetrieveResponse{
+		containerFileRetrieveResponse := &schemas.RakshaContainerFileRetrieveResponse{
 			ID:          fileResp.ID,
 			Object:      fileResp.Object,
 			Bytes:       fileResp.Bytes,
@@ -6904,7 +6904,7 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.UnifAIContext
 			ContainerID: fileResp.ContainerID,
 			Path:        fileResp.Path,
 			Source:      fileResp.Source,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6925,12 +6925,12 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.UnifAIContext
 }
 
 // ContainerFileContent retrieves the content of a file from a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIContainerFileContentRequest) (*schemas.UnifAIContainerFileContentResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewUnifAIOperationError("no keys provided", nil)
+			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
 		}
 	}
 
@@ -6939,18 +6939,18 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.UnifAIContext,
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -6965,10 +6965,10 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.UnifAIContext,
 			req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 		}
 
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
-			lastErr = unifaiErr
+		if rakshaErr != nil {
+			lastErr = rakshaErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -6992,15 +6992,15 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.UnifAIContext,
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 		content := append([]byte(nil), body...)
 
-		containerFileContentResponse := &schemas.UnifAIContainerFileContentResponse{
+		containerFileContentResponse := &schemas.RakshaContainerFileContentResponse{
 			Content:     content,
 			ContentType: contentType,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -7024,12 +7024,12 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.UnifAIContext,
 }
 
 // ContainerFileDelete deletes a file from a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIContainerFileDeleteRequest) (*schemas.UnifAIContainerFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewUnifAIOperationError("no keys provided", nil)
+			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
 		}
 	}
 
@@ -7038,18 +7038,18 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.UnifAIContext, 
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -7065,10 +7065,10 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.UnifAIContext, 
 			req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 		}
 
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
-			lastErr = unifaiErr
+		if rakshaErr != nil {
+			lastErr = rakshaErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -7084,7 +7084,7 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.UnifAIContext, 
 		// Decode response body (handles content-encoding like gzip)
 		responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -7098,19 +7098,19 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.UnifAIContext, 
 			Deleted bool   `json:"deleted"`
 		}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
-			lastErr = unifaiErr
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
+			lastErr = rakshaErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
 		}
 
-		containerFileDeleteResponse := &schemas.UnifAIContainerFileDeleteResponse{
+		containerFileDeleteResponse := &schemas.RakshaContainerFileDeleteResponse{
 			ID:      deleteResp.ID,
 			Object:  deleteResp.Object,
 			Deleted: deleteResp.Deleted,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -7131,10 +7131,10 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.UnifAIContext, 
 }
 
 func (provider *OpenAIProvider) Passthrough(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
-	req *schemas.UnifAIPassthroughRequest,
-) (*schemas.UnifAIPassthroughResponse, *schemas.UnifAIError) {
+	req *schemas.RakshaPassthroughRequest,
+) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.PassthroughRequest); err != nil {
 		return nil, err
 	}
@@ -7170,30 +7170,30 @@ func (provider *OpenAIProvider) Passthrough(
 
 	fasthttpReq.SetBody(req.Body)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
 	}
 
-	var passthroughUsage *schemas.UnifAIPassthroughUsage
+	var passthroughUsage *schemas.RakshaPassthroughUsage
 	if resp.StatusCode() >= 200 && resp.StatusCode() < 300 {
 		passthroughUsage = ExtractOpenAIPassthroughUsage(req.Method, req.Path, req.Body, body)
 	}
 
-	unifaiResponse := &schemas.UnifAIPassthroughResponse{
+	rakshaResponse := &schemas.RakshaPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 			PassthroughPath:         req.Path,
@@ -7201,16 +7201,16 @@ func (provider *OpenAIProvider) Passthrough(
 		PassthroughUsage: passthroughUsage,
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 func (provider *OpenAIProvider) PassthroughStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	req *schemas.UnifAIPassthroughRequest,
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+	req *schemas.RakshaPassthroughRequest,
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.PassthroughStreamRequest); err != nil {
 		return nil, err
 	}
@@ -7256,8 +7256,8 @@ func (provider *OpenAIProvider) PassthroughStream(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -7266,18 +7266,18 @@ func (provider *OpenAIProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
 
 	rawBodyStream := resp.BodyStream()
 	if rawBodyStream == nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			"provider returned an empty stream body",
 			fmt.Errorf("provider returned an empty stream body"))
 	}
@@ -7294,7 +7294,7 @@ func (provider *OpenAIProvider) PassthroughStream(
 			StartTime:        startTime,
 			Logger:           provider.logger,
 			HasUsage:         HasOpenAIPassthroughUsage,
-			Observe: func(event []byte) *schemas.UnifAIPassthroughUsage {
+			Observe: func(event []byte) *schemas.RakshaPassthroughUsage {
 				return ExtractOpenAIPassthroughUsage(req.Method, req.Path, req.Body, event)
 			},
 		},

@@ -1,11 +1,11 @@
-import { UnifAISpeech, SpeechInput } from "@/lib/types/logs";
+import { RakshaSpeech, SpeechInput } from "@/lib/types/logs";
 import { AlertCircle, Play, Volume2 } from "lucide-react";
 import React, { Component } from "react";
 import AudioPlayer from "./audioPlayer";
 
 interface SpeechViewProps {
 	speechInput?: SpeechInput;
-	speechOutput?: UnifAISpeech;
+	speechOutput?: RakshaSpeech;
 	isStreaming?: boolean;
 }
 

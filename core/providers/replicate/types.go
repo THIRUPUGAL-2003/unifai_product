@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // ==================== REQUEST TYPES ====================
@@ -456,8 +456,8 @@ func ParseReplicateTimestamp(timestamp string) int64 {
 	return t.Unix()
 }
 
-// ToUnifAIPredictionStatus converts Replicate status to UnifAI status
-func ToUnifAIPredictionStatus(status ReplicatePredictionStatus) string {
+// ToRakshaPredictionStatus converts Replicate status to Raksha status
+func ToRakshaPredictionStatus(status ReplicatePredictionStatus) string {
 	switch status {
 	case ReplicatePredictionStatusStarting:
 		return "starting"

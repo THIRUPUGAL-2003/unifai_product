@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 type RegexProvider struct {
@@ -71,7 +71,7 @@ func NewRegexProvider(config GuardrailProvider) (*RegexProvider, error) {
 	return provider, nil
 }
 
-func (p *RegexProvider) ValidateInput(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) error {
+func (p *RegexProvider) ValidateInput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error {
 	if req == nil {
 		return nil
 	}
@@ -98,7 +98,7 @@ func (p *RegexProvider) ValidateInput(ctx *schemas.UnifAIContext, req *schemas.U
 	return nil
 }
 
-func (p *RegexProvider) ValidateOutput(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest, resp *schemas.UnifAIResponse) error {
+func (p *RegexProvider) ValidateOutput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, resp *schemas.RakshaResponse) error {
 	for _, content := range extractChatOutputTexts(resp) {
 		if err := p.matchBlocked(content, "output"); err != nil {
 			return err
@@ -220,7 +220,7 @@ func truncateForScan(s string) string {
 	return s
 }
 
-func extractChatOutputTexts(resp *schemas.UnifAIResponse) []string {
+func extractChatOutputTexts(resp *schemas.RakshaResponse) []string {
 	if resp == nil {
 		return nil
 	}

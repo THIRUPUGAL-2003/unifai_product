@@ -1,18 +1,18 @@
 package cohere
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToCohereEmbeddingRequest converts a UnifAI embedding request to Cohere format
-func ToCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *CohereEmbeddingRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil || (unifaiReq.Input.Text == nil && unifaiReq.Input.Texts == nil) {
+// ToCohereEmbeddingRequest converts a Raksha embedding request to Cohere format
+func ToCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *CohereEmbeddingRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil || (rakshaReq.Input.Text == nil && rakshaReq.Input.Texts == nil) {
 		return nil
 	}
 
-	embeddingInput := unifaiReq.Input
+	embeddingInput := rakshaReq.Input
 	cohereReq := &CohereEmbeddingRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
 
 	texts := []string{}
@@ -22,7 +22,7 @@ func ToCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Cohere
 		texts = embeddingInput.Texts
 	}
 
-	// Convert texts from UnifAI format
+	// Convert texts from Raksha format
 	if len(texts) > 0 {
 		cohereReq.Texts = texts
 	}
@@ -30,11 +30,11 @@ func ToCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Cohere
 	// Set default input type if not specified in extra params
 	cohereReq.InputType = "search_document" // Default value
 
-	if unifaiReq.Params != nil {
-		cohereReq.OutputDimension = unifaiReq.Params.Dimensions
-		cohereReq.ExtraParams = unifaiReq.Params.ExtraParams
-		if unifaiReq.Params.ExtraParams != nil {
-			if maxTokens, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["max_tokens"]); ok {
+	if rakshaReq.Params != nil {
+		cohereReq.OutputDimension = rakshaReq.Params.Dimensions
+		cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
+		if rakshaReq.Params.ExtraParams != nil {
+			if maxTokens, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["max_tokens"]); ok {
 				delete(cohereReq.ExtraParams, "max_tokens")
 				cohereReq.MaxTokens = maxTokens
 			}
@@ -42,15 +42,15 @@ func ToCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Cohere
 	}
 
 	// Handle extra params
-	if unifaiReq.Params != nil && unifaiReq.Params.ExtraParams != nil {
+	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
 		// Input type
-		if inputType, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["input_type"]); ok {
+		if inputType, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["input_type"]); ok {
 			delete(cohereReq.ExtraParams, "input_type")
 			cohereReq.InputType = inputType
 		}
 
 		// Embedding types
-		if embeddingTypes, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["embedding_types"]); ok {
+		if embeddingTypes, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["embedding_types"]); ok {
 			if len(embeddingTypes) > 0 {
 				delete(cohereReq.ExtraParams, "embedding_types")
 				cohereReq.EmbeddingTypes = embeddingTypes
@@ -58,7 +58,7 @@ func ToCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Cohere
 		}
 
 		// Truncate
-		if truncate, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["truncate"]); ok {
+		if truncate, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["truncate"]); ok {
 			delete(cohereReq.ExtraParams, "truncate")
 			cohereReq.Truncate = truncate
 		}
@@ -67,15 +67,15 @@ func ToCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Cohere
 	return cohereReq
 }
 
-// ToUnifAIEmbeddingRequest converts a Cohere embedding request to UnifAI format
-func (req *CohereEmbeddingRequest) ToUnifAIEmbeddingRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIEmbeddingRequest {
+// ToRakshaEmbeddingRequest converts a Cohere embedding request to Raksha format
+func (req *CohereEmbeddingRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaContext) *schemas.RakshaEmbeddingRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	unifaiReq := &schemas.UnifAIEmbeddingRequest{
+	rakshaReq := &schemas.RakshaEmbeddingRequest{
 		Provider: provider,
 		Model:    model,
 		Input:    &schemas.EmbeddingInput{},
@@ -85,15 +85,15 @@ func (req *CohereEmbeddingRequest) ToUnifAIEmbeddingRequest(ctx *schemas.UnifAIC
 	// Convert texts
 	if len(req.Texts) > 0 {
 		if len(req.Texts) == 1 {
-			unifaiReq.Input.Text = &req.Texts[0]
+			rakshaReq.Input.Text = &req.Texts[0]
 		} else {
-			unifaiReq.Input.Texts = req.Texts
+			rakshaReq.Input.Texts = req.Texts
 		}
 	}
 
 	// Convert parameters
 	if req.OutputDimension != nil {
-		unifaiReq.Params.Dimensions = req.OutputDimension
+		rakshaReq.Params.Dimensions = req.OutputDimension
 	}
 
 	// Convert extra params
@@ -111,79 +111,79 @@ func (req *CohereEmbeddingRequest) ToUnifAIEmbeddingRequest(ctx *schemas.UnifAIC
 		extraParams["max_tokens"] = *req.MaxTokens
 	}
 	if len(extraParams) > 0 {
-		unifaiReq.Params.ExtraParams = extraParams
+		rakshaReq.Params.ExtraParams = extraParams
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
-// ToUnifAIEmbeddingResponse converts a Cohere embedding response to UnifAI format
-func (response *CohereEmbeddingResponse) ToUnifAIEmbeddingResponse() *schemas.UnifAIEmbeddingResponse {
+// ToRakshaEmbeddingResponse converts a Cohere embedding response to Raksha format
+func (response *CohereEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.RakshaEmbeddingResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIEmbeddingResponse{
+	rakshaResponse := &schemas.RakshaEmbeddingResponse{
 		Object: "list",
 	}
 
 	// Convert embeddings data
 	if response.Embeddings != nil {
-		var unifaiEmbeddings []schemas.EmbeddingData
+		var rakshaEmbeddings []schemas.EmbeddingData
 
 		// Handle different embedding types - prioritize float embeddings
 		if response.Embeddings.Float != nil {
 			for i, embedding := range response.Embeddings.Float {
-				unifaiEmbedding := schemas.EmbeddingData{
+				rakshaEmbedding := schemas.EmbeddingData{
 					Object: "embedding",
 					Index:  i,
 					Embedding: schemas.EmbeddingStruct{
 						EmbeddingArray: embedding,
 					},
 				}
-				unifaiEmbeddings = append(unifaiEmbeddings, unifaiEmbedding)
+				rakshaEmbeddings = append(rakshaEmbeddings, rakshaEmbedding)
 			}
 		} else if response.Embeddings.Base64 != nil {
 			// Handle base64 embeddings as strings
 			for i, embedding := range response.Embeddings.Base64 {
-				unifaiEmbedding := schemas.EmbeddingData{
+				rakshaEmbedding := schemas.EmbeddingData{
 					Object: "embedding",
 					Index:  i,
 					Embedding: schemas.EmbeddingStruct{
 						EmbeddingStr: &embedding,
 					},
 				}
-				unifaiEmbeddings = append(unifaiEmbeddings, unifaiEmbedding)
+				rakshaEmbeddings = append(rakshaEmbeddings, rakshaEmbedding)
 			}
 		}
 		// Note: Int8, Uint8, Binary, Ubinary types would need special handling
-		// depending on how UnifAI wants to represent them
+		// depending on how Raksha wants to represent them
 
-		unifaiResponse.Data = unifaiEmbeddings
+		rakshaResponse.Data = rakshaEmbeddings
 	}
 
 	// Convert usage information
 	if response.Meta != nil {
 		if response.Meta.Tokens != nil {
-			unifaiResponse.Usage = &schemas.UnifAILLMUsage{}
+			rakshaResponse.Usage = &schemas.RakshaLLMUsage{}
 			if response.Meta.Tokens.InputTokens != nil {
-				unifaiResponse.Usage.PromptTokens = int(*response.Meta.Tokens.InputTokens)
+				rakshaResponse.Usage.PromptTokens = int(*response.Meta.Tokens.InputTokens)
 			}
 			if response.Meta.Tokens.OutputTokens != nil {
-				unifaiResponse.Usage.CompletionTokens = int(*response.Meta.Tokens.OutputTokens)
+				rakshaResponse.Usage.CompletionTokens = int(*response.Meta.Tokens.OutputTokens)
 			}
-			unifaiResponse.Usage.TotalTokens = unifaiResponse.Usage.PromptTokens + unifaiResponse.Usage.CompletionTokens
+			rakshaResponse.Usage.TotalTokens = rakshaResponse.Usage.PromptTokens + rakshaResponse.Usage.CompletionTokens
 		} else if response.Meta.BilledUnits != nil {
-			unifaiResponse.Usage = &schemas.UnifAILLMUsage{}
+			rakshaResponse.Usage = &schemas.RakshaLLMUsage{}
 			if response.Meta.BilledUnits.InputTokens != nil {
-				unifaiResponse.Usage.PromptTokens = int(*response.Meta.BilledUnits.InputTokens)
+				rakshaResponse.Usage.PromptTokens = int(*response.Meta.BilledUnits.InputTokens)
 			}
 			if response.Meta.BilledUnits.OutputTokens != nil {
-				unifaiResponse.Usage.CompletionTokens = int(*response.Meta.BilledUnits.OutputTokens)
+				rakshaResponse.Usage.CompletionTokens = int(*response.Meta.BilledUnits.OutputTokens)
 			}
-			unifaiResponse.Usage.TotalTokens = unifaiResponse.Usage.PromptTokens + unifaiResponse.Usage.CompletionTokens
+			rakshaResponse.Usage.TotalTokens = rakshaResponse.Usage.PromptTokens + rakshaResponse.Usage.CompletionTokens
 		}
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }

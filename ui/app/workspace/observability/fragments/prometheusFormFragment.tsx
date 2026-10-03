@@ -44,7 +44,7 @@ const buildDefaults = (initialConfig?: PrometheusFormFragmentProps["currentConfi
 	push_gateway_enabled: initialConfig?.push_gateway_enabled ?? false,
 	prometheus_config: {
 		push_gateway_url: toSecretVarFormValue(initialConfig?.push_gateway_url),
-		job_name: initialConfig?.job_name ?? "unifai",
+		job_name: initialConfig?.job_name ?? "raksha",
 		instance_id: initialConfig?.instance_id ?? "",
 		push_interval: initialConfig?.push_interval ?? 15,
 		basic_auth_username: toSecretVarFormValue(initialConfig?.basic_auth?.username),
@@ -285,7 +285,7 @@ export function PrometheusFormFragment({
 							<div className="flex items-center justify-between">
 								<div className="flex flex-col gap-1">
 									<span className="text-sm font-medium">Metrics Endpoint</span>
-									<code className="text-muted-foreground text-xs">{metricsEndpoint || "http://<unifai-host>:<port>/metrics"}</code>
+									<code className="text-muted-foreground text-xs">{metricsEndpoint || "http://<raksha-host>:<port>/metrics"}</code>
 								</div>
 								{metricsEndpoint && (
 									<Button
@@ -342,7 +342,7 @@ export function PrometheusFormFragment({
 						<Alert variant="info">
 							<AlertTriangle className="" />
 							<AlertDescription className="text-xs">
-								If you are running multiple UnifAI nodes, use push gateway for accurate metrics. Pull-based /metrics scraping may miss
+								If you are running multiple Raksha nodes, use push gateway for accurate metrics. Pull-based /metrics scraping may miss
 								nodes behind a load balancer.
 							</AlertDescription>
 						</Alert>
@@ -376,7 +376,7 @@ export function PrometheusFormFragment({
 										<FormItem>
 											<FormLabel>Job Name</FormLabel>
 											<FormControl>
-												<Input placeholder="unifai" disabled={!hasPrometheusAccess} data-testid="prometheus-job-name" {...field} />
+												<Input placeholder="raksha" disabled={!hasPrometheusAccess} data-testid="prometheus-job-name" {...field} />
 											</FormControl>
 											<FormDescription>Job label for metrics</FormDescription>
 											<FormMessage />
@@ -422,7 +422,7 @@ export function PrometheusFormFragment({
 													</TooltipTrigger>
 													<TooltipContent>
 														<p className="max-w-xs text-xs">
-															Used to identify this UnifAI instance in metrics. If not set, hostname is used automatically.
+															Used to identify this Raksha instance in metrics. If not set, hostname is used automatically.
 														</p>
 													</TooltipContent>
 												</Tooltip>

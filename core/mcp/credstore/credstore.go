@@ -10,15 +10,15 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/unifai/unifai/core/mcp/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/mcp/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // resolver is the internal interface each auth-type-specific resolver
 // implements. RequestHeaders is identical across all auth types (extras only)
 // and lives on CredStore directly, not here.
 type resolver interface {
-	ConnectionHeaders(ctx *schemas.UnifAIContext, config *schemas.MCPClientConfig) (http.Header, error)
+	ConnectionHeaders(ctx *schemas.RakshaContext, config *schemas.MCPClientConfig) (http.Header, error)
 	RequiresPerCallConnection() bool
 }
 
@@ -49,7 +49,7 @@ func NewCredStore(oauth2Provider schemas.OAuth2Provider, headersProvider schemas
 }
 
 // ConnectionHeaders implements schemas.MCPCredentialStore.
-func (s *CredStore) ConnectionHeaders(ctx *schemas.UnifAIContext, config *schemas.MCPClientConfig) (http.Header, error) {
+func (s *CredStore) ConnectionHeaders(ctx *schemas.RakshaContext, config *schemas.MCPClientConfig) (http.Header, error) {
 	r, err := s.resolverFor(config)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (s *CredStore) ConnectionHeaders(ctx *schemas.UnifAIContext, config *schema
 // types: just the filtered per-call context-extras. The auth-type lookup
 // still runs so an unknown type errors loudly here too, instead of silently
 // returning empty.
-func (s *CredStore) RequestHeaders(ctx *schemas.UnifAIContext, config *schemas.MCPClientConfig) (http.Header, error) {
+func (s *CredStore) RequestHeaders(ctx *schemas.RakshaContext, config *schemas.MCPClientConfig) (http.Header, error) {
 	if _, err := s.resolverFor(config); err != nil {
 		return nil, err
 	}

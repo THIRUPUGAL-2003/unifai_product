@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // =============================================================================
@@ -39,12 +39,12 @@ var (
 	CategoryTimeout    = ErrorCategory{"Timeout", "Request Timeout Error", "⏰"}
 	CategoryQuota      = ErrorCategory{"Quota", "Quota/Billing Error", "💳"}
 	CategoryModel      = ErrorCategory{"Model", "Model-Related Error", "🤖"}
-	CategoryUnifAI    = ErrorCategory{"UnifAI", "UnifAI Internal Error", "🌉"}
+	CategoryRaksha    = ErrorCategory{"Raksha", "Raksha Internal Error", "🌉"}
 	CategoryUnknown    = ErrorCategory{"Unknown", "Unknown Error", "❓"}
 )
 
-// ParseUnifAIError converts a UnifAIError into a human-readable ParsedError
-func ParseUnifAIError(err *schemas.UnifAIError) ParsedError {
+// ParseRakshaError converts a RakshaError into a human-readable ParsedError
+func ParseRakshaError(err *schemas.RakshaError) ParsedError {
 	if err == nil {
 		return ParsedError{
 			Category: CategoryUnknown.Name,
@@ -61,7 +61,7 @@ func ParseUnifAIError(err *schemas.UnifAIError) ParsedError {
 
 	// Store technical details
 	parsed.Technical["provider"] = err.ExtraFields.Provider
-	parsed.Technical["is_unifai_error"] = err.IsUnifAIError
+	parsed.Technical["is_raksha_error"] = err.IsRakshaError
 	if err.StatusCode != nil {
 		parsed.Technical["status_code"] = *err.StatusCode
 	}
@@ -104,7 +104,7 @@ func ParseUnifAIError(err *schemas.UnifAIError) ParsedError {
 }
 
 // categorizeError determines the error category based on status codes, types, and messages
-func categorizeError(err *schemas.UnifAIError) (category, title string) {
+func categorizeError(err *schemas.RakshaError) (category, title string) {
 	// Check status code first
 	if err.StatusCode != nil {
 		switch *err.StatusCode {
@@ -164,8 +164,8 @@ func categorizeError(err *schemas.UnifAIError) (category, title string) {
 		return CategoryModel.Name, "Model Not Available"
 	case strings.Contains(message, "connection") || strings.Contains(message, "network"):
 		return CategoryHTTP.Name, "Network Error"
-	case err.IsUnifAIError:
-		return CategoryUnifAI.Name, "UnifAI Internal Error"
+	case err.IsRakshaError:
+		return CategoryRaksha.Name, "Raksha Internal Error"
 	}
 
 	// Default based on HTTP status
@@ -197,7 +197,7 @@ func cleanErrorMessage(message string) string {
 }
 
 // parseHTTPError handles HTTP-specific error parsing
-func parseHTTPError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseHTTPError(err *schemas.RakshaError, parsed *ParsedError) {
 	if err.StatusCode != nil {
 		parsed.Details = append(parsed.Details, fmt.Sprintf("HTTP Status: %d", *err.StatusCode))
 
@@ -213,7 +213,7 @@ func parseHTTPError(err *schemas.UnifAIError, parsed *ParsedError) {
 }
 
 // parseAuthError handles authentication-specific error parsing
-func parseAuthError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseAuthError(err *schemas.RakshaError, parsed *ParsedError) {
 	message := strings.ToLower(err.Error.Message)
 
 	if strings.Contains(message, "api key") {
@@ -233,7 +233,7 @@ func parseAuthError(err *schemas.UnifAIError, parsed *ParsedError) {
 }
 
 // parseRateLimitError handles rate limiting error parsing
-func parseRateLimitError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseRateLimitError(err *schemas.RakshaError, parsed *ParsedError) {
 	parsed.Suggestions = append(parsed.Suggestions, "Reduce request frequency or implement exponential backoff")
 	parsed.Suggestions = append(parsed.Suggestions, "Consider upgrading your provider plan for higher rate limits")
 
@@ -245,7 +245,7 @@ func parseRateLimitError(err *schemas.UnifAIError, parsed *ParsedError) {
 }
 
 // parseProviderError handles provider-specific error parsing
-func parseProviderError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseProviderError(err *schemas.RakshaError, parsed *ParsedError) {
 	parsed.Details = append(parsed.Details, "This is a provider-specific error")
 
 	// Provider-specific suggestions
@@ -266,7 +266,7 @@ func parseProviderError(err *schemas.UnifAIError, parsed *ParsedError) {
 }
 
 // parseValidationError handles validation error parsing
-func parseValidationError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseValidationError(err *schemas.RakshaError, parsed *ParsedError) {
 	parsed.Suggestions = append(parsed.Suggestions, "Verify all required parameters are provided")
 	parsed.Suggestions = append(parsed.Suggestions, "Check parameter types and formats match API requirements")
 
@@ -277,21 +277,21 @@ func parseValidationError(err *schemas.UnifAIError, parsed *ParsedError) {
 }
 
 // parseTimeoutError handles timeout error parsing
-func parseTimeoutError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseTimeoutError(err *schemas.RakshaError, parsed *ParsedError) {
 	parsed.Suggestions = append(parsed.Suggestions, "Increase request timeout settings if possible")
 	parsed.Suggestions = append(parsed.Suggestions, "Try breaking large requests into smaller chunks")
 	parsed.Suggestions = append(parsed.Suggestions, "Check network connectivity to the provider")
 }
 
 // parseQuotaError handles quota/billing error parsing
-func parseQuotaError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseQuotaError(err *schemas.RakshaError, parsed *ParsedError) {
 	parsed.Suggestions = append(parsed.Suggestions, "Check your account billing and usage limits")
 	parsed.Suggestions = append(parsed.Suggestions, "Consider upgrading your provider plan")
 	parsed.Suggestions = append(parsed.Suggestions, "Monitor your token usage to avoid hitting limits")
 }
 
 // parseModelError handles model-specific error parsing
-func parseModelError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseModelError(err *schemas.RakshaError, parsed *ParsedError) {
 	message := strings.ToLower(err.Error.Message)
 
 	if strings.Contains(message, "not found") || strings.Contains(message, "does not exist") {
@@ -306,7 +306,7 @@ func parseModelError(err *schemas.UnifAIError, parsed *ParsedError) {
 }
 
 // parseGenericError handles unknown/generic errors
-func parseGenericError(err *schemas.UnifAIError, parsed *ParsedError) {
+func parseGenericError(err *schemas.RakshaError, parsed *ParsedError) {
 	parsed.Suggestions = append(parsed.Suggestions, "Check the provider's documentation for more details")
 	parsed.Suggestions = append(parsed.Suggestions, "Consider enabling debug logging for more information")
 
@@ -355,31 +355,31 @@ func FormatErrorConcise(parsed ParsedError) string {
 	return fmt.Sprintf("%s %s: %s", categoryInfo.Color, parsed.Title, parsed.Message)
 }
 
-// LogError logs a UnifAIError in a readable format
-func LogError(t *testing.T, err *schemas.UnifAIError, context string) {
+// LogError logs a RakshaError in a readable format
+func LogError(t *testing.T, err *schemas.RakshaError, context string) {
 	if err == nil {
 		return
 	}
 
-	parsed := ParseUnifAIError(err)
+	parsed := ParseRakshaError(err)
 	t.Logf("❌ %s Error:\n%s", context, FormatError(parsed))
 }
 
-// LogErrorConcise logs a UnifAIError in a concise format
-func LogErrorConcise(t *testing.T, err *schemas.UnifAIError, context string) {
+// LogErrorConcise logs a RakshaError in a concise format
+func LogErrorConcise(t *testing.T, err *schemas.RakshaError, context string) {
 	if err == nil {
 		return
 	}
 
-	parsed := ParseUnifAIError(err)
+	parsed := ParseRakshaError(err)
 	t.Logf("❌ %s: %s", context, FormatErrorConcise(parsed))
 }
 
 // RequireNoError is like require.NoError but with better error formatting
 // ALWAYS includes ❌ prefix in error messages for consistency
-func RequireNoError(t *testing.T, err *schemas.UnifAIError, msgAndArgs ...interface{}) {
+func RequireNoError(t *testing.T, err *schemas.RakshaError, msgAndArgs ...interface{}) {
 	if err != nil {
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		message := "Expected no error"
 		if len(msgAndArgs) > 0 {
 			if msg, ok := msgAndArgs[0].(string); ok {
@@ -399,9 +399,9 @@ func RequireNoError(t *testing.T, err *schemas.UnifAIError, msgAndArgs ...interf
 }
 
 // AssertNoError is like assert.NoError but with better error formatting
-func AssertNoError(t *testing.T, err *schemas.UnifAIError, msgAndArgs ...interface{}) bool {
+func AssertNoError(t *testing.T, err *schemas.RakshaError, msgAndArgs ...interface{}) bool {
 	if err != nil {
-		parsed := ParseUnifAIError(err)
+		parsed := ParseRakshaError(err)
 		message := "Expected no error"
 		if len(msgAndArgs) > 0 {
 			if msg, ok := msgAndArgs[0].(string); ok {
@@ -441,15 +441,15 @@ func getCategory(name string) ErrorCategory {
 		return CategoryQuota
 	case CategoryModel.Name:
 		return CategoryModel
-	case CategoryUnifAI.Name:
-		return CategoryUnifAI
+	case CategoryRaksha.Name:
+		return CategoryRaksha
 	default:
 		return CategoryUnknown
 	}
 }
 
 // IsRetryableError determines if an error should trigger a retry
-func IsRetryableError(err *schemas.UnifAIError) bool {
+func IsRetryableError(err *schemas.RakshaError) bool {
 	if err == nil {
 		return false
 	}
@@ -482,7 +482,7 @@ func IsRetryableError(err *schemas.UnifAIError) bool {
 }
 
 // GetRetryDelay suggests a retry delay based on the error type
-func GetRetryDelay(err *schemas.UnifAIError, attempt int) int {
+func GetRetryDelay(err *schemas.RakshaError, attempt int) int {
 	if err == nil {
 		return 0
 	}

@@ -38,12 +38,12 @@ func TestNormalizeDomain_AdminInputForms(t *testing.T) {
 	}
 }
 
-// Uses UNIFAI_TEST_PG_DSN (throwaway database, tables are dropped) when set; sqlite otherwise.
+// Uses RAKSHA_TEST_PG_DSN (throwaway database, tables are dropped) when set; sqlite otherwise.
 func newTargetsDomainManager(t *testing.T) *BrowserAIManager {
 	t.Helper()
 	var db *gorm.DB
 	var err error
-	if dsn := os.Getenv("UNIFAI_TEST_PG_DSN"); dsn != "" {
+	if dsn := os.Getenv("RAKSHA_TEST_PG_DSN"); dsn != "" {
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 		if err == nil {
 			_ = db.Migrator().DropTable(&BrowserTargetWebsite{})

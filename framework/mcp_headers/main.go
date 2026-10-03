@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore"
-	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/temptoken"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore"
+	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/temptoken"
 )
 
 // SubmissionFlowTTL caps how long a pending headers submission flow row
@@ -47,11 +47,11 @@ type Provider struct {
 }
 
 // NewProvider constructs a configstore-backed MCPHeadersProvider. Mirrors
-// oauth2.NewOAuth2Provider so the wiring in transports/unifai-http stays
+// oauth2.NewOAuth2Provider so the wiring in transports/raksha-http stays
 // symmetric between the two per-user auth surfaces.
 func NewProvider(configStore configstore.ConfigStore, logger schemas.Logger) *Provider {
 	if logger == nil {
-		logger = unifai.NewDefaultLogger(schemas.LogLevelInfo)
+		logger = raksha.NewDefaultLogger(schemas.LogLevelInfo)
 	}
 	return &Provider{configStore: configStore, logger: logger}
 }

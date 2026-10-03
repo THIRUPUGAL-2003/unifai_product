@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunEagerInputStreamingTest tests that setting eager_input_streaming: true on
@@ -24,7 +24,7 @@ import (
 //
 // This intentionally runs across all four providers (no single-provider gate
 // unlike RunFastModeTest, which is Opus-4.6-only).
-func RunEagerInputStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunEagerInputStreamingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.EagerInputStreaming {
 		t.Logf("EagerInputStreaming not supported for provider %s", testConfig.Provider)
 		return
@@ -46,12 +46,12 @@ func RunEagerInputStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context
 			CreateBasicChatMessage("What's the weather like in San Francisco? answer in celsius"),
 		}
 
-		request := &schemas.UnifAIChatRequest{
+		request := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(300),
+				MaxCompletionTokens: raksha.Ptr(300),
 				Tools:               []schemas.ChatTool{*chatTool},
 			},
 			Fallbacks: testConfig.Fallbacks,
@@ -72,8 +72,8 @@ func RunEagerInputStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context
 			},
 		}
 
-		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionStreamRequest(bfCtx, request)
 		})
 
@@ -89,14 +89,14 @@ func RunEagerInputStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context
 		t.Logf("🔧 Testing eager input streaming (fine-grained-tool-streaming-2025-05-14)...")
 
 		for response := range responseChannel {
-			if response == nil || response.UnifAIChatResponse == nil {
+			if response == nil || response.RakshaChatResponse == nil {
 				continue
 			}
 			responseCount++
 			sawAny = true
 
-			if response.UnifAIChatResponse.Choices != nil {
-				for i, choice := range response.UnifAIChatResponse.Choices {
+			if response.RakshaChatResponse.Choices != nil {
+				for i, choice := range response.RakshaChatResponse.Choices {
 					if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
 						delta := choice.ChatStreamResponseChoice.Delta
 						for _, tc := range delta.ToolCalls {

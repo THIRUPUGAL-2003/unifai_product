@@ -4,42 +4,42 @@ import (
 	"fmt"
 	"sort"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-// ToVLLMRerankRequest converts a UnifAI rerank request to vLLM format.
-func ToVLLMRerankRequest(unifaiReq *schemas.UnifAIRerankRequest) *vLLMRerankRequest {
-	if unifaiReq == nil {
+// ToVLLMRerankRequest converts a Raksha rerank request to vLLM format.
+func ToVLLMRerankRequest(rakshaReq *schemas.RakshaRerankRequest) *vLLMRerankRequest {
+	if rakshaReq == nil {
 		return nil
 	}
 
 	vllmReq := &vLLMRerankRequest{
-		Model:     unifaiReq.Model,
-		Query:     unifaiReq.Query,
-		Documents: make([]string, len(unifaiReq.Documents)),
+		Model:     rakshaReq.Model,
+		Query:     rakshaReq.Query,
+		Documents: make([]string, len(rakshaReq.Documents)),
 	}
 
-	for i, doc := range unifaiReq.Documents {
+	for i, doc := range rakshaReq.Documents {
 		vllmReq.Documents[i] = doc.Text
 	}
 
-	if unifaiReq.Params != nil {
-		vllmReq.TopN = unifaiReq.Params.TopN
-		vllmReq.MaxTokensPerDoc = unifaiReq.Params.MaxTokensPerDoc
-		vllmReq.Priority = unifaiReq.Params.Priority
-		vllmReq.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		vllmReq.TopN = rakshaReq.Params.TopN
+		vllmReq.MaxTokensPerDoc = rakshaReq.Params.MaxTokensPerDoc
+		vllmReq.Priority = rakshaReq.Params.Priority
+		vllmReq.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 
 	return vllmReq
 }
 
-// ToUnifAIRerankResponse converts a vLLM rerank response payload to UnifAI format.
-func ToUnifAIRerankResponse(payload map[string]interface{}, documents []schemas.RerankDocument, returnDocuments bool) (*schemas.UnifAIRerankResponse, error) {
+// ToRakshaRerankResponse converts a vLLM rerank response payload to Raksha format.
+func ToRakshaRerankResponse(payload map[string]interface{}, documents []schemas.RerankDocument, returnDocuments bool) (*schemas.RakshaRerankResponse, error) {
 	if payload == nil {
 		return nil, fmt.Errorf("vllm rerank response is nil")
 	}
 
-	response := &schemas.UnifAIRerankResponse{}
+	response := &schemas.RakshaRerankResponse{}
 
 	if id, ok := schemas.SafeExtractString(payload["id"]); ok {
 		response.ID = id
@@ -113,7 +113,7 @@ func ToUnifAIRerankResponse(payload map[string]interface{}, documents []schemas.
 	return response, nil
 }
 
-func parseVLLMUsage(rawUsage interface{}) (*schemas.UnifAILLMUsage, bool) {
+func parseVLLMUsage(rawUsage interface{}) (*schemas.RakshaLLMUsage, bool) {
 	usageMap, ok := rawUsage.(map[string]interface{})
 	if !ok {
 		return nil, false
@@ -141,7 +141,7 @@ func parseVLLMUsage(rawUsage interface{}) (*schemas.UnifAILLMUsage, bool) {
 		return nil, false
 	}
 
-	return &schemas.UnifAILLMUsage{
+	return &schemas.RakshaLLMUsage{
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 		TotalTokens:      totalTokens,

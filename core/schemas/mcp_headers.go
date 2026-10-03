@@ -100,9 +100,9 @@ type MCPHeadersProvider interface {
 	// when an inline-401 fires, then puts the returned FrontendURL on the
 	// MCPAuthRequiredError so the caller can drive the submission flow.
 	//
-	// baseURL is the unifai dashboard origin (e.g. "https://host") — the
-	// resolver pulls it from UnifAIContextKeyMCPCallbackBaseURL and passes
+	// baseURL is the raksha dashboard origin (e.g. "https://host") — the
+	// resolver pulls it from RakshaContextKeyMCPCallbackBaseURL and passes
 	// it in so the provider can construct the frontend URL without
-	// reaching into the UnifAIContext itself.
+	// reaching into the RakshaContext itself.
 	InitiateUserSubmissionFlow(ctx context.Context, mode MCPAuthMode, identity, mcpClientID, baseURL string) (*MCPHeadersFlowInitiation, error)
 }

@@ -18,9 +18,9 @@ interface ModelSettingsFormData {
 
 export default function ModelSettingsView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const frameworkConfig = unifaiConfig?.framework_config;
-	const clientConfig = unifaiConfig?.client_config;
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const frameworkConfig = rakshaConfig?.framework_config;
+	const clientConfig = rakshaConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [forcePricingSync, { isLoading: isForceSyncing }] = useForcePricingSyncMutation();
 
@@ -42,7 +42,7 @@ export default function ModelSettingsView() {
 	const formValues = watch();
 
 	useEffect(() => {
-		if (!unifaiConfig || isDirty) return;
+		if (!rakshaConfig || isDirty) return;
 		reset({
 			pricing_datasheet_url: frameworkConfig?.pricing_url || "",
 			pricing_sync_interval_hours: Math.round((frameworkConfig?.pricing_sync_interval ?? 0) / 3600) || 24,
@@ -59,7 +59,7 @@ export default function ModelSettingsView() {
 	]);
 
 	const hasChanges = useMemo(() => {
-		if (!unifaiConfig || !isDirty) return false;
+		if (!rakshaConfig || !isDirty) return false;
 		const serverUrl = frameworkConfig?.pricing_url || "";
 		const serverInterval = Math.round((frameworkConfig?.pricing_sync_interval ?? 0) / 3600);
 		const serverModelParamsUrl = frameworkConfig?.model_parameters_url || "";
@@ -70,15 +70,15 @@ export default function ModelSettingsView() {
 			formValues.model_parameters_url !== serverModelParamsUrl ||
 			formValues.routing_chain_max_depth !== serverDepth
 		);
-	}, [unifaiConfig, frameworkConfig, clientConfig, formValues, isDirty]);
+	}, [rakshaConfig, frameworkConfig, clientConfig, formValues, isDirty]);
 
 	const onSubmit = async (data: ModelSettingsFormData) => {
 		try {
 			await updateCoreConfig({
-				...unifaiConfig!,
+				...rakshaConfig!,
 				framework_config: {
 					...frameworkConfig,
-					id: unifaiConfig?.framework_config.id || 0,
+					id: rakshaConfig?.framework_config.id || 0,
 					pricing_url: data.pricing_datasheet_url,
 					pricing_sync_interval: data.pricing_sync_interval_hours * 3600,
 					model_parameters_url: data.model_parameters_url,

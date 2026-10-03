@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/mysqlconn"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/mysqlconn"
 )
 
 // MysqlConfig is logs_store MySQL/MariaDB config (same JSON shape as Postgres).

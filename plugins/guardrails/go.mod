@@ -1,4 +1,4 @@
-module github.com/unifai/unifai/plugins/guardrails
+module github.com/raksha/raksha/plugins/guardrails
 
 go 1.26.4
 

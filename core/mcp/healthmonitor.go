@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/client"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 const (
@@ -177,11 +177,11 @@ func (chm *ClientHealthMonitor) performHealthCheck() {
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), chm.timeout)
 		defer cancel()
 
-		// Mark the request as unifai-generated for health checks so plugins/hooks can
+		// Mark the request as raksha-generated for health checks so plugins/hooks can
 		// distinguish these internal pings/list_tools probes from caller-initiated requests.
 		// runPingWithHooks / runListToolsWithHooks wrap this ctx, so the marker propagates.
-		ctx := schemas.NewUnifAIContext(timeoutCtx, schemas.NoDeadline)
-		ctx.SetValue(schemas.UnifAIContextKeyMCPHealthCheckRequest, true)
+		ctx := schemas.NewRakshaContext(timeoutCtx, schemas.NoDeadline)
+		ctx.SetValue(schemas.RakshaContextKeyMCPHealthCheckRequest, true)
 
 		if chm.isPingAvailable {
 			err = chm.runPingWithHooks(ctx, conn, clientName)

@@ -3,7 +3,7 @@ package migrator
 import (
 	"fmt"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

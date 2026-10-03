@@ -3,12 +3,12 @@ package openai
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAIResponsesRequest converts an OpenAI responses request to UnifAI format
-func (resp *OpenAIResponsesRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIResponsesRequest {
+// ToRakshaResponsesRequest converts an OpenAI responses request to Raksha format
+func (resp *OpenAIResponsesRequest) ToRakshaResponsesRequest(ctx *schemas.RakshaContext) *schemas.RakshaResponsesRequest {
 	if resp == nil {
 		return nil
 	}
@@ -25,7 +25,7 @@ func (resp *OpenAIResponsesRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAI
 		}
 	}
 
-	return &schemas.UnifAIResponsesRequest{
+	return &schemas.RakshaResponsesRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     input,
@@ -34,20 +34,20 @@ func (resp *OpenAIResponsesRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAI
 	}
 }
 
-// ToOpenAIResponsesRequest converts a UnifAI responses request to OpenAI format
-func ToOpenAIResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIResponsesRequest) *OpenAIResponsesRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil {
+// ToOpenAIResponsesRequest converts a Raksha responses request to OpenAI format
+func ToOpenAIResponsesRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaResponsesRequest) *OpenAIResponsesRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil {
 		return nil
 	}
 
 	// Canonical model for capability gating only; wire model is untouched.
-	capModel := schemas.ResolveCanonicalModel(ctx, unifaiReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
 
 	var messages []schemas.ResponsesMessage
 	// OpenAI models (except for gpt-oss) do not support reasoning content blocks, so we need to convert them to summaries, if there are any
 	// OpenAI also doesn't support compaction content blocks, so we need to convert them to text blocks
-	messages = make([]schemas.ResponsesMessage, 0, len(unifaiReq.Input))
-	for _, message := range unifaiReq.Input {
+	messages = make([]schemas.ResponsesMessage, 0, len(rakshaReq.Input))
+	for _, message := range rakshaReq.Input {
 		// First, check if message has compaction content blocks and convert them to text
 		if message.Content != nil && len(message.Content.ContentBlocks) > 0 {
 			hasCompaction := false
@@ -207,11 +207,11 @@ func ToOpenAIResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.Uni
 		}
 	}
 	// Updating params
-	params := unifaiReq.Params
+	params := rakshaReq.Params
 	// Create the responses request with properly mapped parameters
 	req := &OpenAIResponsesRequest{
-		Model:    unifaiReq.Model,
-		Provider: unifaiReq.Provider,
+		Model:    rakshaReq.Model,
+		Provider: rakshaReq.Provider,
 		Input: OpenAIResponsesRequestInput{
 			OpenAIResponsesRequestInputArray: messages,
 		},
@@ -257,7 +257,7 @@ func ToOpenAIResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.Uni
 
 			// Handle xAI-specific parameter filtering
 			// Only grok-3-mini supports reasoning_effort
-			if unifaiReq.Provider == schemas.XAI &&
+			if rakshaReq.Provider == schemas.XAI &&
 				schemas.IsGrokReasoningModel(capModel) &&
 				!strings.Contains(capModel, "grok-3-mini") {
 				// Clear reasoning_effort for non-grok-3-mini xAI reasoning models
@@ -267,7 +267,7 @@ func ToOpenAIResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.Uni
 			// Handle OpenAI-specific parameter filtering
 			// Only o1/o3 series models support reasoning.effort
 			// Regular models like gpt-4o, gpt-4, gpt-3.5-turbo don't support it
-			if unifaiReq.Provider == schemas.OpenAI && !isOpenAIReasoningModel(capModel) {
+			if rakshaReq.Provider == schemas.OpenAI && !isOpenAIReasoningModel(capModel) {
 				// Clear reasoning for non-reasoning OpenAI models to avoid API errors
 				req.ResponsesParameters.Reasoning = nil
 			}
@@ -298,7 +298,7 @@ func ToOpenAIResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.Uni
 		}
 
 		// Normalize function tool parameters for deterministic JSON serialization.
-		// We must copy the Tools slice since it shares the backing array with unifaiReq.Params.Tools.
+		// We must copy the Tools slice since it shares the backing array with rakshaReq.Params.Tools.
 		if len(req.Tools) > 0 {
 			normalizedTools := make([]schemas.ResponsesTool, len(req.Tools))
 			copy(normalizedTools, req.Tools)
@@ -318,8 +318,8 @@ func ToOpenAIResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.Uni
 		req.filterUnsupportedTools()
 	}
 
-	if unifaiReq.Params != nil {
-		req.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		req.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 	return req
 }
@@ -437,15 +437,15 @@ type OpenAICompactionRequest struct {
 	PreviousResponseID   *string                     `json:"previous_response_id,omitempty"`
 	PromptCacheKey       *string                     `json:"prompt_cache_key,omitempty"`
 	PromptCacheRetention *string                     `json:"prompt_cache_retention,omitempty"`
-	ServiceTier          *schemas.UnifAIServiceTier `json:"service_tier,omitempty"`
+	ServiceTier          *schemas.RakshaServiceTier `json:"service_tier,omitempty"`
 	ExtraParams          map[string]interface{}      `json:"-"`
 }
 
 // GetExtraParams implements RequestBodyWithExtraParams.
 func (r *OpenAICompactionRequest) GetExtraParams() map[string]interface{} { return r.ExtraParams }
 
-// ToOpenAICompactionRequest converts a UnifAICompactionRequest to the OpenAI wire format.
-func ToOpenAICompactionRequest(ctx *schemas.UnifAIContext, req *schemas.UnifAICompactionRequest) *OpenAICompactionRequest {
+// ToOpenAICompactionRequest converts a RakshaCompactionRequest to the OpenAI wire format.
+func ToOpenAICompactionRequest(ctx *schemas.RakshaContext, req *schemas.RakshaCompactionRequest) *OpenAICompactionRequest {
 	if req == nil {
 		return nil
 	}
@@ -461,7 +461,7 @@ func ToOpenAICompactionRequest(ctx *schemas.UnifAIContext, req *schemas.UnifAICo
 	if len(req.Input) > 0 {
 		// Run through the same normalization as ToOpenAIResponsesRequest so reasoning
 		// role cleanup, compaction-content conversion, etc. are applied consistently.
-		normalized := ToOpenAIResponsesRequest(ctx, &schemas.UnifAIResponsesRequest{
+		normalized := ToOpenAIResponsesRequest(ctx, &schemas.RakshaResponsesRequest{
 			Provider: req.Provider,
 			Model:    req.Model,
 			Input:    req.Input,
@@ -473,8 +473,8 @@ func ToOpenAICompactionRequest(ctx *schemas.UnifAIContext, req *schemas.UnifAICo
 	return r
 }
 
-// ToUnifAICompactionRequest converts an OpenAICompactionRequest to UnifAI format.
-func (r *OpenAICompactionRequest) ToUnifAICompactionRequest(ctx *schemas.UnifAIContext) *schemas.UnifAICompactionRequest {
+// ToRakshaCompactionRequest converts an OpenAICompactionRequest to Raksha format.
+func (r *OpenAICompactionRequest) ToRakshaCompactionRequest(ctx *schemas.RakshaContext) *schemas.RakshaCompactionRequest {
 	if r == nil {
 		return nil
 	}
@@ -489,7 +489,7 @@ func (r *OpenAICompactionRequest) ToUnifAICompactionRequest(ctx *schemas.UnifAIC
 			},
 		}
 	}
-	return &schemas.UnifAICompactionRequest{
+	return &schemas.RakshaCompactionRequest{
 		Provider:             provider,
 		Model:                model,
 		Input:                input,

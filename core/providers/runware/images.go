@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-// ToRunwareImageGenerationRequest converts a UnifAI image generation request to a Runware
+// ToRunwareImageGenerationRequest converts a Raksha image generation request to a Runware
 // imageInference task. A "seedImage" supplied via extra params (a Runware image UUID, a public
 // URL, or a base64/data-URI string) turns the request into an image-to-image generation.
-func ToRunwareImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequest) (*RunwareInferenceRequest, error) {
-	if unifaiReq.Input == nil {
+func ToRunwareImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (*RunwareInferenceRequest, error) {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
@@ -20,14 +20,14 @@ func ToRunwareImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationReq
 	request := &RunwareInferenceRequest{
 		TaskType:       taskTypeImageInference,
 		TaskUUID:       uuid.New().String(),
-		Model:          unifaiReq.Model,
-		PositivePrompt: &unifaiReq.Input.Prompt,
+		Model:          rakshaReq.Model,
+		PositivePrompt: &rakshaReq.Input.Prompt,
 		Width:          &width,
 		Height:         &height,
 	}
 
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		if params.Size != nil && *params.Size != "" {
 			*request.Width, *request.Height = parseRunwareSize(*params.Size)
@@ -52,14 +52,14 @@ func ToRunwareImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationReq
 	return request, nil
 }
 
-// ToRunwareImageEditRequest converts a UnifAI image edit request to a Runware imageInference task.
+// ToRunwareImageEditRequest converts a Raksha image edit request to a Runware imageInference task.
 // The first input image is the seed image; an optional mask enables inpainting. Outpainting,
 // strength, maskMargin and other operation-specific fields flow through via extra params.
-func ToRunwareImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*RunwareInferenceRequest, error) {
-	if unifaiReq.Input == nil {
+func ToRunwareImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*RunwareInferenceRequest, error) {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
-	if len(unifaiReq.Input.Images) == 0 || len(unifaiReq.Input.Images[0].Image) == 0 {
+	if len(rakshaReq.Input.Images) == 0 || len(rakshaReq.Input.Images[0].Image) == 0 {
 		return nil, fmt.Errorf("at least one input image is required")
 	}
 
@@ -67,18 +67,18 @@ func ToRunwareImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*Runw
 	request := &RunwareInferenceRequest{
 		TaskType:       taskTypeImageInference,
 		TaskUUID:       uuid.New().String(),
-		Model:          unifaiReq.Model,
-		PositivePrompt: &unifaiReq.Input.Prompt,
+		Model:          rakshaReq.Model,
+		PositivePrompt: &rakshaReq.Input.Prompt,
 		Width:          &width,
 		Height:         &height,
 	}
 
 	// Seed image: the base image being edited (raw bytes -> base64 data URI).
-	seedImage := providerUtils.FileBytesToBase64DataURL(unifaiReq.Input.Images[0].Image)
+	seedImage := providerUtils.FileBytesToBase64DataURL(rakshaReq.Input.Images[0].Image)
 	request.SeedImage = &seedImage
 
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		if params.Size != nil && *params.Size != "" {
 			*request.Width, *request.Height = parseRunwareSize(*params.Size)
@@ -102,21 +102,21 @@ func ToRunwareImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) (*Runw
 	return request, nil
 }
 
-// ToUnifAIImageGenerationResponse converts a Runware response envelope to a UnifAI image response.
-func ToUnifAIImageGenerationResponse(resp *RunwareResponse) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+// ToRakshaImageGenerationResponse converts a Runware response envelope to a Raksha image response.
+func ToRakshaImageGenerationResponse(resp *RunwareResponse) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if resp == nil {
-		return nil, providerUtils.NewUnifAIOperationError("runware response is nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("runware response is nil", nil)
 	}
 
 	// Surface task-level failures returned alongside (or instead of) data.
 	if len(resp.Data) == 0 {
 		if msg := firstRunwareErrorMessage(resp.Errors); msg != "" {
-			return nil, providerUtils.NewUnifAIOperationError(msg, nil)
+			return nil, providerUtils.NewRakshaOperationError(msg, nil)
 		}
-		return nil, providerUtils.NewUnifAIOperationError("runware returned no images", nil)
+		return nil, providerUtils.NewRakshaOperationError("runware returned no images", nil)
 	}
 
-	unifaiResp := &schemas.UnifAIImageGenerationResponse{
+	rakshaResp := &schemas.RakshaImageGenerationResponse{
 		ID:   resp.Data[0].TaskUUID,
 		Data: []schemas.ImageData{},
 	}
@@ -132,15 +132,15 @@ func ToUnifAIImageGenerationResponse(resp *RunwareResponse) (*schemas.UnifAIImag
 		case img.ImageDataURI != "":
 			data.URL = img.ImageDataURI
 		}
-		unifaiResp.Data = append(unifaiResp.Data, data)
+		rakshaResp.Data = append(rakshaResp.Data, data)
 		if img.Seed != nil {
 			seeds = append(seeds, *img.Seed)
 		}
 	}
 
 	if len(seeds) > 0 {
-		unifaiResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{Seeds: seeds}
+		rakshaResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{Seeds: seeds}
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }

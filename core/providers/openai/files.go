@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"time"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // OpenAI File API Types
@@ -36,8 +36,8 @@ type OpenAIFileDeleteResponse struct {
 	Deleted bool   `json:"deleted"`
 }
 
-// ToUnifAIFileStatus converts OpenAI status to UnifAI status.
-func ToUnifAIFileStatus(status string) schemas.FileStatus {
+// ToRakshaFileStatus converts OpenAI status to Raksha status.
+func ToRakshaFileStatus(status string) schemas.FileStatus {
 	switch status {
 	case "uploaded":
 		return schemas.FileStatusUploaded
@@ -54,19 +54,19 @@ func ToUnifAIFileStatus(status string) schemas.FileStatus {
 	}
 }
 
-// ToUnifAIFileUploadResponse converts OpenAI file response to UnifAI file upload response.
-func (r *OpenAIFileResponse) ToUnifAIFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIFileUploadResponse {
-	resp := &schemas.UnifAIFileUploadResponse{
+// ToRakshaFileUploadResponse converts OpenAI file response to Raksha file upload response.
+func (r *OpenAIFileResponse) ToRakshaFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileUploadResponse {
+	resp := &schemas.RakshaFileUploadResponse{
 		ID:             r.ID,
 		Object:         r.Object,
 		Bytes:          r.Bytes,
 		CreatedAt:      r.CreatedAt,
 		Filename:       r.Filename,
 		Purpose:        r.Purpose,
-		Status:         ToUnifAIFileStatus(r.Status),
+		Status:         ToRakshaFileStatus(r.Status),
 		StatusDetails:  r.StatusDetails,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -82,19 +82,19 @@ func (r *OpenAIFileResponse) ToUnifAIFileUploadResponse(latency time.Duration, s
 	return resp
 }
 
-// ToUnifAIFileRetrieveResponse converts OpenAI file response to UnifAI file retrieve response.
-func (r *OpenAIFileResponse) ToUnifAIFileRetrieveResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIFileRetrieveResponse {
-	resp := &schemas.UnifAIFileRetrieveResponse{
+// ToRakshaFileRetrieveResponse converts OpenAI file response to Raksha file retrieve response.
+func (r *OpenAIFileResponse) ToRakshaFileRetrieveResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileRetrieveResponse {
+	resp := &schemas.RakshaFileRetrieveResponse{
 		ID:             r.ID,
 		Object:         r.Object,
 		Bytes:          r.Bytes,
 		CreatedAt:      r.CreatedAt,
 		Filename:       r.Filename,
 		Purpose:        r.Purpose,
-		Status:         ToUnifAIFileStatus(r.Status),
+		Status:         ToRakshaFileStatus(r.Status),
 		StatusDetails:  r.StatusDetails,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}

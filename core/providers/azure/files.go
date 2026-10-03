@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/unifai/unifai/core/providers/openai"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/openai"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -18,13 +18,13 @@ import (
 // 2. Context token - uses Bearer token
 // 3. API key - uses api-key header
 // 4. DefaultAzureCredential auto-detection (managed identity, workload identity, env vars, CLI)
-func (provider *AzureProvider) setAzureAuth(ctx context.Context, req *fasthttp.Request, key schemas.Key) *schemas.UnifAIError {
+func (provider *AzureProvider) setAzureAuth(ctx context.Context, req *fasthttp.Request, key schemas.Key) *schemas.RakshaError {
 	// Service Principal authentication
 	if key.AzureKeyConfig != nil && key.AzureKeyConfig.ClientID != nil &&
 		key.AzureKeyConfig.ClientSecret != nil && key.AzureKeyConfig.TenantID != nil && key.AzureKeyConfig.ClientID.GetValue() != "" && key.AzureKeyConfig.ClientSecret.GetValue() != "" && key.AzureKeyConfig.TenantID.GetValue() != "" {
 		cred, err := provider.getOrCreateAuth(key.AzureKeyConfig.TenantID.GetValue(), key.AzureKeyConfig.ClientID.GetValue(), key.AzureKeyConfig.ClientSecret.GetValue())
 		if err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to get or create Azure authentication", err)
+			return providerUtils.NewRakshaOperationError("failed to get or create Azure authentication", err)
 		}
 
 		scopes := getAzureScopes(key.AzureKeyConfig.Scopes)
@@ -33,11 +33,11 @@ func (provider *AzureProvider) setAzureAuth(ctx context.Context, req *fasthttp.R
 			Scopes: scopes,
 		})
 		if err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to get Azure access token", err)
+			return providerUtils.NewRakshaOperationError("failed to get Azure access token", err)
 		}
 
 		if token.Token == "" {
-			return providerUtils.NewUnifAIOperationError("azure access token is empty", fmt.Errorf("token is empty"))
+			return providerUtils.NewRakshaOperationError("azure access token is empty", fmt.Errorf("token is empty"))
 		}
 
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.Token))
@@ -68,16 +68,16 @@ func (provider *AzureProvider) setAzureAuth(ctx context.Context, req *fasthttp.R
 
 	cred, err := provider.getOrCreateDefaultAzureCredential()
 	if err != nil {
-		return providerUtils.NewUnifAIOperationError("no credentials provided and DefaultAzureCredential unavailable", err)
+		return providerUtils.NewRakshaOperationError("no credentials provided and DefaultAzureCredential unavailable", err)
 	}
 
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: scopes})
 	if err != nil {
-		return providerUtils.NewUnifAIOperationError("no credentials provided and DefaultAzureCredential failed to get token", err)
+		return providerUtils.NewRakshaOperationError("no credentials provided and DefaultAzureCredential failed to get token", err)
 	}
 
 	if token.Token == "" {
-		return providerUtils.NewUnifAIOperationError("no credentials provided and DefaultAzureCredential returned empty token", fmt.Errorf("token is empty"))
+		return providerUtils.NewRakshaOperationError("no credentials provided and DefaultAzureCredential returned empty token", fmt.Errorf("token is empty"))
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.Token))
@@ -97,19 +97,19 @@ type AzureFileResponse struct {
 	StatusDetails *string             `json:"status_details,omitempty"`
 }
 
-// ToUnifAIFileUploadResponse converts Azure file response to UnifAI response.
-func (r *AzureFileResponse) ToUnifAIFileUploadResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawResponse bool, rawResponse interface{}) *schemas.UnifAIFileUploadResponse {
-	resp := &schemas.UnifAIFileUploadResponse{
+// ToRakshaFileUploadResponse converts Azure file response to Raksha response.
+func (r *AzureFileResponse) ToRakshaFileUploadResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawResponse bool, rawResponse interface{}) *schemas.RakshaFileUploadResponse {
+	resp := &schemas.RakshaFileUploadResponse{
 		ID:             r.ID,
 		Object:         r.Object,
 		Bytes:          r.Bytes,
 		CreatedAt:      r.CreatedAt,
 		Filename:       r.Filename,
 		Purpose:        r.Purpose,
-		Status:         openai.ToUnifAIFileStatus(r.Status),
+		Status:         openai.ToRakshaFileStatus(r.Status),
 		StatusDetails:  r.StatusDetails,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}

@@ -5,19 +5,19 @@ package mcp
 import (
 	"context"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // MCPManagerInterface defines the interface for MCP management functionality.
 // This interface allows different implementations to be used interchangeably
-// in the UnifAI core.
+// in the Raksha core.
 type MCPManagerInterface interface {
 	// Tool Operations
 	// AddToolsToRequest parses available MCP tools and adds them to the request
-	AddToolsToRequest(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) *schemas.UnifAIRequest
+	AddToolsToRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) *schemas.RakshaRequest
 
 	// GetAvailableTools returns all available MCP tools for the given context
-	GetAvailableTools(ctx *schemas.UnifAIContext) []schemas.ChatTool
+	GetAvailableTools(ctx *schemas.RakshaContext) []schemas.ChatTool
 
 	// UpdateToolManagerConfig updates the configuration for the tool manager.
 	// DisableAutoToolInject in the config controls auto injection — pass the
@@ -29,26 +29,26 @@ type MCPManagerInterface interface {
 	// Tool executions inside the agent loop go through the plugin gate internally —
 	// callers no longer inject an executeTool function.
 	CheckAndExecuteAgentForChatRequest(
-		ctx *schemas.UnifAIContext,
-		req *schemas.UnifAIChatRequest,
-		response *schemas.UnifAIChatResponse,
-		makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError),
-	) (*schemas.UnifAIChatResponse, *schemas.UnifAIError)
+		ctx *schemas.RakshaContext,
+		req *schemas.RakshaChatRequest,
+		response *schemas.RakshaChatResponse,
+		makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError),
+	) (*schemas.RakshaChatResponse, *schemas.RakshaError)
 
 	// CheckAndExecuteAgentForResponsesRequest handles agent mode for Responses API.
 	// Tool executions inside the agent loop go through the plugin gate internally.
 	CheckAndExecuteAgentForResponsesRequest(
-		ctx *schemas.UnifAIContext,
-		req *schemas.UnifAIResponsesRequest,
-		response *schemas.UnifAIResponsesResponse,
-		makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError),
-	) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError)
+		ctx *schemas.RakshaContext,
+		req *schemas.RakshaResponsesRequest,
+		response *schemas.RakshaResponsesResponse,
+		makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
+	) (*schemas.RakshaResponsesResponse, *schemas.RakshaError)
 
 	// ExecuteChatTool / ExecuteResponsesTool run a single MCP tool call through the
-	// plugin gate and return the result in the appropriate API format. UnifAI's
+	// plugin gate and return the result in the appropriate API format. Raksha's
 	// ExecuteChatMCPTool / ExecuteResponsesMCPTool delegate here.
-	ExecuteChatTool(ctx *schemas.UnifAIContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.UnifAIError)
-	ExecuteResponsesTool(ctx *schemas.UnifAIContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.UnifAIError)
+	ExecuteChatTool(ctx *schemas.RakshaContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.RakshaError)
+	ExecuteResponsesTool(ctx *schemas.RakshaContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.RakshaError)
 
 	// Client Management
 	// GetClients returns all MCP clients

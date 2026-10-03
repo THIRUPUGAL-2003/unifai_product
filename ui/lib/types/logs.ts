@@ -1,4 +1,4 @@
-// Types for the logs interface based on UnifAIResponse schema
+// Types for the logs interface based on RakshaResponse schema
 
 import { DBKey, VirtualKey } from "./governance";
 import { RoutingRule } from "./routingRules";
@@ -63,12 +63,12 @@ export interface TranscriptionUsage {
 	seconds?: number; // For duration-based usage
 }
 
-export interface UnifAISpeech {
+export interface RakshaSpeech {
 	usage?: AudioLLMUsage;
 	audio: string; // base64 encoded audio data
 }
 
-export interface UnifAITranscribe {
+export interface RakshaTranscribe {
 	text: string;
 	logprobs?: TranscriptionLogProb[];
 	usage?: TranscriptionUsage;
@@ -201,7 +201,7 @@ export interface ReasoningDetails {
 	data?: string;
 }
 
-export interface UnifAIEmbedding {
+export interface RakshaEmbedding {
 	index: number;
 	object: string;
 	embedding: string | number[] | number[][];
@@ -219,7 +219,7 @@ export interface RerankResult {
 	document?: RerankDocument;
 }
 
-export interface UnifAIImageGenerationData {
+export interface RakshaImageGenerationData {
 	url?: string;
 	b64_json?: string;
 	revised_prompt?: string;
@@ -268,18 +268,18 @@ export interface OCRUsageInfo {
 	doc_size_bytes: number;
 }
 
-export interface UnifAIOCRResponse {
+export interface RakshaOCRResponse {
 	model: string;
 	pages: OCRPage[];
 	usage_info?: OCRUsageInfo;
 	document_annotation?: string;
 }
 
-export interface UnifAIImageGenerationOutput {
+export interface RakshaImageGenerationOutput {
 	id?: string;
 	created?: number;
 	model?: string;
-	data: UnifAIImageGenerationData[];
+	data: RakshaImageGenerationData[];
 	background?: string;
 	output_format?: string;
 	quality?: string;
@@ -319,7 +319,7 @@ export interface VideoOutput {
 	base64?: string;
 	content_type?: string;
 }
-export interface UnifAIVideoGenerationOutput {
+export interface RakshaVideoGenerationOutput {
 	videos: VideoOutput[];
 	id?: string;
 	completed_at?: number;
@@ -336,18 +336,18 @@ export interface UnifAIVideoGenerationOutput {
 	status?: string;
 }
 
-export interface UnifAIVideoDownloadOutput {
+export interface RakshaVideoDownloadOutput {
 	video_id: string;
 	content_type?: string;
 }
 
-export interface UnifAIVideoDeleteOutput {
+export interface RakshaVideoDeleteOutput {
 	id: string;
 	deleted: boolean;
 	object?: string;
 }
 
-export interface UnifAIVideoListOutput {
+export interface RakshaVideoListOutput {
 	object: string;
 	data: VideoObject[];
 	first_id?: string;
@@ -450,10 +450,10 @@ export interface ErrorField {
 	event_id?: string;
 }
 
-export interface UnifAIError {
+export interface RakshaError {
 	event_id?: string;
 	type?: string;
-	is_unifai_error: boolean;
+	is_raksha_error: boolean;
 	status_code?: number;
 	error: ErrorField;
 }
@@ -543,16 +543,16 @@ export interface LogEntry {
 	content_summary?: string;
 	output_message?: ChatMessage;
 	responses_output?: ResponsesMessage[];
-	embedding_output?: UnifAIEmbedding[];
+	embedding_output?: RakshaEmbedding[];
 	rerank_output?: RerankResult[];
 	ocr_input?: OCRDocument;
-	ocr_output?: UnifAIOCRResponse;
-	image_generation_output?: UnifAIImageGenerationOutput;
-	video_generation_output?: UnifAIVideoGenerationOutput;
-	video_retrieve_output?: UnifAIVideoGenerationOutput;
-	video_download_output?: UnifAIVideoDownloadOutput;
-	video_list_output?: UnifAIVideoListOutput;
-	video_delete_output?: UnifAIVideoDeleteOutput;
+	ocr_output?: RakshaOCRResponse;
+	image_generation_output?: RakshaImageGenerationOutput;
+	video_generation_output?: RakshaVideoGenerationOutput;
+	video_retrieve_output?: RakshaVideoGenerationOutput;
+	video_download_output?: RakshaVideoDownloadOutput;
+	video_list_output?: RakshaVideoListOutput;
+	video_delete_output?: RakshaVideoDeleteOutput;
 	params?: ModelParameters;
 	speech_input?: SpeechInput;
 	transcription_input?: TranscriptionInput;
@@ -560,8 +560,8 @@ export interface LogEntry {
 	image_edit_input?: ImageEditInput;
 	image_variation_input?: ImageVariationInput;
 	video_generation_input?: { prompt: string };
-	speech_output?: UnifAISpeech;
-	transcription_output?: UnifAITranscribe;
+	speech_output?: RakshaSpeech;
+	transcription_output?: RakshaTranscribe;
 	list_models_output?: Model[];
 	tools?: Tool[];
 	tool_calls?: ToolCall[];
@@ -571,7 +571,7 @@ export interface LogEntry {
 	cost?: number; // Cost in dollars (total cost of the request - includes cache lookup cost)
 	status: string; // "success" or "error"
 	stop_reason?: string; // Why the model stopped: "stop", "length", "content_filter", "tool_calls", etc.
-	error_details?: UnifAIError;
+	error_details?: RakshaError;
 	stream: boolean; // true if this was a streaming response
 	created_at: string; // ISO string format from Go time.Time - when the log was first created
 	raw_request?: string; // Raw provider request
@@ -1073,7 +1073,7 @@ export interface MCPToolLogEntry {
 	business_unit_id?: string;
 	arguments?: Record<string, unknown> | string; // JSON parsed tool arguments
 	result?: Record<string, unknown> | string; // JSON parsed tool result
-	error_details?: UnifAIError;
+	error_details?: RakshaError;
 	latency?: number; // Execution time in milliseconds
 	cost?: number; // Cost in dollars (per execution cost)
 	status: string; // "processing", "success", or "error"

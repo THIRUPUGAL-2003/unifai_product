@@ -1,6 +1,6 @@
 package tables
 
-import "github.com/unifai/unifai/core/network"
+import "github.com/raksha/raksha/core/network"
 
 const (
 	ConfigAdminUsernameKey = "admin_username"

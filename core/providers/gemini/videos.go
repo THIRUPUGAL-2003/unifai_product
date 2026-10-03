@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 const defaultVideoContentType = "video/mp4"
@@ -241,24 +241,24 @@ func parseVideoDataURL(data string) (mimeType string, base64Payload string, ok b
 	return header, payload, true
 }
 
-// ToGeminiVideoGenerationRequest converts a UnifAI video generation request to Gemini REST API format
+// ToGeminiVideoGenerationRequest converts a Raksha video generation request to Gemini REST API format
 // This creates the request body for POST /models/{model}:predictLongRunning
-func ToGeminiVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequest) (*GeminiVideoGenerationRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request or input is nil")
+func ToGeminiVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*GeminiVideoGenerationRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request or input is nil")
 	}
 
-	unifaiReq.Model = NormalizeModelName(unifaiReq.Model)
+	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
 
 	// Create the instance with prompt
 	instance := &GeminiVideoGenerationInstance{
-		Prompt: unifaiReq.Input.Prompt,
+		Prompt: rakshaReq.Input.Prompt,
 	}
 
 	// Handle input reference (image for image-to-video)
-	if unifaiReq.Input.InputReference != nil && *unifaiReq.Input.InputReference != "" {
+	if rakshaReq.Input.InputReference != nil && *rakshaReq.Input.InputReference != "" {
 		// extract mime type and base64 string from input reference
-		sanitizedURL, err := schemas.SanitizeImageURLWithAllowedSchemes(*unifaiReq.Input.InputReference, defaultGeminiImageURLSchemes...)
+		sanitizedURL, err := schemas.SanitizeImageURLWithAllowedSchemes(*rakshaReq.Input.InputReference, defaultGeminiImageURLSchemes...)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
@@ -277,9 +277,9 @@ func ToGeminiVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 		instance.Image = image
 	}
 
-	if unifaiReq.Params != nil && unifaiReq.Params.VideoURI != nil {
+	if rakshaReq.Params != nil && rakshaReq.Params.VideoURI != nil {
 		instance.Video = &VideoGenerationVideoInput{
-			URI: unifaiReq.Params.VideoURI,
+			URI: rakshaReq.Params.VideoURI,
 		}
 	}
 
@@ -288,68 +288,68 @@ func ToGeminiVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 	}
 
 	// Map parameters if provided
-	if unifaiReq.Params != nil {
+	if rakshaReq.Params != nil {
 		params := &VideoGenerationParameters{}
 
 		// Extract all video generation parameters from ExtraParams
-		if unifaiReq.Params.NegativePrompt != nil {
-			params.NegativePrompt = unifaiReq.Params.NegativePrompt
+		if rakshaReq.Params.NegativePrompt != nil {
+			params.NegativePrompt = rakshaReq.Params.NegativePrompt
 		}
 
-		if unifaiReq.Params.Seconds != nil {
-			seconds, err := strconv.Atoi(*unifaiReq.Params.Seconds)
+		if rakshaReq.Params.Seconds != nil {
+			seconds, err := strconv.Atoi(*rakshaReq.Params.Seconds)
 			if err != nil {
 				return nil, fmt.Errorf("invalid seconds value: %w", err)
 			}
 			params.DurationSeconds = &seconds
 		}
 
-		if unifaiReq.Params.Seed != nil {
-			params.Seed = unifaiReq.Params.Seed
+		if rakshaReq.Params.Seed != nil {
+			params.Seed = rakshaReq.Params.Seed
 		}
 
-		if unifaiReq.Params.Audio != nil {
-			params.GenerateAudio = unifaiReq.Params.Audio
+		if rakshaReq.Params.Audio != nil {
+			params.GenerateAudio = rakshaReq.Params.Audio
 		}
 
-		if unifaiReq.Params.ExtraParams != nil {
-			req.ExtraParams = unifaiReq.Params.ExtraParams
-			if aspectRatio, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["aspectRatio"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			req.ExtraParams = rakshaReq.Params.ExtraParams
+			if aspectRatio, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["aspectRatio"]); ok {
 				params.AspectRatio = aspectRatio
 			}
-			if resolution, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["resolution"]); ok {
+			if resolution, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["resolution"]); ok {
 				params.Resolution = resolution
 			}
 
-			if sampleCount, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["sampleCount"]); ok {
+			if sampleCount, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["sampleCount"]); ok {
 				params.SampleCount = sampleCount
 			}
 
-			if personGeneration, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["personGeneration"]); ok {
+			if personGeneration, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["personGeneration"]); ok {
 				params.PersonGeneration = personGeneration
 			}
 
-			if numberOfVideos, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["numberOfVideos"]); ok {
+			if numberOfVideos, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["numberOfVideos"]); ok {
 				params.NumberOfVideos = numberOfVideos
 			}
-			if storageURI, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["storageURI"]); ok {
+			if storageURI, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["storageURI"]); ok {
 				params.StorageURI = storageURI
 			}
-			if compressionQuality, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["compressionQuality"]); ok {
+			if compressionQuality, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["compressionQuality"]); ok {
 				params.CompressionQuality = compressionQuality
 			}
-			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enhancePrompt"]); ok {
+			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enhancePrompt"]); ok {
 				params.EnhancePrompt = enhancePrompt
 			}
-			if resizeMode, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["resizeMode"]); ok {
+			if resizeMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["resizeMode"]); ok {
 				params.ResizeMode = resizeMode
 			}
-			if referenceImages, ok := unifaiReq.Params.ExtraParams["referenceImages"]; ok {
+			if referenceImages, ok := rakshaReq.Params.ExtraParams["referenceImages"]; ok {
 				if referenceImages, ok := videoReferenceImagesFromExtraParam(referenceImages); ok {
 					req.Instances[0].ReferenceImages = referenceImages
 				}
 			}
-			if lastFrame, ok := unifaiReq.Params.ExtraParams["lastFrame"]; ok {
+			if lastFrame, ok := rakshaReq.Params.ExtraParams["lastFrame"]; ok {
 				if lastFrame, ok := videoImageDataFromExtraParam(lastFrame); ok {
 					req.Instances[0].LastFrame = lastFrame
 				}
@@ -357,8 +357,8 @@ func ToGeminiVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 		}
 
 		// Convert size to aspect ratio if size is provided and aspect ratio is not already set
-		if params.AspectRatio == nil && unifaiReq.Params.Size != "" {
-			aspectRatio := sizeToAspectRatio(unifaiReq.Params.Size)
+		if params.AspectRatio == nil && rakshaReq.Params.Size != "" {
+			aspectRatio := sizeToAspectRatio(rakshaReq.Params.Size)
 			if aspectRatio != "" {
 				params.AspectRatio = &aspectRatio
 			}
@@ -370,15 +370,15 @@ func ToGeminiVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 	return req, nil
 }
 
-// ToUnifAIVideoGenerationResponse converts Gemini operation response to UnifAI format
-func ToUnifAIVideoGenerationResponse(operation *GenerateVideosOperation, model string) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+// ToRakshaVideoGenerationResponse converts Gemini operation response to Raksha format
+func ToRakshaVideoGenerationResponse(operation *GenerateVideosOperation, model string) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	model = NormalizeModelName(model)
 
 	if operation == nil {
-		return nil, providerUtils.NewUnifAIOperationError("operation is nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("operation is nil", nil)
 	}
 
-	response := &schemas.UnifAIVideoGenerationResponse{
+	response := &schemas.RakshaVideoGenerationResponse{
 		ID:        operation.Name,
 		Object:    "video",
 		CreatedAt: time.Now().Unix(),
@@ -541,7 +541,7 @@ func ToUnifAIVideoGenerationResponse(operation *GenerateVideosOperation, model s
 	return response, nil
 }
 
-func (request *GeminiVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx *schemas.UnifAIContext) (*schemas.UnifAIVideoGenerationRequest, error) {
+func (request *GeminiVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx *schemas.RakshaContext) (*schemas.RakshaVideoGenerationRequest, error) {
 	if request == nil || len(request.Instances) == 0 {
 		return nil, fmt.Errorf("request is nil or has no instances")
 	}
@@ -551,7 +551,7 @@ func (request *GeminiVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx 
 
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	unifaiReq := &schemas.UnifAIVideoGenerationRequest{
+	rakshaReq := &schemas.RakshaVideoGenerationRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.VideoGenerationInput{
@@ -566,13 +566,13 @@ func (request *GeminiVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx 
 		if instance.Image.MimeType != nil && *instance.Image.MimeType != "" {
 			mimeType = *instance.Image.MimeType
 		}
-		unifaiReq.Input.InputReference = schemas.Ptr(fmt.Sprintf("data:%s;base64,%s", mimeType, *instance.Image.BytesBase64Encoded))
+		rakshaReq.Input.InputReference = schemas.Ptr(fmt.Sprintf("data:%s;base64,%s", mimeType, *instance.Image.BytesBase64Encoded))
 	}
 
 	// Helper to ensure params are initialized
 	ensureParams := func() {
-		if unifaiReq.Params == nil {
-			unifaiReq.Params = &schemas.VideoGenerationParameters{
+		if rakshaReq.Params == nil {
+			rakshaReq.Params = &schemas.VideoGenerationParameters{
 				ExtraParams: make(map[string]any),
 			}
 		}
@@ -581,25 +581,25 @@ func (request *GeminiVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx 
 	// Handle reference images
 	if len(instance.ReferenceImages) > 0 {
 		ensureParams()
-		unifaiReq.Params.ExtraParams["referenceImages"] = instance.ReferenceImages
+		rakshaReq.Params.ExtraParams["referenceImages"] = instance.ReferenceImages
 	}
 
 	// Handle video URI
 	if instance.Video != nil && instance.Video.URI != nil {
 		ensureParams()
-		unifaiReq.Params.VideoURI = instance.Video.URI
+		rakshaReq.Params.VideoURI = instance.Video.URI
 	}
 
 	// Handle last frame
 	if instance.LastFrame != nil {
 		ensureParams()
-		unifaiReq.Params.ExtraParams["lastFrame"] = instance.LastFrame
+		rakshaReq.Params.ExtraParams["lastFrame"] = instance.LastFrame
 	}
 
 	// Map parameters if provided
 	if request.Parameters != nil {
 		ensureParams()
-		params := unifaiReq.Params
+		params := rakshaReq.Params
 
 		if request.Parameters.NegativePrompt != nil {
 			params.NegativePrompt = request.Parameters.NegativePrompt
@@ -643,10 +643,10 @@ func (request *GeminiVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx 
 		}
 	}
 
-	return unifaiReq, nil
+	return rakshaReq, nil
 }
 
-func ToGeminiVideoGenerationResponse(response *schemas.UnifAIVideoGenerationResponse) *GenerateVideosOperation {
+func ToGeminiVideoGenerationResponse(response *schemas.RakshaVideoGenerationResponse) *GenerateVideosOperation {
 	if response == nil {
 		return nil
 	}

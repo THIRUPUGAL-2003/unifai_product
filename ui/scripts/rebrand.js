@@ -26,20 +26,20 @@ files.forEach(file => {
     let content = fs.readFileSync(file, 'utf-8');
     let original = content;
 
-    content = content.replace(/UnifAI enterprise license/g, 'UnifAI enterprise license');
-    content = content.replace(/UnifAI deployment/g, 'UnifAI deployment');
-    content = content.replace(/UnifAI admin APIs/g, 'UnifAI admin APIs');
-    content = content.replace(/API calls to UnifAI/g, 'API calls to UnifAI');
-    content = content.replace(/restarting UnifAI/g, 'restarting UnifAI');
-    content = content.replace(/client with UnifAI/g, 'client with UnifAI');
-    content = content.replace(/Handled by UnifAI/g, 'Handled by UnifAI');
-    content = content.replace(/via UnifAI/g, 'via UnifAI');
-    content = content.replace(/UnifAI automatically/g, 'UnifAI automatically');
+    content = content.replace(/Raksha enterprise license/g, 'Raksha enterprise license');
+    content = content.replace(/Raksha deployment/g, 'Raksha deployment');
+    content = content.replace(/Raksha admin APIs/g, 'Raksha admin APIs');
+    content = content.replace(/API calls to Raksha/g, 'API calls to Raksha');
+    content = content.replace(/restarting Raksha/g, 'restarting Raksha');
+    content = content.replace(/client with Raksha/g, 'client with Raksha');
+    content = content.replace(/Handled by Raksha/g, 'Handled by Raksha');
+    content = content.replace(/via Raksha/g, 'via Raksha');
+    content = content.replace(/Raksha automatically/g, 'Raksha automatically');
 
     content = content.replace(/\s*readmeLink="[^"]*"/g, '');
-    content = content.replace(/"https:\/\/docs\.getunifai\.ai[^"]*"/g, '""');
-    content = content.replace(/"https:\/\/docs\.getunifai\.io[^"]*"/g, '""');
-    content = content.replace(/"https:\/\/github\.com\/maximhq\/unifai[^"]*"/g, '""');
+    content = content.replace(/"https:\/\/docs\.getraksha\.ai[^"]*"/g, '""');
+    content = content.replace(/"https:\/\/docs\.getraksha\.io[^"]*"/g, '""');
+    content = content.replace(/"https:\/\/github\.com\/maximhq\/raksha[^"]*"/g, '""');
 
     if (content !== original) {
         fs.writeFileSync(file, content, 'utf-8');

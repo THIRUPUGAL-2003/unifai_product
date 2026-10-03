@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCookies } from "react-cookie";
 import { toast } from "sonner";
 
-const ONBOARDING_DISMISSED_COOKIE = "unifai_onboarding_dismissed";
+const ONBOARDING_DISMISSED_COOKIE = "raksha_onboarding_dismissed";
 const METADATA_DISMISSED_KEY = "onboarding_dismissed";
 const METADATA_SKIPPED_KEY = "onboarding_skipped";
 
@@ -66,11 +66,11 @@ export default function OnboardingWidget() {
 	const skipWriteChainRef = useRef<Promise<void>>(Promise.resolve());
 	const [pendingSkippedIds, setPendingSkippedIds] = useState<string[]>([]);
 
-	const { data: unifaiConfig } = useGetCoreConfigQuery({}, { skip: shouldSkipCoreConfigQuery });
+	const { data: rakshaConfig } = useGetCoreConfigQuery({}, { skip: shouldSkipCoreConfigQuery });
 	// A widget dismissed for everyone only needs the core-config query (to learn
 	// the dismiss flag). Once isDismissedForAll is known, skip the provider and
 	// governance queries so they don't hit the network on every page load.
-	const isDismissedForAll = unifaiConfig?.metadata?.[METADATA_DISMISSED_KEY] === true;
+	const isDismissedForAll = rakshaConfig?.metadata?.[METADATA_DISMISSED_KEY] === true;
 	const shouldSkipChecklistQueries = shouldSkipCoreConfigQuery || isDismissedForAll;
 	const { data: allKeys } = useGetAllKeysQuery(undefined, { skip: shouldSkipChecklistQueries });
 	const { data: vksResponse } = useGetVirtualKeysQuery(undefined, {
@@ -83,16 +83,16 @@ export default function OnboardingWidget() {
 		skip: shouldSkipChecklistQueries || !IS_ENTERPRISE,
 	});
 	const checklistReady =
-		unifaiConfig !== undefined &&
+		rakshaConfig !== undefined &&
 		allKeys !== undefined &&
 		(!IS_ENTERPRISE || (vksResponse !== undefined && modelConfigsResponse !== undefined && scimProviders !== undefined));
 
 	const skippedIds = useMemo<string[]>(() => {
-		return parseSkippedIds(unifaiConfig?.metadata?.[METADATA_SKIPPED_KEY]);
-	}, [unifaiConfig?.metadata]);
+		return parseSkippedIds(rakshaConfig?.metadata?.[METADATA_SKIPPED_KEY]);
+	}, [rakshaConfig?.metadata]);
 
-	const authConfig = unifaiConfig?.auth_config;
-	const clientConfig = unifaiConfig?.client_config;
+	const authConfig = rakshaConfig?.auth_config;
+	const clientConfig = rakshaConfig?.client_config;
 	const authValueSet = (secretVar: { value?: string; ref?: string; type?: string } | undefined) => {
 		if (!secretVar) return false;
 		return !!secretVar.value || !!secretVar.ref;

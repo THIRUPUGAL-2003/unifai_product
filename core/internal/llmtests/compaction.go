@@ -7,20 +7,20 @@ import (
 	"testing"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/providers/anthropic"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/providers/anthropic"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunCompactionTest tests that context_management with compaction is correctly
-// forwarded through UnifAI via the Responses API.
+// forwarded through Raksha via the Responses API.
 //
 // Because compaction requires a minimum trigger of 50,000 input tokens, this
 // test does NOT trigger actual compaction. Instead it verifies:
-//  1. The context_management field survives the UnifAI request round-trip
+//  1. The context_management field survives the Raksha request round-trip
 //  2. The compact-2026-01-12 beta header is properly sent
 //  3. The API accepts the request without error (non-streaming + streaming)
-func RunCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunCompactionTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Compaction {
 		t.Logf("Compaction not supported for provider %s", testConfig.Provider)
 		return
@@ -67,14 +67,14 @@ func RunCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.Context,
 
 		// --- Non-streaming test ---
 		t.Run("NonStreaming", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
-			request := &schemas.UnifAIResponsesRequest{
+			request := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    compactionModel,
 				Input:    messages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(100),
+					MaxOutputTokens: raksha.Ptr(100),
 					ExtraParams: map[string]interface{}{
 						"context_management": contextManagement,
 					},
@@ -106,14 +106,14 @@ func RunCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.Context,
 
 		// --- Streaming test ---
 		t.Run("Streaming", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
-			request := &schemas.UnifAIResponsesRequest{
+			request := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    compactionModel,
 				Input:    messages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(100),
+					MaxOutputTokens: raksha.Ptr(100),
 					ExtraParams: map[string]interface{}{
 						"context_management": contextManagement,
 					},
@@ -140,15 +140,15 @@ func RunCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.Context,
 						goto done
 					}
 					chunkCount++
-					if chunk.UnifAIResponsesStreamResponse != nil {
-						if chunk.UnifAIResponsesStreamResponse.Type == schemas.ResponsesStreamResponseTypeCreated {
+					if chunk.RakshaResponsesStreamResponse != nil {
+						if chunk.RakshaResponsesStreamResponse.Type == schemas.ResponsesStreamResponseTypeCreated {
 							hasCreated = true
 						}
-						if chunk.UnifAIResponsesStreamResponse.Type == schemas.ResponsesStreamResponseTypeCompleted {
+						if chunk.RakshaResponsesStreamResponse.Type == schemas.ResponsesStreamResponseTypeCompleted {
 							hasCompleted = true
 						}
-						if chunk.UnifAIResponsesStreamResponse.Delta != nil {
-							fullContent.WriteString(*chunk.UnifAIResponsesStreamResponse.Delta)
+						if chunk.RakshaResponsesStreamResponse.Delta != nil {
+							fullContent.WriteString(*chunk.RakshaResponsesStreamResponse.Delta)
 						}
 					}
 				case <-streamCtx.Done():
@@ -174,12 +174,12 @@ func RunCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.Context,
 }
 
 // RunExternalCompactionTest tests OpenAI's /v1/responses/compact endpoint via
-// unifai.CompactionRequest. It validates:
+// raksha.CompactionRequest. It validates:
 //  1. The response object is "response.compaction"
 //  2. The output array contains at least one compaction item (type=="compaction")
 //  3. Usage token counts are present
 //  4. The compacted output can be fed back into a subsequent ResponsesRequest
-func RunExternalCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunExternalCompactionTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ExternalCompaction {
 		t.Logf("ExternalCompaction not supported for provider %s", testConfig.Provider)
 		return
@@ -216,9 +216,9 @@ func RunExternalCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		}
 
 		t.Run("BasicCompaction", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
-			req := &schemas.UnifAICompactionRequest{
+			req := &schemas.RakshaCompactionRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    conversation,
@@ -271,10 +271,10 @@ func RunExternalCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		})
 
 		t.Run("CompactedOutputUsableInFollowUp", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
 			// Step 1: compact the conversation
-			compactReq := &schemas.UnifAICompactionRequest{
+			compactReq := &schemas.RakshaCompactionRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    conversation,
@@ -290,12 +290,12 @@ func RunExternalCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.
 			// Step 2: append a new user message to the compacted output and call /responses
 			followUpInput := append(compactResp.Output, CreateBasicResponsesMessage("Which of those two cities is further north?"))
 
-			bfCtx2 := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			followUpResp, followUpErr := client.ResponsesRequest(bfCtx2, &schemas.UnifAIResponsesRequest{
+			bfCtx2 := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			followUpResp, followUpErr := client.ResponsesRequest(bfCtx2, &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    followUpInput,
-				Params:   &schemas.ResponsesParameters{MaxOutputTokens: unifai.Ptr(100)},
+				Params:   &schemas.ResponsesParameters{MaxOutputTokens: raksha.Ptr(100)},
 			})
 			if followUpErr != nil {
 				t.Fatalf("Follow-up ResponsesRequest with compacted input failed: %s", GetErrorMessage(followUpErr))
@@ -313,10 +313,10 @@ func RunExternalCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		})
 
 		t.Run("CompactionWithInstructions", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			instructions := "Always respond in formal English."
 
-			req := &schemas.UnifAICompactionRequest{
+			req := &schemas.RakshaCompactionRequest{
 				Provider:     testConfig.Provider,
 				Model:        model,
 				Input:        conversation,
@@ -340,9 +340,9 @@ func RunExternalCompactionTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		t.Run("CompactionMultiTurnWithTimeout", func(t *testing.T) {
 			timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 			defer cancel()
-			bfCtx := schemas.NewUnifAIContext(timeoutCtx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(timeoutCtx, schemas.NoDeadline)
 
-			req := &schemas.UnifAICompactionRequest{
+			req := &schemas.RakshaCompactionRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    conversation,

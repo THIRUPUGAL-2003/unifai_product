@@ -1,8 +1,8 @@
 package tables
 
 import (
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/encrypt"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/encrypt"
 )
 
 const (

@@ -5,28 +5,28 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func ToElevenlabsTranscriptionRequest(unifaiReq *schemas.UnifAITranscriptionRequest) *ElevenlabsTranscriptionRequest {
-	if unifaiReq == nil {
+func ToElevenlabsTranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequest) *ElevenlabsTranscriptionRequest {
+	if rakshaReq == nil {
 		return nil
 	}
 
 	req := &ElevenlabsTranscriptionRequest{
-		ModelID: unifaiReq.Model,
+		ModelID: rakshaReq.Model,
 	}
 
-	if unifaiReq.Input != nil && len(unifaiReq.Input.File) > 0 {
-		req.File = unifaiReq.Input.File
-		req.Filename = unifaiReq.Input.Filename
+	if rakshaReq.Input != nil && len(rakshaReq.Input.File) > 0 {
+		req.File = rakshaReq.Input.File
+		req.Filename = rakshaReq.Input.Filename
 	}
 
-	if unifaiReq.Params == nil {
+	if rakshaReq.Params == nil {
 		return req
 	}
 
-	params := unifaiReq.Params
+	params := rakshaReq.Params
 
 	if params.Language != nil {
 		req.LanguageCode = params.Language
@@ -83,7 +83,7 @@ func ToElevenlabsTranscriptionRequest(unifaiReq *schemas.UnifAITranscriptionRequ
 			delete(params.ExtraParams, "use_multi_channel")
 			req.UseMultiChannel = useMultiChannel
 		}
-		req.ExtraParams = unifaiReq.Params.ExtraParams
+		req.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 
 	if len(params.AdditionalFormats) > 0 {
@@ -111,7 +111,7 @@ func ToElevenlabsTranscriptionRequest(unifaiReq *schemas.UnifAITranscriptionRequ
 	return req
 }
 
-func ToUnifAITranscriptionResponse(chunks []ElevenlabsSpeechToTextChunkResponse) *schemas.UnifAITranscriptionResponse {
+func ToRakshaTranscriptionResponse(chunks []ElevenlabsSpeechToTextChunkResponse) *schemas.RakshaTranscriptionResponse {
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -145,7 +145,7 @@ func ToUnifAITranscriptionResponse(chunks []ElevenlabsSpeechToTextChunkResponse)
 
 	text := strings.Join(textParts, "\n")
 
-	response := &schemas.UnifAITranscriptionResponse{
+	response := &schemas.RakshaTranscriptionResponse{
 		Text:     text,
 		Words:    allWords,
 		LogProbs: allLogProbs,

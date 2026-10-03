@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // bedrockInputTokenCountHeader is the HTTP response header Bedrock uses to report input
@@ -30,41 +30,41 @@ func inputTokensFromHeaders(headers map[string]string) (int, bool) {
 	return 0, false
 }
 
-// ToBedrockTitanEmbeddingRequest converts a UnifAI embedding request to Bedrock Titan format
-func ToBedrockTitanEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) (*BedrockTitanEmbeddingRequest, error) {
-	if unifaiReq == nil {
-		return nil, fmt.Errorf("unifai embedding request is nil")
+// ToBedrockTitanEmbeddingRequest converts a Raksha embedding request to Bedrock Titan format
+func ToBedrockTitanEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*BedrockTitanEmbeddingRequest, error) {
+	if rakshaReq == nil {
+		return nil, fmt.Errorf("raksha embedding request is nil")
 	}
 
 	// Validate that only single text input is provided for Titan models
-	if unifaiReq.Input.Text == nil && len(unifaiReq.Input.Texts) == 0 {
+	if rakshaReq.Input.Text == nil && len(rakshaReq.Input.Texts) == 0 {
 		return nil, fmt.Errorf("no input text provided for embedding")
 	}
 
 	titanReq := &BedrockTitanEmbeddingRequest{}
 
 	// Set input text
-	if unifaiReq.Input.Text != nil {
-		titanReq.InputText = *unifaiReq.Input.Text
-	} else if len(unifaiReq.Input.Texts) > 0 {
+	if rakshaReq.Input.Text != nil {
+		titanReq.InputText = *rakshaReq.Input.Text
+	} else if len(rakshaReq.Input.Texts) > 0 {
 		var embeddingText string
-		for _, text := range unifaiReq.Input.Texts {
+		for _, text := range rakshaReq.Input.Texts {
 			embeddingText += text + " \n"
 		}
 		titanReq.InputText = embeddingText
 	}
 
-	if unifaiReq.Params != nil {
-		titanReq.Dimensions = unifaiReq.Params.Dimensions
-		if normalize, ok := unifaiReq.Params.ExtraParams["normalize"]; ok {
+	if rakshaReq.Params != nil {
+		titanReq.Dimensions = rakshaReq.Params.Dimensions
+		if normalize, ok := rakshaReq.Params.ExtraParams["normalize"]; ok {
 			if b, ok := normalize.(bool); ok {
 				titanReq.Normalize = &b
 			}
 		}
 		// Forward remaining extra params (excluding normalize which is now a first-class field)
-		if len(unifaiReq.Params.ExtraParams) > 0 {
+		if len(rakshaReq.Params.ExtraParams) > 0 {
 			extra := make(map[string]interface{})
-			for k, v := range unifaiReq.Params.ExtraParams {
+			for k, v := range rakshaReq.Params.ExtraParams {
 				if k != "normalize" {
 					extra[k] = v
 				}
@@ -78,13 +78,13 @@ func ToBedrockTitanEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) (
 	return titanReq, nil
 }
 
-// ToUnifAIEmbeddingResponse converts a Bedrock Titan embedding response to UnifAI format
-func (response *BedrockTitanEmbeddingResponse) ToUnifAIEmbeddingResponse() *schemas.UnifAIEmbeddingResponse {
+// ToRakshaEmbeddingResponse converts a Bedrock Titan embedding response to Raksha format
+func (response *BedrockTitanEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.RakshaEmbeddingResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIEmbeddingResponse{
+	rakshaResponse := &schemas.RakshaEmbeddingResponse{
 		Object: "list",
 		Data: []schemas.EmbeddingData{
 			{
@@ -95,37 +95,37 @@ func (response *BedrockTitanEmbeddingResponse) ToUnifAIEmbeddingResponse() *sche
 				},
 			},
 		},
-		Usage: &schemas.UnifAILLMUsage{
+		Usage: &schemas.RakshaLLMUsage{
 			PromptTokens: response.InputTextTokenCount,
 			TotalTokens:  response.InputTextTokenCount,
 		},
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
-// ToBedrockCohereEmbeddingRequest converts a UnifAI embedding request to Bedrock Cohere format.
+// ToBedrockCohereEmbeddingRequest converts a Raksha embedding request to Bedrock Cohere format.
 // Unlike the direct Cohere API, Bedrock does not accept a "model" field in the request body.
-func ToBedrockCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) (*BedrockCohereEmbeddingRequest, error) {
-	if unifaiReq == nil {
-		return nil, fmt.Errorf("unifai embedding request is nil")
+func ToBedrockCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*BedrockCohereEmbeddingRequest, error) {
+	if rakshaReq == nil {
+		return nil, fmt.Errorf("raksha embedding request is nil")
 	}
-	if unifaiReq.Input == nil || (unifaiReq.Input.Text == nil && len(unifaiReq.Input.Texts) == 0) {
+	if rakshaReq.Input == nil || (rakshaReq.Input.Text == nil && len(rakshaReq.Input.Texts) == 0) {
 		return nil, fmt.Errorf("no input provided for embedding")
 	}
 
 	req := &BedrockCohereEmbeddingRequest{}
 
 	// Map texts
-	if unifaiReq.Input.Text != nil {
-		req.Texts = []string{*unifaiReq.Input.Text}
-	} else if len(unifaiReq.Input.Texts) > 0 {
-		req.Texts = unifaiReq.Input.Texts
+	if rakshaReq.Input.Text != nil {
+		req.Texts = []string{*rakshaReq.Input.Text}
+	} else if len(rakshaReq.Input.Texts) > 0 {
+		req.Texts = rakshaReq.Input.Texts
 	}
 
-	if unifaiReq.Params != nil {
-		extra := make(map[string]interface{}, len(unifaiReq.Params.ExtraParams))
-		for k, v := range unifaiReq.Params.ExtraParams {
+	if rakshaReq.Params != nil {
+		extra := make(map[string]interface{}, len(rakshaReq.Params.ExtraParams))
+		for k, v := range rakshaReq.Params.ExtraParams {
 			extra[k] = v
 		}
 
@@ -170,8 +170,8 @@ func ToBedrockCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) 
 				delete(extra, "max_tokens")
 			}
 		}
-		if unifaiReq.Params.Dimensions != nil {
-			req.OutputDimension = unifaiReq.Params.Dimensions
+		if rakshaReq.Params.Dimensions != nil {
+			req.OutputDimension = rakshaReq.Params.Dimensions
 		}
 		if len(extra) > 0 {
 			req.ExtraParams = extra
@@ -186,7 +186,7 @@ func ToBedrockCohereEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) 
 // (model_family / model_name / model_id / alias key) and falls back to the
 // substring detectors against the wire model — so an alias to an opaque
 // Bedrock deployment that's tagged with the right family routes correctly.
-func DetermineEmbeddingModelType(ctx *schemas.UnifAIContext, model string) (string, error) {
+func DetermineEmbeddingModelType(ctx *schemas.RakshaContext, model string) (string, error) {
 	switch {
 	case schemas.IsTitanModelFamily(ctx, model):
 		return "titan", nil
@@ -197,16 +197,16 @@ func DetermineEmbeddingModelType(ctx *schemas.UnifAIContext, model string) (stri
 	}
 }
 
-// ToUnifAIEmbeddingResponse converts a BedrockCohereEmbeddingResponse to UnifAI format.
+// ToRakshaEmbeddingResponse converts a BedrockCohereEmbeddingResponse to Raksha format.
 // Bedrock returns embeddings as a raw [][]float32 when response_type is "embeddings_floats"
 // (the default, when no embedding_types are requested), and as a typed object when
 // response_type is "embeddings_by_type".
-func (r *BedrockCohereEmbeddingResponse) ToUnifAIEmbeddingResponse() (*schemas.UnifAIEmbeddingResponse, error) {
+func (r *BedrockCohereEmbeddingResponse) ToRakshaEmbeddingResponse() (*schemas.RakshaEmbeddingResponse, error) {
 	if r == nil {
 		return nil, fmt.Errorf("nil Bedrock Cohere embedding response")
 	}
 
-	unifaiResponse := &schemas.UnifAIEmbeddingResponse{Object: "list"}
+	rakshaResponse := &schemas.RakshaEmbeddingResponse{Object: "list"}
 
 	switch r.ResponseType {
 	case "embeddings_by_type":
@@ -228,7 +228,7 @@ func (r *BedrockCohereEmbeddingResponse) ToUnifAIEmbeddingResponse() (*schemas.U
 				for j, v := range emb {
 					float64Emb[j] = float64(v)
 				}
-				unifaiResponse.Data = append(unifaiResponse.Data, schemas.EmbeddingData{
+				rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
 					Object:    "embedding",
 					Index:     i,
 					Embedding: schemas.EmbeddingStruct{EmbeddingArray: float64Emb},
@@ -238,7 +238,7 @@ func (r *BedrockCohereEmbeddingResponse) ToUnifAIEmbeddingResponse() (*schemas.U
 		if typed.Base64 != nil {
 			for i, emb := range typed.Base64 {
 				e := emb
-				unifaiResponse.Data = append(unifaiResponse.Data, schemas.EmbeddingData{
+				rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
 					Object:    "embedding",
 					Index:     i,
 					Embedding: schemas.EmbeddingStruct{EmbeddingStr: &e},
@@ -246,28 +246,28 @@ func (r *BedrockCohereEmbeddingResponse) ToUnifAIEmbeddingResponse() (*schemas.U
 			}
 		}
 		for i, emb := range typed.Int8 {
-			unifaiResponse.Data = append(unifaiResponse.Data, schemas.EmbeddingData{
+			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt8Array: emb},
 			})
 		}
 		for i, emb := range typed.Binary {
-			unifaiResponse.Data = append(unifaiResponse.Data, schemas.EmbeddingData{
+			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt8Array: emb},
 			})
 		}
 		for i, emb := range typed.Uint8 {
-			unifaiResponse.Data = append(unifaiResponse.Data, schemas.EmbeddingData{
+			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt32Array: emb},
 			})
 		}
 		for i, emb := range typed.Ubinary {
-			unifaiResponse.Data = append(unifaiResponse.Data, schemas.EmbeddingData{
+			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt32Array: emb},
@@ -285,7 +285,7 @@ func (r *BedrockCohereEmbeddingResponse) ToUnifAIEmbeddingResponse() (*schemas.U
 			for j, v := range emb {
 				float64Emb[j] = float64(v)
 			}
-			unifaiResponse.Data = append(unifaiResponse.Data, schemas.EmbeddingData{
+			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingArray: float64Emb},
@@ -293,5 +293,5 @@ func (r *BedrockCohereEmbeddingResponse) ToUnifAIEmbeddingResponse() (*schemas.U
 		}
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }

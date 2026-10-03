@@ -5,17 +5,17 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/unifai/unifai/scripts/unifai-migration-cli/litellm"
+	"github.com/raksha/raksha/scripts/raksha-migration-cli/litellm"
 )
 
-// rateLimitResetWindow is the UnifAI reset duration for migrated rate limits.
+// rateLimitResetWindow is the Raksha reset duration for migrated rate limits.
 // LiteLLM's tpm_limit / rpm_limit are defined per minute, so both the token and
-// request limits reset every minute in UnifAI.
+// request limits reset every minute in Raksha.
 const rateLimitResetWindow = "1m"
 
-// defaultMaxBudgetPeriod is the UnifAI reset window used when a LiteLLM budget
+// defaultMaxBudgetPeriod is the Raksha reset window used when a LiteLLM budget
 // has a spend cap but no budget_duration. LiteLLM allows a never-resetting
-// budget; UnifAI requires a reset window, so a long default stands in for
+// budget; Raksha requires a reset window, so a long default stands in for
 // "effectively never".
 const defaultMaxBudgetPeriod = "10Y"
 
@@ -25,7 +25,7 @@ const defaultMaxBudgetPeriod = "10Y"
 // durations like "daily" have no leading digit and therefore do not match.
 var litellmDurationRe = regexp.MustCompile(`^(\d+)(mo|[smhdw])`)
 
-// LiteLLMOrganizationToUnifAICustomer transforms a LiteLLM organization into a UnifAI
+// LiteLLMOrganizationToRakshaCustomer transforms a LiteLLM organization into a Raksha
 // create-customer request. The mapping is pure (no I/O) so each field can be
 // unit-tested in isolation.
 //
@@ -36,15 +36,15 @@ var litellmDurationRe = regexp.MustCompile(`^(\d+)(mo|[smhdw])`)
 //   - budget.tpm_limit          -> rate_limit.token_max_limit   (reset "1m")
 //   - budget.rpm_limit          -> rate_limit.request_max_limit (reset "1m")
 //
-// Models and allowed MCP servers are intentionally not migrated: a UnifAI
+// Models and allowed MCP servers are intentionally not migrated: a Raksha
 // customer has no models, and MCP linkage is handled separately.
-func LiteLLMOrganizationToUnifAICustomer(org litellm.LiteLLMOrganization, cfg MigrationRunConfig) (*UnifAICreateCustomerRequest, error) {
+func LiteLLMOrganizationToRakshaCustomer(org litellm.LiteLLMOrganization, cfg MigrationRunConfig) (*RakshaCreateCustomerRequest, error) {
 	name := strings.TrimSpace(org.OrganizationAlias)
 	if name == "" {
 		return nil, fmt.Errorf("organization %q has no organization_alias; a customer name is required", org.OrganizationID)
 	}
 
-	req := &UnifAICreateCustomerRequest{Name: name}
+	req := &RakshaCreateCustomerRequest{Name: name}
 
 	if org.Budget != nil {
 		budget, err := toBudget(*org.Budget, cfg.MaxBudgetPeriod)
@@ -52,7 +52,7 @@ func LiteLLMOrganizationToUnifAICustomer(org litellm.LiteLLMOrganization, cfg Mi
 			return nil, fmt.Errorf("organization %q: %w", org.OrganizationID, err)
 		}
 		if budget != nil {
-			req.Budgets = []UnifAICreateBudgetRequest{*budget}
+			req.Budgets = []RakshaCreateBudgetRequest{*budget}
 		}
 		req.RateLimit = toRateLimit(*org.Budget)
 	}
@@ -60,21 +60,21 @@ func LiteLLMOrganizationToUnifAICustomer(org litellm.LiteLLMOrganization, cfg Mi
 	return req, nil
 }
 
-// toBudget maps the LiteLLM spend cap to a UnifAI budget.
+// toBudget maps the LiteLLM spend cap to a Raksha budget.
 //
 //   - max_budget nil or <= 0 -> no budget (nil, nil); LiteLLM treats this as
-//     "no spend cap", and UnifAI requires a positive max_limit.
+//     "no spend cap", and Raksha requires a positive max_limit.
 //   - max_budget > 0 with a missing/blank budget_duration -> maxBudgetPeriod;
-//     LiteLLM allows a never-reset budget but UnifAI requires a window, so the
+//     LiteLLM allows a never-reset budget but Raksha requires a window, so the
 //     operator-supplied default stands in.
 //   - max_budget > 0 with an unparseable budget_duration -> error.
-func toBudget(b litellm.LiteLLMBudget, maxBudgetPeriod string) (*UnifAICreateBudgetRequest, error) {
+func toBudget(b litellm.LiteLLMBudget, maxBudgetPeriod string) (*RakshaCreateBudgetRequest, error) {
 	if b.MaxBudget == nil || *b.MaxBudget <= 0 {
 		return nil, nil
 	}
 
 	if b.BudgetDuration == nil || strings.TrimSpace(*b.BudgetDuration) == "" {
-		return &UnifAICreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: maxBudgetPeriod}, nil
+		return &RakshaCreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: maxBudgetPeriod}, nil
 	}
 
 	reset, err := convertBudgetDuration(*b.BudgetDuration)
@@ -82,14 +82,14 @@ func toBudget(b litellm.LiteLLMBudget, maxBudgetPeriod string) (*UnifAICreateBud
 		return nil, err
 	}
 
-	return &UnifAICreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: reset}, nil
+	return &RakshaCreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: reset}, nil
 }
 
-// toRateLimit maps tpm_limit / rpm_limit onto a UnifAI rate limit. Each
+// toRateLimit maps tpm_limit / rpm_limit onto a Raksha rate limit. Each
 // dimension is independent: a non-positive or nil limit is treated as "no
 // limit" and omitted. Returns nil when neither dimension has a positive limit.
-func toRateLimit(b litellm.LiteLLMBudget) *UnifAICreateRateLimitRequest {
-	rl := &UnifAICreateRateLimitRequest{}
+func toRateLimit(b litellm.LiteLLMBudget) *RakshaCreateRateLimitRequest {
+	rl := &RakshaCreateRateLimitRequest{}
 	set := false
 
 	if b.TPMLimit != nil && *b.TPMLimit > 0 {
@@ -114,9 +114,9 @@ func toRateLimit(b litellm.LiteLLMBudget) *UnifAICreateRateLimitRequest {
 	return rl
 }
 
-// convertBudgetDuration translates a LiteLLM budget_duration into UnifAI's
+// convertBudgetDuration translates a LiteLLM budget_duration into Raksha's
 // duration format. The only unit difference is months: LiteLLM uses "mo",
-// UnifAI uses "M". All other units (s, m, h, d, w) are identical.
+// Raksha uses "M". All other units (s, m, h, d, w) are identical.
 func convertBudgetDuration(d string) (string, error) {
 	d = strings.TrimSpace(d)
 	m := litellmDurationRe.FindStringSubmatch(d)

@@ -88,7 +88,7 @@ const protocolOptions: {
 // emptyProfile returns a fresh profile with the same defaults a newly created collector uses.
 const emptyProfile = (): ProfileForm => ({
 	enabled: true,
-	service_name: "unifai",
+	service_name: "raksha",
 	collector_url: emptySecretVar(),
 	headers: {},
 	trace_type: "genai_extension",
@@ -107,7 +107,7 @@ const emptyProfile = (): ProfileForm => ({
 // toProfileForm normalizes a stored profile into the SecretVar-based form representation.
 const toProfileForm = (p?: StoredOtelProfile): ProfileForm => ({
 	enabled: p?.enabled ?? true,
-	service_name: p?.service_name ?? "unifai",
+	service_name: p?.service_name ?? "raksha",
 	collector_url: toSecretVarFormValue(p?.collector_url),
 	headers: toSecretVarMapFormValue(p?.headers),
 	trace_type: p?.trace_type ?? "genai_extension",
@@ -385,9 +385,9 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						render={({ field }) => (
 							<FormItem className="w-full">
 								<FormLabel>Service Name</FormLabel>
-								<FormDescription>If kept empty, the service name will be set to "unifai"</FormDescription>
+								<FormDescription>If kept empty, the service name will be set to "raksha"</FormDescription>
 								<FormControl>
-									<Input placeholder="unifai" disabled={!hasOtelAccess} {...field} />
+									<Input placeholder="raksha" disabled={!hasOtelAccess} {...field} />
 								</FormControl>
 								<FormMessage />
 							</FormItem>
@@ -627,7 +627,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 									<FormItem className="w-full">
 										<FormLabel>TLS CA Certificate Path</FormLabel>
 										<FormDescription>
-											File path to the CA certificate on the UnifAI server. Leave empty to use system root CAs.
+											File path to the CA certificate on the Raksha server. Leave empty to use system root CAs.
 										</FormDescription>
 										<FormControl>
 											<Input placeholder="/path/to/ca.crt" disabled={!hasOtelAccess} {...field} />

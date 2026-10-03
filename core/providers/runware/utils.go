@@ -17,7 +17,7 @@ const (
 	defaultRunwareVideoHeight = 1080
 )
 
-// parseRunwareSize converts a UnifAI size string ("1024x1024") to width/height pixels.
+// parseRunwareSize converts a Raksha size string ("1024x1024") to width/height pixels.
 // Falls back to the defaults when the value is empty or malformed.
 func parseRunwareSize(size string) (width int, height int) {
 	width, height = defaultRunwareWidth, defaultRunwareHeight
@@ -34,7 +34,7 @@ func parseRunwareSize(size string) (width int, height int) {
 	return width, height
 }
 
-// runwareOutputType maps a UnifAI response_format to Runware's outputType.
+// runwareOutputType maps a Raksha response_format to Runware's outputType.
 // Returns nil to let Runware use its default (URL).
 func runwareOutputType(responseFormat *string) *string {
 	if responseFormat == nil {
@@ -52,7 +52,7 @@ func runwareOutputType(responseFormat *string) *string {
 	return &out
 }
 
-// runwareOutputFormat maps a UnifAI output_format to Runware's outputFormat enum.
+// runwareOutputFormat maps a Raksha output_format to Runware's outputFormat enum.
 // Returns nil to let Runware use its default.
 func runwareOutputFormat(outputFormat *string) *string {
 	if outputFormat == nil {

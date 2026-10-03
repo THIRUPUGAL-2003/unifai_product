@@ -1,7 +1,7 @@
 package vllm
 
 import (
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // vLLMTranscriptionStreamChunk represents a single transcription streaming chunk from vLLM.

@@ -89,7 +89,7 @@ export default function SCIMView() {
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-base">SCIM endpoints (for your IdP)</CardTitle>
-					<CardDescription>Configure these in Okta, Entra, or Keycloak when provisioning users into UnifAI.</CardDescription>
+					<CardDescription>Configure these in Okta, Entra, or Keycloak when provisioning users into Raksha.</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3 text-sm">
 					<EndpointRow label="Base URL" value={scimBase} onCopy={copyToClipboard} />
@@ -197,7 +197,7 @@ export default function SCIMView() {
 						</select>
 					</div>
 					<div className="space-y-1">
-						<Label>SCIM bearer token (for IdP → UnifAI)</Label>
+						<Label>SCIM bearer token (for IdP → Raksha)</Label>
 						<div className="flex gap-2">
 							<Input
 								type={showToken ? "text" : "password"}

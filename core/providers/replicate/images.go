@@ -3,8 +3,8 @@ package replicate
 import (
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // modelInputImageFieldMap maps model identifiers to their input image field names.
@@ -27,22 +27,22 @@ var modelInputImageFieldMap = map[string]string{
 	"black-forest-labs/flux-krea-dev": "image",
 }
 
-// ToReplicateImageGenerationInput converts a UnifAI image generation request to Replicate prediction input
-func ToReplicateImageGenerationInput(unifaiReq *schemas.UnifAIImageGenerationRequest) *ReplicatePredictionRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil {
+// ToReplicateImageGenerationInput converts a Raksha image generation request to Replicate prediction input
+func ToReplicateImageGenerationInput(rakshaReq *schemas.RakshaImageGenerationRequest) *ReplicatePredictionRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil {
 		return nil
 	}
 
 	input := &ReplicatePredictionRequestInput{
-		Prompt: &unifaiReq.Input.Prompt,
+		Prompt: &rakshaReq.Input.Prompt,
 	}
 
 	// Map parameters if available
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
-		if unifaiReq.Params.N != nil {
-			input.NumberOfImages = unifaiReq.Params.N
+		if rakshaReq.Params.N != nil {
+			input.NumberOfImages = rakshaReq.Params.N
 		}
 
 		if params.AspectRatio != nil {
@@ -98,15 +98,15 @@ func ToReplicateImageGenerationInput(unifaiReq *schemas.UnifAIImageGenerationReq
 	}
 
 	// Check if model is a version ID and set version field accordingly
-	if isVersionID(unifaiReq.Model) {
-		request.Version = &unifaiReq.Model
+	if isVersionID(rakshaReq.Model) {
+		request.Version = &rakshaReq.Model
 	}
 
-	if unifaiReq.Params != nil && unifaiReq.Params.ExtraParams != nil {
-		if webhook, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["webhook"]); ok {
+	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
+		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
 			request.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			request.WebhookEventsFilter = webhookEventsFilter
 		}
 	}
@@ -114,20 +114,20 @@ func ToReplicateImageGenerationInput(unifaiReq *schemas.UnifAIImageGenerationReq
 	return request
 }
 
-// ToUnifAIImageGenerationResponse converts a Replicate prediction response to UnifAI format
-func ToUnifAIImageGenerationResponse(
+// ToRakshaImageGenerationResponse converts a Replicate prediction response to Raksha format
+func ToRakshaImageGenerationResponse(
 	prediction *ReplicatePredictionResponse,
-) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if prediction == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: true,
 			Error: &schemas.ErrorField{
 				Message: "prediction response is nil",
 			},
 		}
 	}
 
-	response := &schemas.UnifAIImageGenerationResponse{
+	response := &schemas.RakshaImageGenerationResponse{
 		ID:      prediction.ID,
 		Created: ParseReplicateTimestamp(prediction.CreatedAt),
 		Model:   prediction.Model,
@@ -187,20 +187,20 @@ func getInputImageFieldName(model string) string {
 	return "input_images"
 }
 
-// ToReplicateImageEditInput converts a UnifAI image edit request to Replicate prediction input
-func ToReplicateImageEditInput(unifaiReq *schemas.UnifAIImageEditRequest) *ReplicatePredictionRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil {
+// ToReplicateImageEditInput converts a Raksha image edit request to Replicate prediction input
+func ToReplicateImageEditInput(rakshaReq *schemas.RakshaImageEditRequest) *ReplicatePredictionRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil {
 		return nil
 	}
 
 	input := &ReplicatePredictionRequestInput{
-		Prompt: &unifaiReq.Input.Prompt,
+		Prompt: &rakshaReq.Input.Prompt,
 	}
 
 	// Map image URLs - Replicate requires image URLs, not file bytes
-	if len(unifaiReq.Input.Images) > 0 {
-		images := make([]string, 0, len(unifaiReq.Input.Images))
-		for _, img := range unifaiReq.Input.Images {
+	if len(rakshaReq.Input.Images) > 0 {
+		images := make([]string, 0, len(rakshaReq.Input.Images))
+		for _, img := range rakshaReq.Input.Images {
 			if len(img.Image) > 0 {
 				images = append(images, providerUtils.FileBytesToBase64DataURL(img.Image))
 			}
@@ -208,7 +208,7 @@ func ToReplicateImageEditInput(unifaiReq *schemas.UnifAIImageEditRequest) *Repli
 
 		if len(images) > 0 {
 			// Determine the appropriate field based on model
-			fieldName := getInputImageFieldName(unifaiReq.Model)
+			fieldName := getInputImageFieldName(rakshaReq.Model)
 
 			switch fieldName {
 			case "image_prompt":
@@ -231,8 +231,8 @@ func ToReplicateImageEditInput(unifaiReq *schemas.UnifAIImageEditRequest) *Repli
 	}
 
 	// Map parameters if available
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		if params.N != nil {
 			input.NumberOfImages = params.N
@@ -284,8 +284,8 @@ func ToReplicateImageEditInput(unifaiReq *schemas.UnifAIImageEditRequest) *Repli
 	}
 
 	// Check if model is a version ID and set version field accordingly
-	if isVersionID(unifaiReq.Model) {
-		request.Version = &unifaiReq.Model
+	if isVersionID(rakshaReq.Model) {
+		request.Version = &rakshaReq.Model
 	}
 
 	return request

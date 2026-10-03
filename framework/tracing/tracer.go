@@ -1,4 +1,4 @@
-// Package tracing provides distributed tracing infrastructure for UnifAI
+// Package tracing provides distributed tracing infrastructure for Raksha
 package tracing
 
 import (
@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
-	"github.com/unifai/unifai/framework/streaming"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
+	"github.com/raksha/raksha/framework/streaming"
 )
 
 // Tracer implements schemas.Tracer using TraceStore.
@@ -145,8 +145,8 @@ type spanHandle struct {
 // and returns an updated context with the new span ID.
 //
 // Parent span resolution order:
-// 1. UnifAIContextKeySpanID - existing span in this service (for child spans)
-// 2. UnifAIContextKeyParentSpanID - incoming parent from W3C traceparent (for root spans)
+// 1. RakshaContextKeySpanID - existing span in this service (for child spans)
+// 2. RakshaContextKeyParentSpanID - incoming parent from W3C traceparent (for root spans)
 // 3. No parent - creates a root span with no parent
 func (t *Tracer) StartSpan(ctx context.Context, name string, kind schemas.SpanKind) (context.Context, schemas.SpanHandle) {
 	traceID := GetTraceID(ctx)
@@ -155,12 +155,12 @@ func (t *Tracer) StartSpan(ctx context.Context, name string, kind schemas.SpanKi
 	}
 
 	// Get parent span ID from context - first check for existing span in this service
-	parentSpanID, _ := ctx.Value(schemas.UnifAIContextKeySpanID).(string)
+	parentSpanID, _ := ctx.Value(schemas.RakshaContextKeySpanID).(string)
 
 	// If no existing span, check for incoming parent span ID from W3C traceparent header
 	// This links the root span of this service to the upstream service's span
 	if parentSpanID == "" {
-		parentSpanID, _ = ctx.Value(schemas.UnifAIContextKeyParentSpanID).(string)
+		parentSpanID, _ = ctx.Value(schemas.RakshaContextKeyParentSpanID).(string)
 	}
 
 	var span *schemas.Span
@@ -173,7 +173,7 @@ func (t *Tracer) StartSpan(ctx context.Context, name string, kind schemas.SpanKi
 		return ctx, nil
 	}
 	// Update context with new span ID
-	newCtx := context.WithValue(ctx, schemas.UnifAIContextKeySpanID, span.SpanID)
+	newCtx := context.WithValue(ctx, schemas.RakshaContextKeySpanID, span.SpanID)
 	return newCtx, &spanHandle{traceID: traceID, spanID: span.SpanID}
 }
 
@@ -245,7 +245,7 @@ func (t *Tracer) AddEvent(handle schemas.SpanHandle, name string, attrs map[stri
 }
 
 // PopulateLLMRequestAttributes populates all LLM-specific request attributes on the span.
-func (t *Tracer) PopulateLLMRequestAttributes(handle schemas.SpanHandle, req *schemas.UnifAIRequest) {
+func (t *Tracer) PopulateLLMRequestAttributes(handle schemas.SpanHandle, req *schemas.RakshaRequest) {
 	h, ok := handle.(*spanHandle)
 	if !ok || h == nil || req == nil {
 		return
@@ -295,7 +295,7 @@ func (t *Tracer) PopulateLLMRequestAttributes(handle schemas.SpanHandle, req *sc
 }
 
 // PopulateLLMResponseAttributes populates all LLM-specific response attributes on the span.
-func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.UnifAIContext, handle schemas.SpanHandle, resp *schemas.UnifAIResponse, err *schemas.UnifAIError) {
+func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.RakshaContext, handle schemas.SpanHandle, resp *schemas.RakshaResponse, err *schemas.RakshaError) {
 	h, ok := handle.(*spanHandle)
 	if !ok || h == nil {
 		return
@@ -402,7 +402,7 @@ func (t *Tracer) GetDeferredSpanID(traceID string) string {
 // AddStreamingChunk tracks TTFT and chunk count for the deferred span.
 // Chunk contents are no longer stored here; full content accumulation is handled
 // by the embedded streaming.Accumulator (via ProcessStreamingChunk) for plugins.
-func (t *Tracer) AddStreamingChunk(traceID string, response *schemas.UnifAIResponse) {
+func (t *Tracer) AddStreamingChunk(traceID string, response *schemas.RakshaResponse) {
 	if traceID == "" || response == nil {
 		return
 	}
@@ -413,7 +413,7 @@ func (t *Tracer) AddStreamingChunk(traceID string, response *schemas.UnifAIRespo
 // The response is built from the streaming accumulator during the final ProcessStreamingChunk call
 // and stored on the DeferredSpanInfo. Returns nil response if no accumulated data is available
 // (e.g., when no plugin calls ProcessStreamingChunk).
-func (t *Tracer) GetAccumulatedChunks(traceID string) (*schemas.UnifAIResponse, int64, int) {
+func (t *Tracer) GetAccumulatedChunks(traceID string) (*schemas.RakshaResponse, int64, int) {
 	ttftNs, chunkCount := t.store.GetAccumulatedData(traceID)
 	resp := t.store.GetAccumulatedResponse(traceID)
 	return resp, ttftNs, chunkCount
@@ -450,7 +450,7 @@ func (t *Tracer) ResumeStream(traceID string) {
 // EndStream terminates the streaming response. Any buffered chunks are flushed
 // first; if err is non-nil it is then delivered as a terminal error chunk. After
 // EndStream, all further provider chunks are dropped (PostLLMHook still fires).
-func (t *Tracer) EndStream(traceID string, err *schemas.UnifAIError) {
+func (t *Tracer) EndStream(traceID string, err *schemas.RakshaError) {
 	if traceID == "" || t.accumulator == nil {
 		return
 	}
@@ -486,10 +486,10 @@ func (t *Tracer) IsStreamPaused(traceID string) bool {
 	return t.accumulator.IsStreamPaused(traceID)
 }
 
-// GetAccumulatedResponse returns a snapshot UnifAIResponse built on demand
+// GetAccumulatedResponse returns a snapshot RakshaResponse built on demand
 // from the accumulator's current chunks. See schemas.Tracer.GetAccumulatedResponse
 // for full semantics.
-func (t *Tracer) GetAccumulatedResponse(traceID string) *schemas.UnifAIResponse {
+func (t *Tracer) GetAccumulatedResponse(traceID string) *schemas.RakshaResponse {
 	if traceID == "" || t.accumulator == nil {
 		return nil
 	}
@@ -499,7 +499,7 @@ func (t *Tracer) GetAccumulatedResponse(traceID string) *schemas.UnifAIResponse 
 // GateSend delivers a stream chunk through the pause/resume/end gate. Replaces
 // direct channel sends in provider helpers so plugin-driven pause/resume can
 // take effect. See schemas.Tracer.GateSend for full semantics.
-func (t *Tracer) GateSend(traceID string, chunk *schemas.UnifAIStreamChunk, isFinal, isHardErr bool, ch chan *schemas.UnifAIStreamChunk, ctx *schemas.UnifAIContext) (ok bool) {
+func (t *Tracer) GateSend(traceID string, chunk *schemas.RakshaStreamChunk, isFinal, isHardErr bool, ch chan *schemas.RakshaStreamChunk, ctx *schemas.RakshaContext) (ok bool) {
 	if t.accumulator == nil || traceID == "" {
 		// Fallback to direct send when no accumulator is wired (defensive).
 		// Recover from "send on closed channel" so a closed consumer cannot
@@ -557,20 +557,20 @@ func (t *Tracer) ForceCleanupStreamAccumulator(traceID string) {
 // returns nil for non-final chunks.
 // This method is used by plugins to access accumulated streaming data.
 // Set isFinalChunk to indicate whether the current chunk is the last in the stream.
-func (t *Tracer) ProcessStreamingChunk(ctx *schemas.UnifAIContext, traceID string, isFinalChunk bool, result *schemas.UnifAIResponse, err *schemas.UnifAIError) *schemas.StreamAccumulatorResult {
+func (t *Tracer) ProcessStreamingChunk(ctx *schemas.RakshaContext, traceID string, isFinalChunk bool, result *schemas.RakshaResponse, err *schemas.RakshaError) *schemas.StreamAccumulatorResult {
 	if traceID == "" || t.accumulator == nil {
 		return nil
 	}
 
 	// Create a new context for accumulator that sets the traceID as the accumulator lookup ID.
-	accumCtx := schemas.NewUnifAIContext(context.Background(), time.Time{})
-	accumCtx.SetValue(schemas.UnifAIContextKeyAccumulatorID, traceID)
-	accumCtx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, isFinalChunk)
+	accumCtx := schemas.NewRakshaContext(context.Background(), time.Time{})
+	accumCtx.SetValue(schemas.RakshaContextKeyAccumulatorID, traceID)
+	accumCtx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, isFinalChunk)
 
 	// Forward relevant context values to the new context
 	if ctx != nil {
-		accumCtx.SetValue(schemas.UnifAIContextKeySelectedKeyID, ctx.Value(schemas.UnifAIContextKeySelectedKeyID))
-		accumCtx.SetValue(schemas.UnifAIContextKeyGovernanceVirtualKeyID, ctx.Value(schemas.UnifAIContextKeyGovernanceVirtualKeyID))
+		accumCtx.SetValue(schemas.RakshaContextKeySelectedKeyID, ctx.Value(schemas.RakshaContextKeySelectedKeyID))
+		accumCtx.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, ctx.Value(schemas.RakshaContextKeyGovernanceVirtualKeyID))
 	}
 
 	processedResp, processErr := t.accumulator.ProcessStreamingResponse(accumCtx, result, err)
@@ -578,17 +578,17 @@ func (t *Tracer) ProcessStreamingChunk(ctx *schemas.UnifAIContext, traceID strin
 		return nil
 	}
 
-	// On final chunk, store the accumulated UnifAIResponse on the deferred span
+	// On final chunk, store the accumulated RakshaResponse on the deferred span
 	// so that completeDeferredSpan can populate span attributes (e.g., gen_ai.output.messages)
 	if isFinalChunk {
-		if unifaiResp := processedResp.ToUnifAIResponse(); unifaiResp != nil &&
-			(unifaiResp.ChatResponse != nil ||
-				unifaiResp.TextCompletionResponse != nil ||
-				unifaiResp.SpeechResponse != nil ||
-				unifaiResp.TranscriptionResponse != nil ||
-				unifaiResp.ImageGenerationResponse != nil ||
-				unifaiResp.ResponsesResponse != nil) {
-			t.store.SetAccumulatedResponse(traceID, unifaiResp)
+		if rakshaResp := processedResp.ToRakshaResponse(); rakshaResp != nil &&
+			(rakshaResp.ChatResponse != nil ||
+				rakshaResp.TextCompletionResponse != nil ||
+				rakshaResp.SpeechResponse != nil ||
+				rakshaResp.TranscriptionResponse != nil ||
+				rakshaResp.ImageGenerationResponse != nil ||
+				rakshaResp.ResponsesResponse != nil) {
+			t.store.SetAccumulatedResponse(traceID, rakshaResp)
 		}
 	}
 

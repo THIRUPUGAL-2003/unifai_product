@@ -11,16 +11,16 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/vectorstore"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/vectorstore"
 )
 
 // performDirectSearch does an O(1) point fetch on the deterministic directCacheID
 // derived from (provider, model, cacheKey, request_hash, params_hash). Caller
 // supplies the prebuilt metadata + paramsHash so we don't recompute them when
 // semantic search runs as well.
-func (plugin *Plugin) performDirectSearch(ctx *schemas.UnifAIContext, state *cacheState, req *schemas.UnifAIRequest, cacheKey string, metadata map[string]interface{}, paramsHash string) (*schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) performDirectSearch(ctx *schemas.RakshaContext, state *cacheState, req *schemas.RakshaRequest, cacheKey string, metadata map[string]interface{}, paramsHash string) (*schemas.LLMPluginShortCircuit, error) {
 	requestHash, err := plugin.generateRequestHash(req, metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate request hash: %w", err)
@@ -51,7 +51,7 @@ func (plugin *Plugin) performDirectSearch(ctx *schemas.UnifAIContext, state *cac
 
 // performSemanticSearch performs semantic similarity search and returns matching response if found.
 // Caller supplies the prebuilt paramsHash so it isn't recomputed.
-func (plugin *Plugin) performSemanticSearch(ctx *schemas.UnifAIContext, state *cacheState, req *schemas.UnifAIRequest, cacheKey string, paramsHash string) (*schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) performSemanticSearch(ctx *schemas.RakshaContext, state *cacheState, req *schemas.RakshaRequest, cacheKey string, paramsHash string) (*schemas.LLMPluginShortCircuit, error) {
 	text, err := plugin.extractTextForEmbedding(state, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract text for embedding: %w", err)
@@ -80,7 +80,7 @@ func (plugin *Plugin) performSemanticSearch(ctx *schemas.UnifAIContext, state *c
 	strictFilters := []vectorstore.Query{
 		{Field: "cache_key", Operator: vectorstore.QueryOperatorEqual, Value: cacheKey},
 		{Field: "params_hash", Operator: vectorstore.QueryOperatorEqual, Value: paramsHash},
-		{Field: "from_unifai_semantic_cache_plugin", Operator: vectorstore.QueryOperatorEqual, Value: true},
+		{Field: "from_raksha_semantic_cache_plugin", Operator: vectorstore.QueryOperatorEqual, Value: true},
 	}
 	if plugin.config.CacheByProvider != nil && *plugin.config.CacheByProvider {
 		strictFilters = append(strictFilters, vectorstore.Query{Field: "provider", Operator: vectorstore.QueryOperatorEqual, Value: string(provider)})
@@ -122,15 +122,15 @@ func filterSelectFields(skip string) []string {
 // selectFieldsForRequest returns the projection list trimmed to the response
 // shape we actually need (single response vs stream chunks).
 func selectFieldsForRequest(requestType schemas.RequestType) []string {
-	if unifai.IsStreamRequestType(requestType) {
+	if raksha.IsStreamRequestType(requestType) {
 		return selectFieldsStream
 	}
 	return selectFieldsNonStream
 }
 
 // generateEmbedding generates an embedding for the given text using the configured provider.
-func (plugin *Plugin) generateEmbedding(ctx *schemas.UnifAIContext, text string) ([]float32, int, error) {
-	embeddingReq := &schemas.UnifAIEmbeddingRequest{
+func (plugin *Plugin) generateEmbedding(ctx *schemas.RakshaContext, text string) ([]float32, int, error) {
+	embeddingReq := &schemas.RakshaEmbeddingRequest{
 		Provider: plugin.config.Provider,
 		Model:    plugin.config.EmbeddingModel,
 		Input: &schemas.EmbeddingInput{
@@ -138,14 +138,14 @@ func (plugin *Plugin) generateEmbedding(ctx *schemas.UnifAIContext, text string)
 		},
 	}
 
-	embeddingCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-	// Cancel the derived context once we're done. NewUnifAIContext starts a
+	embeddingCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+	// Cancel the derived context once we're done. NewRakshaContext starts a
 	// watchCancellation goroutine that holds a reference to ctx (the scoped
 	// plugin context). Without this, that goroutine outlives the plugin call
 	// and may dereference fields on a parent context that has already been
 	// released back to its sync.Pool — see core/schemas.ReleasePluginScope.
 	defer embeddingCtx.Cancel()
-	embeddingCtx.SetValue(schemas.UnifAIContextKeySkipPluginPipeline, true)
+	embeddingCtx.SetValue(schemas.RakshaContextKeySkipPluginPipeline, true)
 	if plugin.embeddingRequestExecutor == nil {
 		return nil, 0, fmt.Errorf("embedding request executor is not configured")
 	}
@@ -187,7 +187,7 @@ func (plugin *Plugin) generateEmbedding(ctx *schemas.UnifAIContext, text string)
 
 // generateRequestHash creates an xxhash of the (normalized input, params).
 // Fallbacks are excluded since they only affect error handling.
-func (plugin *Plugin) generateRequestHash(req *schemas.UnifAIRequest, params map[string]interface{}) (string, error) {
+func (plugin *Plugin) generateRequestHash(req *schemas.RakshaRequest, params map[string]interface{}) (string, error) {
 	hashInput := map[string]interface{}{
 		"input":  plugin.getNormalizedInputForCaching(req),
 		"params": params,
@@ -235,7 +235,7 @@ func (plugin *Plugin) generateDirectCacheID(provider schemas.ModelProvider, mode
 //   - (nil, nil): treat as a miss. Used for both genuine misses and "soft" misses
 //     (expired entry, unparseable expires_at, format mismatch). Caller proceeds to upstream.
 //   - (nil, err): hard error worth logging; caller logs and proceeds to upstream.
-func (plugin *Plugin) buildResponseFromResult(ctx *schemas.UnifAIContext, state *cacheState, req *schemas.UnifAIRequest, result vectorstore.SearchResult, cacheType CacheType, threshold *float64, inputTokens *int) (*schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) buildResponseFromResult(ctx *schemas.RakshaContext, state *cacheState, req *schemas.RakshaRequest, result vectorstore.SearchResult, cacheType CacheType, threshold *float64, inputTokens *int) (*schemas.LLMPluginShortCircuit, error) {
 	properties := result.Properties
 	if properties == nil {
 		return nil, fmt.Errorf("no properties found in cached result")
@@ -265,7 +265,7 @@ func (plugin *Plugin) buildResponseFromResult(ctx *schemas.UnifAIContext, state 
 		similarity = *result.Score
 	}
 
-	isStream := unifai.IsStreamRequestType(req.RequestType)
+	isStream := raksha.IsStreamRequestType(req.RequestType)
 	if isStream {
 		streamResponses, ok := properties["stream_chunks"]
 		if ok && streamResponses != nil {
@@ -315,14 +315,14 @@ func isExpiredEntry(properties map[string]interface{}) (bool, bool) {
 }
 
 // buildNonStreamingResponseFromResult constructs a single response from cached data.
-func (plugin *Plugin) buildNonStreamingResponseFromResult(ctx *schemas.UnifAIContext, state *cacheState, req *schemas.UnifAIRequest, result vectorstore.SearchResult, responseData interface{}, cacheType CacheType, threshold *float64, similarity *float64, inputTokens *int) (*schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) buildNonStreamingResponseFromResult(ctx *schemas.RakshaContext, state *cacheState, req *schemas.RakshaRequest, result vectorstore.SearchResult, responseData interface{}, cacheType CacheType, threshold *float64, similarity *float64, inputTokens *int) (*schemas.LLMPluginShortCircuit, error) {
 	requestedProvider, requestedModel, _ := req.GetRequestFields()
 
 	responseStr, ok := responseData.(string)
 	if !ok {
 		return nil, fmt.Errorf("cached response is not a string")
 	}
-	var cachedResponse schemas.UnifAIResponse
+	var cachedResponse schemas.RakshaResponse
 	if err := json.Unmarshal([]byte(responseStr), &cachedResponse); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal cached response: %w", err)
 	}
@@ -336,9 +336,9 @@ func (plugin *Plugin) buildNonStreamingResponseFromResult(ctx *schemas.UnifAICon
 // The replay goroutine guards every send with ctx.Done() so a dropped consumer
 // can't leak the goroutine (and its captured chunks) for the lifetime of the
 // process.
-func (plugin *Plugin) buildStreamingResponseFromResult(ctx *schemas.UnifAIContext, state *cacheState, req *schemas.UnifAIRequest, result vectorstore.SearchResult, streamArray []string, cacheType CacheType, threshold *float64, similarity *float64, inputTokens *int) (*schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) buildStreamingResponseFromResult(ctx *schemas.RakshaContext, state *cacheState, req *schemas.RakshaRequest, result vectorstore.SearchResult, streamArray []string, cacheType CacheType, threshold *float64, similarity *float64, inputTokens *int) (*schemas.LLMPluginShortCircuit, error) {
 	requestedProvider, requestedModel, _ := req.GetRequestFields()
-	streamChan := make(chan *schemas.UnifAIStreamChunk)
+	streamChan := make(chan *schemas.RakshaStreamChunk)
 	done := ctx.Done()
 
 	// We deliberately do NOT pre-decode all chunks up front — that would
@@ -349,7 +349,7 @@ func (plugin *Plugin) buildStreamingResponseFromResult(ctx *schemas.UnifAIContex
 	go func() {
 		defer close(streamChan)
 		for i, chunkStr := range streamArray {
-			var cachedResponse schemas.UnifAIResponse
+			var cachedResponse schemas.RakshaResponse
 			if err := json.Unmarshal([]byte(chunkStr), &cachedResponse); err != nil {
 				plugin.logger.Warn("Failed to unmarshal stream chunk %d, skipping: %v", i, err)
 				continue
@@ -364,7 +364,7 @@ func (plugin *Plugin) buildStreamingResponseFromResult(ctx *schemas.UnifAIContex
 			if i == len(streamArray)-1 {
 				// stampCacheDebugForHit marks this chunk as the cache-hit final
 				// chunk; cache.PostLLMHook keys off CacheDebug.CacheHit=true to
-				// set UnifAIContextKeyStreamEndIndicator on the root ctx
+				// set RakshaContextKeyStreamEndIndicator on the root ctx
 				// synchronously (same goroutine as logging.PostLLMHook).
 				//
 				// We deliberately do NOT call ctx.Root().SetValue here. Doing
@@ -376,13 +376,13 @@ func (plugin *Plugin) buildStreamingResponseFromResult(ctx *schemas.UnifAIContex
 				plugin.stampCacheDebugForHit(state, cachedResponse.GetExtraFields(), result.ID, requestedProvider, requestedModel, cacheType, threshold, similarity, inputTokens)
 			}
 
-			chunk := &schemas.UnifAIStreamChunk{
-				UnifAITextCompletionResponse:        cachedResponse.TextCompletionResponse,
-				UnifAIChatResponse:                  cachedResponse.ChatResponse,
-				UnifAIResponsesStreamResponse:       cachedResponse.ResponsesStreamResponse,
-				UnifAISpeechStreamResponse:          cachedResponse.SpeechStreamResponse,
-				UnifAITranscriptionStreamResponse:   cachedResponse.TranscriptionStreamResponse,
-				UnifAIImageGenerationStreamResponse: cachedResponse.ImageGenerationStreamResponse,
+			chunk := &schemas.RakshaStreamChunk{
+				RakshaTextCompletionResponse:        cachedResponse.TextCompletionResponse,
+				RakshaChatResponse:                  cachedResponse.ChatResponse,
+				RakshaResponsesStreamResponse:       cachedResponse.ResponsesStreamResponse,
+				RakshaSpeechStreamResponse:          cachedResponse.SpeechStreamResponse,
+				RakshaTranscriptionStreamResponse:   cachedResponse.TranscriptionStreamResponse,
+				RakshaImageGenerationStreamResponse: cachedResponse.ImageGenerationStreamResponse,
 			}
 
 			select {
@@ -405,7 +405,7 @@ func (plugin *Plugin) buildStreamingResponseFromResult(ctx *schemas.UnifAIContex
 // preserved in the cached response.
 func (plugin *Plugin) stampCacheDebugForHit(
 	state *cacheState,
-	extraFields *schemas.UnifAIResponseExtraFields,
+	extraFields *schemas.RakshaResponseExtraFields,
 	cacheID string,
 	requestedProvider schemas.ModelProvider,
 	requestedModel string,
@@ -421,18 +421,18 @@ func (plugin *Plugin) stampCacheDebugForHit(
 		return
 	}
 	if extraFields.CacheDebug == nil {
-		extraFields.CacheDebug = &schemas.UnifAICacheDebug{}
+		extraFields.CacheDebug = &schemas.RakshaCacheDebug{}
 	}
 	cd := extraFields.CacheDebug
 	cd.CacheHit = true
-	cd.HitType = unifai.Ptr(string(cacheType))
-	cd.CacheID = unifai.Ptr(cacheID)
-	cd.RequestedProvider = unifai.Ptr(string(requestedProvider))
-	cd.RequestedModel = unifai.Ptr(requestedModel)
-	cd.CacheHitLatency = unifai.Ptr(time.Since(state.CreatedAt).Milliseconds())
+	cd.HitType = raksha.Ptr(string(cacheType))
+	cd.CacheID = raksha.Ptr(cacheID)
+	cd.RequestedProvider = raksha.Ptr(string(requestedProvider))
+	cd.RequestedModel = raksha.Ptr(requestedModel)
+	cd.CacheHitLatency = raksha.Ptr(time.Since(state.CreatedAt).Milliseconds())
 	if cacheType == CacheTypeSemantic {
-		cd.ProviderUsed = unifai.Ptr(string(plugin.config.Provider))
-		cd.ModelUsed = unifai.Ptr(plugin.config.EmbeddingModel)
+		cd.ProviderUsed = raksha.Ptr(string(plugin.config.Provider))
+		cd.ModelUsed = raksha.Ptr(plugin.config.EmbeddingModel)
 		cd.Threshold = threshold
 		cd.Similarity = similarity
 		cd.InputTokens = inputTokens

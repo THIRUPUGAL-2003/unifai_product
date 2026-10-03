@@ -325,7 +325,7 @@ export async function downloadPdfTable(opts: {
 		pdf.setFontSize(7);
 		pdf.setTextColor(140, 140, 140);
 		pdf.text(`Page ${pageNum} · ${totalHint}`, margin, pageH - 4);
-		pdf.text("Powered by UnifAI", pageW - margin, pageH - 4, { align: "right" });
+		pdf.text("Powered by Raksha", pageW - margin, pageH - 4, { align: "right" });
 	};
 
 	// Title block (page 1)

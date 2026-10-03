@@ -16,8 +16,8 @@ type RerankParameters struct {
 	ExtraParams     map[string]interface{} `json:"-"`
 }
 
-// UnifAIRerankRequest represents a request to rerank documents by relevance to a query.
-type UnifAIRerankRequest struct {
+// RakshaRerankRequest represents a request to rerank documents by relevance to a query.
+type RakshaRerankRequest struct {
 	Provider       ModelProvider     `json:"provider"`
 	Model          string            `json:"model"`
 	Query          string            `json:"query"`
@@ -28,7 +28,7 @@ type UnifAIRerankRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body for the rerank request.
-func (r *UnifAIRerankRequest) GetRawRequestBody() []byte {
+func (r *RakshaRerankRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
@@ -39,11 +39,11 @@ type RerankResult struct {
 	Document       *RerankDocument `json:"document,omitempty"`
 }
 
-// UnifAIRerankResponse represents the response from a rerank request.
-type UnifAIRerankResponse struct {
+// RakshaRerankResponse represents the response from a rerank request.
+type RakshaRerankResponse struct {
 	ID          string                     `json:"id,omitempty"`
 	Results     []RerankResult             `json:"results"`
 	Model       string                     `json:"model"`
-	Usage       *UnifAILLMUsage           `json:"usage,omitempty"`
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	Usage       *RakshaLLMUsage           `json:"usage,omitempty"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/framework/configstore"
-	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/encrypt"
+	"github.com/raksha/raksha/framework/configstore"
+	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/encrypt"
 )
 
 // Errors returned by the service. Callers (notably the auth middleware) should

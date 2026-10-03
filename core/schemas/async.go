@@ -30,5 +30,5 @@ type AsyncJobResponse struct {
 	CompletedAt *time.Time     `json:"completed_at,omitempty"`
 	StatusCode  int            `json:"status_code,omitempty"`
 	Result      interface{}    `json:"result,omitempty"`
-	Error       *UnifAIError  `json:"error,omitempty"`
+	Error       *RakshaError  `json:"error,omitempty"`
 }

@@ -4,27 +4,27 @@ import (
 	"strconv"
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-// ToGeminiError derives a GeminiGenerationError from a UnifAIError
-func ToGeminiError(unifaiErr *schemas.UnifAIError) *GeminiGenerationError {
-	if unifaiErr == nil {
+// ToGeminiError derives a GeminiGenerationError from a RakshaError
+func ToGeminiError(rakshaErr *schemas.RakshaError) *GeminiGenerationError {
+	if rakshaErr == nil {
 		return nil
 	}
 	code := 500
 	status := ""
-	if unifaiErr.Error != nil && unifaiErr.Error.Type != nil {
-		status = *unifaiErr.Error.Type
+	if rakshaErr.Error != nil && rakshaErr.Error.Type != nil {
+		status = *rakshaErr.Error.Type
 	}
 	message := ""
-	if unifaiErr.Error != nil && unifaiErr.Error.Message != "" {
-		message = unifaiErr.Error.Message
+	if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
+		message = rakshaErr.Error.Message
 	}
-	if unifaiErr.StatusCode != nil {
-		code = *unifaiErr.StatusCode
+	if rakshaErr.StatusCode != nil {
+		code = *rakshaErr.StatusCode
 	}
 	return &GeminiGenerationError{
 		Error: &GeminiGenerationErrorStruct{
@@ -36,10 +36,10 @@ func ToGeminiError(unifaiErr *schemas.UnifAIError) *GeminiGenerationError {
 }
 
 // parseGeminiError parses Gemini error responses
-func parseGeminiError(resp *fasthttp.Response) *schemas.UnifAIError {
+func parseGeminiError(resp *fasthttp.Response) *schemas.RakshaError {
 	// Try to parse as []GeminiGenerationError
 	var errorResps []GeminiGenerationError
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResps)
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResps)
 	if len(errorResps) > 0 {
 		var message string
 		var firstError *GeminiGenerationErrorStruct
@@ -53,27 +53,27 @@ func parseGeminiError(resp *fasthttp.Response) *schemas.UnifAIError {
 		}
 		// Trim trailing newline
 		message = strings.TrimSuffix(message, "\n")
-		if unifaiErr.Error == nil {
-			unifaiErr.Error = &schemas.ErrorField{}
+		if rakshaErr.Error == nil {
+			rakshaErr.Error = &schemas.ErrorField{}
 		}
 		// Set Code from first error if available
 		if firstError != nil {
-			unifaiErr.Error.Code = schemas.Ptr(strconv.Itoa(firstError.Code))
+			rakshaErr.Error.Code = schemas.Ptr(strconv.Itoa(firstError.Code))
 		}
 		// Set Message to trimmed concatenated message
-		unifaiErr.Error.Message = message
-		return unifaiErr
+		rakshaErr.Error.Message = message
+		return rakshaErr
 	}
 
 	// Try to parse as GeminiGenerationError
 	var errorResp GeminiGenerationError
-	unifaiErr = providerUtils.HandleProviderAPIError(resp, &errorResp)
+	rakshaErr = providerUtils.HandleProviderAPIError(resp, &errorResp)
 	if errorResp.Error != nil {
-		if unifaiErr.Error == nil {
-			unifaiErr.Error = &schemas.ErrorField{}
+		if rakshaErr.Error == nil {
+			rakshaErr.Error = &schemas.ErrorField{}
 		}
-		unifaiErr.Error.Code = schemas.Ptr(strconv.Itoa(errorResp.Error.Code))
-		unifaiErr.Error.Message = errorResp.Error.Message
+		rakshaErr.Error.Code = schemas.Ptr(strconv.Itoa(errorResp.Error.Code))
+		rakshaErr.Error.Message = errorResp.Error.Message
 	}
-	return unifaiErr
+	return rakshaErr
 }

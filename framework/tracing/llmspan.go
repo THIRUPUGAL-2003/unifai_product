@@ -1,4 +1,4 @@
-// Package tracing provides distributed tracing utilities for UnifAI.
+// Package tracing provides distributed tracing utilities for Raksha.
 package tracing
 
 import (
@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 func formatTraceValue(v any) string {
@@ -32,9 +32,9 @@ func formatTraceValue(v any) string {
 	return fmt.Sprint(rv.Interface())
 }
 
-// PopulateRequestAttributes extracts common request attributes from a UnifAIRequest.
+// PopulateRequestAttributes extracts common request attributes from a RakshaRequest.
 // This is the main entry point for populating request attributes on a span.
-func PopulateRequestAttributes(req *schemas.UnifAIRequest) map[string]any {
+func PopulateRequestAttributes(req *schemas.RakshaRequest) map[string]any {
 	attrs := make(map[string]any)
 	if req == nil {
 		return attrs
@@ -42,7 +42,7 @@ func PopulateRequestAttributes(req *schemas.UnifAIRequest) map[string]any {
 
 	provider, model, _ := req.GetRequestFields()
 	attrs[schemas.AttrProviderName] = schemas.OTelProviderName(provider)
-	attrs[schemas.AttrUnifAIProviderName] = string(provider) // raw UnifAI short name, mirrors canonical gen_ai.provider.name
+	attrs[schemas.AttrRakshaProviderName] = string(provider) // raw Raksha short name, mirrors canonical gen_ai.provider.name
 	attrs[schemas.AttrRequestModel] = model
 	attrs[schemas.AttrOperationName] = schemas.OTelOperationName(req.RequestType)
 
@@ -84,9 +84,9 @@ func PopulateRequestAttributes(req *schemas.UnifAIRequest) map[string]any {
 	return attrs
 }
 
-// PopulateResponseAttributes extracts common response attributes from a UnifAIResponse.
+// PopulateResponseAttributes extracts common response attributes from a RakshaResponse.
 // This is the main entry point for populating response attributes on a span.
-func PopulateResponseAttributes(resp *schemas.UnifAIResponse) map[string]any {
+func PopulateResponseAttributes(resp *schemas.RakshaResponse) map[string]any {
 	attrs := make(map[string]any)
 	if resp == nil {
 		return attrs
@@ -130,8 +130,8 @@ func PopulateResponseAttributes(resp *schemas.UnifAIResponse) map[string]any {
 	return attrs
 }
 
-// PopulateErrorAttributes extracts error attributes from a UnifAIError.
-func PopulateErrorAttributes(err *schemas.UnifAIError) map[string]any {
+// PopulateErrorAttributes extracts error attributes from a RakshaError.
+func PopulateErrorAttributes(err *schemas.RakshaError) map[string]any {
 	attrs := make(map[string]any)
 	if err == nil || err.Error == nil {
 		return attrs
@@ -162,59 +162,59 @@ func PopulateContextAttributes(
 	numberOfRetries, fallbackIndex int,
 ) {
 	// Each AttrXxx (gen_ai.*) emission below is LEGACY namespace pollution: a
-	// UnifAI-internal concept does not belong under gen_ai.*. The unifai.* mirrors
+	// Raksha-internal concept does not belong under gen_ai.*. The raksha.* mirrors
 	// are the canonical home going forward; drop the gen_ai.* lines once dashboards
 	// migrate (grep for "// legacy:" inside this function).
 	if virtualKeyID != "" {
-		attrs[schemas.AttrVirtualKeyID] = virtualKeyID     // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrVirtualKeyName] = virtualKeyName // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrUnifAIVirtualKeyID] = virtualKeyID
-		attrs[schemas.AttrUnifAIVirtualKeyName] = virtualKeyName
+		attrs[schemas.AttrVirtualKeyID] = virtualKeyID     // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrVirtualKeyName] = virtualKeyName // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRakshaVirtualKeyID] = virtualKeyID
+		attrs[schemas.AttrRakshaVirtualKeyName] = virtualKeyName
 	}
 	if selectedKeyID != "" {
-		attrs[schemas.AttrSelectedKeyID] = selectedKeyID     // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrSelectedKeyName] = selectedKeyName // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrUnifAISelectedKeyID] = selectedKeyID
-		attrs[schemas.AttrUnifAISelectedKeyName] = selectedKeyName
+		attrs[schemas.AttrSelectedKeyID] = selectedKeyID     // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrSelectedKeyName] = selectedKeyName // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRakshaSelectedKeyID] = selectedKeyID
+		attrs[schemas.AttrRakshaSelectedKeyName] = selectedKeyName
 	}
 	if routingRuleID != "" {
-		attrs[schemas.AttrRoutingRuleID] = routingRuleID     // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrRoutingRuleName] = routingRuleName // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrUnifAIRoutingRuleID] = routingRuleID
-		attrs[schemas.AttrUnifAIRoutingRuleName] = routingRuleName
+		attrs[schemas.AttrRoutingRuleID] = routingRuleID     // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRoutingRuleName] = routingRuleName // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRakshaRoutingRuleID] = routingRuleID
+		attrs[schemas.AttrRakshaRoutingRuleName] = routingRuleName
 	}
 	if teamID != "" {
-		attrs[schemas.AttrTeamID] = teamID // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrUnifAITeamID] = teamID
+		attrs[schemas.AttrTeamID] = teamID // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRakshaTeamID] = teamID
 	}
 	if teamName != "" {
-		attrs[schemas.AttrTeamName] = teamName // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrUnifAITeamName] = teamName
+		attrs[schemas.AttrTeamName] = teamName // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRakshaTeamName] = teamName
 	}
 	if customerID != "" {
-		attrs[schemas.AttrCustomerID] = customerID // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrUnifAICustomerID] = customerID
+		attrs[schemas.AttrCustomerID] = customerID // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRakshaCustomerID] = customerID
 	}
 	if customerName != "" {
-		attrs[schemas.AttrCustomerName] = customerName // legacy: gen_ai.* placement of unifai-internal attr
-		attrs[schemas.AttrUnifAICustomerName] = customerName
+		attrs[schemas.AttrCustomerName] = customerName // legacy: gen_ai.* placement of raksha-internal attr
+		attrs[schemas.AttrRakshaCustomerName] = customerName
 	}
 	if businessUnitID != "" {
-		attrs[schemas.AttrUnifAIBusinessUnitID] = businessUnitID
+		attrs[schemas.AttrRakshaBusinessUnitID] = businessUnitID
 	}
 	if businessUnitName != "" {
-		attrs[schemas.AttrUnifAIBusinessUnitName] = businessUnitName
+		attrs[schemas.AttrRakshaBusinessUnitName] = businessUnitName
 	}
 	if userID != "" {
-		attrs[schemas.AttrUnifAIUserID] = userID
+		attrs[schemas.AttrRakshaUserID] = userID
 	}
 	if userName != "" {
-		attrs[schemas.AttrUnifAIUserName] = userName
+		attrs[schemas.AttrRakshaUserName] = userName
 	}
-	attrs[schemas.AttrNumberOfRetries] = numberOfRetries // legacy: gen_ai.* placement of unifai-internal attr
-	attrs[schemas.AttrFallbackIndex] = fallbackIndex     // legacy: gen_ai.* placement of unifai-internal attr
-	attrs[schemas.AttrUnifAIRetries] = numberOfRetries
-	attrs[schemas.AttrUnifAIFallbackIndex] = fallbackIndex
+	attrs[schemas.AttrNumberOfRetries] = numberOfRetries // legacy: gen_ai.* placement of raksha-internal attr
+	attrs[schemas.AttrFallbackIndex] = fallbackIndex     // legacy: gen_ai.* placement of raksha-internal attr
+	attrs[schemas.AttrRakshaRetries] = numberOfRetries
+	attrs[schemas.AttrRakshaFallbackIndex] = fallbackIndex
 }
 
 // ===============================================
@@ -222,7 +222,7 @@ func PopulateContextAttributes(
 // ===============================================
 
 // PopulateChatRequestAttributes extracts chat completion request attributes.
-func PopulateChatRequestAttributes(req *schemas.UnifAIChatRequest, attrs map[string]any) {
+func PopulateChatRequestAttributes(req *schemas.RakshaChatRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -239,7 +239,7 @@ func PopulateChatRequestAttributes(req *schemas.UnifAIChatRequest, attrs map[str
 		}
 		if req.Params.Stop != nil {
 			attrs[schemas.AttrStopSequences] = append([]string(nil), req.Params.Stop...)
-			attrs[schemas.AttrUnifAIStopSequencesJoined] = strings.Join(req.Params.Stop, ",") // legacy: comma-joined back-compat for dashboards predating the []string fix
+			attrs[schemas.AttrRakshaStopSequencesJoined] = strings.Join(req.Params.Stop, ",") // legacy: comma-joined back-compat for dashboards predating the []string fix
 		}
 		if req.Params.PresencePenalty != nil {
 			attrs[schemas.AttrPresencePenalty] = *req.Params.PresencePenalty
@@ -272,7 +272,7 @@ func PopulateChatRequestAttributes(req *schemas.UnifAIChatRequest, attrs map[str
 }
 
 // PopulateChatResponseAttributes extracts chat completion response attributes.
-func PopulateChatResponseAttributes(resp *schemas.UnifAIChatResponse, attrs map[string]any) {
+func PopulateChatResponseAttributes(resp *schemas.RakshaChatResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -385,7 +385,7 @@ func PopulateChatResponseAttributes(resp *schemas.UnifAIChatResponse, attrs map[
 // ===============================================
 
 // PopulateTextCompletionRequestAttributes extracts text completion request attributes.
-func PopulateTextCompletionRequestAttributes(req *schemas.UnifAITextCompletionRequest, attrs map[string]any) {
+func PopulateTextCompletionRequestAttributes(req *schemas.RakshaTextCompletionRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -402,7 +402,7 @@ func PopulateTextCompletionRequestAttributes(req *schemas.UnifAITextCompletionRe
 		}
 		if req.Params.Stop != nil {
 			attrs[schemas.AttrStopSequences] = append([]string(nil), req.Params.Stop...)
-			attrs[schemas.AttrUnifAIStopSequencesJoined] = strings.Join(req.Params.Stop, ",") // legacy: comma-joined back-compat for dashboards predating the []string fix
+			attrs[schemas.AttrRakshaStopSequencesJoined] = strings.Join(req.Params.Stop, ",") // legacy: comma-joined back-compat for dashboards predating the []string fix
 		}
 		if req.Params.PresencePenalty != nil {
 			attrs[schemas.AttrPresencePenalty] = *req.Params.PresencePenalty
@@ -452,7 +452,7 @@ func PopulateTextCompletionRequestAttributes(req *schemas.UnifAITextCompletionRe
 }
 
 // PopulateTextCompletionResponseAttributes extracts text completion response attributes.
-func PopulateTextCompletionResponseAttributes(resp *schemas.UnifAITextCompletionResponse, attrs map[string]any) {
+func PopulateTextCompletionResponseAttributes(resp *schemas.RakshaTextCompletionResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -500,7 +500,7 @@ func PopulateTextCompletionResponseAttributes(resp *schemas.UnifAITextCompletion
 // ===============================================
 
 // PopulateEmbeddingRequestAttributes extracts embedding request attributes.
-func PopulateEmbeddingRequestAttributes(req *schemas.UnifAIEmbeddingRequest, attrs map[string]any) {
+func PopulateEmbeddingRequestAttributes(req *schemas.RakshaEmbeddingRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -538,7 +538,7 @@ func PopulateEmbeddingRequestAttributes(req *schemas.UnifAIEmbeddingRequest, att
 }
 
 // PopulateEmbeddingResponseAttributes extracts embedding response attributes.
-func PopulateEmbeddingResponseAttributes(resp *schemas.UnifAIEmbeddingResponse, attrs map[string]any) {
+func PopulateEmbeddingResponseAttributes(resp *schemas.RakshaEmbeddingResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -558,7 +558,7 @@ func PopulateEmbeddingResponseAttributes(resp *schemas.UnifAIEmbeddingResponse, 
 // ===============================================
 
 // PopulateTranscriptionRequestAttributes extracts transcription request attributes.
-func PopulateTranscriptionRequestAttributes(req *schemas.UnifAITranscriptionRequest, attrs map[string]any) {
+func PopulateTranscriptionRequestAttributes(req *schemas.RakshaTranscriptionRequest, attrs map[string]any) {
 	if req == nil || req.Params == nil {
 		return
 	}
@@ -578,7 +578,7 @@ func PopulateTranscriptionRequestAttributes(req *schemas.UnifAITranscriptionRequ
 }
 
 // PopulateTranscriptionResponseAttributes extracts transcription response attributes.
-func PopulateTranscriptionResponseAttributes(resp *schemas.UnifAITranscriptionResponse, attrs map[string]any) {
+func PopulateTranscriptionResponseAttributes(resp *schemas.RakshaTranscriptionResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -608,7 +608,7 @@ func PopulateTranscriptionResponseAttributes(resp *schemas.UnifAITranscriptionRe
 // ===============================================
 
 // PopulateSpeechRequestAttributes extracts speech request attributes.
-func PopulateSpeechRequestAttributes(req *schemas.UnifAISpeechRequest, attrs map[string]any) {
+func PopulateSpeechRequestAttributes(req *schemas.RakshaSpeechRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -643,7 +643,7 @@ func PopulateSpeechRequestAttributes(req *schemas.UnifAISpeechRequest, attrs map
 }
 
 // PopulateSpeechResponseAttributes extracts speech response attributes.
-func PopulateSpeechResponseAttributes(resp *schemas.UnifAISpeechResponse, attrs map[string]any) {
+func PopulateSpeechResponseAttributes(resp *schemas.RakshaSpeechResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -661,7 +661,7 @@ func PopulateSpeechResponseAttributes(resp *schemas.UnifAISpeechResponse, attrs 
 // ===============================================
 
 // PopulateResponsesRequestAttributes extracts responses API request attributes.
-func PopulateResponsesRequestAttributes(req *schemas.UnifAIResponsesRequest, attrs map[string]any) {
+func PopulateResponsesRequestAttributes(req *schemas.RakshaResponsesRequest, attrs map[string]any) {
 	if req == nil || req.Params == nil {
 		return
 	}
@@ -760,7 +760,7 @@ func PopulateResponsesRequestAttributes(req *schemas.UnifAIResponsesRequest, att
 }
 
 // PopulateResponsesResponseAttributes extracts responses API response attributes.
-func PopulateResponsesResponseAttributes(resp *schemas.UnifAIResponsesResponse, attrs map[string]any) {
+func PopulateResponsesResponseAttributes(resp *schemas.RakshaResponsesResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -942,7 +942,7 @@ func PopulateResponsesResponseAttributes(resp *schemas.UnifAIResponsesResponse, 
 // ===============================================
 
 // PopulateBatchCreateRequestAttributes extracts batch create request attributes.
-func PopulateBatchCreateRequestAttributes(req *schemas.UnifAIBatchCreateRequest, attrs map[string]any) {
+func PopulateBatchCreateRequestAttributes(req *schemas.RakshaBatchCreateRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -969,7 +969,7 @@ func PopulateBatchCreateRequestAttributes(req *schemas.UnifAIBatchCreateRequest,
 }
 
 // PopulateBatchListRequestAttributes extracts batch list request attributes.
-func PopulateBatchListRequestAttributes(req *schemas.UnifAIBatchListRequest, attrs map[string]any) {
+func PopulateBatchListRequestAttributes(req *schemas.RakshaBatchListRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -999,7 +999,7 @@ func PopulateBatchListRequestAttributes(req *schemas.UnifAIBatchListRequest, att
 }
 
 // PopulateBatchRetrieveRequestAttributes extracts batch retrieve request attributes.
-func PopulateBatchRetrieveRequestAttributes(req *schemas.UnifAIBatchRetrieveRequest, attrs map[string]any) {
+func PopulateBatchRetrieveRequestAttributes(req *schemas.RakshaBatchRetrieveRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1014,7 +1014,7 @@ func PopulateBatchRetrieveRequestAttributes(req *schemas.UnifAIBatchRetrieveRequ
 }
 
 // PopulateBatchCancelRequestAttributes extracts batch cancel request attributes.
-func PopulateBatchCancelRequestAttributes(req *schemas.UnifAIBatchCancelRequest, attrs map[string]any) {
+func PopulateBatchCancelRequestAttributes(req *schemas.RakshaBatchCancelRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1029,7 +1029,7 @@ func PopulateBatchCancelRequestAttributes(req *schemas.UnifAIBatchCancelRequest,
 }
 
 // PopulateBatchResultsRequestAttributes extracts batch results request attributes.
-func PopulateBatchResultsRequestAttributes(req *schemas.UnifAIBatchResultsRequest, attrs map[string]any) {
+func PopulateBatchResultsRequestAttributes(req *schemas.RakshaBatchResultsRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1044,7 +1044,7 @@ func PopulateBatchResultsRequestAttributes(req *schemas.UnifAIBatchResultsReques
 }
 
 // PopulateBatchCreateResponseAttributes extracts batch create response attributes.
-func PopulateBatchCreateResponseAttributes(resp *schemas.UnifAIBatchCreateResponse, attrs map[string]any) {
+func PopulateBatchCreateResponseAttributes(resp *schemas.RakshaBatchCreateResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1081,7 +1081,7 @@ func PopulateBatchCreateResponseAttributes(resp *schemas.UnifAIBatchCreateRespon
 }
 
 // PopulateBatchListResponseAttributes extracts batch list response attributes.
-func PopulateBatchListResponseAttributes(resp *schemas.UnifAIBatchListResponse, attrs map[string]any) {
+func PopulateBatchListResponseAttributes(resp *schemas.RakshaBatchListResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1100,7 +1100,7 @@ func PopulateBatchListResponseAttributes(resp *schemas.UnifAIBatchListResponse, 
 }
 
 // PopulateBatchRetrieveResponseAttributes extracts batch retrieve response attributes.
-func PopulateBatchRetrieveResponseAttributes(resp *schemas.UnifAIBatchRetrieveResponse, attrs map[string]any) {
+func PopulateBatchRetrieveResponseAttributes(resp *schemas.RakshaBatchRetrieveResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1158,7 +1158,7 @@ func PopulateBatchRetrieveResponseAttributes(resp *schemas.UnifAIBatchRetrieveRe
 }
 
 // PopulateBatchCancelResponseAttributes extracts batch cancel response attributes.
-func PopulateBatchCancelResponseAttributes(resp *schemas.UnifAIBatchCancelResponse, attrs map[string]any) {
+func PopulateBatchCancelResponseAttributes(resp *schemas.RakshaBatchCancelResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1180,7 +1180,7 @@ func PopulateBatchCancelResponseAttributes(resp *schemas.UnifAIBatchCancelRespon
 }
 
 // PopulateBatchResultsResponseAttributes extracts batch results response attributes.
-func PopulateBatchResultsResponseAttributes(resp *schemas.UnifAIBatchResultsResponse, attrs map[string]any) {
+func PopulateBatchResultsResponseAttributes(resp *schemas.RakshaBatchResultsResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1198,7 +1198,7 @@ func PopulateBatchResultsResponseAttributes(resp *schemas.UnifAIBatchResultsResp
 // ===============================================
 
 // PopulateFileUploadRequestAttributes extracts file upload request attributes.
-func PopulateFileUploadRequestAttributes(req *schemas.UnifAIFileUploadRequest, attrs map[string]any) {
+func PopulateFileUploadRequestAttributes(req *schemas.RakshaFileUploadRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1219,7 +1219,7 @@ func PopulateFileUploadRequestAttributes(req *schemas.UnifAIFileUploadRequest, a
 }
 
 // PopulateFileListRequestAttributes extracts file list request attributes.
-func PopulateFileListRequestAttributes(req *schemas.UnifAIFileListRequest, attrs map[string]any) {
+func PopulateFileListRequestAttributes(req *schemas.RakshaFileListRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1243,7 +1243,7 @@ func PopulateFileListRequestAttributes(req *schemas.UnifAIFileListRequest, attrs
 }
 
 // PopulateFileRetrieveRequestAttributes extracts file retrieve request attributes.
-func PopulateFileRetrieveRequestAttributes(req *schemas.UnifAIFileRetrieveRequest, attrs map[string]any) {
+func PopulateFileRetrieveRequestAttributes(req *schemas.RakshaFileRetrieveRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1258,7 +1258,7 @@ func PopulateFileRetrieveRequestAttributes(req *schemas.UnifAIFileRetrieveReques
 }
 
 // PopulateFileDeleteRequestAttributes extracts file delete request attributes.
-func PopulateFileDeleteRequestAttributes(req *schemas.UnifAIFileDeleteRequest, attrs map[string]any) {
+func PopulateFileDeleteRequestAttributes(req *schemas.RakshaFileDeleteRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1273,7 +1273,7 @@ func PopulateFileDeleteRequestAttributes(req *schemas.UnifAIFileDeleteRequest, a
 }
 
 // PopulateFileContentRequestAttributes extracts file content request attributes.
-func PopulateFileContentRequestAttributes(req *schemas.UnifAIFileContentRequest, attrs map[string]any) {
+func PopulateFileContentRequestAttributes(req *schemas.RakshaFileContentRequest, attrs map[string]any) {
 	if req == nil {
 		return
 	}
@@ -1288,7 +1288,7 @@ func PopulateFileContentRequestAttributes(req *schemas.UnifAIFileContentRequest,
 }
 
 // PopulateFileUploadResponseAttributes extracts file upload response attributes.
-func PopulateFileUploadResponseAttributes(resp *schemas.UnifAIFileUploadResponse, attrs map[string]any) {
+func PopulateFileUploadResponseAttributes(resp *schemas.RakshaFileUploadResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1310,7 +1310,7 @@ func PopulateFileUploadResponseAttributes(resp *schemas.UnifAIFileUploadResponse
 }
 
 // PopulateFileListResponseAttributes extracts file list response attributes.
-func PopulateFileListResponseAttributes(resp *schemas.UnifAIFileListResponse, attrs map[string]any) {
+func PopulateFileListResponseAttributes(resp *schemas.RakshaFileListResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1323,7 +1323,7 @@ func PopulateFileListResponseAttributes(resp *schemas.UnifAIFileListResponse, at
 }
 
 // PopulateFileRetrieveResponseAttributes extracts file retrieve response attributes.
-func PopulateFileRetrieveResponseAttributes(resp *schemas.UnifAIFileRetrieveResponse, attrs map[string]any) {
+func PopulateFileRetrieveResponseAttributes(resp *schemas.RakshaFileRetrieveResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1345,7 +1345,7 @@ func PopulateFileRetrieveResponseAttributes(resp *schemas.UnifAIFileRetrieveResp
 }
 
 // PopulateFileDeleteResponseAttributes extracts file delete response attributes.
-func PopulateFileDeleteResponseAttributes(resp *schemas.UnifAIFileDeleteResponse, attrs map[string]any) {
+func PopulateFileDeleteResponseAttributes(resp *schemas.RakshaFileDeleteResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1358,7 +1358,7 @@ func PopulateFileDeleteResponseAttributes(resp *schemas.UnifAIFileDeleteResponse
 }
 
 // PopulateFileContentResponseAttributes extracts file content response attributes.
-func PopulateFileContentResponseAttributes(resp *schemas.UnifAIFileContentResponse, attrs map[string]any) {
+func PopulateFileContentResponseAttributes(resp *schemas.RakshaFileContentResponse, attrs map[string]any) {
 	if resp == nil {
 		return
 	}
@@ -1418,7 +1418,7 @@ func extractChatMessages(messages []schemas.ChatMessage) []MessageSummary {
 }
 
 // extractChatResponseMessages extracts output messages from chat response
-func extractChatResponseMessages(resp *schemas.UnifAIChatResponse) []MessageSummary {
+func extractChatResponseMessages(resp *schemas.RakshaChatResponse) []MessageSummary {
 	if resp == nil {
 		return nil
 	}
@@ -1521,7 +1521,7 @@ type ResponsesMessageSummary struct {
 }
 
 // extractResponsesOutputMessages extracts output messages from a Responses API response.
-func extractResponsesOutputMessages(resp *schemas.UnifAIResponsesResponse) []ResponsesMessageSummary {
+func extractResponsesOutputMessages(resp *schemas.RakshaResponsesResponse) []ResponsesMessageSummary {
 	if resp == nil {
 		return nil
 	}

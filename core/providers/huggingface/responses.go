@@ -3,17 +3,17 @@ package huggingface
 import (
 	"fmt"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToHuggingFaceResponsesRequest converts a UnifAI Responses request into the Hugging Face
+// ToHuggingFaceResponsesRequest converts a Raksha Responses request into the Hugging Face
 // chat-completions payload that the provider already understands.
-func ToHuggingFaceResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*HuggingFaceChatRequest, error) {
-	if unifaiReq == nil {
+func ToHuggingFaceResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*HuggingFaceChatRequest, error) {
+	if rakshaReq == nil {
 		return nil, nil
 	}
 
-	chatReq := unifaiReq.ToChatRequest()
+	chatReq := rakshaReq.ToChatRequest()
 	if chatReq == nil {
 		return nil, fmt.Errorf("failed to convert responses request to chat request")
 	}
@@ -29,9 +29,9 @@ func ToHuggingFaceResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) (*
 	return hfReq, nil
 }
 
-// ToUnifAIResponsesResponseFromHuggingFace converts a UnifAI chat response into the
-// UnifAI Responses response shape, preserving provider metadata.
-func ToUnifAIResponsesResponseFromHuggingFace(resp *schemas.UnifAIChatResponse, requestedModel string) (*schemas.UnifAIResponsesResponse, error) {
+// ToRakshaResponsesResponseFromHuggingFace converts a Raksha chat response into the
+// Raksha Responses response shape, preserving provider metadata.
+func ToRakshaResponsesResponseFromHuggingFace(resp *schemas.RakshaChatResponse, requestedModel string) (*schemas.RakshaResponsesResponse, error) {
 	if resp == nil {
 		return nil, nil
 	}
@@ -41,7 +41,7 @@ func ToUnifAIResponsesResponseFromHuggingFace(resp *schemas.UnifAIChatResponse, 
 		resp.Model = requestedModel
 	}
 
-	responsesResp := resp.ToUnifAIResponsesResponse()
+	responsesResp := resp.ToRakshaResponsesResponse()
 	if responsesResp != nil {
 	}
 

@@ -42,7 +42,7 @@ function parseOcrMarkdown(data: unknown): string {
 }
 
 /**
- * OCR via UnifAI `POST /v1/ocr` (Mistral OCR).
+ * OCR via Raksha `POST /v1/ocr` (Mistral OCR).
  * Supports image_url (photos) and document_url (PDF / scanned docs).
  */
 export async function ocrDocument(

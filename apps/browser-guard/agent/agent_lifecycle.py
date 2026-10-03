@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 
-from agent_config import AGENT_VERSION, UNIFAI_BACKEND_URL
+from agent_config import AGENT_VERSION, RAKSHA_BACKEND_URL
 from agent_health import first_run_path
 from agent_http import _http_json
 from agent_identity import get_or_create_agent_id
@@ -31,7 +31,7 @@ def show_message_async(title: str, text: str, flags: int = 0x40) -> None:
     threading.Thread(
         target=show_message,
         args=(title, text, flags),
-        name="unifai-guard-msg",
+        name="raksha-guard-msg",
         daemon=True,
     ).start()
 
@@ -57,14 +57,14 @@ def maybe_first_run_prompt() -> None:
         else "Chrome, Edge, Brave, Opera, Vivaldi, Firefox"
     )
     show_message_async(
-        "UnifAI Guard installed",
-        "UnifAI Guard is running.\n\n"
+        "Raksha Guard installed",
+        "Raksha Guard is running.\n\n"
         "For Browser AI monitoring & predict to work:\n"
         f"1) Fully quit every browser you use ({browsers})\n"
         "2) Reopen the browser and visit a monitored AI site\n"
         "3) Send a test prompt\n\n"
         f"Version {AGENT_VERSION}\n"
-        f"Backend: {UNIFAI_BACKEND_URL}\n"
+        f"Backend: {RAKSHA_BACKEND_URL}\n"
         f"Logs: {log_hint_path()}",
     )
 
@@ -78,11 +78,11 @@ def _is_guard_install_path(path: str) -> bool:
     n = (path or "").replace("\\", "/").lower()
     if not n:
         return False
-    if "unifai" in n and "guard" in n:
+    if "raksha" in n and "guard" in n:
         return True
-    if n.endswith("/unifai_guard.app") or n.endswith("unifai_guard.app"):
+    if n.endswith("/raksha_guard.app") or n.endswith("raksha_guard.app"):
         return True
-    if n.endswith("unifai_guard.exe"):
+    if n.endswith("raksha_guard.exe"):
         return True
     return False
 
@@ -91,7 +91,7 @@ def schedule_install_removal() -> None:
     """After PAC/autostart clear: delete Guard EXE / .app once this process exits.
 
     Windows: detached cmd waits then deletes EXE (+ Guard install folder when safe).
-    macOS: detached shell removes known UnifAI_Guard.app locations.
+    macOS: detached shell removes known Raksha_Guard.app locations.
     """
     try:
         if IS_WIN:
@@ -102,20 +102,20 @@ def schedule_install_removal() -> None:
             local = os.environ.get("LOCALAPPDATA", "")
             pf = os.environ.get("ProgramFiles", r"C:\Program Files")
             for cand in (
-                os.path.join(local, "Programs", "UnifAI", "Guard", "UnifAI_Guard.exe") if local else "",
-                os.path.join(pf, "UnifAI", "Guard", "UnifAI_Guard.exe"),
+                os.path.join(local, "Programs", "Raksha", "Guard", "Raksha_Guard.exe") if local else "",
+                os.path.join(pf, "Raksha", "Guard", "Raksha_Guard.exe"),
             ):
                 if cand and os.path.isfile(cand) and cand not in targets:
                     targets.append(cand)
             if not targets:
-                print("[UnifAI Guard] Remote uninstall: no Guard EXE path to delete.")
+                print("[Raksha Guard] Remote uninstall: no Guard EXE path to delete.")
                 return
             # `timeout` needs an interactive console and exits instantly when detached, so
             # use ping as the delay; then stop every Guard process (incl. the MitM worker
             # holding the EXE open) before deleting.
             parts: list[str] = [
                 "ping -n 5 127.0.0.1 >nul",
-                "taskkill /F /IM UnifAI_Guard.exe >nul 2>&1",
+                "taskkill /F /IM Raksha_Guard.exe >nul 2>&1",
                 "ping -n 2 127.0.0.1 >nul",
             ]
             dirs: set[str] = set()
@@ -127,7 +127,7 @@ def schedule_install_removal() -> None:
             for d in dirs:
                 parts.append(f'rmdir /s /q "{d}" 2>nul')
                 parent = os.path.dirname(d)
-                if parent and parent.lower().endswith("\\unifai"):
+                if parent and parent.lower().endswith("\\raksha"):
                     parts.append(f'rmdir "{parent}" 2>nul')
             cmd = " & ".join(parts)
             # Both STARTUPINFO(SW_HIDE) and CREATE_NO_WINDOW: completely hides cmd/ping/taskkill
@@ -138,44 +138,44 @@ def schedule_install_removal() -> None:
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             # String, not list: a list would escape the path quotes as \" for cmd.exe.
             subprocess.Popen(f"cmd.exe /c {cmd}", startupinfo=si, creationflags=flags, close_fds=True)
-            print(f"[UnifAI Guard] Scheduled EXE removal: {targets}")
+            print(f"[Raksha Guard] Scheduled EXE removal: {targets}")
             return
 
         if IS_MAC:
             home = os.path.expanduser("~")
             apps = [
-                "/Applications/UnifAI_Guard.app",
-                os.path.join(home, "Applications", "UnifAI_Guard.app"),
+                "/Applications/Raksha_Guard.app",
+                os.path.join(home, "Applications", "Raksha_Guard.app"),
             ]
             # If running from a frozen .app, also remove that bundle
             if getattr(sys, "frozen", False):
                 exe = os.path.abspath(sys.executable)
-                # .../UnifAI_Guard.app/Contents/MacOS/UnifAI_Guard
+                # .../Raksha_Guard.app/Contents/MacOS/Raksha_Guard
                 marker = "/Contents/MacOS/"
                 if marker in exe.replace("\\", "/"):
                     app = exe[: exe.replace("\\", "/").index(marker)]
                     if app.endswith(".app") and app not in apps:
                         apps.append(app)
             existing = [a for a in apps if os.path.isdir(a)]
-            guard_data = os.path.join(home, "Library", "Application Support", "UnifAI", "Guard")
+            guard_data = os.path.join(home, "Library", "Application Support", "Raksha", "Guard")
             if os.path.isdir(guard_data):
                 existing.append(guard_data)
             if not existing:
-                print("[UnifAI Guard] Remote uninstall: no Guard .app to delete.")
+                print("[Raksha Guard] Remote uninstall: no Guard .app to delete.")
                 return
             quoted = " ".join(f'"{a}"' for a in existing)
             script = f'(sleep 3; rm -rf {quoted}) >/dev/null 2>&1 &'
             subprocess.Popen(["/bin/bash", "-c", script], start_new_session=True)
-            print(f"[UnifAI Guard] Scheduled .app removal: {existing}")
+            print(f"[Raksha Guard] Scheduled .app removal: {existing}")
     except Exception as e:
-        print(f"[UnifAI Guard WARNING] Could not schedule install removal: {e}")
+        print(f"[Raksha Guard WARNING] Could not schedule install removal: {e}")
 
 
 def remote_uninstall_authorized(agent_id: str) -> bool:
     """True when an admin already approved removing this Guard from the dashboard."""
     status, data = _http_json(
         "POST",
-        f"{UNIFAI_BACKEND_URL}/api/browser-ai/agents/uninstall-status",
+        f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/uninstall-status",
         {"agent_id": agent_id},
     )
     return status == 200 and isinstance(data, dict) and bool(data.get("authorized"))
@@ -201,10 +201,10 @@ def launch_windows_uninstaller() -> bool:
             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             close_fds=True,
         )
-        print(f"[UnifAI Guard] Launched silent uninstaller: {uninstaller}")
+        print(f"[Raksha Guard] Launched silent uninstaller: {uninstaller}")
         return True
     except Exception as e:
-        print(f"[UnifAI Guard WARNING] Could not launch uninstaller: {e}")
+        print(f"[Raksha Guard WARNING] Could not launch uninstaller: {e}")
         return False
 
 
@@ -218,33 +218,33 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
     clean_key = (key or "").strip()
     status, data = _http_json(
         "POST",
-        f"{UNIFAI_BACKEND_URL}/api/browser-ai/agents/uninstall",
+        f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/uninstall",
         {"agent_id": agent_id, "key": clean_key},
     )
     if status == 200:
-        print("[UnifAI Guard] Uninstall authorized by backend.")
+        print("[Raksha Guard] Uninstall authorized by backend.")
         clear_guard_runtime()
         if schedule_cleanup:
             schedule_install_removal()
         return 0
     if status == 403:
-        print("[UnifAI Guard ERROR] Invalid uninstall key.")
+        print("[Raksha Guard ERROR] Invalid uninstall key.")
         return 2
     if status == 0:
-        print("[UnifAI Guard ERROR] Backend unreachable — uninstall key not verified. PAC left on.")
+        print("[Raksha Guard ERROR] Backend unreachable — uninstall key not verified. PAC left on.")
         return 1
-    print(f"[UnifAI Guard ERROR] Uninstall rejected status={status} body={data}")
+    print(f"[Raksha Guard ERROR] Uninstall rejected status={status} body={data}")
     return 1
 
 
 def run_uninstall_prompt() -> int:
     if remote_uninstall_authorized(get_or_create_agent_id()):
-        print("[UnifAI Guard] Uninstall already approved by admin — no key needed.")
+        print("[Raksha Guard] Uninstall already approved by admin — no key needed.")
         clear_guard_runtime()
         return 0
     key = prompt_uninstall_key()
     if key is None:
-        print("[UnifAI Guard] Uninstall cancelled by user.")
+        print("[Raksha Guard] Uninstall cancelled by user.")
         return 3
     # When called from Inno Setup uninstaller, Inno Setup itself deletes the files/folder.
     # schedule_cleanup=False avoids launching a separate background cmd process that fights Inno.

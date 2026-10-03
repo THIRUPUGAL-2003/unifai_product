@@ -363,7 +363,7 @@ export default function MCPLogsPage() {
 	} = useColumnConfig({
 		columnIds,
 		paramName: "mcp_cols",
-		storageKey: "unifai.mcp_logs.cols",
+		storageKey: "raksha.mcp_logs.cols",
 		defaultHidden: ["virtual_key", "user", "team", "customer", "business_unit"],
 		fixedColumns: hasDeleteAccess ? { right: ["actions"] } : undefined,
 	});

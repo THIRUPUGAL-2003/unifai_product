@@ -12,8 +12,8 @@ import (
 	"github.com/tidwall/sjson"
 	"github.com/valyala/fasthttp"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // geminiCachedContent mirrors the Gemini API CachedContent resource shape
@@ -40,7 +40,7 @@ type geminiCachedContentList struct {
 	NextPageToken  string                `json:"nextPageToken,omitempty"`
 }
 
-func (g *geminiCachedContent) toUnifAIObject() schemas.CachedContentObject {
+func (g *geminiCachedContent) toRakshaObject() schemas.CachedContentObject {
 	return schemas.CachedContentObject{
 		Name:              g.Name,
 		DisplayName:       g.DisplayName,
@@ -75,9 +75,9 @@ func cachedContentObjectToWire(obj schemas.CachedContentObject) geminiCachedCont
 	}
 }
 
-// ToGeminiCachedContentCreateResponse renders a UnifAI create response as the
+// ToGeminiCachedContentCreateResponse renders a Raksha create response as the
 // Gemini camelCase wire shape (https://ai.google.dev/api/caching#CachedContent).
-func ToGeminiCachedContentCreateResponse(resp *schemas.UnifAICachedContentCreateResponse) interface{} {
+func ToGeminiCachedContentCreateResponse(resp *schemas.RakshaCachedContentCreateResponse) interface{} {
 	if resp == nil {
 		return nil
 	}
@@ -96,9 +96,9 @@ func ToGeminiCachedContentCreateResponse(resp *schemas.UnifAICachedContentCreate
 	}
 }
 
-// ToGeminiCachedContentListResponse renders a UnifAI list response as the
+// ToGeminiCachedContentListResponse renders a Raksha list response as the
 // Gemini wire shape (cachedContents/nextPageToken).
-func ToGeminiCachedContentListResponse(resp *schemas.UnifAICachedContentListResponse) interface{} {
+func ToGeminiCachedContentListResponse(resp *schemas.RakshaCachedContentListResponse) interface{} {
 	if resp == nil {
 		return nil
 	}
@@ -115,9 +115,9 @@ func ToGeminiCachedContentListResponse(resp *schemas.UnifAICachedContentListResp
 	return wire
 }
 
-// ToGeminiCachedContentRetrieveResponse renders a UnifAI retrieve response as
+// ToGeminiCachedContentRetrieveResponse renders a Raksha retrieve response as
 // the Gemini camelCase wire shape.
-func ToGeminiCachedContentRetrieveResponse(resp *schemas.UnifAICachedContentRetrieveResponse) interface{} {
+func ToGeminiCachedContentRetrieveResponse(resp *schemas.RakshaCachedContentRetrieveResponse) interface{} {
 	if resp == nil {
 		return nil
 	}
@@ -136,9 +136,9 @@ func ToGeminiCachedContentRetrieveResponse(resp *schemas.UnifAICachedContentRetr
 	}
 }
 
-// ToGeminiCachedContentUpdateResponse renders a UnifAI update response as the
+// ToGeminiCachedContentUpdateResponse renders a Raksha update response as the
 // Gemini camelCase wire shape.
-func ToGeminiCachedContentUpdateResponse(resp *schemas.UnifAICachedContentUpdateResponse) interface{} {
+func ToGeminiCachedContentUpdateResponse(resp *schemas.RakshaCachedContentUpdateResponse) interface{} {
 	if resp == nil {
 		return nil
 	}
@@ -157,16 +157,16 @@ func ToGeminiCachedContentUpdateResponse(resp *schemas.UnifAICachedContentUpdate
 	}
 }
 
-// ToGeminiCachedContentDeleteResponse renders a UnifAI delete response. Gemini
+// ToGeminiCachedContentDeleteResponse renders a Raksha delete response. Gemini
 // returns an empty body on success; mirror that with an empty struct so the
-// payload is serialized as `{}` rather than the unifai-internal shape.
-func ToGeminiCachedContentDeleteResponse(_ *schemas.UnifAICachedContentDeleteResponse) interface{} {
+// payload is serialized as `{}` rather than the raksha-internal shape.
+func ToGeminiCachedContentDeleteResponse(_ *schemas.RakshaCachedContentDeleteResponse) interface{} {
 	return struct{}{}
 }
 
-func validateTTLExpireMutex(ttl, expireTime *string) *schemas.UnifAIError {
+func validateTTLExpireMutex(ttl, expireTime *string) *schemas.RakshaError {
 	if ttl != nil && *ttl != "" && expireTime != nil && *expireTime != "" {
-		return providerUtils.NewUnifAIOperationError("ttl and expire_time are mutually exclusive", nil)
+		return providerUtils.NewRakshaOperationError("ttl and expire_time are mutually exclusive", nil)
 	}
 	return nil
 }
@@ -180,7 +180,7 @@ func normalizeCachedContentName(name string) string {
 
 // CachedContentCreate creates a new cached content via Google AI Studio's
 // /v1beta/cachedContents endpoint.
-func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentCreateRequest) (*schemas.UnifAICachedContentCreateResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentCreateRequest) (*schemas.RakshaCachedContentCreateResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.CachedContentCreateRequest); err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 		return nil, err
 	}
 	if request.Model == "" {
-		return nil, providerUtils.NewUnifAIOperationError("model is required for cached content create", nil)
+		return nil, providerUtils.NewRakshaOperationError("model is required for cached content create", nil)
 	}
 
 	model := request.Model
@@ -201,7 +201,7 @@ func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 		var err error
 		jsonBody, err = sjson.SetBytes(jsonBody, "model", model)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to set cached content model", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to set cached content model", err)
 		}
 	} else {
 		body := geminiCachedContent{
@@ -224,7 +224,7 @@ func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 		var err error
 		jsonBody, err = sonic.Marshal(body)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to marshal cached content create body", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to marshal cached content create body", err)
 		}
 	}
 
@@ -243,10 +243,10 @@ func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 	}
 	req.SetBody(jsonBody)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
@@ -254,15 +254,15 @@ func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var geminiResp geminiCachedContent
 	if err := sonic.Unmarshal(respBody, &geminiResp); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	return &schemas.UnifAICachedContentCreateResponse{
+	return &schemas.RakshaCachedContentCreateResponse{
 		Name:              geminiResp.Name,
 		DisplayName:       geminiResp.DisplayName,
 		Model:             geminiResp.Model,
@@ -274,14 +274,14 @@ func (provider *GeminiProvider) CachedContentCreate(ctx *schemas.UnifAIContext, 
 		UpdateTime:        geminiResp.UpdateTime,
 		ExpireTime:        geminiResp.ExpireTime,
 		UsageMetadata:     geminiResp.UsageMetadata,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
 // cachedContentListByKey lists cached contents for a single key.
-func (provider *GeminiProvider) cachedContentListByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentListRequest) (*schemas.UnifAICachedContentListResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *GeminiProvider) cachedContentListByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentListRequest) (*schemas.RakshaCachedContentListResponse, time.Duration, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -307,10 +307,10 @@ func (provider *GeminiProvider) cachedContentListByKey(ctx *schemas.UnifAIContex
 		req.Header.Set("x-goog-api-key", key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
@@ -318,48 +318,48 @@ func (provider *GeminiProvider) cachedContentListByKey(ctx *schemas.UnifAIContex
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var geminiList geminiCachedContentList
 	if err := sonic.Unmarshal(respBody, &geminiList); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	unifaiObjects := make([]schemas.CachedContentObject, 0, len(geminiList.CachedContents))
+	rakshaObjects := make([]schemas.CachedContentObject, 0, len(geminiList.CachedContents))
 	for i := range geminiList.CachedContents {
-		unifaiObjects = append(unifaiObjects, geminiList.CachedContents[i].toUnifAIObject())
+		rakshaObjects = append(rakshaObjects, geminiList.CachedContents[i].toRakshaObject())
 	}
 
-	return &schemas.UnifAICachedContentListResponse{
-		CachedContents: unifaiObjects,
+	return &schemas.RakshaCachedContentListResponse{
+		CachedContents: rakshaObjects,
 		NextPageToken:  geminiList.NextPageToken,
 	}, latency, nil
 }
 
 // CachedContentList lists cached contents, trying each key until successful.
-func (provider *GeminiProvider) CachedContentList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentListRequest) (*schemas.UnifAICachedContentListResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) CachedContentList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentListRequest) (*schemas.RakshaCachedContentListResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.CachedContentListRequest); err != nil {
 		return nil, err
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content list", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content list", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentListByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentListByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
 // cachedContentRetrieveByKey retrieves a single cached content for one key.
-func (provider *GeminiProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentRetrieveRequest) (*schemas.UnifAICachedContentRetrieveResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *GeminiProvider) cachedContentRetrieveByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentRetrieveRequest) (*schemas.RakshaCachedContentRetrieveResponse, time.Duration, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -376,10 +376,10 @@ func (provider *GeminiProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAICo
 		req.Header.Set("x-goog-api-key", key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
@@ -387,15 +387,15 @@ func (provider *GeminiProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAICo
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var geminiResp geminiCachedContent
 	if err := sonic.Unmarshal(respBody, &geminiResp); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	return &schemas.UnifAICachedContentRetrieveResponse{
+	return &schemas.RakshaCachedContentRetrieveResponse{
 		Name:              geminiResp.Name,
 		DisplayName:       geminiResp.DisplayName,
 		Model:             geminiResp.Model,
@@ -411,31 +411,31 @@ func (provider *GeminiProvider) cachedContentRetrieveByKey(ctx *schemas.UnifAICo
 }
 
 // CachedContentRetrieve retrieves a cached content by name, trying each key.
-func (provider *GeminiProvider) CachedContentRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentRetrieveRequest) (*schemas.UnifAICachedContentRetrieveResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) CachedContentRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentRetrieveRequest) (*schemas.RakshaCachedContentRetrieveResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.CachedContentRetrieveRequest); err != nil {
 		return nil, err
 	}
 	if request.Name == "" {
-		return nil, providerUtils.NewUnifAIOperationError("name is required for cached content retrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("name is required for cached content retrieve", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content retrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content retrieve", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentRetrieveByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentRetrieveByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
 // cachedContentUpdateByKey updates expiration on a cached content for one key.
-func (provider *GeminiProvider) cachedContentUpdateByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentUpdateRequest) (*schemas.UnifAICachedContentUpdateResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *GeminiProvider) cachedContentUpdateByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentUpdateRequest) (*schemas.RakshaCachedContentUpdateResponse, time.Duration, *schemas.RakshaError) {
 	body := geminiCachedContent{}
 	updateMaskFields := []string{}
 	if request.TTL != nil && *request.TTL != "" {
@@ -452,7 +452,7 @@ func (provider *GeminiProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 		var marshalErr error
 		jsonBody, marshalErr = sonic.Marshal(body)
 		if marshalErr != nil {
-			return nil, 0, providerUtils.NewUnifAIOperationError("failed to marshal cached content update body", marshalErr)
+			return nil, 0, providerUtils.NewRakshaOperationError("failed to marshal cached content update body", marshalErr)
 		}
 	}
 
@@ -476,10 +476,10 @@ func (provider *GeminiProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 	}
 	req.SetBody(jsonBody)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
@@ -487,15 +487,15 @@ func (provider *GeminiProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 
 	respBody, decErr := providerUtils.CheckAndDecodeBody(resp)
 	if decErr != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decErr)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decErr)
 	}
 
 	var geminiResp geminiCachedContent
 	if err := sonic.Unmarshal(respBody, &geminiResp); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	return &schemas.UnifAICachedContentUpdateResponse{
+	return &schemas.RakshaCachedContentUpdateResponse{
 		Name:              geminiResp.Name,
 		DisplayName:       geminiResp.DisplayName,
 		Model:             geminiResp.Model,
@@ -511,37 +511,37 @@ func (provider *GeminiProvider) cachedContentUpdateByKey(ctx *schemas.UnifAICont
 }
 
 // CachedContentUpdate updates expiration on a cached content, trying each key.
-func (provider *GeminiProvider) CachedContentUpdate(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentUpdateRequest) (*schemas.UnifAICachedContentUpdateResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) CachedContentUpdate(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentUpdateRequest) (*schemas.RakshaCachedContentUpdateResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.CachedContentUpdateRequest); err != nil {
 		return nil, err
 	}
 	if request.Name == "" {
-		return nil, providerUtils.NewUnifAIOperationError("name is required for cached content update", nil)
+		return nil, providerUtils.NewRakshaOperationError("name is required for cached content update", nil)
 	}
 	if err := validateTTLExpireMutex(request.TTL, request.ExpireTime); err != nil {
 		return nil, err
 	}
 	if (request.TTL == nil || *request.TTL == "") && (request.ExpireTime == nil || *request.ExpireTime == "") {
-		return nil, providerUtils.NewUnifAIOperationError("either ttl or expire_time must be set for cached content update", nil)
+		return nil, providerUtils.NewRakshaOperationError("either ttl or expire_time must be set for cached content update", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content update", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content update", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentUpdateByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentUpdateByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
 // cachedContentDeleteByKey deletes a cached content for one key.
-func (provider *GeminiProvider) cachedContentDeleteByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICachedContentDeleteRequest) (*schemas.UnifAICachedContentDeleteResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *GeminiProvider) cachedContentDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCachedContentDeleteRequest) (*schemas.RakshaCachedContentDeleteResponse, time.Duration, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -557,50 +557,50 @@ func (provider *GeminiProvider) cachedContentDeleteByKey(ctx *schemas.UnifAICont
 		req.Header.Set("x-goog-api-key", key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, latency, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
 	}
 
-	return &schemas.UnifAICachedContentDeleteResponse{
+	return &schemas.RakshaCachedContentDeleteResponse{
 		Name:    name,
 		Deleted: true,
 	}, latency, nil
 }
 
 // CachedContentDelete deletes a cached content by name, trying each key.
-func (provider *GeminiProvider) CachedContentDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAICachedContentDeleteRequest) (*schemas.UnifAICachedContentDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) CachedContentDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaCachedContentDeleteRequest) (*schemas.RakshaCachedContentDeleteResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.CachedContentDeleteRequest); err != nil {
 		return nil, err
 	}
 	if request.Name == "" {
-		return nil, providerUtils.NewUnifAIOperationError("name is required for cached content delete", nil)
+		return nil, providerUtils.NewRakshaOperationError("name is required for cached content delete", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for cached content delete", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for cached content delete", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, latency, unifaiErr := provider.cachedContentDeleteByKey(ctx, key, request)
-		if unifaiErr == nil {
-			resp.ExtraFields = schemas.UnifAIResponseExtraFields{Latency: latency.Milliseconds()}
+		resp, latency, rakshaErr := provider.cachedContentDeleteByKey(ctx, key, request)
+		if rakshaErr == nil {
+			resp.ExtraFields = schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()}
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
-// fromUnifAIObject is the inverse of toUnifAIObject — projects a unifai-canonical
+// fromRakshaObject is the inverse of toRakshaObject — projects a raksha-canonical
 // CachedContentObject back into the Gemini wire shape (camelCase keys).
 //
 // API ref: https://ai.google.dev/api/caching#CachedContent
-func fromUnifAIObject(o schemas.CachedContentObject) geminiCachedContent {
+func fromRakshaObject(o schemas.CachedContentObject) geminiCachedContent {
 	return geminiCachedContent{
 		Name:              o.Name,
 		DisplayName:       o.DisplayName,

@@ -91,7 +91,7 @@ func IsKnownProvider(provider string) bool {
 // ParseModelString extracts provider and model from a model string.
 // For model strings like "anthropic/claude", it returns ("anthropic", "claude").
 // For model strings like "claude", it returns ("", "claude").
-// Only splits on "/" when the prefix is a known UnifAI provider, so model
+// Only splits on "/" when the prefix is a known Raksha provider, so model
 // namespaces like "meta-llama/Llama-3.1-8B" are preserved as-is.
 func ParseModelString(model string, defaultProvider ModelProvider) (ModelProvider, string) {
 	// Check if model contains a provider prefix (only split on first "/" to preserve model names with "/")

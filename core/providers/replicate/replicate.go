@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -27,8 +27,8 @@ type ReplicateProvider struct {
 	client               *fasthttp.Client      // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient      *fasthttp.Client      // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig // Network configuration including extra headers
-	sendBackRawRequest   bool                  // Whether to include raw request in UnifAIResponse
-	sendBackRawResponse  bool                  // Whether to include raw response in UnifAIResponse
+	sendBackRawRequest   bool                  // Whether to include raw request in RakshaResponse
+	sendBackRawResponse  bool                  // Whether to include raw response in RakshaResponse
 	customProviderConfig *schemas.CustomProviderConfig
 }
 
@@ -77,7 +77,7 @@ func (provider *ReplicateProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // buildRequestURL builds the request URL with custom provider config support
-func (provider *ReplicateProvider) buildRequestURL(ctx *schemas.UnifAIContext, defaultPath string, requestType schemas.RequestType) string {
+func (provider *ReplicateProvider) buildRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType) string {
 	path, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 	if isCompleteURL {
 		return path
@@ -100,7 +100,7 @@ const (
 // (e.g. experimental versioned models).
 //
 // Nil ReplicateKeyConfig and missing alias both default to false (predictions).
-func useDeploymentsEndpoint(ctx *schemas.UnifAIContext, key schemas.Key) bool {
+func useDeploymentsEndpoint(ctx *schemas.RakshaContext, key schemas.Key) bool {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.ReplicateAliasCfg != nil && ra.Config.ReplicateAliasCfg.UseDeploymentsEndpoint != nil {
 		return *ra.Config.ReplicateAliasCfg.UseDeploymentsEndpoint
 	}
@@ -111,7 +111,7 @@ func useDeploymentsEndpoint(ctx *schemas.UnifAIContext, key schemas.Key) bool {
 // Supports both sync (with Prefer: wait header) and async modes
 // stripPrefer should be true for streaming requests to exclude the Prefer header
 func createPrediction(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	jsonBody []byte,
 	key schemas.Key,
@@ -121,7 +121,7 @@ func createPrediction(
 	logger schemas.Logger,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-) (*ReplicatePredictionResponse, interface{}, time.Duration, map[string]string, *schemas.UnifAIError) {
+) (*ReplicatePredictionResponse, interface{}, time.Duration, map[string]string, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -151,10 +151,10 @@ func createPrediction(
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, nil, latency, nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, nil, latency, nil, rakshaErr
 	}
 
 	// Extract provider response headers before releasing the response
@@ -169,13 +169,13 @@ func createPrediction(
 	// Parse response
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, nil, latency, providerResponseHeaders, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var prediction ReplicatePredictionResponse
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &prediction, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, nil, latency, providerResponseHeaders, unifaiErr
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &prediction, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, nil, latency, providerResponseHeaders, rakshaErr
 	}
 
 	return &prediction, rawResponse, latency, providerResponseHeaders, nil
@@ -183,13 +183,13 @@ func createPrediction(
 
 // getPrediction retrieves the current state of a prediction
 func getPrediction(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	predictionURL string,
 	key schemas.Key,
 	logger schemas.Logger,
 	sendBackRawResponse bool,
-) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.UnifAIError) {
+) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -206,10 +206,10 @@ func getPrediction(
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, nil, nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, nil, nil, rakshaErr
 	}
 
 	// Extract provider response headers before releasing the response
@@ -224,13 +224,13 @@ func getPrediction(
 	// Parse response
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, nil, providerResponseHeaders, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, nil, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	prediction := &ReplicatePredictionResponse{}
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, prediction, nil, false, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, nil, providerResponseHeaders, unifaiErr
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, prediction, nil, false, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, nil, providerResponseHeaders, rakshaErr
 	}
 
 	return prediction, rawResponse, providerResponseHeaders, nil
@@ -238,16 +238,16 @@ func getPrediction(
 
 // pollPrediction polls a prediction URL until it reaches a terminal state or timeout
 func pollPrediction(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	predictionURL string,
 	key schemas.Key,
 	timeoutSeconds int,
 	logger schemas.Logger,
 	sendBackRawResponse bool,
-) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.UnifAIError) {
+) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.RakshaError) {
 	// Create context with timeout
-	pollCtx, cancel := schemas.NewUnifAIContextWithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	pollCtx, cancel := schemas.NewRakshaContextWithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
 	ticker := time.NewTicker(pollingInterval)
@@ -270,7 +270,7 @@ func pollPrediction(
 	for {
 		select {
 		case <-pollCtx.Done():
-			return nil, nil, providerResponseHeaders, providerUtils.NewUnifAIOperationError(
+			return nil, nil, providerResponseHeaders, providerUtils.NewRakshaOperationError(
 				schemas.ErrProviderRequestTimedOut,
 				fmt.Errorf("prediction polling timed out after %d seconds", timeoutSeconds))
 		case <-ticker.C:
@@ -290,13 +290,13 @@ func pollPrediction(
 
 // listDeploymentsByKey performs a list deployments request for a single key.
 // Deployments are account-specific, so this needs to be called per key.
-func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 	client := provider.client
 	extraHeaders := provider.networkConfig.ExtraHeaders
 
 	if !useDeploymentsEndpoint(ctx, key) {
-		return ToUnifAIListModelsResponse(
+		return ToRakshaListModelsResponse(
 			&ReplicateDeploymentListResponse{},
 			providerName,
 			key.Models,
@@ -333,15 +333,15 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.UnifAIConte
 		providerUtils.SetExtraHeaders(ctx, req, extraHeaders, nil)
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 
 		// Release resources
 		wait()
 		fasthttp.ReleaseRequest(req)
 
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseResponse(resp)
-			return nil, unifaiErr
+			return nil, rakshaErr
 		}
 
 		// Handle error response
@@ -351,7 +351,7 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.UnifAIConte
 			return nil, errorResponse
 		}
 
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 		// Make a copy of the response body before releasing
 		bodyCopy := make([]byte, len(resp.Body()))
@@ -362,7 +362,7 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.UnifAIConte
 		// Parse response from the copy
 		var pageResponse ReplicateDeploymentListResponse
 		if err := sonic.Unmarshal(bodyCopy, &pageResponse); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError(
+			return nil, providerUtils.NewRakshaOperationError(
 				"failed to parse deployments response",
 				err)
 		}
@@ -383,8 +383,8 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.UnifAIConte
 		Results: allDeployments,
 	}
 
-	// Convert deployments to UnifAI response (no public models here)
-	response := ToUnifAIListModelsResponse(
+	// Convert deployments to Raksha response (no public models here)
+	response := ToRakshaListModelsResponse(
 		deploymentsResponse,
 		providerName,
 		key.Models,
@@ -397,7 +397,7 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.UnifAIConte
 }
 
 // ListModels performs a list models request to Replicate's API.
-func (provider *ReplicateProvider) ListModels(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
@@ -426,18 +426,18 @@ func (provider *ReplicateProvider) ListModels(ctx *schemas.UnifAIContext, keys [
 }
 
 // TextCompletion performs a text completion request to the replicate API.
-func (provider *ReplicateProvider) TextCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITextCompletionRequest) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.TextCompletionRequest); err != nil {
 		return nil, err
 	}
 
 	// build replicate request
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateTextRequest(request) })
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -492,35 +492,35 @@ func (provider *ReplicateProvider) TextCompletion(ctx *schemas.UnifAIContext, ke
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to UnifAI response
-	unifaiResponse := prediction.ToUnifAITextCompletionResponse()
+	// Convert to Raksha response
+	rakshaResponse := prediction.ToRakshaTextCompletionResponse()
 
 	// Set extra fields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // TextCompletionStream performs a streaming text completion request to replicate's API.
 // It formats the request, sends it to replicate, and processes the response.
-// Returns a channel of UnifAIStream objects or an error if the request fails.
-func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITextCompletionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel of RakshaStream objects or an error if the request fails.
+func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.TextCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert UnifAI request to Replicate format with streaming enabled
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Replicate format with streaming enabled
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -531,8 +531,8 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -565,32 +565,32 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 
 	// Verify stream URL is available
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
-		unifaiErr := providerUtils.NewUnifAIOperationError(
+		rakshaErr := providerUtils.NewRakshaOperationError(
 			"stream URL not available in prediction response",
 			fmt.Errorf("prediction response missing stream URL"))
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, unifaiErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -643,10 +643,10 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -663,11 +663,11 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 				if eventData != "" {
 					// Create a streaming chunk with text completion response
 					text := eventData
-					response := &schemas.UnifAITextCompletionResponse{
+					response := &schemas.RakshaTextCompletionResponse{
 						ID:     messageID,
 						Model:  request.Model,
 						Object: "text_completion",
-						Choices: []schemas.UnifAIResponseChoice{
+						Choices: []schemas.RakshaResponseChoice{
 							{
 								Index: 0,
 								TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
@@ -675,7 +675,7 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 								},
 							},
 						},
-						ExtraFields: schemas.UnifAIResponseExtraFields{
+						ExtraFields: schemas.RakshaResponseExtraFields{
 							ChunkIndex: chunkIndex,
 							Latency:    time.Since(lastChunkTime).Milliseconds(),
 						},
@@ -693,7 +693,7 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 					chunkIndex++
 
 					providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-						providerUtils.GetUnifAIResponseForStreamResponse(response, nil, nil, nil, nil, nil),
+						providerUtils.GetRakshaResponseForStreamResponse(response, nil, nil, nil, nil, nil),
 						responseChan, postHookSpanFinalizer)
 				}
 
@@ -709,12 +709,12 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -724,12 +724,12 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 					if doneData.Output != nil {
 						errorMsg = fmt.Sprintf("prediction failed: %v", doneData.Output)
 					}
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						errorMsg,
 						fmt.Errorf("stream ended with error"))
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -737,7 +737,7 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 
 				// Send final chunk with finish reason
 				finishReason := schemas.Ptr("stop")
-				finalResponse := providerUtils.CreateUnifAITextCompletionChunkResponse(
+				finalResponse := providerUtils.CreateRakshaTextCompletionChunkResponse(
 					messageID,
 					nil, // usage - not available in done event
 					finishReason,
@@ -752,9 +752,9 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 
 				finalResponse.ExtraFields.Latency = time.Since(startTime).Milliseconds()
 
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(finalResponse, nil, nil, nil, nil, nil),
+					providerUtils.GetRakshaResponseForStreamResponse(finalResponse, nil, nil, nil, nil, nil),
 					responseChan, postHookSpanFinalizer)
 				resp.CloseBodyStream()
 				return
@@ -766,18 +766,18 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.UnifAIConte
 }
 
 // ChatCompletion performs a chat completion request to the replicate API.
-func (provider *ReplicateProvider) ChatCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
 	}
 
 	// build replicate request
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateChatRequest(request) })
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -832,35 +832,35 @@ func (provider *ReplicateProvider) ChatCompletion(ctx *schemas.UnifAIContext, ke
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to UnifAI response
-	unifaiResponse := prediction.ToUnifAIChatResponse()
+	// Convert to Raksha response
+	rakshaResponse := prediction.ToRakshaChatResponse()
 
 	// Set extra fields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // ChatCompletionStream performs a streaming chat completion request to the replicate API.
 // It supports real-time streaming of responses using Server-Sent Events (SSE).
-// Returns a channel containing UnifAIResponse objects representing the stream or an error if the request fails.
-func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIChatRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel containing RakshaResponse objects representing the stream or an error if the request fails.
+func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert UnifAI request to Replicate format with streaming enabled
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Replicate format with streaming enabled
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -871,8 +871,8 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -905,32 +905,32 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 
 	// Verify stream URL is available
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
-		unifaiErr := providerUtils.NewUnifAIOperationError(
+		rakshaErr := providerUtils.NewRakshaOperationError(
 			"stream URL not available in prediction response",
 			fmt.Errorf("prediction response missing stream URL"))
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, unifaiErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -983,10 +983,10 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -1009,12 +1009,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 						Role:    &role,
 					}
 
-					response := &schemas.UnifAIChatResponse{
+					response := &schemas.RakshaChatResponse{
 						ID:      messageID,
 						Model:   request.Model,
 						Object:  "chat.completion.chunk",
 						Created: int(time.Now().Unix()),
-						Choices: []schemas.UnifAIResponseChoice{
+						Choices: []schemas.RakshaResponseChoice{
 							{
 								Index: 0,
 								ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1022,7 +1022,7 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 								},
 							},
 						},
-						ExtraFields: schemas.UnifAIResponseExtraFields{
+						ExtraFields: schemas.RakshaResponseExtraFields{
 							ChunkIndex: chunkIndex,
 							Latency:    time.Since(lastChunkTime).Milliseconds(),
 						},
@@ -1040,7 +1040,7 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 					chunkIndex++
 
 					providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-						providerUtils.GetUnifAIResponseForStreamResponse(nil, response, nil, nil, nil, nil),
+						providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil),
 						responseChan, postHookSpanFinalizer)
 				}
 
@@ -1056,12 +1056,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -1071,12 +1071,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 					if doneData.Output != nil {
 						errorMsg = fmt.Sprintf("prediction failed: %v", doneData.Output)
 					}
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						errorMsg,
 						fmt.Errorf("stream ended with error"))
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -1084,12 +1084,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 
 				// Send final chunk with finish reason
 				finishReason := "stop"
-				finalResponse := &schemas.UnifAIChatResponse{
+				finalResponse := &schemas.RakshaChatResponse{
 					ID:      messageID,
 					Model:   request.Model,
 					Object:  "chat.completion.chunk",
 					Created: int(time.Now().Unix()),
-					Choices: []schemas.UnifAIResponseChoice{
+					Choices: []schemas.RakshaResponseChoice{
 						{
 							Index:        0,
 							FinishReason: &finishReason,
@@ -1098,7 +1098,7 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 							},
 						},
 					},
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(startTime).Milliseconds(),
 					},
@@ -1109,9 +1109,9 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 					providerUtils.ParseAndSetRawRequest(&finalResponse.ExtraFields, jsonData)
 				}
 
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(nil, finalResponse, nil, nil, nil, nil),
+					providerUtils.GetRakshaResponseForStreamResponse(nil, finalResponse, nil, nil, nil, nil),
 					responseChan, postHookSpanFinalizer)
 				resp.CloseBodyStream()
 				return
@@ -1123,18 +1123,18 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.UnifAIConte
 }
 
 // Responses performs a responses request to the replicate API.
-func (provider *ReplicateProvider) Responses(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
 
 	// build replicate request
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateResponsesRequest(request) })
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -1189,11 +1189,11 @@ func (provider *ReplicateProvider) Responses(ctx *schemas.UnifAIContext, key sch
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to UnifAI response
-	response := prediction.ToUnifAIResponsesResponse()
+	// Convert to Raksha response
+	response := prediction.ToRakshaResponsesResponse()
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
@@ -1206,23 +1206,23 @@ func (provider *ReplicateProvider) Responses(ctx *schemas.UnifAIContext, key sch
 }
 
 // ResponsesStream performs a streaming responses request to the replicate API.
-func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIResponsesRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
 	}
 
 	// Build replicate request
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateResponsesRequest(request) })
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Enable streaming (using sjson to set field directly, preserving key order)
 	if updatedData, err := providerUtils.SetJSONField(jsonData, "stream", true); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to set stream field", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to set stream field", err)
 	} else {
 		jsonData = updatedData
 	}
@@ -1257,10 +1257,10 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 
 	// Verify stream URL is available
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
-		unifaiErr := providerUtils.NewUnifAIOperationError(
+		rakshaErr := providerUtils.NewRakshaOperationError(
 			"stream URL not available in prediction response",
 			fmt.Errorf("prediction response missing stream URL"))
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	streamURL := *prediction.URLs.Stream
@@ -1290,8 +1290,8 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 	if streamErr != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(streamErr, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1300,13 +1300,13 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 			}, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if errors.Is(streamErr, fasthttp.ErrTimeout) || errors.Is(streamErr, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1317,13 +1317,13 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1348,11 +1348,11 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 		defer releaseGzip()
 
 		if reader == nil {
-			unifaiErr := providerUtils.NewUnifAIOperationError(
+			rakshaErr := providerUtils.NewRakshaOperationError(
 				"provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"))
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency), responseChan, provider.logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency), responseChan, provider.logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -1394,17 +1394,17 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
-					unifaiErr := providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, readErr)
+					rakshaErr := providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr)
 
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 					}
 
-					enrichedErr := providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				break
@@ -1429,15 +1429,15 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 						// Emit lifecycle events on first content
 						if !hasEmittedCreated {
 							// response.created
-							createdResp := &schemas.UnifAIResponsesStreamResponse{
+							createdResp := &schemas.RakshaResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeCreated,
 								SequenceNumber: sequenceNumber,
-								Response: &schemas.UnifAIResponsesResponse{
+								Response: &schemas.RakshaResponsesResponse{
 									ID:        schemas.Ptr(messageID),
 									Model:     request.Model,
 									CreatedAt: int(startTime.Unix()),
 								},
-								ExtraFields: schemas.UnifAIResponseExtraFields{
+								ExtraFields: schemas.RakshaResponseExtraFields{
 									Latency:    time.Since(startTime).Milliseconds(),
 									ChunkIndex: sequenceNumber,
 								},
@@ -1446,7 +1446,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 								providerUtils.ParseAndSetRawRequest(&createdResp.ExtraFields, jsonData)
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, createdResp, nil, nil, nil),
+								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, createdResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedCreated = true
@@ -1454,19 +1454,19 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 
 						if !hasEmittedInProgress {
 							// response.in_progress
-							inProgressResp := &schemas.UnifAIResponsesStreamResponse{
+							inProgressResp := &schemas.RakshaResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeInProgress,
 								SequenceNumber: sequenceNumber,
-								Response: &schemas.UnifAIResponsesResponse{
+								Response: &schemas.RakshaResponsesResponse{
 									ID:        schemas.Ptr(messageID),
 									CreatedAt: int(startTime.Unix()),
 								},
-								ExtraFields: schemas.UnifAIResponseExtraFields{
+								ExtraFields: schemas.RakshaResponseExtraFields{
 									ChunkIndex: sequenceNumber,
 								},
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, inProgressResp, nil, nil, nil),
+								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, inProgressResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedInProgress = true
@@ -1477,7 +1477,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 							messageType := schemas.ResponsesMessageTypeMessage
 							role := schemas.ResponsesInputMessageRoleAssistant
 							status := "in_progress"
-							itemAddedResp := &schemas.UnifAIResponsesStreamResponse{
+							itemAddedResp := &schemas.RakshaResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 								SequenceNumber: sequenceNumber,
 								OutputIndex:    schemas.Ptr(outputIndex),
@@ -1490,12 +1490,12 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 										ContentBlocks: []schemas.ResponsesMessageContentBlock{},
 									},
 								},
-								ExtraFields: schemas.UnifAIResponseExtraFields{
+								ExtraFields: schemas.RakshaResponseExtraFields{
 									ChunkIndex: sequenceNumber,
 								},
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, itemAddedResp, nil, nil, nil),
+								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, itemAddedResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedOutputItemAdded = true
@@ -1504,7 +1504,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 						if !hasEmittedContentPartAdded {
 							// response.content_part.added
 							emptyText := ""
-							partAddedResp := &schemas.UnifAIResponsesStreamResponse{
+							partAddedResp := &schemas.RakshaResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 								SequenceNumber: sequenceNumber,
 								OutputIndex:    schemas.Ptr(outputIndex),
@@ -1518,19 +1518,19 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 										LogProbs:    []schemas.ResponsesOutputMessageContentTextLogProb{},
 									},
 								},
-								ExtraFields: schemas.UnifAIResponseExtraFields{
+								ExtraFields: schemas.RakshaResponseExtraFields{
 									ChunkIndex: sequenceNumber,
 								},
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, partAddedResp, nil, nil, nil),
+								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, partAddedResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedContentPartAdded = true
 						}
 
 						// response.output_text.delta
-						deltaResp := &schemas.UnifAIResponsesStreamResponse{
+						deltaResp := &schemas.RakshaResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
@@ -1538,12 +1538,12 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 							ItemID:         schemas.Ptr(itemID),
 							Delta:          schemas.Ptr(currentEvent.Data),
 							LogProbs:       []schemas.ResponsesOutputMessageContentTextLogProb{},
-							ExtraFields: schemas.UnifAIResponseExtraFields{
+							ExtraFields: schemas.RakshaResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, deltaResp, nil, nil, nil),
+							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, deltaResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 						hasReceivedContent = true
@@ -1557,24 +1557,24 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 					// Stream completed
 					if hasReceivedContent {
 						// response.output_text.done
-						textDoneResp := &schemas.UnifAIResponsesStreamResponse{
+						textDoneResp := &schemas.RakshaResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
 							ContentIndex:   schemas.Ptr(contentIndex),
 							ItemID:         schemas.Ptr(itemID),
 							LogProbs:       []schemas.ResponsesOutputMessageContentTextLogProb{},
-							ExtraFields: schemas.UnifAIResponseExtraFields{
+							ExtraFields: schemas.RakshaResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, textDoneResp, nil, nil, nil),
+							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, textDoneResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 
 						// response.content_part.done
-						partDoneResp := &schemas.UnifAIResponsesStreamResponse{
+						partDoneResp := &schemas.RakshaResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
@@ -1587,12 +1587,12 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 									LogProbs:    []schemas.ResponsesOutputMessageContentTextLogProb{},
 								},
 							},
-							ExtraFields: schemas.UnifAIResponseExtraFields{
+							ExtraFields: schemas.RakshaResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, partDoneResp, nil, nil, nil),
+							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, partDoneResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 
@@ -1600,7 +1600,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 						messageType := schemas.ResponsesMessageTypeMessage
 						role := schemas.ResponsesInputMessageRoleAssistant
 						status := "completed"
-						itemDoneResp := &schemas.UnifAIResponsesStreamResponse{
+						itemDoneResp := &schemas.RakshaResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
@@ -1621,27 +1621,27 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 									},
 								},
 							},
-							ExtraFields: schemas.UnifAIResponseExtraFields{
+							ExtraFields: schemas.RakshaResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, itemDoneResp, nil, nil, nil),
+							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, itemDoneResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 					}
 
 					// response.completed
-					completedResp := &schemas.UnifAIResponsesStreamResponse{
+					completedResp := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeCompleted,
 						SequenceNumber: sequenceNumber,
-						Response: &schemas.UnifAIResponsesResponse{
+						Response: &schemas.RakshaResponsesResponse{
 							ID:          schemas.Ptr(messageID),
 							Model:       request.Model,
 							CreatedAt:   int(startTime.Unix()),
 							CompletedAt: schemas.Ptr(int(time.Now().Unix())),
 						},
-						ExtraFields: schemas.UnifAIResponseExtraFields{
+						ExtraFields: schemas.RakshaResponseExtraFields{
 							Latency:    time.Since(startTime).Milliseconds(),
 							ChunkIndex: sequenceNumber,
 						},
@@ -1657,9 +1657,9 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 						completedResp.ExtraFields.RawResponse = rawResponseChunks
 					}
 
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-						providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, completedResp, nil, nil, nil),
+						providerUtils.GetRakshaResponseForStreamResponse(nil, nil, completedResp, nil, nil, nil),
 						responseChan, postHookSpanFinalizer)
 					resp.CloseBodyStream()
 					return
@@ -1674,18 +1674,18 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 					if currentEvent.Data != "" {
 						errorMsg = currentEvent.Data
 					}
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						errorMsg,
 						fmt.Errorf("stream error: %s", errorMsg))
 
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 					}
 
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					resp.CloseBodyStream()
 					return
 				}
@@ -1697,55 +1697,55 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.UnifAIContext, p
 }
 
 // Embedding is not supported by the replicate provider.
-func (provider *ReplicateProvider) Embedding(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIEmbeddingRequest) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.EmbeddingRequest, provider.GetProviderKey())
 }
 
 // Speech is not supported by the replicate provider.
-func (provider *ReplicateProvider) Speech(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAISpeechRequest) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, provider.GetProviderKey())
 }
 
 // Rerank is not supported by the Replicate provider.
-func (provider *ReplicateProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIRerankRequest) (*schemas.UnifAIRerankResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Replicate provider.
-func (provider *ReplicateProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIOCRRequest) (*schemas.UnifAIOCRResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the replicate provider.
-func (provider *ReplicateProvider) SpeechStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAISpeechRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
 // Transcription is not supported by the replicate provider.
-func (provider *ReplicateProvider) Transcription(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITranscriptionRequest) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionRequest, provider.GetProviderKey())
 }
 
 // TranscriptionStream is not supported by the replicate provider.
-func (provider *ReplicateProvider) TranscriptionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITranscriptionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
 // ImageGeneration performs an image generation request to the replicate API using predictions.
-func (provider *ReplicateProvider) ImageGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert UnifAI request to Replicate format
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Replicate format
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToReplicateImageGenerationInput(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -1800,31 +1800,31 @@ func (provider *ReplicateProvider) ImageGeneration(ctx *schemas.UnifAIContext, k
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to UnifAI response
-	unifaiResponse, err := ToUnifAIImageGenerationResponse(prediction)
+	// Convert to Raksha response
+	rakshaResponse, err := ToRakshaImageGenerationResponse(prediction)
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set extra fields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // ImageGenerationStream performs a streaming image generation request to the replicate API.
 // It creates a prediction with streaming enabled and listens to the stream URL for progressive updates.
-func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageGenerationStreamRequest); err != nil {
 		return nil, err
 	}
@@ -1832,8 +1832,8 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	// Convert UnifAI request to Replicate format with streaming enabled
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Replicate format with streaming enabled
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1841,8 +1841,8 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -1876,7 +1876,7 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
 		return nil, providerUtils.EnrichError(
 			ctx,
-			providerUtils.NewUnifAIOperationError(
+			providerUtils.NewRakshaOperationError(
 				"stream URL not available in prediction response",
 				fmt.Errorf("prediction response missing stream URL"),
 			),
@@ -1891,23 +1891,23 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, unifaiErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1962,10 +1962,10 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					provider.logger.Warn(fmt.Sprintf("Error reading SSE stream: %v", readErr))
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -2002,14 +2002,14 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 				}
 
 				// Create chunk
-				chunk := &schemas.UnifAIImageGenerationStreamResponse{
+				chunk := &schemas.RakshaImageGenerationStreamResponse{
 					Type:         schemas.ImageGenerationEventTypePartial,
 					Index:        0, // Single image for now
 					ChunkIndex:   chunkIndex,
 					B64JSON:      b64Data,
 					CreatedAt:    time.Now().Unix(),
 					OutputFormat: outputFormat,
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -2028,7 +2028,7 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 				chunkIndex++
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 
 			case "done":
@@ -2043,40 +2043,40 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					unifaiErr = providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				case "error":
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						"prediction failed",
 						fmt.Errorf("stream ended with error"))
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					unifaiErr = providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 
 				// Send completion chunk (success case when reason is empty or not present)
-				finalChunk := &schemas.UnifAIImageGenerationStreamResponse{
+				finalChunk := &schemas.RakshaImageGenerationStreamResponse{
 					Type:         schemas.ImageGenerationEventTypeCompleted,
 					Index:        0,
 					ChunkIndex:   chunkIndex,
 					B64JSON:      lastB64Data,      // Include last image data
 					OutputFormat: lastOutputFormat, // Include output format
 					CreatedAt:    time.Now().Unix(),
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(startTime).Milliseconds(),
 					},
@@ -2094,9 +2094,9 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 					finalChunk.ExtraFields.RawResponse = rawResponseChunks
 				}
 
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 					responseChan, postHookSpanFinalizer)
 				return
 
@@ -2115,8 +2115,8 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 					}
 				}
 
-				unifaiErr := &schemas.UnifAIError{
-					IsUnifAIError: false,
+				rakshaErr := &schemas.RakshaError{
+					IsRakshaError: false,
 					Error: &schemas.ErrorField{
 						Message: errorMsg,
 					},
@@ -2124,11 +2124,11 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 				// Include accumulated raw responses in error
 				if sendBackRawResponse {
 					rawResponseChunks = append(rawResponseChunks, ReplicateSSEEvent{Event: eventType, Data: eventData})
-					unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+					rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 				}
-				unifaiErr = providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+				rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 				return
 			}
 		}
@@ -2138,20 +2138,20 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.UnifAICont
 }
 
 // ImageEdit is not supported by the Replicate provider.
-func (provider *ReplicateProvider) ImageEdit(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageEditRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert UnifAI request to Replicate format
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Replicate format
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToReplicateImageEditInput(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -2206,31 +2206,31 @@ func (provider *ReplicateProvider) ImageEdit(ctx *schemas.UnifAIContext, key sch
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to UnifAI response (reuse image generation response format)
-	unifaiResponse, err := ToUnifAIImageGenerationResponse(prediction)
+	// Convert to Raksha response (reuse image generation response format)
+	rakshaResponse, err := ToRakshaImageGenerationResponse(prediction)
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set extra fields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // ImageEditStream performs a streaming image edit request to the replicate API.
 // It creates a prediction with streaming enabled and listens to the stream URL for progressive updates.
-func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageEditRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageEditStreamRequest); err != nil {
 		return nil, err
 	}
@@ -2238,8 +2238,8 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	// Convert UnifAI request to Replicate format with streaming enabled
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Replicate format with streaming enabled
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -2247,8 +2247,8 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -2283,7 +2283,7 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
 		return nil, providerUtils.EnrichError(
 			ctx,
-			providerUtils.NewUnifAIOperationError(
+			providerUtils.NewRakshaOperationError(
 				"stream URL not available in prediction response",
 				fmt.Errorf("prediction response missing stream URL"),
 			),
@@ -2298,23 +2298,23 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, unifaiErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -2369,9 +2369,9 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 					return
 				}
 				if readErr != io.EOF {
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError("stream read error", readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("stream read error", readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -2406,14 +2406,14 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 				}
 
 				// Create chunk (use ImageEditEventTypePartial)
-				chunk := &schemas.UnifAIImageGenerationStreamResponse{
+				chunk := &schemas.RakshaImageGenerationStreamResponse{
 					Type:         schemas.ImageEditEventTypePartial,
 					Index:        0,
 					ChunkIndex:   chunkIndex,
 					B64JSON:      b64Data,
 					CreatedAt:    time.Now().Unix(),
 					OutputFormat: outputFormat,
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -2432,7 +2432,7 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 				chunkIndex++
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 
 			case "done":
@@ -2447,38 +2447,38 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					unifaiErr = providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				case "error":
-					unifaiErr := providerUtils.NewUnifAIOperationError(
+					rakshaErr := providerUtils.NewRakshaOperationError(
 						"prediction failed",
 						fmt.Errorf("stream ended with error"))
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					unifaiErr = providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 
 				// Send completion chunk (success case)
-				finalChunk := &schemas.UnifAIImageGenerationStreamResponse{
+				finalChunk := &schemas.RakshaImageGenerationStreamResponse{
 					Type:         schemas.ImageEditEventTypeCompleted,
 					Index:        0,
 					ChunkIndex:   chunkIndex,
 					B64JSON:      lastB64Data,
 					CreatedAt:    time.Now().Unix(),
 					OutputFormat: lastOutputFormat,
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(startTime).Milliseconds(),
 					},
@@ -2492,9 +2492,9 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 					finalChunk.ExtraFields.RawResponse = rawResponseChunks
 				}
 
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 					responseChan, postHookSpanFinalizer)
 				return
 
@@ -2506,16 +2506,16 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 					errorData.Detail = eventData
 				}
 
-				unifaiErr := providerUtils.NewUnifAIOperationError(
+				rakshaErr := providerUtils.NewRakshaOperationError(
 					"stream error",
 					fmt.Errorf("%s", errorData.Detail))
 				if sendBackRawResponse {
 					rawResponseChunks = append(rawResponseChunks, ReplicateSSEEvent{Event: eventType, Data: eventData})
-					unifaiErr.ExtraFields.RawResponse = rawResponseChunks
+					rakshaErr.ExtraFields.RawResponse = rawResponseChunks
 				}
-				unifaiErr = providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+				rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 				return
 			}
 		}
@@ -2525,25 +2525,25 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.UnifAIContext, p
 }
 
 // ImageVariation is not supported by the Replicate provider.
-func (provider *ReplicateProvider) ImageVariation(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageVariationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration performs a video generation request to Replicate's API.
-func (provider *ReplicateProvider) VideoGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoGenerationRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.VideoGenerationRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert UnifAI request to Replicate format
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Replicate format
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToReplicateVideoGenerationInput(request)
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create prediction asynchronously and return job ID without polling.
@@ -2574,38 +2574,38 @@ func (provider *ReplicateProvider) VideoGeneration(ctx *schemas.UnifAIContext, k
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to UnifAI response
-	unifaiResponse, err := ToUnifAIVideoGenerationResponse(prediction)
+	// Convert to Raksha response
+	rakshaResponse, err := ToRakshaVideoGenerationResponse(prediction)
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
-	unifaiResponse.ID = providerUtils.AddVideoIDProviderSuffix(unifaiResponse.ID, schemas.Replicate)
+	rakshaResponse.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResponse.ID, schemas.Replicate)
 
 	// Set extra fields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // VideoRetrieve fetches the status/output of a Replicate video generation job.
-func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoRetrieveRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.VideoRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	providerName := provider.GetProviderKey()
 	if request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
@@ -2625,10 +2625,10 @@ func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2644,66 +2644,66 @@ func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key
 	}
 
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	var prediction ReplicatePredictionResponse
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &prediction, nil, false, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &prediction, nil, false, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	unifaiResponse, convertErr := ToUnifAIVideoGenerationResponse(&prediction)
+	rakshaResponse, convertErr := ToRakshaVideoGenerationResponse(&prediction)
 	if convertErr != nil {
 		return nil, providerUtils.EnrichError(ctx, convertErr, nil, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
-	unifaiResponse.ID = providerUtils.AddVideoIDProviderSuffix(unifaiResponse.ID, providerName)
+	rakshaResponse.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResponse.ID, providerName)
 
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if sendBackRawResponse {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // VideoDownload is not supported by the Replicate provider.
-func (provider *ReplicateProvider) VideoDownload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoDownloadRequest) (*schemas.UnifAIVideoDownloadResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.VideoDownloadRequest); err != nil {
 		return nil, err
 	}
 	if request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 	// Retrieve latest status/output first.
-	unifaiVideoRetrieveRequest := &schemas.UnifAIVideoRetrieveRequest{
+	rakshaVideoRetrieveRequest := &schemas.RakshaVideoRetrieveRequest{
 		Provider: request.Provider,
 		ID:       request.ID,
 	}
-	videoResp, unifaiErr := provider.VideoRetrieve(ctx, key, unifaiVideoRetrieveRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	videoResp, rakshaErr := provider.VideoRetrieve(ctx, key, rakshaVideoRetrieveRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if videoResp.Status != schemas.VideoStatusCompleted {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			fmt.Sprintf("video not ready, current status: %s", videoResp.Status),
 			nil)
 	}
 	if len(videoResp.Videos) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("video URL not available", nil)
+		return nil, providerUtils.NewRakshaOperationError("video URL not available", nil)
 	}
 	var videoUrl string
 	if videoResp.Videos[0].URL != nil {
 		videoUrl = *videoResp.Videos[0].URL
 	}
 	if videoUrl == "" {
-		return nil, providerUtils.NewUnifAIOperationError("invalid video output type", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid video output type", nil)
 	}
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2715,92 +2715,92 @@ func (provider *ReplicateProvider) VideoDownload(ctx *schemas.UnifAIContext, key
 	if key.Value.GetValue() != "" {
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(
 			fmt.Sprintf("failed to download video: HTTP %d", resp.StatusCode()),
 			nil), latency)
 	}
 
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 	contentType := string(resp.Header.ContentType())
 	if contentType == "" {
 		contentType = "video/mp4"
 	}
 	content := append([]byte(nil), body...)
-	unifaiResp := &schemas.UnifAIVideoDownloadResponse{
+	rakshaResp := &schemas.RakshaVideoDownloadResponse{
 		VideoID:     request.ID,
 		Content:     content,
 		ContentType: contentType,
 	}
 
-	unifaiResp.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResp.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResp.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // VideoDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) VideoDelete(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoDeleteRequest) (*schemas.UnifAIVideoDeleteResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by replicate provider.
-func (provider *ReplicateProvider) VideoList(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoListRequest) (*schemas.UnifAIVideoListResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by replicate provider.
-func (provider *ReplicateProvider) VideoRemix(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoRemixRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // BatchCreate is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIBatchCreateRequest) (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchRetrieveRequest) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchCancel(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchResults(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // FileUpload uploads a file to Replicate's Files API.
-func (provider *ReplicateProvider) FileUpload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileUploadRequest) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("file content is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
 	}
 
 	// Create multipart form data
@@ -2833,13 +2833,13 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.UnifAIContext, key sc
 	// Add filename field if provided
 	if filename != "" {
 		if err := writer.WriteField("filename", filename); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to write filename field", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to write filename field", err)
 		}
 	}
 
 	// Add type field (content type)
 	if err := writer.WriteField("type", contentType); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write type field", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write type field", err)
 	}
 
 	// Add metadata field if provided
@@ -2848,17 +2848,17 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.UnifAIContext, key sc
 			if len(metadata) > 0 {
 				metadataJSON, err := providerUtils.MarshalSorted(metadata)
 				if err != nil {
-					return nil, providerUtils.NewUnifAIOperationError("failed to marshal metadata", err)
+					return nil, providerUtils.NewRakshaOperationError("failed to marshal metadata", err)
 				}
 				h := make(textproto.MIMEHeader)
 				h.Set("Content-Disposition", `form-data; name="metadata"`)
 				h.Set("Content-Type", "application/json")
 				metadataPart, err := writer.CreatePart(h)
 				if err != nil {
-					return nil, providerUtils.NewUnifAIOperationError("failed to create metadata part", err)
+					return nil, providerUtils.NewRakshaOperationError("failed to create metadata part", err)
 				}
 				if _, err := metadataPart.Write(metadataJSON); err != nil {
-					return nil, providerUtils.NewUnifAIOperationError("failed to write metadata", err)
+					return nil, providerUtils.NewRakshaOperationError("failed to write metadata", err)
 				}
 			}
 		}
@@ -2871,14 +2871,14 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.UnifAIContext, key sc
 
 	part, err := writer.CreatePart(h)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create form file", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write file content", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -2900,10 +2900,10 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.UnifAIContext, key sc
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -2914,27 +2914,27 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.UnifAIContext, key sc
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var replicateResp ReplicateFileResponse
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	fileResponse := replicateResp.ToUnifAIFileUploadResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+	fileResponse := replicateResp.ToRakshaFileUploadResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
 	fileResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	return fileResponse, nil
 }
 
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *ReplicateProvider) FileList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileListRequest) (*schemas.UnifAIFileListResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
@@ -2944,14 +2944,14 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.UnifAIContext, keys []s
 	// unrecognised value through would produce a malformed request rather than a clean API error.
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, false)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIFileListResponse{
+		return &schemas.RakshaFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -2989,10 +2989,10 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.UnifAIContext, keys []s
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -3003,16 +3003,16 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.UnifAIContext, keys []s
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var replicateResp ReplicateFileListResponse
-	_, _, unifaiErr = providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, _, rakshaErr = providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	// Convert files to UnifAI format
+	// Convert files to Raksha format
 	files := make([]schemas.FileObject, 0, len(replicateResp.Results))
 	for _, file := range replicateResp.Results {
 		files = append(files, schemas.FileObject{
@@ -3022,7 +3022,7 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.UnifAIContext, keys []s
 			CreatedAt: ParseReplicateTimestamp(file.CreatedAt),
 			Filename:  file.Name,
 			Purpose:   schemas.FilePurposeBatch,
-			Status:    ToUnifAIFileStatus(&file),
+			Status:    ToRakshaFileStatus(&file),
 		})
 	}
 
@@ -3038,38 +3038,38 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.UnifAIContext, keys []s
 	// Use helper to build proper cursor with key index
 	finalCursor, finalHasMore := helper.BuildNextCursor(hasMore, nextCursor)
 
-	// Convert to UnifAI response
+	// Convert to Raksha response
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
-	unifaiResp := &schemas.UnifAIFileListResponse{
+	rakshaResp := &schemas.RakshaFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: finalHasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerResponseHeaders,
 		},
 	}
 	if finalCursor != "" {
-		unifaiResp.After = &finalCursor
+		rakshaResp.After = &finalCursor
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // FileRetrieve retrieves file metadata from Replicate's Files API by trying each key until found.
-func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -3086,12 +3086,12 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -3108,16 +3108,16 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var replicateResp ReplicateFileResponse
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -3125,9 +3125,9 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
-		fileRetrieveResponse := replicateResp.ToUnifAIFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+		fileRetrieveResponse := replicateResp.ToRakshaFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 		fileRetrieveResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 		return fileRetrieveResponse, nil
 	}
@@ -3136,17 +3136,17 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys
 }
 
 // FileDelete deletes a file from Replicate's Files API by trying each key until successful.
-func (provider *ReplicateProvider) FileDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -3163,12 +3163,12 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.UnifAIContext, keys [
 		}
 
 		// Make request
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -3177,12 +3177,12 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.UnifAIContext, keys [
 			providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
-			return &schemas.UnifAIFileDeleteResponse{
+			ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+			return &schemas.RakshaFileDeleteResponse{
 				ID:      request.FileID,
 				Object:  "file",
 				Deleted: true,
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					Latency:                 latency.Milliseconds(),
 					ProviderResponseHeaders: providerResponseHeaders,
 				},
@@ -3203,17 +3203,17 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.UnifAIContext, keys [
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		// Try to parse response body if present
 		var deleteResp map[string]interface{}
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if unifaiErr != nil {
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if rakshaErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = unifaiErr
+			lastErr = rakshaErr
 			continue
 		}
 
@@ -3221,13 +3221,13 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.UnifAIContext, keys [
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
-		result := &schemas.UnifAIFileDeleteResponse{
+		result := &schemas.RakshaFileDeleteResponse{
 			ID:      request.FileID,
 			Object:  "file",
 			Deleted: true,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -3248,69 +3248,69 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.UnifAIContext, keys [
 }
 
 // FileContent is not supported by replicate provider.
-func (provider *ReplicateProvider) FileContent(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileContentRequest) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
-func (provider *ReplicateProvider) CountTokens(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIResponsesRequest) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the Replicate provider.
-func (provider *ReplicateProvider) Compaction(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICompactionRequest) (*schemas.UnifAICompactionResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerCreateRequest) (*schemas.UnifAIContainerCreateResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerListRequest) (*schemas.UnifAIContainerListResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerRetrieveRequest) (*schemas.UnifAIContainerRetrieveResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerDeleteRequest) (*schemas.UnifAIContainerDeleteResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerFileCreateRequest) (*schemas.UnifAIContainerFileCreateResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileListRequest) (*schemas.UnifAIContainerFileListResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileRetrieveRequest) (*schemas.UnifAIContainerFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileContent(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileContentRequest) (*schemas.UnifAIContainerFileContentResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileDeleteRequest) (*schemas.UnifAIContainerFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Replicate provider.
-func (provider *ReplicateProvider) Passthrough(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIPassthroughRequest) (*schemas.UnifAIPassthroughResponse, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *ReplicateProvider) PassthroughStream(_ *schemas.UnifAIContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.UnifAIPassthroughRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *ReplicateProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

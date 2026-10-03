@@ -3,10 +3,10 @@ package huggingface
 import (
 	"fmt"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-func ToHuggingFaceSpeechRequest(request *schemas.UnifAISpeechRequest) (*HuggingFaceSpeechRequest, error) {
+func ToHuggingFaceSpeechRequest(request *schemas.RakshaSpeechRequest) (*HuggingFaceSpeechRequest, error) {
 	if request == nil {
 		return nil, nil
 	}
@@ -113,7 +113,7 @@ func ToHuggingFaceSpeechRequest(request *schemas.UnifAISpeechRequest) (*HuggingF
 	return hfRequest, nil
 }
 
-func (response *HuggingFaceSpeechResponse) ToUnifAISpeechResponse(requestedModel string, audioData []byte) (*schemas.UnifAISpeechResponse, error) {
+func (response *HuggingFaceSpeechResponse) ToRakshaSpeechResponse(requestedModel string, audioData []byte) (*schemas.RakshaSpeechResponse, error) {
 	if response == nil {
 		return nil, nil
 	}
@@ -122,13 +122,13 @@ func (response *HuggingFaceSpeechResponse) ToUnifAISpeechResponse(requestedModel
 		return nil, fmt.Errorf("model name cannot be empty")
 	}
 
-	// Create the base UnifAI response with the downloaded audio data
-	unifaiResponse := &schemas.UnifAISpeechResponse{
+	// Create the base Raksha response with the downloaded audio data
+	rakshaResponse := &schemas.RakshaSpeechResponse{
 		Audio: audioData,
 	}
 
 	// Note: HuggingFace TTS API typically doesn't return usage information
 	// or alignment data, so we leave those fields as nil
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }

@@ -6,17 +6,17 @@ import (
 	"sync"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
 )
 
 // Defaults for sync configuration and timeouts. Exposed so the composer can
 // fall back to these when the framework Config leaves fields nil.
 const (
-	DefaultURL                    = "https://getunifai.ai/datasheet"
-	DefaultModelParametersURL     = "https://getunifai.ai/datasheet/model-parameters"
+	DefaultURL                    = "https://getraksha.ai/datasheet"
+	DefaultModelParametersURL     = "https://getraksha.ai/datasheet/model-parameters"
 	DefaultSyncInterval           = 24 * time.Hour
 	DefaultPricingTimeout         = 60 * time.Second
 	DefaultModelParametersTimeout = 45 * time.Second
@@ -310,7 +310,7 @@ func (s *Store) DatasheetModelsForProvider(provider schemas.ModelProvider) []str
 
 // DeprecatedDatasheetModelsForProvider returns deprecated models from the
 // datasheet view for provider. Deprecated models may disappear from provider
-// list-models APIs but must remain visible in UnifAI catalog listings.
+// list-models APIs but must remain visible in Raksha catalog listings.
 func (s *Store) DeprecatedDatasheetModelsForProvider(provider schemas.ModelProvider) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -451,7 +451,7 @@ func NewTestStore(baseModelIndex map[string]string) *Store {
 		baseModelIndex = make(map[string]string)
 	}
 	return &Store{
-		logger:                 unifai.NewNoOpLogger(),
+		logger:                 raksha.NewNoOpLogger(),
 		pricingData:            make(map[string]configstoreTables.TableModelPricing),
 		baseModelIndex:         baseModelIndex,
 		supportedResponseTypes: make(map[string][]string),

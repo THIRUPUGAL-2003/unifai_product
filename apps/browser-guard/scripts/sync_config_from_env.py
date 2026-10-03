@@ -2,7 +2,7 @@
 """
 Sync Guard configs + docs from repository root .env.
 
-Usage (from unifai_product):
+Usage (from raksha_product):
     python apps/browser-guard/scripts/sync_config_from_env.py
 """
 
@@ -104,7 +104,7 @@ def update_json_config(
             changed = True
         comment = (
             "Generated from .env — run sync_config_from_env.py after changing "
-            "SERVER_DOMAIN / UNIFAI_PROXY_ADDR / PAC_HTTP_PORT / UNIFAI_GUARD_SECRET"
+            "SERVER_DOMAIN / RAKSHA_PROXY_ADDR / PAC_HTTP_PORT / RAKSHA_GUARD_SECRET"
         )
         if data.get("_comment") != comment:
             data["_comment"] = comment
@@ -155,7 +155,7 @@ def update_doc_file(
         new = re.sub(
             r"`https?://[^`\s]+`",
             lambda m: f"`{server_domain}`"
-            if "yespanchi" in m.group(0) or "unifai." in m.group(0) or "dev-yp" in m.group(0)
+            if "yespanchi" in m.group(0) or "raksha." in m.group(0) or "dev-yp" in m.group(0)
             else m.group(0),
             new,
         )
@@ -235,10 +235,10 @@ def main() -> int:
         )
         return 1
 
-    proxy_addr = read_env_var(repo_root, "UNIFAI_PROXY_ADDR", "")
+    proxy_addr = read_env_var(repo_root, "RAKSHA_PROXY_ADDR", "")
     if not proxy_addr:
         print(
-            "[sync_config_from_env ERROR] UNIFAI_PROXY_ADDR is not set in .env!",
+            "[sync_config_from_env ERROR] RAKSHA_PROXY_ADDR is not set in .env!",
             file=sys.stderr,
         )
         return 1
@@ -252,24 +252,24 @@ def main() -> int:
         return 1
 
     print(f"[sync_config_from_env] SERVER_DOMAIN = {server_domain}")
-    print(f"[sync_config_from_env] UNIFAI_PROXY_ADDR = {proxy_addr}")
+    print(f"[sync_config_from_env] RAKSHA_PROXY_ADDR = {proxy_addr}")
     print(f"[sync_config_from_env] PAC_HTTP_PORT = {pac_http_port}")
 
-    guard_secret = read_env_var(repo_root, "UNIFAI_GUARD_SECRET", "")
-    require_secret = read_env_var(repo_root, "UNIFAI_GUARD_REQUIRE_SECRET", "1").lower()
+    guard_secret = read_env_var(repo_root, "RAKSHA_GUARD_SECRET", "")
+    require_secret = read_env_var(repo_root, "RAKSHA_GUARD_REQUIRE_SECRET", "1").lower()
     require_secret_on = require_secret not in ("0", "false", "no", "off")
     if guard_secret:
-        print("[sync_config_from_env] UNIFAI_GUARD_SECRET = (set)")
+        print("[sync_config_from_env] RAKSHA_GUARD_SECRET = (set)")
     else:
         print(
-            "[sync_config_from_env] WARNING: UNIFAI_GUARD_SECRET not set — "
+            "[sync_config_from_env] WARNING: RAKSHA_GUARD_SECRET not set — "
             "agent APIs stay open until you set it (required for VAPT / production)",
             file=sys.stderr,
         )
         if require_secret_on:
             print(
-                "[sync_config_from_env] ERROR: UNIFAI_GUARD_REQUIRE_SECRET is on but "
-                "UNIFAI_GUARD_SECRET is empty — refuse to publish empty secret into packages",
+                "[sync_config_from_env] ERROR: RAKSHA_GUARD_REQUIRE_SECRET is on but "
+                "RAKSHA_GUARD_SECRET is empty — refuse to publish empty secret into packages",
                 file=sys.stderr,
             )
             return 1
@@ -277,29 +277,29 @@ def main() -> int:
     bg = os.path.join(repo_root, "apps", "browser-guard")
 
     config_files = [
-        os.path.join(bg, "config", "unifai_guard_config.json"),
-        os.path.join(bg, "release", "unifai_guard_config.json"),
-        os.path.join(bg, "installer", "staging", "unifai_guard_config.json"),
-        os.path.join(bg, "installer", "staging-mac", "unifai_guard_config.json"),
+        os.path.join(bg, "config", "raksha_guard_config.json"),
+        os.path.join(bg, "release", "raksha_guard_config.json"),
+        os.path.join(bg, "installer", "staging", "raksha_guard_config.json"),
+        os.path.join(bg, "installer", "staging-mac", "raksha_guard_config.json"),
         os.path.join(
-            bg, "installer", "staging-mac", "UnifAI_Guard.app", "Contents", "Resources", "unifai_guard_config.json"
+            bg, "installer", "staging-mac", "Raksha_Guard.app", "Contents", "Resources", "raksha_guard_config.json"
         ),
         os.path.join(
             bg,
             "installer",
             "pkg-root",
             "Applications",
-            "UnifAI_Guard.app",
+            "Raksha_Guard.app",
             "Contents",
             "Resources",
-            "unifai_guard_config.json",
+            "raksha_guard_config.json",
         ),
-        os.path.join(bg, "release", "UnifAI_Guard.app", "Contents", "Resources", "unifai_guard_config.json"),
+        os.path.join(bg, "release", "Raksha_Guard.app", "Contents", "Resources", "raksha_guard_config.json"),
     ]
     local_app_data = os.environ.get("LOCALAPPDATA", "")
     if local_app_data:
-        config_files.append(os.path.join(local_app_data, "Programs", "UnifAI", "Guard", "unifai_guard_config.json"))
-        config_files.append(os.path.join(local_app_data, "UnifAI", "Guard", "unifai_guard_config.json"))
+        config_files.append(os.path.join(local_app_data, "Programs", "Raksha", "Guard", "raksha_guard_config.json"))
+        config_files.append(os.path.join(local_app_data, "Raksha", "Guard", "raksha_guard_config.json"))
 
     doc_files = [
         os.path.join(bg, "release", "EMPLOYEE_README.txt"),
@@ -313,12 +313,12 @@ def main() -> int:
         os.path.join(bg, "installer", "MACOS_PRODUCTION.md"),
         os.path.join(bg, "installer", "IT_README.txt"),
         os.path.join(bg, "HYBRID_DEPLOY.txt"),
-        os.path.join(bg, "installer", "UnifAI_Guard.iss"),
-        os.path.join(bg, "release", "Update_UnifAI_Guard.ps1"),
-        os.path.join(bg, "release", "Update_UnifAI_Guard_macOS.command"),
-        os.path.join(bg, "installer", "Install_UnifAI_Guard.command"),
-        os.path.join(bg, "release", "Install_UnifAI_Guard.command"),
-        os.path.join(bg, "installer", "staging-mac", "Install_UnifAI_Guard.command"),
+        os.path.join(bg, "installer", "Raksha_Guard.iss"),
+        os.path.join(bg, "release", "Update_Raksha_Guard.ps1"),
+        os.path.join(bg, "release", "Update_Raksha_Guard_macOS.command"),
+        os.path.join(bg, "installer", "Install_Raksha_Guard.command"),
+        os.path.join(bg, "release", "Install_Raksha_Guard.command"),
+        os.path.join(bg, "installer", "staging-mac", "Install_Raksha_Guard.command"),
         os.path.join(bg, "release", "INSTALL_WINDOWS.txt"),
         os.path.join(bg, "release", "INSTALL_MACOS.txt"),
         os.path.join(bg, "installer", "staging", "INSTALL_WINDOWS.txt"),

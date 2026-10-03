@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/queryscope"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/queryscope"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -880,16 +880,16 @@ func (s *RDBLogStore) listSelectColumns() string {
 	case "postgres":
 		// Postgres jsonb rejects malformed JSON (22P02), \u0000 escapes
 		// (22P05), and unpaired UTF-16 surrogates (22P05). A single bad row
-		// would otherwise abort the whole list query. unifai_safe_jsonb
+		// would otherwise abort the whole list query. raksha_safe_jsonb
 		// wraps the cast in an EXCEPTION block and returns the raw TEXT on
 		// any parse failure; see migrationAddSafeJsonbFunction.
 		inputHistoryExpr = `CASE
 			WHEN object_type = 'realtime.turn' THEN input_history
-			ELSE unifai_safe_jsonb(input_history)
+			ELSE raksha_safe_jsonb(input_history)
 			END AS input_history`
 		responsesInputExpr = `CASE
 			WHEN object_type = 'realtime.turn' THEN responses_input_history
-			ELSE unifai_safe_jsonb(responses_input_history)
+			ELSE raksha_safe_jsonb(responses_input_history)
 			END AS responses_input_history`
 		outputMessageExpr = `CASE WHEN object_type = 'realtime.turn' THEN output_message ELSE NULL END AS output_message`
 	default: // sqlite

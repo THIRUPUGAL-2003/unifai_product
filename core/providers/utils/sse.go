@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 const (
@@ -29,7 +29,7 @@ type SSEEventReader interface {
 }
 
 // SSEReaderFactory creates SSE readers for streaming response processing.
-// Enterprise injects this via UnifAIContextKeySSEReaderFactory to replace
+// Enterprise injects this via RakshaContextKeySSEReaderFactory to replace
 // the default bufio.Scanner-based implementations with streaming readers.
 type SSEReaderFactory struct {
 	NewDataReader  func(reader io.Reader) SSEDataReader
@@ -39,9 +39,9 @@ type SSEReaderFactory struct {
 // GetSSEDataReader returns an SSEDataReader for the given reader.
 // If enterprise has injected an SSEReaderFactory via context, uses that.
 // Otherwise returns a default implementation wrapping bufio.NewScanner.
-func GetSSEDataReader(ctx *schemas.UnifAIContext, reader io.Reader) SSEDataReader {
+func GetSSEDataReader(ctx *schemas.RakshaContext, reader io.Reader) SSEDataReader {
 	if ctx != nil {
-		if factory, ok := ctx.Value(schemas.UnifAIContextKeySSEReaderFactory).(*SSEReaderFactory); ok && factory != nil && factory.NewDataReader != nil {
+		if factory, ok := ctx.Value(schemas.RakshaContextKeySSEReaderFactory).(*SSEReaderFactory); ok && factory != nil && factory.NewDataReader != nil {
 			return factory.NewDataReader(reader)
 		}
 	}
@@ -51,9 +51,9 @@ func GetSSEDataReader(ctx *schemas.UnifAIContext, reader io.Reader) SSEDataReade
 // GetSSEEventReader returns an SSEEventReader for the given reader.
 // If enterprise has injected an SSEReaderFactory via context, uses that.
 // Otherwise returns a default implementation wrapping bufio.NewScanner.
-func GetSSEEventReader(ctx *schemas.UnifAIContext, reader io.Reader) SSEEventReader {
+func GetSSEEventReader(ctx *schemas.RakshaContext, reader io.Reader) SSEEventReader {
 	if ctx != nil {
-		if factory, ok := ctx.Value(schemas.UnifAIContextKeySSEReaderFactory).(*SSEReaderFactory); ok && factory != nil && factory.NewEventReader != nil {
+		if factory, ok := ctx.Value(schemas.RakshaContextKeySSEReaderFactory).(*SSEReaderFactory); ok && factory != nil && factory.NewEventReader != nil {
 			return factory.NewEventReader(reader)
 		}
 	}

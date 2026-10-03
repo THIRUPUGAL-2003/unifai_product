@@ -1,7 +1,7 @@
 // Package utils — list_models.go
 // Centralised pipeline for filtering and backfilling models in ListModels responses.
 //
-// Every provider's ToUnifAIListModelsResponse follows the same logical steps:
+// Every provider's ToRakshaListModelsResponse follows the same logical steps:
 //  1. Resolve each API model's name (alias lookup → alias key; else raw model ID)
 //  2. Filter (allowlist + blacklist check on the resolved name)
 //  3. Backfill entries that were not returned by the API but should appear in output
@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -151,7 +151,7 @@ type FilterResult struct {
 }
 
 // Pipeline holds all the context needed to filter and backfill models in a
-// single ListModels response. Construct one per ToUnifAIListModelsResponse call
+// single ListModels response. Construct one per ToRakshaListModelsResponse call
 // and use its methods instead of passing params + matchFns to every function.
 //
 //	pipeline := &providerUtils.ListModelsPipeline{
@@ -179,7 +179,7 @@ type ListModelsPipeline struct {
 	MatchFns []MatchFn
 }
 
-// ShouldEarlyExit reports whether ToUnifAIListModelsResponse should immediately
+// ShouldEarlyExit reports whether ToRakshaListModelsResponse should immediately
 // return an empty response without processing any models.
 //
 // Returns true when:

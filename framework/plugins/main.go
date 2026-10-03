@@ -2,7 +2,7 @@
 package plugins
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // PluginConfig is the generic configuration for any plugin type

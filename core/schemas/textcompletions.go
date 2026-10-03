@@ -4,23 +4,23 @@ import (
 	"fmt"
 )
 
-// UnifAITextCompletionRequest is the request struct for text completion requests
-type UnifAITextCompletionRequest struct {
+// RakshaTextCompletionRequest is the request struct for text completion requests
+type RakshaTextCompletionRequest struct {
 	Provider       ModelProvider             `json:"provider"`
 	Model          string                    `json:"model"`
 	Input          *TextCompletionInput      `json:"input,omitempty"`
 	Params         *TextCompletionParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback                `json:"fallbacks,omitempty"`
-	RawRequestBody []byte                    `json:"-"` // set unifai-use-raw-request-body to true in ctx to use the raw request body. UnifAI will directly send this to the downstream provider.
+	RawRequestBody []byte                    `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
 }
 
-func (r *UnifAITextCompletionRequest) GetRawRequestBody() []byte {
+func (r *RakshaTextCompletionRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-// ToUnifAIChatRequest converts a UnifAI text completion request to a UnifAI chat completion request
+// ToRakshaChatRequest converts a Raksha text completion request to a Raksha chat completion request
 // This method is discouraged to use, but is useful for litellm fallback flows
-func (r *UnifAITextCompletionRequest) ToUnifAIChatRequest() *UnifAIChatRequest {
+func (r *RakshaTextCompletionRequest) ToRakshaChatRequest() *RakshaChatRequest {
 	if r == nil || r.Input == nil {
 		return nil
 	}
@@ -55,7 +55,7 @@ func (r *UnifAITextCompletionRequest) ToUnifAIChatRequest() *UnifAIChatRequest {
 		params.PresencePenalty = r.Params.PresencePenalty
 		params.Seed = r.Params.Seed
 	}
-	return &UnifAIChatRequest{
+	return &RakshaChatRequest{
 		Provider:  r.Provider,
 		Model:     r.Model,
 		Fallbacks: r.Fallbacks,
@@ -64,14 +64,14 @@ func (r *UnifAITextCompletionRequest) ToUnifAIChatRequest() *UnifAIChatRequest {
 	}
 }
 
-type UnifAITextCompletionResponse struct {
+type RakshaTextCompletionResponse struct {
 	ID                string                     `json:"id"`
-	Choices           []UnifAIResponseChoice    `json:"choices"`
+	Choices           []RakshaResponseChoice    `json:"choices"`
 	Model             string                     `json:"model"`
 	Object            string                     `json:"object"` // "text_completion" (same for text completion stream)
 	SystemFingerprint string                     `json:"system_fingerprint"`
-	Usage             *UnifAILLMUsage           `json:"usage"`
-	ExtraFields       UnifAIResponseExtraFields `json:"extra_fields"`
+	Usage             *RakshaLLMUsage           `json:"usage"`
+	ExtraFields       RakshaResponseExtraFields `json:"extra_fields"`
 }
 
 type TextCompletionInput struct {

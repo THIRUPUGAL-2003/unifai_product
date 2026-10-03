@@ -1,4 +1,4 @@
-// Package semanticcache provides semantic caching integration for UnifAI plugin.
+// Package semanticcache provides semantic caching integration for Raksha plugin.
 // This plugin caches responses using both direct hash matching (xxhash) and semantic similarity search (embeddings).
 // It supports configurable caching behavior via the VectorStore abstraction, with TTL management and streaming response handling.
 package semanticcache
@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/vectorstore"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/vectorstore"
 )
 
 // Config contains configuration for the semantic cache plugin.
@@ -93,7 +93,7 @@ type StreamChunk struct {
 	// reaper to drop accumulators stuck without a final chunk.
 	Timestamp time.Time
 	// Response is the chunk payload as delivered by the provider.
-	Response *schemas.UnifAIResponse
+	Response *schemas.RakshaResponse
 }
 
 // StreamAccumulator collects the chunks of a single streaming response so
@@ -102,7 +102,7 @@ type StreamAccumulator struct {
 	// mu serializes Chunks/IsComplete updates across the per-chunk PostLLMHook
 	// invocations and the periodic reaper.
 	mu sync.Mutex
-	// RequestID is the UnifAIContext request ID this accumulator is keyed by.
+	// RequestID is the RakshaContext request ID this accumulator is keyed by.
 	RequestID string
 	// StorageID is the cache entry ID the accumulated stream will be written under.
 	StorageID string
@@ -126,11 +126,11 @@ type StreamAccumulator struct {
 	TTL time.Duration
 }
 
-// EmbeddingRequestExecutor invokes the embedding endpoint on the unifai
+// EmbeddingRequestExecutor invokes the embedding endpoint on the raksha
 // client. The plugin calls it on cache misses to compute the request
 // embedding for semantic similarity search and storage. It mirrors the
-// signature of unifai.Client.EmbeddingRequest.
-type EmbeddingRequestExecutor func(ctx *schemas.UnifAIContext, req *schemas.UnifAIEmbeddingRequest) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError)
+// signature of raksha.Client.EmbeddingRequest.
+type EmbeddingRequestExecutor func(ctx *schemas.RakshaContext, req *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError)
 
 // Plugin implements schemas.LLMPlugin for semantic caching. It serves cached
 // responses via two complementary lookup paths: a direct O(1) hash match on
@@ -166,7 +166,7 @@ type Plugin struct {
 // Plugin constants
 const (
 	PluginName                          string        = "semantic_cache"
-	DefaultVectorStoreNamespace         string        = "UnifAISemanticCachePlugin"
+	DefaultVectorStoreNamespace         string        = "RakshaSemanticCachePlugin"
 	CacheConnectionTimeout              time.Duration = 5 * time.Second
 	CreateNamespaceTimeout              time.Duration = 30 * time.Second
 	CacheSetTimeout                     time.Duration = 30 * time.Second
@@ -176,7 +176,7 @@ const (
 )
 
 // SelectFields enumerates the properties projected back from the vector store
-// on a cache hit. params_hash and from_unifai_semantic_cache_plugin are
+// on a cache hit. params_hash and from_raksha_semantic_cache_plugin are
 // filter-only (used in WHERE-style queries to narrow matches) and intentionally
 // omitted from this projection — keep them defined in VectorStoreProperties
 // below so the store creates the columns/indexes, but don't fetch them.
@@ -211,21 +211,21 @@ var VectorStoreProperties = map[string]vectorstore.VectorStoreProperties{
 		DataType:    vectorstore.VectorStorePropertyTypeString,
 		Description: "The hash of the parameters used for the request",
 	},
-	"from_unifai_semantic_cache_plugin": {
+	"from_raksha_semantic_cache_plugin": {
 		DataType:    vectorstore.VectorStorePropertyTypeBoolean,
-		Description: "Whether the cache entry was created by the UnifAISemanticCachePlugin",
+		Description: "Whether the cache entry was created by the RakshaSemanticCachePlugin",
 	},
 }
 
-// Per-request context keys. Callers set these on UnifAIContext before the
-// request enters UnifAI; the plugin reads them in Pre/PostLLMHook. CacheKey
+// Per-request context keys. Callers set these on RakshaContext before the
+// request enters Raksha; the plugin reads them in Pre/PostLLMHook. CacheKey
 // (or Config.DefaultCacheKey) is the only one required for caching to engage.
 const (
-	CacheKey          schemas.UnifAIContextKey = "semantic_cache-key"        // String. Required (or DefaultCacheKey) — bucket entries under a tenant/feature scope.
-	CacheTTLKey       schemas.UnifAIContextKey = "semantic_cache-ttl"        // time.Duration. Per-request override of Config.TTL.
-	CacheThresholdKey schemas.UnifAIContextKey = "semantic_cache-threshold"  // float64. Per-request override of the semantic similarity threshold.
-	CacheTypeKey      schemas.UnifAIContextKey = "semantic_cache-cache_type" // CacheType. Narrow lookup to a single path (direct or semantic).
-	CacheNoStoreKey   schemas.UnifAIContextKey = "semantic_cache-no_store"   // bool. Skip writing the response to cache (still served from cache on hit).
+	CacheKey          schemas.RakshaContextKey = "semantic_cache-key"        // String. Required (or DefaultCacheKey) — bucket entries under a tenant/feature scope.
+	CacheTTLKey       schemas.RakshaContextKey = "semantic_cache-ttl"        // time.Duration. Per-request override of Config.TTL.
+	CacheThresholdKey schemas.RakshaContextKey = "semantic_cache-threshold"  // float64. Per-request override of the semantic similarity threshold.
+	CacheTypeKey      schemas.RakshaContextKey = "semantic_cache-cache_type" // CacheType. Narrow lookup to a single path (direct or semantic).
+	CacheNoStoreKey   schemas.RakshaContextKey = "semantic_cache-no_store"   // bool. Skip writing the response to cache (still served from cache on hit).
 )
 
 type CacheType string
@@ -237,7 +237,7 @@ const (
 
 // Init validates the configuration, creates the namespace in the underlying
 // VectorStore, starts the background reaper goroutines, and returns a plugin
-// ready to be wired into the UnifAI plugin pipeline.
+// ready to be wired into the Raksha plugin pipeline.
 //
 // Note: Init mutates *config in place to fill in defaults — TTL, Threshold,
 // CacheBy* — so the caller sees the resolved values after this returns.
@@ -316,22 +316,22 @@ func (plugin *Plugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used by the semantic cache plugin.
-func (plugin *Plugin) HTTPTransportPreHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (plugin *Plugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used by the semantic cache plugin.
-func (plugin *Plugin) HTTPTransportPostHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (plugin *Plugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes streaming chunks through unchanged.
-func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, chunk *schemas.UnifAIStreamChunk) (*schemas.UnifAIStreamChunk, error) {
+func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (plugin *Plugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAIRequest) error {
+func (plugin *Plugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
 	return nil
 }
 
@@ -341,7 +341,7 @@ func (plugin *Plugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAI
 // pipeline with a cached response on hit. On miss, it leaves per-request
 // state on the plugin keyed by request ID for PostLLMHook to consume when
 // the upstream response arrives.
-func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	cacheKey, ok := plugin.resolveCacheKey(ctx)
 	if !ok {
 		return req, nil, nil
@@ -350,7 +350,7 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAI
 	// Without a request ID we have nowhere to anchor per-request state. The
 	// framework always stamps this before plugin hooks run; direct callers
 	// (tests, custom integrations) must set it too.
-	requestID, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
 	if !ok || requestID == "" {
 		return req, nil, nil
 	}
@@ -455,7 +455,7 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAI
 
 // resolveCacheKey returns the per-request cache key (or the configured default)
 // and a bool indicating whether the caller should proceed with caching.
-func (plugin *Plugin) resolveCacheKey(ctx *schemas.UnifAIContext) (string, bool) {
+func (plugin *Plugin) resolveCacheKey(ctx *schemas.RakshaContext) (string, bool) {
 	if cacheKey, ok := ctx.Value(CacheKey).(string); ok && cacheKey != "" {
 		return cacheKey, true
 	}
@@ -468,7 +468,7 @@ func (plugin *Plugin) resolveCacheKey(ctx *schemas.UnifAIContext) (string, bool)
 // resolveCacheTypes returns whether direct and semantic search paths should
 // run for this request. Defaults both to true; an explicit CacheTypeKey on
 // the context narrows to just one.
-func (plugin *Plugin) resolveCacheTypes(ctx *schemas.UnifAIContext) (direct bool, semantic bool) {
+func (plugin *Plugin) resolveCacheTypes(ctx *schemas.RakshaContext) (direct bool, semantic bool) {
 	direct, semantic = true, true
 	ctxVal := ctx.Value(CacheTypeKey)
 	if ctxVal == nil {
@@ -506,15 +506,15 @@ func (plugin *Plugin) setPlaceholderVectorIfRequired(state *cacheState) {
 // its own background context + CacheSetTimeout, so client cancellation
 // after the response is delivered doesn't drop the cache write. Returns the
 // response unmodified — caching never alters the request flow.
-func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, res *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
-	if unifaiErr != nil {
+func (plugin *Plugin) PostLLMHook(ctx *schemas.RakshaContext, res *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+	if rakshaErr != nil {
 		// We rely on errors always arriving as the final chunk for streams, so
 		// we abort caching here without further bookkeeping. Any partial
 		// accumulator from a prior chunk gets reaped by the periodic cleanup.
-		return res, unifaiErr, nil
+		return res, rakshaErr, nil
 	}
 
-	requestID, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
 	if !ok {
 		return res, nil, nil
 	}
@@ -532,8 +532,8 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, res *schemas.UnifA
 	// races: the producer can advance to its next iteration (and SetValue)
 	// while the receiver is still running PostLLMHooks for the previous
 	// chunk, poisoning that chunk's IsFinalChunk read.
-	if unifai.IsStreamRequestType(requestType) && cacheDebug != nil && cacheDebug.CacheHit {
-		ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+	if raksha.IsStreamRequestType(requestType) && cacheDebug != nil && cacheDebug.CacheHit {
+		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 	}
 	// Cache hit replay: cache_debug was already stamped in PreLLMHook by
 	// stampCacheDebugForHit. There's nothing further to do here — no new
@@ -549,8 +549,8 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, res *schemas.UnifA
 	}
 	provider := extraFields.Provider
 	model := extraFields.OriginalModelRequested
-	isStream := unifai.IsStreamRequestType(requestType)
-	isFinalChunk := unifai.IsFinalChunk(ctx)
+	isStream := raksha.IsStreamRequestType(requestType)
+	isFinalChunk := raksha.IsFinalChunk(ctx)
 
 	state := plugin.getCacheState(requestID)
 	if state == nil || state.ParamsHash == "" {
@@ -631,11 +631,11 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.UnifAIContext, res *schemas.UnifA
 // separately as an early return in PostLLMHook because it must short-circuit
 // before stamping (cache_debug for hits is already populated by
 // stampCacheDebugForHit during PreLLMHook).
-func (plugin *Plugin) shouldSkipCacheWrite(ctx *schemas.UnifAIContext) bool {
-	if isLargePayload, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+func (plugin *Plugin) shouldSkipCacheWrite(ctx *schemas.RakshaContext) bool {
+	if isLargePayload, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
 		return true
 	}
-	if isLargeResponse, ok := ctx.Value(schemas.UnifAIContextKeyLargeResponseMode).(bool); ok && isLargeResponse {
+	if isLargeResponse, ok := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); ok && isLargeResponse {
 		return true
 	}
 	if noStore, ok := ctx.Value(CacheNoStoreKey).(bool); ok && noStore {
@@ -649,7 +649,7 @@ func (plugin *Plugin) shouldSkipCacheWrite(ctx *schemas.UnifAIContext) bool {
 // from per-request state. shouldStoreEmbeddings is false for explicit
 // direct-only requests on stores that don't require vectors — those entries
 // skip the embedding column entirely.
-func (plugin *Plugin) resolveStorageIDAndEmbedding(ctx *schemas.UnifAIContext, state *cacheState, requestID string, requestType schemas.RequestType) (storageID string, embedding []float32, shouldStoreEmbeddings bool) {
+func (plugin *Plugin) resolveStorageIDAndEmbedding(ctx *schemas.RakshaContext, state *cacheState, requestID string, requestType schemas.RequestType) (storageID string, embedding []float32, shouldStoreEmbeddings bool) {
 	storageID = requestID
 	if state.DirectCacheID != "" {
 		storageID = state.DirectCacheID
@@ -678,20 +678,20 @@ func (plugin *Plugin) resolveStorageIDAndEmbedding(ctx *schemas.UnifAIContext, s
 // Embedding-cost fields (ProviderUsed/ModelUsed/InputTokens) are only stamped
 // when semantic search actually ran. For streams, only the final chunk is
 // stamped to avoid duplicating telemetry.
-func (plugin *Plugin) stampCacheDebugForMiss(state *cacheState, extraFields *schemas.UnifAIResponseExtraFields, storageID string, isStream, isFinalChunk bool) {
+func (plugin *Plugin) stampCacheDebugForMiss(state *cacheState, extraFields *schemas.RakshaResponseExtraFields, storageID string, isStream, isFinalChunk bool) {
 	if isStream && !isFinalChunk {
 		return
 	}
 	if extraFields.CacheDebug == nil {
-		extraFields.CacheDebug = &schemas.UnifAICacheDebug{}
+		extraFields.CacheDebug = &schemas.RakshaCacheDebug{}
 	}
 	cd := extraFields.CacheDebug
 	cd.CacheHit = false
-	cd.CacheID = unifai.Ptr(storageID)
+	cd.CacheID = raksha.Ptr(storageID)
 	if state.EmbeddingsInputTokens > 0 {
 		inputTokens := state.EmbeddingsInputTokens
-		cd.ProviderUsed = unifai.Ptr(string(plugin.config.Provider))
-		cd.ModelUsed = unifai.Ptr(plugin.config.EmbeddingModel)
+		cd.ProviderUsed = raksha.Ptr(string(plugin.config.Provider))
+		cd.ModelUsed = raksha.Ptr(plugin.config.EmbeddingModel)
 		cd.InputTokens = &inputTokens
 	}
 }
@@ -701,7 +701,7 @@ func (plugin *Plugin) stampCacheDebugForMiss(state *cacheState, extraFields *sch
 // to mirror how Config.UnmarshalJSON + Init treat TTL=0 at construction time —
 // otherwise a header of "0s" would yield expires_at=now and silently kill the
 // cache write for the affected request, which is rarely what the caller wants.
-func (plugin *Plugin) resolveTTL(ctx *schemas.UnifAIContext) time.Duration {
+func (plugin *Plugin) resolveTTL(ctx *schemas.RakshaContext) time.Duration {
 	if v := ctx.Value(CacheTTLKey); v != nil {
 		if ttl, ok := v.(time.Duration); ok {
 			if ttl > 0 {
@@ -724,7 +724,7 @@ func (plugin *Plugin) WaitForPendingOperations() {
 
 // Cleanup signals the background loops to stop and waits for in-flight cache
 // writes to drain before returning. When CleanUpOnShutdown is true, it then
-// deletes every entry tagged from_unifai_semantic_cache_plugin and drops
+// deletes every entry tagged from_raksha_semantic_cache_plugin and drops
 // the namespace — useful for ephemeral test environments. The default is to
 // leave entries in place so they can serve subsequent process restarts.
 func (plugin *Plugin) Cleanup() error {
@@ -759,7 +759,7 @@ func (plugin *Plugin) ClearCacheForKey(cacheKey string) error {
 			Value:    cacheKey,
 		},
 		{
-			Field:    "from_unifai_semantic_cache_plugin",
+			Field:    "from_raksha_semantic_cache_plugin",
 			Operator: vectorstore.QueryOperatorEqual,
 			Value:    true,
 		},
@@ -785,7 +785,7 @@ func (plugin *Plugin) ClearCacheForKey(cacheKey string) error {
 }
 
 // ClearCacheForCacheID deletes a single cache entry by its storage ID. The
-// caller obtains the ID from UnifAIResponse.ExtraFields.CacheDebug.CacheID,
+// caller obtains the ID from RakshaResponse.ExtraFields.CacheDebug.CacheID,
 // which is stamped on both cache hits and cache misses — so the same handle
 // works whether the request wrote the entry or read it.
 func (plugin *Plugin) ClearCacheForCacheID(cacheID string) error {

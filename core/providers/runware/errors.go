@@ -3,34 +3,34 @@ package runware
 import (
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-// parseRunwareError parses a Runware error HTTP response into a UnifAIError.
+// parseRunwareError parses a Runware error HTTP response into a RakshaError.
 // Runware reports failures in a top-level "errors" array.
-func parseRunwareError(resp *fasthttp.Response) *schemas.UnifAIError {
+func parseRunwareError(resp *fasthttp.Response) *schemas.RakshaError {
 	var errorResp RunwareResponse
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 
 	if msg := firstRunwareErrorMessage(errorResp.Errors); msg != "" {
-		if unifaiErr.Error == nil {
-			unifaiErr.Error = &schemas.ErrorField{}
+		if rakshaErr.Error == nil {
+			rakshaErr.Error = &schemas.ErrorField{}
 		}
-		unifaiErr.Error.Message = msg
-	} else if unifaiErr.Error == nil || unifaiErr.Error.Message == "" {
-		if unifaiErr.Error == nil {
-			unifaiErr.Error = &schemas.ErrorField{}
+		rakshaErr.Error.Message = msg
+	} else if rakshaErr.Error == nil || rakshaErr.Error.Message == "" {
+		if rakshaErr.Error == nil {
+			rakshaErr.Error = &schemas.ErrorField{}
 		}
-		unifaiErr.Error.Message = "Runware API request failed"
+		rakshaErr.Error.Message = "Runware API request failed"
 	}
 
-	if unifaiErr.Error != nil {
-		unifaiErr.Error.Message = strings.TrimRight(unifaiErr.Error.Message, "\n")
+	if rakshaErr.Error != nil {
+		rakshaErr.Error.Message = strings.TrimRight(rakshaErr.Error.Message, "\n")
 	}
 
-	return unifaiErr
+	return rakshaErr
 }
 
 // firstRunwareErrorMessage returns a human-readable message from the first error, if any.

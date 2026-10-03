@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the UnifAI system.
+// Package schemas defines the core schemas and types used by the Raksha system.
 package schemas
 
 // CachedContentObject represents a cached content resource as returned by the
@@ -19,9 +19,9 @@ type CachedContentObject struct {
 	UsageMetadata     map[string]any `json:"usage_metadata,omitempty"`
 }
 
-// UnifAICachedContentCreateRequest creates a new cached content. TTL and
+// RakshaCachedContentCreateRequest creates a new cached content. TTL and
 // ExpireTime are mutually exclusive — providers must error if both are set.
-type UnifAICachedContentCreateRequest struct {
+type RakshaCachedContentCreateRequest struct {
 	Provider          ModelProvider `json:"provider"`
 	Model             string        `json:"model"`
 	DisplayName       *string       `json:"display_name,omitempty"`
@@ -37,10 +37,10 @@ type UnifAICachedContentCreateRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (r *UnifAICachedContentCreateRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
+func (r *RakshaCachedContentCreateRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
 
-// UnifAICachedContentCreateResponse is the response from creating a cached content.
-type UnifAICachedContentCreateResponse struct {
+// RakshaCachedContentCreateResponse is the response from creating a cached content.
+type RakshaCachedContentCreateResponse struct {
 	Name              string         `json:"name"`
 	DisplayName       string         `json:"display_name,omitempty"`
 	Model             string         `json:"model"`
@@ -53,11 +53,11 @@ type UnifAICachedContentCreateResponse struct {
 	ExpireTime        string         `json:"expire_time,omitempty"`
 	UsageMetadata     map[string]any `json:"usage_metadata,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAICachedContentListRequest lists cached contents in the project.
-type UnifAICachedContentListRequest struct {
+// RakshaCachedContentListRequest lists cached contents in the project.
+type RakshaCachedContentListRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -70,18 +70,18 @@ type UnifAICachedContentListRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (r *UnifAICachedContentListRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
+func (r *RakshaCachedContentListRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
 
-// UnifAICachedContentListResponse is the response from listing cached contents.
-type UnifAICachedContentListResponse struct {
+// RakshaCachedContentListResponse is the response from listing cached contents.
+type RakshaCachedContentListResponse struct {
 	CachedContents []CachedContentObject `json:"cached_contents"`
 	NextPageToken  string                `json:"next_page_token,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAICachedContentRetrieveRequest retrieves a single cached content by name.
-type UnifAICachedContentRetrieveRequest struct {
+// RakshaCachedContentRetrieveRequest retrieves a single cached content by name.
+type RakshaCachedContentRetrieveRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -95,10 +95,10 @@ type UnifAICachedContentRetrieveRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (r *UnifAICachedContentRetrieveRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
+func (r *RakshaCachedContentRetrieveRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
 
-// UnifAICachedContentRetrieveResponse is the response from retrieving one cached content.
-type UnifAICachedContentRetrieveResponse struct {
+// RakshaCachedContentRetrieveResponse is the response from retrieving one cached content.
+type RakshaCachedContentRetrieveResponse struct {
 	Name              string         `json:"name"`
 	DisplayName       string         `json:"display_name,omitempty"`
 	Model             string         `json:"model"`
@@ -111,12 +111,12 @@ type UnifAICachedContentRetrieveResponse struct {
 	ExpireTime        string         `json:"expire_time,omitempty"`
 	UsageMetadata     map[string]any `json:"usage_metadata,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAICachedContentUpdateRequest updates a cached content's expiration.
+// RakshaCachedContentUpdateRequest updates a cached content's expiration.
 // Only TTL or ExpireTime may be set — they are mutually exclusive.
-type UnifAICachedContentUpdateRequest struct {
+type RakshaCachedContentUpdateRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -131,10 +131,10 @@ type UnifAICachedContentUpdateRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (r *UnifAICachedContentUpdateRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
+func (r *RakshaCachedContentUpdateRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
 
-// UnifAICachedContentUpdateResponse is the response from updating a cached content.
-type UnifAICachedContentUpdateResponse struct {
+// RakshaCachedContentUpdateResponse is the response from updating a cached content.
+type RakshaCachedContentUpdateResponse struct {
 	Name              string         `json:"name"`
 	DisplayName       string         `json:"display_name,omitempty"`
 	Model             string         `json:"model"`
@@ -147,11 +147,11 @@ type UnifAICachedContentUpdateResponse struct {
 	ExpireTime        string         `json:"expire_time,omitempty"`
 	UsageMetadata     map[string]any `json:"usage_metadata,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAICachedContentDeleteRequest deletes a cached content by name.
-type UnifAICachedContentDeleteRequest struct {
+// RakshaCachedContentDeleteRequest deletes a cached content by name.
+type RakshaCachedContentDeleteRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -163,14 +163,14 @@ type UnifAICachedContentDeleteRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (r *UnifAICachedContentDeleteRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
+func (r *RakshaCachedContentDeleteRequest) GetRawRequestBody() []byte { return r.RawRequestBody }
 
-// UnifAICachedContentDeleteResponse is the response from deleting a cached
+// RakshaCachedContentDeleteResponse is the response from deleting a cached
 // content. Providers typically return an empty body on success; this struct
-// carries a Deleted flag set by unifai plus ExtraFields for diagnostics.
-type UnifAICachedContentDeleteResponse struct {
+// carries a Deleted flag set by raksha plus ExtraFields for diagnostics.
+type RakshaCachedContentDeleteResponse struct {
 	Name    string `json:"name,omitempty"`
 	Deleted bool   `json:"deleted"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }

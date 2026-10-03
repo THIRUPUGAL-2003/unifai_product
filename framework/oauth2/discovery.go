@@ -390,7 +390,7 @@ type DynamicClientRegistrationResponse struct {
 }
 
 // RegisterDynamicClient performs dynamic client registration with the OAuth provider (RFC 7591)
-// This allows UnifAI to automatically register as an OAuth client without manual setup.
+// This allows Raksha to automatically register as an OAuth client without manual setup.
 //
 // Parameters:
 //   - ctx: Context for the registration request

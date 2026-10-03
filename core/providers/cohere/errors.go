@@ -1,21 +1,21 @@
 package cohere
 
 import (
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-func parseCohereError(resp *fasthttp.Response) *schemas.UnifAIError {
+func parseCohereError(resp *fasthttp.Response) *schemas.RakshaError {
 	var errorResp CohereError
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
-	unifaiErr.Type = &errorResp.Type
-	if unifaiErr.Error == nil {
-		unifaiErr.Error = &schemas.ErrorField{}
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	rakshaErr.Type = &errorResp.Type
+	if rakshaErr.Error == nil {
+		rakshaErr.Error = &schemas.ErrorField{}
 	}
-	unifaiErr.Error.Message = errorResp.Message
+	rakshaErr.Error.Message = errorResp.Message
 	if errorResp.Code != nil {
-		unifaiErr.Error.Code = errorResp.Code
+		rakshaErr.Error.Code = errorResp.Code
 	}
-	return unifaiErr
+	return rakshaErr
 }

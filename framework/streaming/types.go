@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 type StreamType string
@@ -33,28 +33,28 @@ type AccumulatedData struct {
 	OutputMessage         *schemas.ChatMessage
 	OutputMessages        []schemas.ResponsesMessage // For responses API
 	ToolCalls             []schemas.ChatAssistantMessageToolCall
-	ErrorDetails          *schemas.UnifAIError
-	TokenUsage            *schemas.UnifAILLMUsage
-	CacheDebug            *schemas.UnifAICacheDebug
+	ErrorDetails          *schemas.RakshaError
+	TokenUsage            *schemas.RakshaLLMUsage
+	CacheDebug            *schemas.RakshaCacheDebug
 	Cost                  *float64
-	AudioOutput           *schemas.UnifAISpeechResponse
-	TranscriptionOutput   *schemas.UnifAITranscriptionResponse
-	ImageGenerationOutput *schemas.UnifAIImageGenerationResponse
-	PassthroughOutput     *schemas.UnifAIPassthroughResponse // For passthrough streaming
+	AudioOutput           *schemas.RakshaSpeechResponse
+	TranscriptionOutput   *schemas.RakshaTranscriptionResponse
+	ImageGenerationOutput *schemas.RakshaImageGenerationResponse
+	PassthroughOutput     *schemas.RakshaPassthroughResponse // For passthrough streaming
 	FinishReason          *string
-	LogProbs              *schemas.UnifAILogProbs
+	LogProbs              *schemas.RakshaLogProbs
 	RawResponse           *string
 }
 
 // AudioStreamChunk represents a single streaming chunk
 type AudioStreamChunk struct {
 	Timestamp          time.Time                            // When chunk was received
-	Delta              *schemas.UnifAISpeechStreamResponse // The actual delta content
+	Delta              *schemas.RakshaSpeechStreamResponse // The actual delta content
 	FinishReason       *string                              // If this is the final chunk
 	TokenUsage         *schemas.SpeechUsage                 // Token usage if available
-	SemanticCacheDebug *schemas.UnifAICacheDebug           // Semantic cache debug if available
+	SemanticCacheDebug *schemas.RakshaCacheDebug           // Semantic cache debug if available
 	Cost               *float64                             // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.UnifAIError                // Error if any
+	ErrorDetails       *schemas.RakshaError                // Error if any
 	ChunkIndex         int                                  // Index of the chunk in the stream
 	RawResponse        *string
 }
@@ -62,12 +62,12 @@ type AudioStreamChunk struct {
 // TranscriptionStreamChunk represents a single transcription streaming chunk
 type TranscriptionStreamChunk struct {
 	Timestamp          time.Time                                   // When chunk was received
-	Delta              *schemas.UnifAITranscriptionStreamResponse // The actual delta content
+	Delta              *schemas.RakshaTranscriptionStreamResponse // The actual delta content
 	FinishReason       *string                                     // If this is the final chunk
 	TokenUsage         *schemas.TranscriptionUsage                 // Token usage if available
-	SemanticCacheDebug *schemas.UnifAICacheDebug                  // Semantic cache debug if available
+	SemanticCacheDebug *schemas.RakshaCacheDebug                  // Semantic cache debug if available
 	Cost               *float64                                    // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.UnifAIError                       // Error if any
+	ErrorDetails       *schemas.RakshaError                       // Error if any
 	ChunkIndex         int                                         // Index of the chunk in the stream
 	RawResponse        *string
 }
@@ -77,11 +77,11 @@ type ChatStreamChunk struct {
 	Timestamp          time.Time                              // When chunk was received
 	Delta              *schemas.ChatStreamResponseChoiceDelta // The actual delta content
 	FinishReason       *string                                // If this is the final chunk
-	LogProbs           *schemas.UnifAILogProbs               // LogProbs if available
-	TokenUsage         *schemas.UnifAILLMUsage               // Token usage if available
-	SemanticCacheDebug *schemas.UnifAICacheDebug             // Semantic cache debug if available
+	LogProbs           *schemas.RakshaLogProbs               // LogProbs if available
+	TokenUsage         *schemas.RakshaLLMUsage               // Token usage if available
+	SemanticCacheDebug *schemas.RakshaCacheDebug             // Semantic cache debug if available
 	Cost               *float64                               // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.UnifAIError                  // Error if any
+	ErrorDetails       *schemas.RakshaError                  // Error if any
 	ChunkIndex         int                                    // Index of the chunk in the stream
 	RawResponse        *string                                // Raw response if available
 }
@@ -89,12 +89,12 @@ type ChatStreamChunk struct {
 // ResponsesStreamChunk represents a single responses streaming chunk
 type ResponsesStreamChunk struct {
 	Timestamp          time.Time                               // When chunk was received
-	StreamResponse     *schemas.UnifAIResponsesStreamResponse // The actual stream response
+	StreamResponse     *schemas.RakshaResponsesStreamResponse // The actual stream response
 	FinishReason       *string                                 // If this is the final chunk
-	TokenUsage         *schemas.UnifAILLMUsage                // Token usage if available
-	SemanticCacheDebug *schemas.UnifAICacheDebug              // Semantic cache debug if available
+	TokenUsage         *schemas.RakshaLLMUsage                // Token usage if available
+	SemanticCacheDebug *schemas.RakshaCacheDebug              // Semantic cache debug if available
 	Cost               *float64                                // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.UnifAIError                   // Error if any
+	ErrorDetails       *schemas.RakshaError                   // Error if any
 	ChunkIndex         int                                     // Index of the chunk in the stream
 	RawResponse        *string
 }
@@ -102,13 +102,13 @@ type ResponsesStreamChunk struct {
 // ImageStreamChunk represents a single image streaming chunk
 type ImageStreamChunk struct {
 	Timestamp          time.Time                                     // When chunk was received
-	Delta              *schemas.UnifAIImageGenerationStreamResponse // The actual stream response
+	Delta              *schemas.RakshaImageGenerationStreamResponse // The actual stream response
 	FinishReason       *string                                       // If this is the final chunk
 	ChunkIndex         int                                           // Index of the chunk in the stream
 	ImageIndex         int                                           // Index of the image in the stream
-	ErrorDetails       *schemas.UnifAIError                         // Error if any
+	ErrorDetails       *schemas.RakshaError                         // Error if any
 	Cost               *float64                                      // Cost in dollars from pricing plugin
-	SemanticCacheDebug *schemas.UnifAICacheDebug                    // Semantic cache debug if available
+	SemanticCacheDebug *schemas.RakshaCacheDebug                    // Semantic cache debug if available
 	TokenUsage         *schemas.ImageUsage                           // Token usage if available
 	RawResponse        *string                                       // Raw response if available
 }
@@ -164,12 +164,12 @@ type StreamAccumulator struct {
 	// buffer and transitions the gate to Ended.
 	gatePendingTerminal bool
 	gateSeq             int                              // monotonic, bumped on every GateSend
-	gateReplayBuf       []*schemas.UnifAIStreamChunk    // wire-format chunks captured while paused
+	gateReplayBuf       []*schemas.RakshaStreamChunk    // wire-format chunks captured while paused
 	gateReplayBufBytes  int64                            // sum of MarshalJSON sizes of chunks in gateReplayBuf; capped by gateReplayBufMaxBytes
 	gateCond            *sync.Cond                       // wakes flusher on Resume / End / append-while-active
-	gateEndError        *schemas.UnifAIError            // delivered as terminal chunk if EndStream(err) was called with non-nil
-	gateFlusherCh       chan *schemas.UnifAIStreamChunk // captured on first GateSend; reused by flusher
-	gateFlusherCtx      *schemas.UnifAIContext          // captured on first GateSend
+	gateEndError        *schemas.RakshaError            // delivered as terminal chunk if EndStream(err) was called with non-nil
+	gateFlusherCh       chan *schemas.RakshaStreamChunk // captured on first GateSend; reused by flusher
+	gateFlusherCtx      *schemas.RakshaContext          // captured on first GateSend
 	gateFlusherOn       bool                             // flusher goroutine running
 	gateFlusherDone     chan struct{}                    // closed when the most recent flusher exits; nil when no flusher has ever started
 	// gatePendingCleanup is set by cleanupStreamAccumulator when the caller
@@ -288,13 +288,13 @@ type ProcessedStreamResponse struct {
 	RawRequest     *interface{}
 }
 
-// ToUnifAIResponse converts a ProcessedStreamResponse to a UnifAIResponse
-func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
+// ToRakshaResponse converts a ProcessedStreamResponse to a RakshaResponse
+func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 	if p.Data == nil {
 		return nil
 	}
 
-	resp := &schemas.UnifAIResponse{}
+	resp := &schemas.RakshaResponse{}
 
 	switch p.StreamType {
 	case StreamTypeText:
@@ -302,11 +302,11 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 		if p.Data.OutputMessage != nil && p.Data.OutputMessage.Content != nil && p.Data.OutputMessage.Content.ContentStr != nil {
 			text = *p.Data.OutputMessage.Content.ContentStr
 		}
-		textResp := &schemas.UnifAITextCompletionResponse{
+		textResp := &schemas.RakshaTextCompletionResponse{
 			ID:     p.RequestID,
 			Object: "text_completion",
 			Model:  p.RequestedModel,
-			Choices: []schemas.UnifAIResponseChoice{
+			Choices: []schemas.RakshaResponseChoice{
 				{
 					Index:        0,
 					FinishReason: p.Data.FinishReason,
@@ -320,7 +320,7 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 		}
 
 		resp.TextCompletionResponse = textResp
-		resp.TextCompletionResponse.ExtraFields = schemas.UnifAIResponseExtraFields{
+		resp.TextCompletionResponse.ExtraFields = schemas.RakshaResponseExtraFields{
 			RequestType:            schemas.TextCompletionRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -349,16 +349,16 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 		}
 		usage := p.Data.TokenUsage
 		if usage == nil && p.Data.Cost != nil && *p.Data.Cost > 0 {
-			usage = &schemas.UnifAILLMUsage{
-				Cost: &schemas.UnifAICost{TotalCost: *p.Data.Cost},
+			usage = &schemas.RakshaLLMUsage{
+				Cost: &schemas.RakshaCost{TotalCost: *p.Data.Cost},
 			}
 		}
-		chatResp := &schemas.UnifAIChatResponse{
+		chatResp := &schemas.RakshaChatResponse{
 			ID:      p.RequestID,
 			Object:  "chat.completion",
 			Model:   p.RequestedModel,
 			Created: int(p.Data.StartTimestamp.Unix()),
-			Choices: []schemas.UnifAIResponseChoice{
+			Choices: []schemas.RakshaResponseChoice{
 				{
 					Index:        0,
 					FinishReason: p.Data.FinishReason,
@@ -372,7 +372,7 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 		}
 
 		resp.ChatResponse = chatResp
-		resp.ChatResponse.ExtraFields = schemas.UnifAIResponseExtraFields{
+		resp.ChatResponse.ExtraFields = schemas.RakshaResponseExtraFields{
 			RequestType:            schemas.ChatCompletionRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -389,7 +389,7 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 			resp.ChatResponse.ExtraFields.CacheDebug = p.Data.CacheDebug
 		}
 	case StreamTypeResponses:
-		responsesResp := &schemas.UnifAIResponsesResponse{}
+		responsesResp := &schemas.RakshaResponsesResponse{}
 
 		if p.Data.OutputMessages != nil {
 			responsesResp.Output = p.Data.OutputMessages
@@ -397,7 +397,7 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 		if p.Data.TokenUsage != nil {
 			responsesResp.Usage = p.Data.TokenUsage.ToResponsesResponseUsage()
 		}
-		responsesResp.ExtraFields = schemas.UnifAIResponseExtraFields{
+		responsesResp.ExtraFields = schemas.RakshaResponseExtraFields{
 			RequestType:            schemas.ResponsesRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -417,10 +417,10 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 	case StreamTypeAudio:
 		speechResp := p.Data.AudioOutput
 		if speechResp == nil {
-			speechResp = &schemas.UnifAISpeechResponse{}
+			speechResp = &schemas.RakshaSpeechResponse{}
 		}
 		resp.SpeechResponse = speechResp
-		resp.SpeechResponse.ExtraFields = schemas.UnifAIResponseExtraFields{
+		resp.SpeechResponse.ExtraFields = schemas.RakshaResponseExtraFields{
 			RequestType:            schemas.SpeechRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -439,10 +439,10 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 	case StreamTypeTranscription:
 		transcriptionResp := p.Data.TranscriptionOutput
 		if transcriptionResp == nil {
-			transcriptionResp = &schemas.UnifAITranscriptionResponse{}
+			transcriptionResp = &schemas.RakshaTranscriptionResponse{}
 		}
 		resp.TranscriptionResponse = transcriptionResp
-		resp.TranscriptionResponse.ExtraFields = schemas.UnifAIResponseExtraFields{
+		resp.TranscriptionResponse.ExtraFields = schemas.RakshaResponseExtraFields{
 			RequestType:            schemas.TranscriptionRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -461,7 +461,7 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 	case StreamTypeImage:
 		imageResp := p.Data.ImageGenerationOutput
 		if imageResp == nil {
-			imageResp = &schemas.UnifAIImageGenerationResponse{
+			imageResp = &schemas.RakshaImageGenerationResponse{
 				Data: make([]schemas.ImageData, 0),
 			}
 			if p.RequestID != "" {
@@ -476,7 +476,7 @@ func (p *ProcessedStreamResponse) ToUnifAIResponse() *schemas.UnifAIResponse {
 			imageResp.Data = make([]schemas.ImageData, 0)
 		}
 		resp.ImageGenerationResponse = imageResp
-		resp.ImageGenerationResponse.ExtraFields = schemas.UnifAIResponseExtraFields{
+		resp.ImageGenerationResponse.ExtraFields = schemas.RakshaResponseExtraFields{
 			RequestType:            schemas.ImageGenerationRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,

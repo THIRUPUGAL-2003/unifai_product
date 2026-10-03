@@ -3,46 +3,46 @@ package openai
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAIChatRequest converts an OpenAI chat request to UnifAI format
-func (req *OpenAIChatRequest) ToUnifAIChatRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIChatRequest {
+// ToRakshaChatRequest converts an OpenAI chat request to Raksha format
+func (req *OpenAIChatRequest) ToRakshaChatRequest(ctx *schemas.RakshaContext) *schemas.RakshaChatRequest {
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	return &schemas.UnifAIChatRequest{
+	return &schemas.RakshaChatRequest{
 		Provider:  provider,
 		Model:     model,
-		Input:     ConvertOpenAIMessagesToUnifAIMessages(req.Messages),
+		Input:     ConvertOpenAIMessagesToRakshaMessages(req.Messages),
 		Params:    &req.ChatParameters,
 		Fallbacks: schemas.ParseFallbacks(req.Fallbacks),
 	}
 }
 
-// ToOpenAIChatRequest converts a UnifAI chat completion request to OpenAI format
-func ToOpenAIChatRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIChatRequest) *OpenAIChatRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil {
+// ToOpenAIChatRequest converts a Raksha chat completion request to OpenAI format
+func ToOpenAIChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest) *OpenAIChatRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil {
 		return nil
 	}
 
 	openaiReq := &OpenAIChatRequest{
-		Model:    unifaiReq.Model,
-		Messages: ConvertUnifAIMessagesToOpenAIMessages(unifaiReq.Input),
-		Provider: unifaiReq.Provider,
+		Model:    rakshaReq.Model,
+		Messages: ConvertRakshaMessagesToOpenAIMessages(rakshaReq.Input),
+		Provider: rakshaReq.Provider,
 	}
 
 	// Canonical model for capability gating only; wire model (openaiReq.Model) is untouched.
-	capModel := schemas.ResolveCanonicalModel(ctx, unifaiReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
 
-	if unifaiReq.Params != nil {
-		openaiReq.ChatParameters = *unifaiReq.Params
+	if rakshaReq.Params != nil {
+		openaiReq.ChatParameters = *rakshaReq.Params
 		if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
 			openaiReq.ChatParameters.MaxCompletionTokens = schemas.Ptr(MinMaxCompletionTokens)
 		}
 		// Drop user field if it exceeds OpenAI's 64 character limit
 		openaiReq.ChatParameters.User = SanitizeUserField(openaiReq.ChatParameters.User)
-		openaiReq.ExtraParams = unifaiReq.Params.ExtraParams
+		openaiReq.ExtraParams = rakshaReq.Params.ExtraParams
 
 		// Normalize tool parameters for deterministic JSON serialization (improves prompt caching)
 		if len(openaiReq.ChatParameters.Tools) > 0 {
@@ -59,7 +59,7 @@ func ToOpenAIChatRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAICh
 		}
 	}
 
-	switch unifaiReq.Provider {
+	switch rakshaReq.Provider {
 	case schemas.OpenAI, schemas.Azure:
 		openaiReq.normalizeReasoningEffort(capModel)
 		return openaiReq
@@ -84,7 +84,7 @@ func ToOpenAIChatRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAICh
 		openaiReq.filterOpenAISpecificParameters(capModel)
 
 		// Apply Mistral-specific transformations for Vertex Mistral models
-		if schemas.IsMistralModel(unifaiReq.Model) {
+		if schemas.IsMistralModel(rakshaReq.Model) {
 			openaiReq.applyMistralCompatibility()
 		} else if openaiReq.Reasoning != nil && openaiReq.Reasoning.Effort != nil &&
 			*openaiReq.Reasoning.Effort == "none" {
@@ -109,7 +109,7 @@ func ToOpenAIChatRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAICh
 		return openaiReq
 	default:
 		// Check if provider is a custom provider
-		if isCustomProvider, ok := ctx.Value(schemas.UnifAIContextKeyIsCustomProvider).(bool); ok && isCustomProvider {
+		if isCustomProvider, ok := ctx.Value(schemas.RakshaContextKeyIsCustomProvider).(bool); ok && isCustomProvider {
 			return openaiReq
 		}
 		openaiReq.filterOpenAISpecificParameters(capModel)

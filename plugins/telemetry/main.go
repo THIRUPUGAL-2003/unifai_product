@@ -1,5 +1,5 @@
 // Package telemetry provides Prometheus metrics collection and monitoring functionality
-// for the UnifAI HTTP service. It includes middleware for HTTP request tracking
+// for the Raksha HTTP service. It includes middleware for HTTP request tracking
 // and a plugin for tracking upstream provider metrics.
 package telemetry
 
@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	unifai "github.com/unifai/unifai/core"
-	schemas "github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	raksha "github.com/raksha/raksha/core"
+	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -29,8 +29,8 @@ const (
 )
 
 const (
-	startTimeKey         schemas.UnifAIContextKey = "unifai-prom-start-time"
-	activeRequestTypeKey schemas.UnifAIContextKey = "unifai-prom-active-req-type"
+	startTimeKey         schemas.RakshaContextKey = "raksha-prom-start-time"
+	activeRequestTypeKey schemas.RakshaContextKey = "raksha-prom-active-req-type"
 )
 
 // PushGatewayConfig holds the configuration for pushing metrics to a Prometheus Push Gateway.
@@ -41,7 +41,7 @@ type PushGatewayConfig struct {
 	Enabled bool `json:"enabled"`
 	// PushGatewayURL is the URL of the Prometheus Push Gateway (e.g., http://pushgateway:9091). Supports env.VAR_NAME.
 	PushGatewayURL *schemas.SecretVar `json:"push_gateway_url"`
-	// JobName is the job label for pushed metrics (default: "unifai")
+	// JobName is the job label for pushed metrics (default: "raksha")
 	JobName string `json:"job_name"`
 	// InstanceID is the instance label for grouping metrics. If empty, hostname is used.
 	InstanceID string `json:"instance_id"`
@@ -141,7 +141,7 @@ func hideResolvedEnvValue(v *schemas.SecretVar) *schemas.SecretVar {
 //   - Error counts
 type PrometheusPlugin struct {
 	pricingManager *modelcatalog.ModelCatalog
-	registry       *prometheus.Registry // UnifAI metrics only — used for push gateway
+	registry       *prometheus.Registry // Raksha metrics only — used for push gateway
 	systemRegistry *prometheus.Registry // Go/process collectors — /metrics scraping only
 
 	logger schemas.Logger
@@ -176,7 +176,7 @@ type PrometheusPlugin struct {
 	customLabels                   []string
 
 	defaultHTTPLabels    []string
-	defaultUnifAILabels []string
+	defaultRakshaLabels []string
 
 	// Push gateway fields
 	pushConfig *PushGatewayConfig
@@ -257,7 +257,7 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 	}
 
 	defaultHTTPLabels := []string{"path", "method", "status"}
-	defaultUnifAILabels := []string{
+	defaultRakshaLabels := []string{
 		"provider",
 		"model",
 		"alias",
@@ -279,7 +279,7 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 	var filteredCustomLabels []string
 	if len(config.CustomLabels) > 0 {
 		for _, label := range config.CustomLabels {
-			if !containsLabel(defaultUnifAILabels, label) && !containsLabel(defaultHTTPLabels, label) {
+			if !containsLabel(defaultRakshaLabels, label) && !containsLabel(defaultHTTPLabels, label) {
 				filteredCustomLabels = append(filteredCustomLabels, label)
 			} else {
 				logger.Info("custom label %s is already a default label, it will be ignored", label)
@@ -327,157 +327,157 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 		append(defaultHTTPLabels, filteredCustomLabels...),
 	)
 
-	// UnifAI Upstream Metrics
-	unifaiUpstreamRequestsTotal := factory.NewCounterVec(
+	// Raksha Upstream Metrics
+	rakshaUpstreamRequestsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_upstream_requests_total",
-			Help: "Total number of requests forwarded to upstream providers by UnifAI.",
+			Name: "raksha_upstream_requests_total",
+			Help: "Total number of requests forwarded to upstream providers by Raksha.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiUpstreamLatencySeconds := factory.NewHistogramVec(
+	rakshaUpstreamLatencySeconds := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "unifai_upstream_latency_seconds",
-			Help:    "Latency of requests forwarded to upstream providers by UnifAI.",
+			Name:    "raksha_upstream_latency_seconds",
+			Help:    "Latency of requests forwarded to upstream providers by Raksha.",
 			Buckets: upstreamLatencyBuckets, // Extended range for AI model inference times
 		},
-		append(append(defaultUnifAILabels, "is_success"), filteredCustomLabels...),
+		append(append(defaultRakshaLabels, "is_success"), filteredCustomLabels...),
 	)
 
-	unifaiSuccessRequestsTotal := factory.NewCounterVec(
+	rakshaSuccessRequestsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_success_requests_total",
-			Help: "Total number of successful requests forwarded to upstream providers by UnifAI.",
+			Name: "raksha_success_requests_total",
+			Help: "Total number of successful requests forwarded to upstream providers by Raksha.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiErrorRequestsTotal := factory.NewCounterVec(
+	rakshaErrorRequestsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_error_requests_total",
-			Help: "Total number of error requests forwarded to upstream providers by UnifAI.",
+			Name: "raksha_error_requests_total",
+			Help: "Total number of error requests forwarded to upstream providers by Raksha.",
 		},
-		append(append(defaultUnifAILabels, "status_code"), filteredCustomLabels...),
+		append(append(defaultRakshaLabels, "status_code"), filteredCustomLabels...),
 	)
 
-	unifaiInputTokensTotal := factory.NewCounterVec(
+	rakshaInputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_input_tokens_total",
-			Help: "Total number of input tokens forwarded to upstream providers by UnifAI.",
+			Name: "raksha_input_tokens_total",
+			Help: "Total number of input tokens forwarded to upstream providers by Raksha.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiOutputTokensTotal := factory.NewCounterVec(
+	rakshaOutputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_output_tokens_total",
-			Help: "Total number of output tokens forwarded to upstream providers by UnifAI.",
+			Name: "raksha_output_tokens_total",
+			Help: "Total number of output tokens forwarded to upstream providers by Raksha.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiCacheHitsTotal := factory.NewCounterVec(
+	rakshaCacheHitsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_cache_hits_total",
-			Help: "Total number of cache hits forwarded to upstream providers by UnifAI, separated by cache type (direct/semantic).",
+			Name: "raksha_cache_hits_total",
+			Help: "Total number of cache hits forwarded to upstream providers by Raksha, separated by cache type (direct/semantic).",
 		},
-		append(append(defaultUnifAILabels, "cache_type"), filteredCustomLabels...),
+		append(append(defaultRakshaLabels, "cache_type"), filteredCustomLabels...),
 	)
 
 	// Provider-side prompt cache tokens (Anthropic/OpenAI/Gemini prompt caching). Distinct
-	// from unifai_cache_hits_total, which counts UnifAI's own semantic-cache hits.
-	unifaiCacheReadInputTokensTotal := factory.NewCounterVec(
+	// from raksha_cache_hits_total, which counts Raksha's own semantic-cache hits.
+	rakshaCacheReadInputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_cache_read_input_tokens_total",
+			Name: "raksha_cache_read_input_tokens_total",
 			Help: "Total provider-side prompt-cache read (cached) input tokens. Billed at a reduced rate by the provider.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiCacheWriteInputTokensTotal := factory.NewCounterVec(
+	rakshaCacheWriteInputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_cache_write_input_tokens_total",
+			Name: "raksha_cache_write_input_tokens_total",
 			Help: "Total provider-side prompt-cache creation (write) input tokens.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiCacheWriteInputTokens5mTotal := factory.NewCounterVec(
+	rakshaCacheWriteInputTokens5mTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_cache_write_input_tokens_5m_total",
-			Help: "Provider-side prompt-cache write input tokens with a 5-minute TTL (Anthropic only). Subset of unifai_cache_write_input_tokens_total — do not sum with it.",
+			Name: "raksha_cache_write_input_tokens_5m_total",
+			Help: "Provider-side prompt-cache write input tokens with a 5-minute TTL (Anthropic only). Subset of raksha_cache_write_input_tokens_total — do not sum with it.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiCacheWriteInputTokens1hTotal := factory.NewCounterVec(
+	rakshaCacheWriteInputTokens1hTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_cache_write_input_tokens_1h_total",
-			Help: "Provider-side prompt-cache write input tokens with a 1-hour TTL (Anthropic only). Subset of unifai_cache_write_input_tokens_total — do not sum with it.",
+			Name: "raksha_cache_write_input_tokens_1h_total",
+			Help: "Provider-side prompt-cache write input tokens with a 1-hour TTL (Anthropic only). Subset of raksha_cache_write_input_tokens_total — do not sum with it.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiCostTotal := factory.NewCounterVec(
+	rakshaCostTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_cost_total",
+			Name: "raksha_cost_total",
 			Help: "Total cost in USD for requests to upstream providers.",
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiStreamInterTokenLatencySeconds := factory.NewHistogramVec(
+	rakshaStreamInterTokenLatencySeconds := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "unifai_stream_inter_token_latency_seconds",
+			Name:    "raksha_stream_inter_token_latency_seconds",
 			Help:    "Latency of the intermediate tokens of a stream response.",
 			Buckets: interTokenLatencyBuckets,
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiStreamFirstTokenLatencySeconds := factory.NewHistogramVec(
+	rakshaStreamFirstTokenLatencySeconds := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "unifai_stream_first_token_latency_seconds",
+			Name:    "raksha_stream_first_token_latency_seconds",
 			Help:    "Latency of the first token of a stream response.",
 			Buckets: firstTokenLatencyBuckets,
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	unifaiRequestRetries := factory.NewHistogramVec(
+	rakshaRequestRetries := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "unifai_request_retries",
+			Name:    "raksha_request_retries",
 			Help:    "Number of retries used per request (observed once per request).",
 			Buckets: []float64{0, 1, 2, 3, 5, 10},
 		},
-		append(defaultUnifAILabels, filteredCustomLabels...),
+		append(defaultRakshaLabels, filteredCustomLabels...),
 	)
 
-	// unifaiKeyRotationEventsTotal counts key-swap events from the attempt trail.
+	// rakshaKeyRotationEventsTotal counts key-swap events from the attempt trail.
 	// One observation is emitted only when a failed attempt triggered rotation to a different key
 	// on the next retry (TriggeredRotation == true, fail_reason non-nil). Use this to track actual
 	// key-rotation pressure per provider/key/failure reason.
 
-	unifaiKeyRotationEventsTotal := factory.NewCounterVec(
+	rakshaKeyRotationEventsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unifai_key_rotation_events_total",
+			Name: "raksha_key_rotation_events_total",
 			Help: "Number of key rotations, broken down by provider, key, and failure reason. One increment per per-key failure (rate-limit/auth/billing/permission) that triggered a switch to a different key on the next retry.",
 		},
 		[]string{"provider", "requested_model", "key_id", "key_name", "fail_reason"},
 	)
 
-	unifaiActiveRequests := factory.NewGaugeVec(
+	rakshaActiveRequests := factory.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "unifai_active_requests",
+			Name: "raksha_active_requests",
 			Help: "Number of LLM requests currently in-flight.",
 		},
 		[]string{"method"},
 	)
 
-	unifaiProviderKeyUp := factory.NewGaugeVec(
+	rakshaProviderKeyUp := factory.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "unifai_provider_key_up",
+			Name: "raksha_provider_key_up",
 			Help: "Health of a provider key. 1 = last attempt succeeded, 0 = last attempt failed.",
 		},
 		[]string{"provider", "key_id", "key_name"},
@@ -494,27 +494,27 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 		HTTPRequestDuration:            httpRequestDuration,
 		HTTPRequestSizeBytes:           httpRequestSizeBytes,
 		HTTPResponseSizeBytes:          httpResponseSizeBytes,
-		UpstreamRequestsTotal:          unifaiUpstreamRequestsTotal,
-		UpstreamLatencySeconds:         unifaiUpstreamLatencySeconds,
-		SuccessRequestsTotal:           unifaiSuccessRequestsTotal,
-		ErrorRequestsTotal:             unifaiErrorRequestsTotal,
-		InputTokensTotal:               unifaiInputTokensTotal,
-		OutputTokensTotal:              unifaiOutputTokensTotal,
-		CacheHitsTotal:                 unifaiCacheHitsTotal,
-		CacheReadInputTokensTotal:      unifaiCacheReadInputTokensTotal,
-		CacheWriteInputTokensTotal:     unifaiCacheWriteInputTokensTotal,
-		CacheWriteInputTokens5mTotal:   unifaiCacheWriteInputTokens5mTotal,
-		CacheWriteInputTokens1hTotal:   unifaiCacheWriteInputTokens1hTotal,
-		CostTotal:                      unifaiCostTotal,
-		StreamInterTokenLatencySeconds: unifaiStreamInterTokenLatencySeconds,
-		StreamFirstTokenLatencySeconds: unifaiStreamFirstTokenLatencySeconds,
-		RequestRetries:                 unifaiRequestRetries,
-		KeyRotationEventsTotal:         unifaiKeyRotationEventsTotal,
-		ActiveRequests:                 unifaiActiveRequests,
-		ProviderKeyUp:                  unifaiProviderKeyUp,
+		UpstreamRequestsTotal:          rakshaUpstreamRequestsTotal,
+		UpstreamLatencySeconds:         rakshaUpstreamLatencySeconds,
+		SuccessRequestsTotal:           rakshaSuccessRequestsTotal,
+		ErrorRequestsTotal:             rakshaErrorRequestsTotal,
+		InputTokensTotal:               rakshaInputTokensTotal,
+		OutputTokensTotal:              rakshaOutputTokensTotal,
+		CacheHitsTotal:                 rakshaCacheHitsTotal,
+		CacheReadInputTokensTotal:      rakshaCacheReadInputTokensTotal,
+		CacheWriteInputTokensTotal:     rakshaCacheWriteInputTokensTotal,
+		CacheWriteInputTokens5mTotal:   rakshaCacheWriteInputTokens5mTotal,
+		CacheWriteInputTokens1hTotal:   rakshaCacheWriteInputTokens1hTotal,
+		CostTotal:                      rakshaCostTotal,
+		StreamInterTokenLatencySeconds: rakshaStreamInterTokenLatencySeconds,
+		StreamFirstTokenLatencySeconds: rakshaStreamFirstTokenLatencySeconds,
+		RequestRetries:                 rakshaRequestRetries,
+		KeyRotationEventsTotal:         rakshaKeyRotationEventsTotal,
+		ActiveRequests:                 rakshaActiveRequests,
+		ProviderKeyUp:                  rakshaProviderKeyUp,
 		customLabels:                   filteredCustomLabels,
 		defaultHTTPLabels:              defaultHTTPLabels,
-		defaultUnifAILabels:           defaultUnifAILabels,
+		defaultRakshaLabels:           defaultRakshaLabels,
 	}
 
 	// Default /metrics scraping to on when the config omits the field — preserves
@@ -546,7 +546,7 @@ func (p *PrometheusPlugin) GetRegistry() *prometheus.Registry {
 }
 
 // GetMetricsGatherer returns a combined gatherer for the /metrics endpoint,
-// including both UnifAI metrics and Go/process runtime collectors.
+// including both Raksha metrics and Go/process runtime collectors.
 func (p *PrometheusPlugin) GetMetricsGatherer() prometheus.Gatherer {
 	return prometheus.Gatherers{p.registry, p.systemRegistry}
 }
@@ -599,28 +599,28 @@ func (p *PrometheusPlugin) RedactConfig(raw map[string]any) (map[string]any, err
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *PrometheusPlugin) HTTPTransportPreHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *PrometheusPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *PrometheusPlugin) HTTPTransportPostHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *PrometheusPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *PrometheusPlugin) HTTPTransportStreamChunkHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, chunk *schemas.UnifAIStreamChunk) (*schemas.UnifAIStreamChunk, error) {
+func (p *PrometheusPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *PrometheusPlugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAIRequest) error {
+func (p *PrometheusPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
 	return nil
 }
 
 // PreLLMHook records the start time of the request in the context.
 // This time is used later in PostLLMHook to calculate request duration.
-func (p *PrometheusPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *PrometheusPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	ctx.SetValue(startTimeKey, time.Now())
 	ctx.SetValue(activeRequestTypeKey, req.RequestType)
 	p.ActiveRequests.WithLabelValues(string(req.RequestType)).Inc()
@@ -632,7 +632,7 @@ func (p *PrometheusPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.U
 // and the Anthropic-only 5m/1h TTL breakdown of the write total. Chat/text-completion carry
 // these on Usage.PromptTokensDetails; the Responses API carries them on
 // Usage.InputTokensDetails. Mirrors the response-type switch used for input/output tokens.
-func extractProviderCacheTokens(result *schemas.UnifAIResponse) (read, write, write5m, write1h int) {
+func extractProviderCacheTokens(result *schemas.RakshaResponse) (read, write, write5m, write1h int) {
 	var promptDetails *schemas.ChatPromptTokensDetails
 	var inputDetails *schemas.ResponsesResponseInputTokens
 
@@ -666,8 +666,8 @@ func extractProviderCacheTokens(result *schemas.UnifAIResponse) (read, write, wr
 // It records:
 //   - Request latency
 //   - Total request count
-func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
-	requestType, provider, originalModel, resolvedModel := unifai.GetResponseFields(result, unifaiErr)
+func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+	requestType, provider, originalModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
 
 	// Determine effective model label and alias label (mirrors applyModelAlias logic in logging)
 	model := originalModel
@@ -682,31 +682,31 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 	startTime, ok := ctx.Value(startTimeKey).(time.Time)
 	if !ok {
 		p.logger.Warn("Warning: startTime not found in context for Prometheus PostLLMHook")
-		return result, unifaiErr, nil
+		return result, rakshaErr, nil
 	}
 
-	virtualKeyID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyID)
-	virtualKeyName := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyName)
-	routingRuleID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceRoutingRuleID)
-	routingRuleName := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceRoutingRuleName)
+	virtualKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID)
+	virtualKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName)
+	routingRuleID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceRoutingRuleID)
+	routingRuleName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceRoutingRuleName)
 
-	selectedKeyID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeySelectedKeyID)
-	selectedKeyName := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeySelectedKeyName)
+	selectedKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyID)
+	selectedKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyName)
 
-	numberOfRetries := unifai.GetIntFromContext(ctx, schemas.UnifAIContextKeyNumberOfRetries)
-	fallbackIndex := unifai.GetIntFromContext(ctx, schemas.UnifAIContextKeyFallbackIndex)
-	attemptTrail, _ := ctx.Value(schemas.UnifAIContextKeyAttemptTrail).([]schemas.KeyAttemptRecord)
+	numberOfRetries := raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyNumberOfRetries)
+	fallbackIndex := raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyFallbackIndex)
+	attemptTrail, _ := ctx.Value(schemas.RakshaContextKeyAttemptTrail).([]schemas.KeyAttemptRecord)
 	// Get routing engines array and join into comma-separated string
 	routingEngines := []string{}
-	if engines, ok := ctx.Value(schemas.UnifAIContextKeyRoutingEnginesUsed).([]string); ok {
+	if engines, ok := ctx.Value(schemas.RakshaContextKeyRoutingEnginesUsed).([]string); ok {
 		routingEngines = engines
 	}
 	routingEngineUsed := strings.Join(routingEngines, ",")
 
-	teamID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceTeamID)
-	teamName := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceTeamName)
-	customerID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceCustomerID)
-	customerName := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceCustomerName)
+	teamID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID)
+	teamName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamName)
+	customerID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerID)
+	customerName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerName)
 
 	// Extract ALL context values BEFORE spawning the goroutine.
 	labelValues := map[string]string{
@@ -730,11 +730,11 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 
 	// Get all custom prometheus labels from context BEFORE the goroutine.
 	// Resolution order (first match wins):
-	//   1. x-uf-dim-* headers (canonical; set by HTTP transport as UnifAIContextKeyDimensions)
+	//   1. x-uf-dim-* headers (canonical; set by HTTP transport as RakshaContextKeyDimensions)
 	//   2. x-uf-prom-* headers (deprecated; kept for backward compatibility)
-	//   3. Direct UnifAIContextKey lookup (Go SDK usage — documented API)
-	dims, _ := ctx.Value(schemas.UnifAIContextKeyDimensions).(map[string]string)
-	requestHeaders, _ := ctx.Value(schemas.UnifAIContextKeyRequestHeaders).(map[string]string)
+	//   3. Direct RakshaContextKey lookup (Go SDK usage — documented API)
+	dims, _ := ctx.Value(schemas.RakshaContextKeyDimensions).(map[string]string)
+	requestHeaders, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string)
 	for _, key := range p.customLabels {
 		if dims != nil {
 			if v, ok := dims[key]; ok {
@@ -750,7 +750,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 			}
 		}
 		// fallback: direct context key (Go SDK usage, documented API)
-		if value := ctx.Value(schemas.UnifAIContextKey(key)); value != nil {
+		if value := ctx.Value(schemas.RakshaContextKey(key)); value != nil {
 			if strValue, ok := value.(string); ok {
 				labelValues[key] = strValue
 			}
@@ -758,14 +758,14 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 	}
 
 	// Get label values in the correct order (cache_type will be handled separately for cache hits)
-	promLabelValues := getPrometheusLabelValues(append(p.defaultUnifAILabels, p.customLabels...), labelValues)
+	promLabelValues := getPrometheusLabelValues(append(p.defaultRakshaLabels, p.customLabels...), labelValues)
 
 	// Extract stream end indicator BEFORE the goroutine
-	streamEndIndicatorValue := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator)
+	streamEndIndicatorValue := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator)
 	isFinalChunk, hasFinalChunkIndicator := streamEndIndicatorValue.(bool)
 
 	// Decrement active requests on the final (or only) call for this request
-	isStreamFinal := !unifai.IsStreamRequestType(requestType) || (hasFinalChunkIndicator && isFinalChunk)
+	isStreamFinal := !raksha.IsStreamRequestType(requestType) || (hasFinalChunkIndicator && isFinalChunk)
 	if isStreamFinal {
 		if method, ok := ctx.Value(activeRequestTypeKey).(schemas.RequestType); ok {
 			p.ActiveRequests.WithLabelValues(string(method)).Dec()
@@ -777,7 +777,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 	// Calculate cost and record metrics in a separate goroutine to avoid blocking the main thread
 	go func() {
 		// For streaming requests, handle per-token metrics for intermediate chunks
-		if unifai.IsStreamRequestType(requestType) {
+		if raksha.IsStreamRequestType(requestType) {
 			// For intermediate chunks, record per-token metrics and exit.
 			// The final chunk will fall through to record full request metrics.
 			if !hasFinalChunkIndicator || !isFinalChunk {
@@ -813,7 +813,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 			}
 		}
 		// Mark the selected key healthy if the request ultimately succeeded
-		if unifaiErr == nil && selectedKeyID != "" {
+		if rakshaErr == nil && selectedKeyID != "" {
 			p.ProviderKeyUp.WithLabelValues(string(provider), selectedKeyID, selectedKeyName).Set(1)
 		}
 
@@ -827,9 +827,9 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 		// Record latency
 		duration := time.Since(startTime).Seconds()
 		latencyLabelValues := make([]string, 0, len(promLabelValues)+1)
-		latencyLabelValues = append(latencyLabelValues, promLabelValues[:len(p.defaultUnifAILabels)]...) // all default labels
-		latencyLabelValues = append(latencyLabelValues, strconv.FormatBool(unifaiErr == nil))            // is_success
-		latencyLabelValues = append(latencyLabelValues, promLabelValues[len(p.defaultUnifAILabels):]...) // then custom labels
+		latencyLabelValues = append(latencyLabelValues, promLabelValues[:len(p.defaultRakshaLabels)]...) // all default labels
+		latencyLabelValues = append(latencyLabelValues, strconv.FormatBool(rakshaErr == nil))            // is_success
+		latencyLabelValues = append(latencyLabelValues, promLabelValues[len(p.defaultRakshaLabels):]...) // then custom labels
 		p.UpstreamLatencySeconds.WithLabelValues(latencyLabelValues...).Observe(duration)
 
 		// Record cost using the dedicated cost counter
@@ -838,16 +838,16 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 		}
 
 		// Record error and success counts
-		if unifaiErr != nil {
+		if rakshaErr != nil {
 			// Add status_code to label values (create new slice to avoid modifying original)
 			statusCode := "unknown"
-			if unifaiErr.StatusCode != nil {
-				statusCode = strconv.Itoa(*unifaiErr.StatusCode)
+			if rakshaErr.StatusCode != nil {
+				statusCode = strconv.Itoa(*rakshaErr.StatusCode)
 			}
 			errorPromLabelValues := make([]string, 0, len(promLabelValues)+1)
-			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[:len(p.defaultUnifAILabels)]...) // all default labels
+			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[:len(p.defaultRakshaLabels)]...) // all default labels
 			errorPromLabelValues = append(errorPromLabelValues, statusCode)                                       // status_code
-			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[len(p.defaultUnifAILabels):]...) // then custom labels
+			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[len(p.defaultRakshaLabels):]...) // then custom labels
 
 			p.ErrorRequestsTotal.WithLabelValues(errorPromLabelValues...).Inc()
 		} else {
@@ -897,7 +897,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 			p.OutputTokensTotal.WithLabelValues(promLabelValues...).Add(float64(outputTokens))
 
 			// Record provider-side prompt cache tokens (Anthropic/OpenAI/Gemini prompt
-			// caching). Distinct from the cache-hit counter below, which tracks UnifAI's
+			// caching). Distinct from the cache-hit counter below, which tracks Raksha's
 			// own semantic cache. 5m/1h are an Anthropic-only TTL breakdown of the write total.
 			cacheRead, cacheWrite, cacheWrite5m, cacheWrite1h := extractProviderCacheTokens(result)
 			if cacheRead > 0 {
@@ -923,16 +923,16 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 
 				// Add cache_type to label values (create new slice to avoid modifying original)
 				cacheHitLabelValues := make([]string, 0, len(promLabelValues)+1)
-				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[:len(p.defaultUnifAILabels)]...) // all default labels
+				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[:len(p.defaultRakshaLabels)]...) // all default labels
 				cacheHitLabelValues = append(cacheHitLabelValues, cacheType)                                        // cache_type
-				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[len(p.defaultUnifAILabels):]...) // then custom labels
+				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[len(p.defaultRakshaLabels):]...) // then custom labels
 
 				p.CacheHitsTotal.WithLabelValues(cacheHitLabelValues...).Inc()
 			}
 		}
 	}()
 
-	return result, unifaiErr, nil
+	return result, rakshaErr, nil
 }
 
 // HTTPMiddleware wraps a FastHTTP handler to collect Prometheus metrics.
@@ -941,7 +941,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 //   - Request duration
 //   - Request and response sizes
 //   - HTTP status codes
-//   - UnifAI upstream requests and errors
+//   - Raksha upstream requests and errors
 func (p *PrometheusPlugin) HTTPMiddleware(handler fasthttp.RequestHandler) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
 		start := time.Now()
@@ -988,7 +988,7 @@ func (p *PrometheusPlugin) EnablePushGateway(config *PushGatewayConfig) error {
 
 	// Apply defaults
 	if config.JobName == "" {
-		config.JobName = "unifai"
+		config.JobName = "raksha"
 	}
 	if config.PushInterval <= 0 {
 		config.PushInterval = 15

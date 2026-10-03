@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/alerts"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/alerts"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
 )
 
 // State is the live open/closed state for one policy.

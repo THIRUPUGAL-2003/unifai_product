@@ -6,24 +6,24 @@ import (
 	"mime/multipart"
 	"net/http"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToOpenAIVideoGenerationRequest converts a UnifAI Video Request to OpenAI format
-func ToOpenAIVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequest) (*OpenAIVideoGenerationRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil || unifaiReq.Input.Prompt == "" {
-		return nil, fmt.Errorf("unifai request, input, or prompt is nil/empty")
+// ToOpenAIVideoGenerationRequest converts a Raksha Video Request to OpenAI format
+func ToOpenAIVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*OpenAIVideoGenerationRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil || rakshaReq.Input.Prompt == "" {
+		return nil, fmt.Errorf("raksha request, input, or prompt is nil/empty")
 	}
 
 	req := &OpenAIVideoGenerationRequest{
-		Model:  unifaiReq.Model,
-		Prompt: unifaiReq.Input.Prompt,
+		Model:  rakshaReq.Model,
+		Prompt: rakshaReq.Input.Prompt,
 	}
 
-	if unifaiReq.Input.InputReference != nil {
+	if rakshaReq.Input.InputReference != nil {
 		// convert base64 to bytes
-		sanitizedURL, err := schemas.SanitizeImageURL(*unifaiReq.Input.InputReference)
+		sanitizedURL, err := schemas.SanitizeImageURL(*rakshaReq.Input.InputReference)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
@@ -39,16 +39,16 @@ func ToOpenAIVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 		}
 	}
 
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.Seconds != nil {
-			req.Seconds = unifaiReq.Params.Seconds
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.Seconds != nil {
+			req.Seconds = rakshaReq.Params.Seconds
 		}
 
 		// Validate and set size
-		if unifaiReq.Params.Size != "" {
+		if rakshaReq.Params.Size != "" {
 			// Check if the provided size is valid
-			if ValidOpenAIVideoSizes[unifaiReq.Params.Size] {
-				req.Size = unifaiReq.Params.Size
+			if ValidOpenAIVideoSizes[rakshaReq.Params.Size] {
+				req.Size = rakshaReq.Params.Size
 			} else {
 				// Invalid size provided, use default
 				req.Size = string(DefaultOpenAIVideoSize)
@@ -58,25 +58,25 @@ func ToOpenAIVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 			req.Size = string(DefaultOpenAIVideoSize)
 		}
 
-		req.ExtraParams = unifaiReq.Params.ExtraParams
+		req.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 
 	return req, nil
 }
 
-func ToOpenAIVideoRemixRequest(unifaiReq *schemas.UnifAIVideoRemixRequest) (*OpenAIVideoRemixRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil || unifaiReq.Input.Prompt == "" {
-		return nil, fmt.Errorf("unifai request, input, or prompt is nil/empty")
+func ToOpenAIVideoRemixRequest(rakshaReq *schemas.RakshaVideoRemixRequest) (*OpenAIVideoRemixRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil || rakshaReq.Input.Prompt == "" {
+		return nil, fmt.Errorf("raksha request, input, or prompt is nil/empty")
 	}
 
 	req := &OpenAIVideoRemixRequest{
-		Prompt: unifaiReq.Input.Prompt,
+		Prompt: rakshaReq.Input.Prompt,
 	}
 
 	return req, nil
 }
 
-func ToUnifAIVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.UnifAIVideoRemixRequest {
+func ToRakshaVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.RakshaVideoRemixRequest {
 	if openaiReq == nil || openaiReq.Prompt == "" {
 		return nil
 	}
@@ -86,7 +86,7 @@ func ToUnifAIVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.Unif
 		provider = schemas.OpenAI
 	}
 
-	return &schemas.UnifAIVideoRemixRequest{
+	return &schemas.RakshaVideoRemixRequest{
 		ID:       openaiReq.ID,
 		Provider: provider,
 		Input: &schemas.VideoGenerationInput{
@@ -95,7 +95,7 @@ func ToUnifAIVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.Unif
 	}
 }
 
-func (req *OpenAIVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIVideoGenerationRequest {
+func (req *OpenAIVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx *schemas.RakshaContext) *schemas.RakshaVideoGenerationRequest {
 	if req == nil {
 		return nil
 	}
@@ -109,7 +109,7 @@ func (req *OpenAIVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx *sch
 		input.InputReference = schemas.Ptr(providerUtils.FileBytesToBase64DataURL(req.InputReference))
 	}
 
-	return &schemas.UnifAIVideoGenerationRequest{
+	return &schemas.RakshaVideoGenerationRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     input,
@@ -119,33 +119,33 @@ func (req *OpenAIVideoGenerationRequest) ToUnifAIVideoGenerationRequest(ctx *sch
 }
 
 // parseVideoGenerationFormDataBodyFromRequest parses the video generation request and writes it to the multipart form.
-func parseVideoGenerationFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIVideoGenerationRequest, providerName schemas.ModelProvider) *schemas.UnifAIError {
+func parseVideoGenerationFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIVideoGenerationRequest, providerName schemas.ModelProvider) *schemas.RakshaError {
 	// Add prompt field (required)
 	if openaiReq.Prompt == "" {
-		return providerUtils.NewUnifAIOperationError("prompt is required", nil)
+		return providerUtils.NewRakshaOperationError("prompt is required", nil)
 	}
 	if err := writer.WriteField("prompt", openaiReq.Prompt); err != nil {
-		return providerUtils.NewUnifAIOperationError("failed to write prompt field", err)
+		return providerUtils.NewRakshaOperationError("failed to write prompt field", err)
 	}
 
 	// Add optional model field
 	if openaiReq.Model != "" {
 		if err := writer.WriteField("model", openaiReq.Model); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write model field", err)
+			return providerUtils.NewRakshaOperationError("failed to write model field", err)
 		}
 	}
 
 	// Add optional seconds field
 	if openaiReq.Seconds != nil {
 		if err := writer.WriteField("seconds", *openaiReq.Seconds); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write seconds field", err)
+			return providerUtils.NewRakshaOperationError("failed to write seconds field", err)
 		}
 	}
 
 	// Add optional size field
 	if openaiReq.Size != "" {
 		if err := writer.WriteField("size", openaiReq.Size); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write size field", err)
+			return providerUtils.NewRakshaOperationError("failed to write size field", err)
 		}
 	}
 
@@ -186,16 +186,16 @@ func parseVideoGenerationFormDataBodyFromRequest(writer *multipart.Writer, opena
 			"Content-Type":        {mimeType},
 		})
 		if err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to create form part for input_reference", err)
+			return providerUtils.NewRakshaOperationError("failed to create form part for input_reference", err)
 		}
 		if _, err := part.Write(openaiReq.InputReference); err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to write input_reference file data", err)
+			return providerUtils.NewRakshaOperationError("failed to write input_reference file data", err)
 		}
 	}
 
 	// Close the multipart writer
 	if err := writer.Close(); err != nil {
-		return providerUtils.NewUnifAIOperationError("failed to close multipart writer", err)
+		return providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
 	}
 
 	return nil

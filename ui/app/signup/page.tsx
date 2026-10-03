@@ -231,7 +231,7 @@ export default function SignupPage() {
 							<h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl leading-[1.12]">
 								Get Started with{" "}
 								<span className="bg-gradient-to-r from-[#45f3ff] via-[#7dd3fc] to-white bg-clip-text text-transparent">
-									UnifAI Platform.
+									Raksha Platform.
 								</span>
 							</h1>
 

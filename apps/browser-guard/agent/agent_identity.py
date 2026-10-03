@@ -32,7 +32,7 @@ def get_or_create_agent_id() -> str:
         with open(path, "w", encoding="utf-8") as f:
             f.write(new_id)
     except Exception as e:
-        print(f"[UnifAI Guard WARNING] Could not persist agent_id: {e}")
+        print(f"[Raksha Guard WARNING] Could not persist agent_id: {e}")
     return new_id
 
 

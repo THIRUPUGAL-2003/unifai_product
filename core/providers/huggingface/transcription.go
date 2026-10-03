@@ -4,11 +4,11 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-func ToHuggingFaceTranscriptionRequest(request *schemas.UnifAITranscriptionRequest) (*HuggingFaceTranscriptionRequest, error) {
+func ToHuggingFaceTranscriptionRequest(request *schemas.RakshaTranscriptionRequest) (*HuggingFaceTranscriptionRequest, error) {
 	if request == nil {
 		return nil, nil
 	}
@@ -132,7 +132,7 @@ func ToHuggingFaceTranscriptionRequest(request *schemas.UnifAITranscriptionReque
 	return hfRequest, nil
 }
 
-func (response *HuggingFaceTranscriptionResponse) ToUnifAITranscriptionResponse(requestedModel string) (*schemas.UnifAITranscriptionResponse, error) {
+func (response *HuggingFaceTranscriptionResponse) ToRakshaTranscriptionResponse(requestedModel string) (*schemas.RakshaTranscriptionResponse, error) {
 	if response == nil {
 		return nil, nil
 	}
@@ -141,8 +141,8 @@ func (response *HuggingFaceTranscriptionResponse) ToUnifAITranscriptionResponse(
 		return nil, fmt.Errorf("model name cannot be empty")
 	}
 
-	// Create the base UnifAI response
-	unifaiResponse := &schemas.UnifAITranscriptionResponse{
+	// Create the base Raksha response
+	rakshaResponse := &schemas.RakshaTranscriptionResponse{
 		Text: response.Text,
 	}
 
@@ -163,8 +163,8 @@ func (response *HuggingFaceTranscriptionResponse) ToUnifAITranscriptionResponse(
 				Text:  chunk.Text,
 			}
 		}
-		unifaiResponse.Segments = segments
+		rakshaResponse.Segments = segments
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }

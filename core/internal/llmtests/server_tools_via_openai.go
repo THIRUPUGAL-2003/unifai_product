@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunServerToolsViaOpenAIEndpointTest reproduces the user-reported bug where
@@ -19,14 +19,14 @@ import (
 //   - ToAnthropicChatRequest learning to convert non-function tools (server
 //     tools) into AnthropicTool with the correct variant embed.
 //
-// This test sends the exact curl-reported shape via UnifAIChatRequest +
+// This test sends the exact curl-reported shape via RakshaChatRequest +
 // ChatCompletionRequest and asserts the request succeeds end-to-end against
 // the provider. It covers three server tools that have single-turn triggers
 // (web_search, web_fetch, code_execution) across all supporting providers per
 // Table 20. Other variants (bash, memory, text_editor, tool_search,
 // mcp_toolset, computer_use) require multi-turn tool loops or infra setup
 // and are covered by the schema / unit-level round-trip tests instead.
-func RunServerToolsViaOpenAIEndpointTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunServerToolsViaOpenAIEndpointTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ServerToolsViaOpenAIEndpoint {
 		t.Logf("ServerToolsViaOpenAIEndpoint not supported for provider %s", testConfig.Provider)
 		return
@@ -107,20 +107,20 @@ func RunServerToolsViaOpenAIEndpointTest(t *testing.T, client *unifai.UnifAI, ct
 					tc.extra(&tool)
 				}
 
-				req := &schemas.UnifAIChatRequest{
+				req := &schemas.RakshaChatRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.ChatModel,
 					Input: []schemas.ChatMessage{
 						CreateBasicChatMessage(tc.prompt),
 					},
 					Params: &schemas.ChatParameters{
-						MaxCompletionTokens: unifai.Ptr(500),
+						MaxCompletionTokens: raksha.Ptr(500),
 						Tools:               []schemas.ChatTool{tool},
 					},
 					Fallbacks: testConfig.Fallbacks,
 				}
 
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				resp, err := client.ChatCompletionRequest(bfCtx, req)
 				if err != nil {
 					t.Fatalf("%s tool request failed: %s", tc.name, GetErrorMessage(err))

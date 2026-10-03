@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 const (
@@ -48,7 +48,7 @@ type PluginConfig struct {
 }
 
 const (
-	EnableStreamingJSONParser schemas.UnifAIContextKey = "enable-streaming-json-parser"
+	EnableStreamingJSONParser schemas.RakshaContextKey = "enable-streaming-json-parser"
 )
 
 // Init creates a new JSON parser plugin instance with custom configuration
@@ -84,49 +84,49 @@ func (p *JsonParserPlugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *JsonParserPlugin) HTTPTransportPreHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *JsonParserPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *JsonParserPlugin) HTTPTransportPostHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *JsonParserPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *JsonParserPlugin) HTTPTransportStreamChunkHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, chunk *schemas.UnifAIStreamChunk) (*schemas.UnifAIStreamChunk, error) {
+func (p *JsonParserPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *JsonParserPlugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAIRequest) error {
+func (p *JsonParserPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
 	return nil
 }
 
 // PreLLMHook is not used for this plugin as we only process responses
 // Parameters:
-//   - ctx: The UnifAI context
-//   - req: The UnifAI request
+//   - ctx: The Raksha context
+//   - req: The Raksha request
 //
 // Returns:
-//   - *schemas.UnifAIRequest: The processed request
+//   - *schemas.RakshaRequest: The processed request
 //   - *schemas.LLMPluginShortCircuit: The plugin short circuit if the request is not allowed
 //   - error: Any error that occurred during processing
-func (p *JsonParserPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *JsonParserPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	return req, nil, nil
 }
 
 // PostLLMHook processes streaming responses by accumulating chunks and making accumulated content valid JSON
 // Parameters:
-//   - ctx: The UnifAI context
-//   - result: The UnifAI response to be processed
-//   - err: The UnifAI error to be processed
+//   - ctx: The Raksha context
+//   - result: The Raksha response to be processed
+//   - err: The Raksha error to be processed
 //
 // Returns:
-//   - *schemas.UnifAIResponse: The processed response
-//   - *schemas.UnifAIError: The processed error
+//   - *schemas.RakshaResponse: The processed response
+//   - *schemas.RakshaError: The processed error
 //   - error: Any error that occurred during processing
-func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, err *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
+func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
 	// If there's an error, don't process
 	if err != nil {
 		return result, err, nil
@@ -156,7 +156,7 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 
 	// Create a deep copy of the result to avoid modifying the original pointer
 	// This ensures other plugins using the same pointer don't get corrupted data
-	resultCopy := p.deepCopyUnifAIResponse(result)
+	resultCopy := p.deepCopyRakshaResponse(result)
 	if resultCopy == nil {
 		return result, err, nil
 	}
@@ -183,12 +183,12 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 							fixedContent := p.parsePartialJSON(accumulated)
 
 							if !p.isValidJSON(fixedContent) {
-								err = &schemas.UnifAIError{
+								err = &schemas.RakshaError{
 									Error: &schemas.ErrorField{
 										Message: "Invalid JSON in streaming response",
 									},
 									StreamControl: &schemas.StreamControl{
-										SkipStream: unifai.Ptr(true),
+										SkipStream: raksha.Ptr(true),
 									},
 								}
 
@@ -216,12 +216,12 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 			fixedContent := p.parsePartialJSON(accumulated)
 
 			if !p.isValidJSON(fixedContent) {
-				err = &schemas.UnifAIError{
+				err = &schemas.RakshaError{
 					Error: &schemas.ErrorField{
 						Message: "Invalid JSON in streaming response",
 					},
 					StreamControl: &schemas.StreamControl{
-						SkipStream: unifai.Ptr(true),
+						SkipStream: raksha.Ptr(true),
 					},
 				}
 
@@ -233,7 +233,7 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schem
 	}
 
 	// If this is the final chunk, cleanup the accumulated content for this request
-	if streamEndIndicatorValue := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator); streamEndIndicatorValue != nil {
+	if streamEndIndicatorValue := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator); streamEndIndicatorValue != nil {
 		isFinalChunk, ok := streamEndIndicatorValue.(bool)
 		if ok && isFinalChunk {
 			p.ClearRequestState(requestID)

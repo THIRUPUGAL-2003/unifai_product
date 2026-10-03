@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build UnifAI Guard with PyInstaller (Windows .exe or macOS .app)."""
+"""Build Raksha Guard with PyInstaller (Windows .exe or macOS .app)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 RELEASE = ROOT / "release"
-CONFIG = ROOT / "config" / "unifai_guard_config.json"
+CONFIG = ROOT / "config" / "raksha_guard_config.json"
 
 
 def run(cmd: list[str]) -> None:
@@ -26,37 +26,37 @@ def run(cmd: list[str]) -> None:
 def copy_config_into_app(app_path: Path) -> None:
     resources = app_path / "Contents" / "Resources"
     resources.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(CONFIG, resources / "unifai_guard_config.json")
+    shutil.copy2(CONFIG, resources / "raksha_guard_config.json")
     version_file = ROOT / "release" / "VERSION.txt"
     if version_file.is_file():
         shutil.copy2(version_file, resources / "VERSION.txt")
 
 
 def build_windows() -> Path:
-    spec = ROOT / "UnifAI_Guard.spec"
+    spec = ROOT / "Raksha_Guard.spec"
     if not spec.is_file():
         raise SystemExit(f"Missing {spec}")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", str(spec)])
-    exe = DIST / "UnifAI_Guard.exe"
+    exe = DIST / "Raksha_Guard.exe"
     if not exe.is_file():
         raise SystemExit(f"Expected {exe} after PyInstaller")
     RELEASE.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(exe, RELEASE / "UnifAI_Guard.exe")
-    shutil.copy2(CONFIG, RELEASE / "unifai_guard_config.json")
+    shutil.copy2(exe, RELEASE / "Raksha_Guard.exe")
+    shutil.copy2(CONFIG, RELEASE / "raksha_guard_config.json")
     return exe
 
 
 def build_macos() -> Path:
-    spec = ROOT / "UnifAI_Guard.macos.spec"
+    spec = ROOT / "Raksha_Guard.macos.spec"
     if not spec.is_file():
         raise SystemExit(f"Missing {spec}")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", str(spec)])
-    app = DIST / "UnifAI_Guard.app"
+    app = DIST / "Raksha_Guard.app"
     if not app.is_dir():
         raise SystemExit(f"Expected {app} after PyInstaller")
     copy_config_into_app(app)
     RELEASE.mkdir(parents=True, exist_ok=True)
-    release_app = RELEASE / "UnifAI_Guard.app"
+    release_app = RELEASE / "Raksha_Guard.app"
     if release_app.exists():
         shutil.rmtree(release_app)
     shutil.copytree(app, release_app, symlinks=True)
@@ -64,14 +64,14 @@ def build_macos() -> Path:
 
 
 def main() -> int:
-    if not (ROOT / "agent" / "unifai_agent.py").is_file():
-        print("Missing agent/unifai_agent.py", file=sys.stderr)
+    if not (ROOT / "agent" / "raksha_agent.py").is_file():
+        print("Missing agent/raksha_agent.py", file=sys.stderr)
         return 1
     if not (ROOT / "proxy" / "browser_ai_proxy.py").is_file():
         print("Missing proxy/browser_ai_proxy.py", file=sys.stderr)
         return 1
     if not CONFIG.is_file():
-        print("Missing config/unifai_guard_config.json", file=sys.stderr)
+        print("Missing config/raksha_guard_config.json", file=sys.stderr)
         return 1
 
     # Always sync configs from .env before building

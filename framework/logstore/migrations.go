@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/migrator"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/migrator"
 	"gorm.io/gorm"
 )
 
@@ -126,7 +126,7 @@ func acquireAdvisoryLock(ctx context.Context, db *gorm.DB, logger schemas.Logger
 			conn.Close()
 			return nil, fmt.Errorf(
 				"failed to acquire logstore %s lock (key=%d) after %d attempts over %s\n\n"+
-					"This usually means another UnifAI pod (or a previous crashed pod's lingering\n"+
+					"This usually means another Raksha pod (or a previous crashed pod's lingering\n"+
 					"database session) is still holding the lock. To diagnose and resolve:\n\n"+
 					"1. Find who holds the lock:\n"+
 					"   SELECT pid, usename, application_name, client_addr, backend_start, state, query\n"+
@@ -3207,7 +3207,7 @@ func migrationAddSafeJsonbFunction(ctx context.Context, db *gorm.DB, logger sche
 			}
 			tx = tx.WithContext(ctx)
 			const stmt = `
-CREATE OR REPLACE FUNCTION unifai_safe_jsonb(t text) RETURNS text
+CREATE OR REPLACE FUNCTION raksha_safe_jsonb(t text) RETURNS text
 LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE
     j jsonb;
@@ -3230,17 +3230,17 @@ BEGIN
 END;
 $$;`
 			if err := tx.Exec(stmt).Error; err != nil {
-				return fmt.Errorf("failed to create unifai_safe_jsonb: %w", err)
+				return fmt.Errorf("failed to create raksha_safe_jsonb: %w", err)
 			}
 			return nil
 		},
 		Rollback: func(tx *gorm.DB) error {
 			tx = tx.WithContext(ctx)
-			return tx.Exec("DROP FUNCTION IF EXISTS unifai_safe_jsonb(text)").Error
+			return tx.Exec("DROP FUNCTION IF EXISTS raksha_safe_jsonb(text)").Error
 		},
 	}})
 	if err := m.Migrate(); err != nil {
-		return fmt.Errorf("error while adding unifai_safe_jsonb function: %s", err.Error())
+		return fmt.Errorf("error while adding raksha_safe_jsonb function: %s", err.Error())
 	}
 	return nil
 }

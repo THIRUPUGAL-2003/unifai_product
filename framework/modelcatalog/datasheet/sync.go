@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
+	raksha "github.com/raksha/raksha/core"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
 )
 
 const (
@@ -206,7 +206,7 @@ func (s *Store) loadPricingFromURL(ctx context.Context) (map[string]Entry, error
 			return nil, fmt.Errorf("failed to read pricing file: %w", err)
 		}
 	} else {
-		if err := unifai.ValidateExternalURL(rawURL, true); err != nil {
+		if err := raksha.ValidateExternalURL(rawURL, true); err != nil {
 			return nil, fmt.Errorf("pricing URL validation failed: %w", err)
 		}
 		client := &http.Client{Timeout: DefaultPricingTimeout}

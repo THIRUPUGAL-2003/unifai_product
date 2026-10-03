@@ -68,8 +68,8 @@ export default function ClientSettingsView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
 	const [droppedRequests, setDroppedRequests] = useState<number>(0);
 	const { data: droppedRequestsData } = useGetDroppedRequestsQuery();
-	const { data: unifaiConfig, isLoading: isCoreConfigLoading } = useGetCoreConfigQuery({ fromDB: true });
-	const config = unifaiConfig?.client_config;
+	const { data: rakshaConfig, isLoading: isCoreConfigLoading } = useGetCoreConfigQuery({ fromDB: true });
+	const config = rakshaConfig?.client_config;
 	const [updateCoreConfig, { isLoading: isSavingCoreConfig }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
 
@@ -173,7 +173,7 @@ export default function ClientSettingsView() {
 
 		// Save core config if changed
 		if (hasCoreConfigChanges) {
-			if (!unifaiConfig) {
+			if (!rakshaConfig) {
 				toast.error("Configuration not loaded. Please refresh and try again.");
 				return;
 			}
@@ -187,7 +187,7 @@ export default function ClientSettingsView() {
 			};
 
 			try {
-				await updateCoreConfig({ ...unifaiConfig!, client_config: cleanedConfig }).unwrap();
+				await updateCoreConfig({ ...rakshaConfig!, client_config: cleanedConfig }).unwrap();
 				coreConfigSaved = true;
 			} catch (error) {
 				toast.error(`Failed to save client config: ${getErrorMessage(error)}`);
@@ -212,7 +212,7 @@ export default function ClientSettingsView() {
 			}
 		}
 	}, [
-		unifaiConfig,
+		rakshaConfig,
 		hasSecurityHeaderError,
 		hasCoreConfigChanges,
 		hasLargePayloadChanges,
@@ -300,7 +300,7 @@ export default function ClientSettingsView() {
 							Drop Excess Requests
 						</label>
 						<p className="text-muted-foreground text-sm">
-							If enabled, UnifAI will drop requests that exceed pool capacity.{" "}
+							If enabled, Raksha will drop requests that exceed pool capacity.{" "}
 							{localConfig.drop_excess_requests && droppedRequests > 0 ? (
 								<span>
 									Have dropped <b>{droppedRequests} requests</b> since last restart.

@@ -3,11 +3,11 @@ package gemini
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAICountTokensResponse converts a Gemini count tokens response to UnifAI format.
-func (resp *GeminiCountTokensResponse) ToUnifAICountTokensResponse(model string) *schemas.UnifAICountTokensResponse {
+// ToRakshaCountTokensResponse converts a Gemini count tokens response to Raksha format.
+func (resp *GeminiCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -49,29 +49,29 @@ func (resp *GeminiCountTokensResponse) ToUnifAICountTokensResponse(model string)
 
 	total := int(resp.TotalTokens)
 
-	return &schemas.UnifAICountTokensResponse{
+	return &schemas.RakshaCountTokensResponse{
 		Model:              model,
 		Object:             "response.input_tokens",
 		InputTokens:        inputTokens,
 		InputTokensDetails: inputDetails,
 		TotalTokens:        &total,
-		ExtraFields:        schemas.UnifAIResponseExtraFields{},
+		ExtraFields:        schemas.RakshaResponseExtraFields{},
 	}
 }
 
-// ToGeminiCountTokensResponse converts a UnifAI count tokens response to Gemini format.
-func ToGeminiCountTokensResponse(unifaiResp *schemas.UnifAICountTokensResponse) *GeminiCountTokensResponse {
-	if unifaiResp == nil {
+// ToGeminiCountTokensResponse converts a Raksha count tokens response to Gemini format.
+func ToGeminiCountTokensResponse(rakshaResp *schemas.RakshaCountTokensResponse) *GeminiCountTokensResponse {
+	if rakshaResp == nil {
 		return nil
 	}
 
 	response := &GeminiCountTokensResponse{
-		TotalTokens: int32(unifaiResp.InputTokens),
+		TotalTokens: int32(rakshaResp.InputTokens),
 	}
 
 	// Map cached content token count if available
-	if unifaiResp.InputTokensDetails != nil && unifaiResp.InputTokensDetails.CachedReadTokens > 0 {
-		response.CachedContentTokenCount = int32(unifaiResp.InputTokensDetails.CachedReadTokens)
+	if rakshaResp.InputTokensDetails != nil && rakshaResp.InputTokensDetails.CachedReadTokens > 0 {
+		response.CachedContentTokenCount = int32(rakshaResp.InputTokensDetails.CachedReadTokens)
 	} else {
 		response.CachedContentTokenCount = 0
 	}

@@ -1,7 +1,7 @@
 import { ExternalLink, Video } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { UnifAIVideoDownloadOutput, UnifAIVideoGenerationOutput, UnifAIVideoListOutput } from "@/lib/types/logs";
+import { RakshaVideoDownloadOutput, RakshaVideoGenerationOutput, RakshaVideoListOutput } from "@/lib/types/logs";
 
 import CollapsibleBox from "./collapsibleBox";
 import { CodeEditor } from "@/components/ui/codeEditor";
@@ -10,12 +10,12 @@ interface VideoGenerationInput {
 	prompt: string;
 }
 
-type VideoOutput = UnifAIVideoGenerationOutput | UnifAIVideoDownloadOutput;
+type VideoOutput = RakshaVideoGenerationOutput | RakshaVideoDownloadOutput;
 
 interface VideoViewProps {
 	videoInput?: VideoGenerationInput;
 	videoOutput?: VideoOutput;
-	videoListOutput?: UnifAIVideoListOutput;
+	videoListOutput?: RakshaVideoListOutput;
 	requestType?: string;
 }
 
@@ -32,8 +32,8 @@ function getMethodTypeLabel(requestType?: string): string {
 export default function VideoView({ videoInput, videoOutput, videoListOutput, requestType }: VideoViewProps) {
 	const methodTypeLabel = getMethodTypeLabel(requestType);
 	const isDownload = requestType?.toLowerCase().includes("video_download");
-	const downloadOutput = isDownload && videoOutput ? (videoOutput as UnifAIVideoDownloadOutput) : null;
-	const generationOutput = !isDownload && videoOutput ? (videoOutput as UnifAIVideoGenerationOutput) : null;
+	const downloadOutput = isDownload && videoOutput ? (videoOutput as RakshaVideoDownloadOutput) : null;
+	const generationOutput = !isDownload && videoOutput ? (videoOutput as RakshaVideoGenerationOutput) : null;
 	const outputURL = generationOutput?.videos?.[0]?.url;
 
 	return (

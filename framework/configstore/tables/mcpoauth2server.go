@@ -3,12 +3,12 @@ package tables
 import (
 	"fmt"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/encrypt"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/encrypt"
 )
 
-// MCPServerAuthMode controls how UnifAI's /mcp endpoint authenticates inbound
-// MCP clients. It does not affect how UnifAI authenticates to upstream MCP
+// MCPServerAuthMode controls how Raksha's /mcp endpoint authenticates inbound
+// MCP clients. It does not affect how Raksha authenticates to upstream MCP
 // servers (governed by MCPClientConfig.AuthType).
 type MCPServerAuthMode string
 
@@ -24,12 +24,12 @@ const (
 	// Discovery endpoints return 404. Default — today's behavior.
 	MCPServerAuthModeHeaders MCPServerAuthMode = "headers"
 
-	// MCPServerAuthModeBoth accepts both header credentials and UnifAI-issued
+	// MCPServerAuthModeBoth accepts both header credentials and Raksha-issued
 	// JWTs. Discovery endpoints are live; existing header-credential clients
 	// that never receive a 401 are unaffected.
 	MCPServerAuthModeBoth MCPServerAuthMode = "both"
 
-	// MCPServerAuthModeOAuth accepts UnifAI-issued JWTs only. Header
+	// MCPServerAuthModeOAuth accepts Raksha-issued JWTs only. Header
 	// credentials (VK / api-key / session) are rejected on /mcp.
 	// WARNING: existing virtual-key MCP integrations will stop working.
 	MCPServerAuthModeOAuth MCPServerAuthMode = "oauth"
@@ -40,7 +40,7 @@ const (
 // MCPServerAuthMode is MCPServerAuthModeBoth or MCPServerAuthModeOAuth.
 // Not a table of its own.
 type OAuth2ServerConfig struct {
-	// IssuerURL is UnifAI's OAuth authorization-server identity — it appears
+	// IssuerURL is Raksha's OAuth authorization-server identity — it appears
 	// as the `issuer` in discovery documents and as the `iss` claim in every
 	// issued JWT. Supports env var syntax ("env.MY_VAR"). When empty,
 	// BuildBaseURL(request) is used as a per-request fallback, which works for
@@ -90,7 +90,7 @@ func DefaultOAuth2ServerConfig() *OAuth2ServerConfig {
 	}
 }
 
-// OAuth2SigningKey holds the single RS256 keypair used to sign UnifAI-issued
+// OAuth2SigningKey holds the single RS256 keypair used to sign Raksha-issued
 // JWTs. Stored as JSON in governance_config under GovernanceConfigKeyOAuth2SigningKey.
 // The private key PEM is encrypted via framework/encrypt before storage.
 type OAuth2SigningKey struct {

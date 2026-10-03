@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // chunkTiming tracks the arrival time of each streaming chunk
@@ -60,7 +60,7 @@ func detectBatchedStream(chunkTimings []chunkTiming, minChunks int) (bool, strin
 }
 
 // RunChatCompletionStreamTest executes the chat completion stream test scenario
-func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.CompletionStream {
 		t.Logf("Chat completion stream not supported for provider %s", testConfig.Provider)
 		return
@@ -75,12 +75,12 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 			CreateBasicChatMessage("Tell me a short story about a robot learning to paint the city which has the eiffel tower. Keep it under 200 words and include the city's name."),
 		}
 
-		request := &schemas.UnifAIChatRequest{
+		request := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    messages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(1000),
+				MaxCompletionTokens: raksha.Ptr(1000),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -101,8 +101,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 		}
 
 		// Use proper streaming retry wrapper for the stream request
-		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionStreamRequest(bfCtx, request)
 		})
 
@@ -114,7 +114,7 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 
 		var fullContent strings.Builder
 		var responseCount int
-		var lastResponse *schemas.UnifAIStreamChunk
+		var lastResponse *schemas.RakshaStreamChunk
 
 		// Chunk timing tracking for batch detection
 		var chunkTimings []chunkTiming
@@ -153,31 +153,31 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 				})
 				lastChunkTime = now
 
-				lastResponse = DeepCopyUnifAIStreamChunk(response)
+				lastResponse = DeepCopyRakshaStreamChunk(response)
 
 				// Basic validation of streaming response structure
-				if response.UnifAIChatResponse != nil {
-					if response.UnifAIChatResponse.ExtraFields.Provider != testConfig.Provider {
-						t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.UnifAIChatResponse.ExtraFields.Provider)
+				if response.RakshaChatResponse != nil {
+					if response.RakshaChatResponse.ExtraFields.Provider != testConfig.Provider {
+						t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.RakshaChatResponse.ExtraFields.Provider)
 					}
-					if response.UnifAIChatResponse.ID == "" {
+					if response.RakshaChatResponse.ID == "" {
 						t.Logf("⚠️ Warning: Response ID is empty")
 					}
 
-					// Per-chunk Object validation: unifai normalizes every streaming chunk
+					// Per-chunk Object validation: raksha normalizes every streaming chunk
 					// to the OpenAI shape with Object="chat.completion.chunk", whether the
-					// upstream provider natively emits it (OpenAI family) or unifai
+					// upstream provider natively emits it (OpenAI family) or raksha
 					// synthesizes it during translation (e.g., Anthropic's type-keyed events).
 					// A missing/wrong Object here indicates a provider translation regression.
-					if response.UnifAIChatResponse.Object != "chat.completion.chunk" {
-						t.Errorf("Chunk %d: Object field must be 'chat.completion.chunk', got %q", responseCount+1, response.UnifAIChatResponse.Object)
+					if response.RakshaChatResponse.Object != "chat.completion.chunk" {
+						t.Errorf("Chunk %d: Object field must be 'chat.completion.chunk', got %q", responseCount+1, response.RakshaChatResponse.Object)
 					}
 
 					// Log latency for each chunk (can be 0 for inter-chunks)
-					t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.UnifAIChatResponse.ExtraFields.Latency)
+					t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.RakshaChatResponse.ExtraFields.Latency)
 
 					// Process each choice in the response
-					for _, choice := range response.UnifAIChatResponse.Choices {
+					for _, choice := range response.RakshaChatResponse.Choices {
 						// Validate that this is a stream response
 						if choice.ChatStreamResponseChoice == nil {
 							t.Logf("⚠️ Warning: Stream response choice is nil for choice %d", choice.Index)
@@ -229,8 +229,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 		finalContent := strings.TrimSpace(fullContent.String())
 
 		// Create a consolidated response for validation
-		consolidatedResponse := &schemas.UnifAIChatResponse{
-			Choices: []schemas.UnifAIResponseChoice{
+		consolidatedResponse := &schemas.RakshaChatResponse{
+			Choices: []schemas.RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -243,23 +243,23 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 					},
 				},
 			},
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Provider: testConfig.Provider,
 			},
 		}
 
 		// Copy usage and other metadata from last response if available
-		if lastResponse != nil && lastResponse.UnifAIChatResponse != nil {
-			consolidatedResponse.Usage = lastResponse.UnifAIChatResponse.Usage
-			consolidatedResponse.Model = lastResponse.UnifAIChatResponse.Model
-			consolidatedResponse.ID = lastResponse.UnifAIChatResponse.ID
-			consolidatedResponse.Created = lastResponse.UnifAIChatResponse.Created
+		if lastResponse != nil && lastResponse.RakshaChatResponse != nil {
+			consolidatedResponse.Usage = lastResponse.RakshaChatResponse.Usage
+			consolidatedResponse.Model = lastResponse.RakshaChatResponse.Model
+			consolidatedResponse.ID = lastResponse.RakshaChatResponse.ID
+			consolidatedResponse.Created = lastResponse.RakshaChatResponse.Created
 
 			// Copy finish reason from last choice if available
-			if len(lastResponse.UnifAIChatResponse.Choices) > 0 && lastResponse.UnifAIChatResponse.Choices[0].FinishReason != nil {
-				consolidatedResponse.Choices[0].FinishReason = lastResponse.UnifAIChatResponse.Choices[0].FinishReason
+			if len(lastResponse.RakshaChatResponse.Choices) > 0 && lastResponse.RakshaChatResponse.Choices[0].FinishReason != nil {
+				consolidatedResponse.Choices[0].FinishReason = lastResponse.RakshaChatResponse.Choices[0].FinishReason
 			}
-			consolidatedResponse.ExtraFields = lastResponse.UnifAIChatResponse.ExtraFields
+			consolidatedResponse.ExtraFields = lastResponse.RakshaChatResponse.ExtraFields
 		}
 
 		// Enhanced validation expectations for streaming
@@ -306,12 +306,12 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 
 			tool := GetSampleChatTool(SampleToolTypeWeather)
 
-			request := &schemas.UnifAIChatRequest{
+			request := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    messages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(1000),
+					MaxCompletionTokens: raksha.Ptr(1000),
 					Tools:               []schemas.ChatTool{*tool},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -338,11 +338,11 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 				t,
 				retryConfig,
 				retryContext,
-				func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-					bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+				func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 					return client.ChatCompletionStreamRequest(bfCtx, request)
 				},
-				func(responseChannel chan *schemas.UnifAIStreamChunk) ChatStreamValidationResult {
+				func(responseChannel chan *schemas.RakshaStreamChunk) ChatStreamValidationResult {
 					var toolCallDetected bool
 					var responseCount int
 					var streamErrors []string
@@ -363,7 +363,7 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 								goto toolStreamComplete
 							}
 
-							if response == nil || response.UnifAIChatResponse == nil {
+							if response == nil || response.RakshaChatResponse == nil {
 								streamErrors = append(streamErrors, "❌ Streaming response should not be nil")
 								continue
 							}
@@ -383,8 +383,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 
 							responseCount++
 
-							if response.UnifAIChatResponse.Choices != nil {
-								for _, choice := range response.UnifAIChatResponse.Choices {
+							if response.RakshaChatResponse.Choices != nil {
+								for _, choice := range response.RakshaChatResponse.Choices {
 									if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
 										delta := choice.ChatStreamResponseChoice.Delta
 
@@ -472,15 +472,15 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 				CreateBasicChatMessage(problemPrompt),
 			}
 
-			request := &schemas.UnifAIChatRequest{
+			request := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ReasoningModel,
 				Input:    messages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(1800),
+					MaxCompletionTokens: raksha.Ptr(1800),
 					Reasoning: &schemas.ChatReasoning{
-						Effort:    unifai.Ptr("high"),
-						MaxTokens: unifai.Ptr(1500),
+						Effort:    raksha.Ptr("high"),
+						MaxTokens: raksha.Ptr(1500),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -503,8 +503,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 			}
 
 			// Use proper streaming retry wrapper for the stream request
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ChatCompletionStreamRequest(bfCtx, request)
 			})
 
@@ -553,8 +553,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 
 					responseCount++
 
-					if response.UnifAIChatResponse != nil {
-						chatResp := response.UnifAIChatResponse
+					if response.RakshaChatResponse != nil {
+						chatResp := response.RakshaChatResponse
 
 						// Check for reasoning in choices
 						if len(chatResp.Choices) > 0 {
@@ -576,7 +576,7 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 										for _, detail := range delta.ReasoningDetails {
 											t.Logf("  - Type: %s, Index: %d", detail.Type, detail.Index)
 											switch detail.Type {
-											case schemas.UnifAIReasoningDetailsTypeText:
+											case schemas.RakshaReasoningDetailsTypeText:
 												if detail.Text != nil && *detail.Text != "" {
 													maxLen := 100
 													text := *detail.Text
@@ -585,11 +585,11 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 													}
 													t.Logf("    Text preview: %q", text[:maxLen])
 												}
-											case schemas.UnifAIReasoningDetailsTypeSummary:
+											case schemas.RakshaReasoningDetailsTypeSummary:
 												if detail.Summary != nil {
 													t.Logf("    Summary length: %d", len(*detail.Summary))
 												}
-											case schemas.UnifAIReasoningDetailsTypeEncrypted:
+											case schemas.RakshaReasoningDetailsTypeEncrypted:
 												if detail.Data != nil {
 													t.Logf("    Encrypted data length: %d", len(*detail.Data))
 												}
@@ -668,15 +668,15 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 				CreateBasicChatMessage(problemPrompt),
 			}
 
-			request := &schemas.UnifAIChatRequest{
+			request := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ReasoningModel,
 				Input:    messages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(1800),
+					MaxCompletionTokens: raksha.Ptr(1800),
 					Reasoning: &schemas.ChatReasoning{
-						Effort:    unifai.Ptr("high"),
-						MaxTokens: unifai.Ptr(1500),
+						Effort:    raksha.Ptr("high"),
+						MaxTokens: raksha.Ptr(1500),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -704,11 +704,11 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 				t,
 				retryConfig,
 				retryContext,
-				func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-					bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+				func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 					return client.ChatCompletionStreamRequest(bfCtx, request)
 				},
-				func(responseChannel chan *schemas.UnifAIStreamChunk) ChatStreamValidationResult {
+				func(responseChannel chan *schemas.RakshaStreamChunk) ChatStreamValidationResult {
 					var reasoningDetected bool
 					var reasoningDetailsDetected bool
 					var reasoningTokensDetected bool
@@ -752,8 +752,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *unifai.UnifAI, ctx contex
 
 							responseCount++
 
-							if response.UnifAIChatResponse != nil {
-								chatResp := response.UnifAIChatResponse
+							if response.RakshaChatResponse != nil {
+								chatResp := response.RakshaChatResponse
 
 								// Check for reasoning in choices
 								if len(chatResp.Choices) > 0 {

@@ -3,9 +3,9 @@ package modelcatalog
 import (
 	"context"
 
-	"github.com/unifai/unifai/core/schemas"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/modelcatalog/datasheet"
+	"github.com/raksha/raksha/core/schemas"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/modelcatalog/datasheet"
 )
 
 // GetModelCapabilityEntryForModel returns capability metadata for a
@@ -37,15 +37,15 @@ func (mc *ModelCatalog) GetPricingEntryForModel(model string, provider schemas.M
 	return mc.datasheet.GetPricingEntryForModel(model, provider)
 }
 
-// CalculateCost computes the dollar cost for a UnifAI response.
-func (mc *ModelCatalog) CalculateCost(result *schemas.UnifAIResponse, scopes *PricingLookupScopes) float64 {
+// CalculateCost computes the dollar cost for a Raksha response.
+func (mc *ModelCatalog) CalculateCost(result *schemas.RakshaResponse, scopes *PricingLookupScopes) float64 {
 	return mc.datasheet.CalculateCost(result, (*datasheet.LookupScopes)(scopes))
 }
 
 // CalculateCostForUsage computes the dollar cost from a bare usage object when
-// no full UnifAIResponse is available — used to bill partial usage carried on
-// a failed/cancelled request (UnifAIError.ExtraFields.BilledUsage).
-func (mc *ModelCatalog) CalculateCostForUsage(usage *schemas.UnifAILLMUsage, provider schemas.ModelProvider, model string, requestType schemas.RequestType, scopes *PricingLookupScopes) float64 {
+// no full RakshaResponse is available — used to bill partial usage carried on
+// a failed/cancelled request (RakshaError.ExtraFields.BilledUsage).
+func (mc *ModelCatalog) CalculateCostForUsage(usage *schemas.RakshaLLMUsage, provider schemas.ModelProvider, model string, requestType schemas.RequestType, scopes *PricingLookupScopes) float64 {
 	return mc.datasheet.CalculateCostForUsage(usage, provider, model, requestType, (*datasheet.LookupScopes)(scopes))
 }
 

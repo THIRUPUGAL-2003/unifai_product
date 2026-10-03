@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // CohereRerankRequest represents a Cohere rerank API request.
@@ -45,12 +45,12 @@ type CohereRerankMeta struct {
 	Tokens      *CohereTokenUsage          `json:"tokens,omitempty"`
 }
 
-func (response *CohereListModelsResponse) ToUnifAIListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.UnifAIListModelsResponse {
+func (response *CohereListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIListModelsResponse{
+	rakshaResponse := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.Models)),
 	}
 
@@ -63,7 +63,7 @@ func (response *CohereListModelsResponse) ToUnifAIListModelsResponse(providerKey
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return unifaiResponse
+		return rakshaResponse
 	}
 
 	included := make(map[string]bool)
@@ -80,13 +80,13 @@ func (response *CohereListModelsResponse) ToUnifAIListModelsResponse(providerKey
 			if result.AliasValue != "" {
 				entry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			unifaiResponse.Data = append(unifaiResponse.Data, entry)
+			rakshaResponse.Data = append(rakshaResponse.Data, entry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	unifaiResponse.Data = append(unifaiResponse.Data,
+	rakshaResponse.Data = append(rakshaResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return unifaiResponse
+	return rakshaResponse
 }

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // StreamingToolCallAccumulator accumulates tool call fragments from streaming responses
@@ -223,7 +223,7 @@ func (acc *StreamingToolCallAccumulator) GetFinalResponsesToolCalls() []ToolCall
 }
 
 // RunToolCallsStreamingTest executes the tool calls streaming test scenario
-func RunToolCallsStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunToolCallsStreamingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ToolCallsStreaming {
 		t.Logf("Tool calls streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -241,12 +241,12 @@ func RunToolCallsStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.
 
 		chatTool := GetSampleChatTool(SampleToolTypeWeather)
 
-		request := &schemas.UnifAIChatRequest{
+		request := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(500),
+				MaxCompletionTokens: raksha.Ptr(500),
 				Tools:               []schemas.ChatTool{*chatTool},
 			},
 			Fallbacks: testConfig.Fallbacks,
@@ -268,8 +268,8 @@ func RunToolCallsStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.
 			},
 		}
 
-		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionStreamRequest(bfCtx, request)
 		})
 
@@ -284,14 +284,14 @@ func RunToolCallsStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		t.Logf("🔧 Testing Chat Completions streaming with tool calls...")
 
 		for response := range responseChannel {
-			if response == nil || response.UnifAIChatResponse == nil {
+			if response == nil || response.RakshaChatResponse == nil {
 				t.Fatal("Streaming response should not be nil")
 			}
 			responseCount++
 
 			// Process tool calls from this chunk
-			if response.UnifAIChatResponse.Choices != nil {
-				for _, choice := range response.UnifAIChatResponse.Choices {
+			if response.RakshaChatResponse.Choices != nil {
+				for _, choice := range response.RakshaChatResponse.Choices {
 					if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
 						delta := choice.ChatStreamResponseChoice.Delta
 
@@ -346,7 +346,7 @@ func RunToolCallsStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.
 
 		responsesTool := GetSampleResponsesTool(SampleToolTypeWeather)
 
-		request := &schemas.UnifAIResponsesRequest{
+		request := &schemas.RakshaResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    responsesMessages,
@@ -374,11 +374,11 @@ func RunToolCallsStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.
 
 		// Use validation retry wrapper that validates tool calls and retries on validation failures
 		validationResult := WithResponsesStreamValidationRetry(t, retryConfig, retryContext,
-			func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			},
-			func(responseChannel chan *schemas.UnifAIStreamChunk) ResponsesStreamValidationResult {
+			func(responseChannel chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult {
 				accumulator := NewStreamingToolCallAccumulator()
 				var responseCount int
 
@@ -405,8 +405,8 @@ func RunToolCallsStreamingTest(t *testing.T, client *unifai.UnifAI, ctx context.
 						}
 						responseCount++
 
-						if response.UnifAIResponsesStreamResponse != nil {
-							streamResp := response.UnifAIResponsesStreamResponse
+						if response.RakshaResponsesStreamResponse != nil {
+							streamResp := response.RakshaResponsesStreamResponse
 
 							// Check for function call events
 							switch streamResp.Type {

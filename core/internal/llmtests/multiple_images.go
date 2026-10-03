@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunMultipleImagesTest executes the multiple images test scenario
-func RunMultipleImagesTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunMultipleImagesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.MultipleImages {
 		t.Logf("Multiple images not supported for provider %s", testConfig.Provider)
 		return
@@ -46,7 +46,7 @@ func RunMultipleImagesTest(t *testing.T, client *unifai.UnifAI, ctx context.Cont
 					ContentBlocks: []schemas.ChatContentBlock{
 						{
 							Type: schemas.ChatContentBlockTypeText,
-							Text: unifai.Ptr(prompt),
+							Text: raksha.Ptr(prompt),
 						},
 						{
 							Type: schemas.ChatContentBlockTypeImage,
@@ -65,12 +65,12 @@ func RunMultipleImagesTest(t *testing.T, client *unifai.UnifAI, ctx context.Cont
 			},
 		}
 
-		request := &schemas.UnifAIChatRequest{
+		request := &schemas.RakshaChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.VisionModel,
 			Input:    messages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(300),
+				MaxCompletionTokens: raksha.Ptr(300),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -116,14 +116,14 @@ func RunMultipleImagesTest(t *testing.T, client *unifai.UnifAI, ctx context.Cont
 			"single image", "unable to view the second",
 		}...) // Failure to process multiple images indicators
 
-		response, unifaiError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "MultipleImages", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		response, rakshaError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "MultipleImages", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, request)
 		})
 
 		// Validation now happens inside WithTestRetry - no need to check again
-		if unifaiError != nil {
-			t.Fatalf("❌ Multiple images request failed after retries: %v", GetErrorMessage(unifaiError))
+		if rakshaError != nil {
+			t.Fatalf("❌ Multiple images request failed after retries: %v", GetErrorMessage(rakshaError))
 		}
 
 		content := GetChatContent(response)

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/unifai/unifai/core/mcp"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/mcp"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +44,7 @@ type AgentTestConfig struct {
 // =============================================================================
 
 // SetupAgentTest creates a complete agent test environment with the specified configuration
-func SetupAgentTest(t *testing.T, config AgentTestConfig) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.UnifAIContext) {
+func SetupAgentTest(t *testing.T, config AgentTestConfig) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.RakshaContext) {
 	t.Helper()
 
 	// Initialize global MCP server paths
@@ -137,7 +137,7 @@ func SetupAgentTest(t *testing.T, config AgentTestConfig) (*mcp.MCPManager, *Dyn
 	if config.ToolFiltering != nil {
 		baseCtx = context.WithValue(baseCtx, schemas.MCPContextKeyIncludeTools, config.ToolFiltering)
 	}
-	ctx := schemas.NewUnifAIContext(baseCtx, schemas.NoDeadline)
+	ctx := schemas.NewRakshaContext(baseCtx, schemas.NoDeadline)
 
 	// Create dynamic LLM mocker
 	mocker := NewDynamicLLMMocker()
@@ -146,7 +146,7 @@ func SetupAgentTest(t *testing.T, config AgentTestConfig) (*mcp.MCPManager, *Dyn
 }
 
 // SetupAgentTestWithClients creates an agent test environment with custom client configs
-func SetupAgentTestWithClients(t *testing.T, config AgentTestConfig, customClients []schemas.MCPClientConfig) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.UnifAIContext) {
+func SetupAgentTestWithClients(t *testing.T, config AgentTestConfig, customClients []schemas.MCPClientConfig) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.RakshaContext) {
 	t.Helper()
 
 	// Create MCP manager with custom clients
@@ -198,7 +198,7 @@ func SetupAgentTestWithClients(t *testing.T, config AgentTestConfig, customClien
 	if config.ToolFiltering != nil {
 		baseCtx = context.WithValue(baseCtx, schemas.MCPContextKeyIncludeTools, config.ToolFiltering)
 	}
-	ctx := schemas.NewUnifAIContext(baseCtx, schemas.NoDeadline)
+	ctx := schemas.NewRakshaContext(baseCtx, schemas.NoDeadline)
 
 	// Create dynamic LLM mocker
 	mocker := NewDynamicLLMMocker()
@@ -211,7 +211,7 @@ func SetupAgentTestWithClients(t *testing.T, config AgentTestConfig, customClien
 // =============================================================================
 
 // SetupMultiClientAgentTest creates an agent test with multiple client types
-func SetupMultiClientAgentTest(t *testing.T, inProcessTools []string, stdioClients []string, autoExecute []string, maxDepth int) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.UnifAIContext) {
+func SetupMultiClientAgentTest(t *testing.T, inProcessTools []string, stdioClients []string, autoExecute []string, maxDepth int) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.RakshaContext) {
 	t.Helper()
 
 	return SetupAgentTest(t, AgentTestConfig{
@@ -223,7 +223,7 @@ func SetupMultiClientAgentTest(t *testing.T, inProcessTools []string, stdioClien
 }
 
 // SetupContextFilteredAgentTest creates an agent test with context filtering
-func SetupContextFilteredAgentTest(t *testing.T, inProcessTools []string, stdioClients []string, autoExecute []string, toolFilter []string, clientFilter []string) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.UnifAIContext) {
+func SetupContextFilteredAgentTest(t *testing.T, inProcessTools []string, stdioClients []string, autoExecute []string, toolFilter []string, clientFilter []string) (*mcp.MCPManager, *DynamicLLMMocker, *schemas.RakshaContext) {
 	t.Helper()
 
 	return SetupAgentTest(t, AgentTestConfig{
@@ -255,7 +255,7 @@ func AssertAgentStoppedAtTurn(t *testing.T, mocker *DynamicLLMMocker, expectedTu
 }
 
 // AssertAgentFinalResponse verifies the final agent response
-func AssertAgentFinalResponse(t *testing.T, response *schemas.UnifAIChatResponse, expectedFinishReason string, shouldContainText string) {
+func AssertAgentFinalResponse(t *testing.T, response *schemas.RakshaChatResponse, expectedFinishReason string, shouldContainText string) {
 	t.Helper()
 
 	require.NotNil(t, response, "Agent response should not be nil")
@@ -301,12 +301,12 @@ func AssertToolExecutedInTurn(t *testing.T, mocker *DynamicLLMMocker, toolName s
 	assistantMsg := assistantMessages[turn-1]
 	found := false
 
-	// Check for exact match or with "unifaiInternal-" prefix
+	// Check for exact match or with "rakshaInternal-" prefix
 	if assistantMsg.ChatAssistantMessage != nil {
 		for _, tc := range assistantMsg.ChatAssistantMessage.ToolCalls {
 			if tc.Function.Name != nil {
 				fullName := *tc.Function.Name
-				if fullName == toolName || fullName == "unifaiInternal-"+toolName ||
+				if fullName == toolName || fullName == "rakshaInternal-"+toolName ||
 					(matchesToolNameWithPrefix(toolName) && fullName == toolName) {
 					found = true
 					break
@@ -342,7 +342,7 @@ func AssertToolNotExecutedInAnyTurn(t *testing.T, mocker *DynamicLLMMocker, tool
 				for _, tc := range msg.ChatAssistantMessage.ToolCalls {
 					if tc.Function.Name != nil {
 						fullName := *tc.Function.Name
-						if fullName == toolName || fullName == "unifaiInternal-"+toolName ||
+						if fullName == toolName || fullName == "rakshaInternal-"+toolName ||
 							(matchesToolNameWithPrefix(toolName) && fullName == toolName) {
 							assert.Fail(t, fmt.Sprintf("Tool %s should not be executed in turn %d", toolName, i+1))
 							return
@@ -382,7 +382,7 @@ func AssertToolsExecutedInParallel(t *testing.T, mocker *DynamicLLMMocker, toolN
 			for _, tc := range assistantMsg.ChatAssistantMessage.ToolCalls {
 				if tc.Function.Name != nil {
 					fullName := *tc.Function.Name
-					if fullName == toolName || fullName == "unifaiInternal-"+toolName ||
+					if fullName == toolName || fullName == "rakshaInternal-"+toolName ||
 						(matchesToolNameWithPrefix(toolName) && fullName == toolName) {
 						found = true
 						break
@@ -420,7 +420,7 @@ func AssertToolResultPresent(t *testing.T, mocker *DynamicLLMMocker, callID stri
 }
 
 // AssertNoToolCalls verifies there are no tool calls in the response
-func AssertNoToolCalls(t *testing.T, response *schemas.UnifAIChatResponse) {
+func AssertNoToolCalls(t *testing.T, response *schemas.RakshaChatResponse) {
 	t.Helper()
 
 	require.NotNil(t, response, "Response should not be nil")
@@ -444,25 +444,25 @@ func AssertAgentMaxDepthReached(t *testing.T, mocker *DynamicLLMMocker, maxDepth
 }
 
 // AssertAgentError verifies the agent returned an error
-func AssertAgentError(t *testing.T, unifaiErr *schemas.UnifAIError, shouldContain string) {
+func AssertAgentError(t *testing.T, rakshaErr *schemas.RakshaError, shouldContain string) {
 	t.Helper()
 
-	require.NotNil(t, unifaiErr, "Should return error")
-	require.NotNil(t, unifaiErr.Error, "Error field should not be nil")
+	require.NotNil(t, rakshaErr, "Should return error")
+	require.NotNil(t, rakshaErr.Error, "Error field should not be nil")
 
 	if shouldContain != "" {
-		assert.Contains(t, unifaiErr.Error.Message, shouldContain, "Error message should contain expected text")
+		assert.Contains(t, rakshaErr.Error.Message, shouldContain, "Error message should contain expected text")
 	}
 }
 
 // AssertAgentSuccess verifies the agent completed without errors
-func AssertAgentSuccess(t *testing.T, response *schemas.UnifAIChatResponse, unifaiErr *schemas.UnifAIError) {
+func AssertAgentSuccess(t *testing.T, response *schemas.RakshaChatResponse, rakshaErr *schemas.RakshaError) {
 	t.Helper()
 
-	if unifaiErr != nil && unifaiErr.Error != nil {
-		t.Logf("unifaiErr: %s", unifaiErr.Error.Message)
+	if rakshaErr != nil && rakshaErr.Error != nil {
+		t.Logf("rakshaErr: %s", rakshaErr.Error.Message)
 	}
-	assert.Nil(t, unifaiErr, "Should not return error")
+	assert.Nil(t, rakshaErr, "Should not return error")
 	require.NotNil(t, response, "Response should not be nil")
 	require.NotEmpty(t, response.Choices, "Response should have choices")
 }
@@ -472,7 +472,7 @@ func AssertAgentSuccess(t *testing.T, response *schemas.UnifAIChatResponse, unif
 // =============================================================================
 
 // AssertRequestIDChanged verifies request ID changed between turns
-func AssertRequestIDChanged(t *testing.T, ctx1 *schemas.UnifAIContext, ctx2 *schemas.UnifAIContext) {
+func AssertRequestIDChanged(t *testing.T, ctx1 *schemas.RakshaContext, ctx2 *schemas.RakshaContext) {
 	t.Helper()
 
 	// This is a placeholder - actual implementation would need access to request IDs
@@ -482,7 +482,7 @@ func AssertRequestIDChanged(t *testing.T, ctx1 *schemas.UnifAIContext, ctx2 *sch
 }
 
 // AssertRequestIDPropagated verifies request ID is present in context
-func AssertRequestIDPropagated(t *testing.T, ctx *schemas.UnifAIContext) {
+func AssertRequestIDPropagated(t *testing.T, ctx *schemas.RakshaContext) {
 	t.Helper()
 
 	// Placeholder assertion - actual implementation depends on how request IDs are stored
@@ -518,10 +518,10 @@ func CreateSTDIOToolCall(id, serverName, toolName string, args map[string]interf
 }
 
 // CreateInProcessToolCall creates a tool call for an in-process tool
-// In-process tools are registered with "unifaiInternal-" prefix
-// The tool name format is: unifaiInternal-{tool_name} (e.g., "unifaiInternal-echo")
+// In-process tools are registered with "rakshaInternal-" prefix
+// The tool name format is: rakshaInternal-{tool_name} (e.g., "rakshaInternal-echo")
 func CreateInProcessToolCall(id, toolName string, args map[string]interface{}) schemas.ChatAssistantMessageToolCall {
-	fullToolName := fmt.Sprintf("unifaiInternal-%s", toolName)
+	fullToolName := fmt.Sprintf("rakshaInternal-%s", toolName)
 	return CreateToolCall(id, fullToolName, args)
 }
 
@@ -531,21 +531,21 @@ func CreateInProcessToolCall(id, toolName string, args map[string]interface{}) s
 
 // CreateAgentTurnWithToolCalls creates a mock LLM response with tool calls for agent mode
 func CreateAgentTurnWithToolCalls(toolCalls ...schemas.ChatAssistantMessageToolCall) ChatResponseFunc {
-	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.UnifAIChatResponse {
+	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
 		return CreateChatResponseWithToolCalls(toolCalls)
 	})
 }
 
 // CreateAgentTurnWithText creates a mock LLM response with text (agent stops)
 func CreateAgentTurnWithText(text string) ChatResponseFunc {
-	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.UnifAIChatResponse {
+	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
 		return CreateChatResponseWithText(text)
 	})
 }
 
 // CreateAgentTurnValidatingResult creates a turn that validates tool result before responding
 func CreateAgentTurnValidatingResult(callID string, mustContain []string, nextToolCalls []schemas.ChatAssistantMessageToolCall, failText string) ChatResponseFunc {
-	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.UnifAIChatResponse {
+	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
 		result, found := GetToolResultFromChatHistory(history, callID)
 		if !found {
 			return CreateChatResponseWithText(failText + " (result not found)")
@@ -606,7 +606,7 @@ func RunAgentScenario(t *testing.T, scenario AgentScenario) {
 		}
 
 		// Get initial response (first turn)
-		req := &schemas.UnifAIChatRequest{
+		req := &schemas.RakshaChatRequest{
 			Provider: schemas.OpenAI,
 			Model:    "gpt-4",
 			Input: []schemas.ChatMessage{
@@ -619,7 +619,7 @@ func RunAgentScenario(t *testing.T, scenario AgentScenario) {
 		require.NotNil(t, initialResponse, "Initial response should not be nil")
 
 		// Execute agent mode with initial response
-		response, unifaiErr := manager.CheckAndExecuteAgentForChatRequest(
+		response, rakshaErr := manager.CheckAndExecuteAgentForChatRequest(
 			ctx,
 			req,
 			initialResponse,
@@ -632,7 +632,7 @@ func RunAgentScenario(t *testing.T, scenario AgentScenario) {
 			case "turn_count":
 				AssertAgentCompletedInTurns(t, mocker, assertion.Expected.(int))
 			case "success":
-				AssertAgentSuccess(t, response, unifaiErr)
+				AssertAgentSuccess(t, response, rakshaErr)
 			case "final_reason":
 				AssertAgentFinalResponse(t, response, assertion.Expected.(string), "")
 			default:
@@ -647,7 +647,7 @@ func RunAgentScenario(t *testing.T, scenario AgentScenario) {
 // =============================================================================
 
 // SimpleAgentTest runs a simple agent test with inline setup
-func SimpleAgentTest(t *testing.T, name string, config AgentTestConfig, responses []ChatResponseFunc, assertions func(*testing.T, *schemas.UnifAIChatResponse, *schemas.UnifAIError, *DynamicLLMMocker)) {
+func SimpleAgentTest(t *testing.T, name string, config AgentTestConfig, responses []ChatResponseFunc, assertions func(*testing.T, *schemas.RakshaChatResponse, *schemas.RakshaError, *DynamicLLMMocker)) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
 		manager, mocker, ctx := SetupAgentTest(t, config)
@@ -656,7 +656,7 @@ func SimpleAgentTest(t *testing.T, name string, config AgentTestConfig, response
 			mocker.AddChatResponse(resp)
 		}
 
-		req := &schemas.UnifAIChatRequest{
+		req := &schemas.RakshaChatRequest{
 			Provider: schemas.OpenAI,
 			Model:    "gpt-4",
 			Input: []schemas.ChatMessage{
@@ -670,14 +670,14 @@ func SimpleAgentTest(t *testing.T, name string, config AgentTestConfig, response
 		require.NotNil(t, initialResponse, "Initial response should not be nil")
 
 		// Execute agent mode
-		response, unifaiErr := manager.CheckAndExecuteAgentForChatRequest(
+		response, rakshaErr := manager.CheckAndExecuteAgentForChatRequest(
 			ctx,
 			req,
 			initialResponse,
 			mocker.MakeChatRequest,
 		)
 
-		assertions(t, response, unifaiErr, mocker)
+		assertions(t, response, rakshaErr, mocker)
 	})
 }
 
@@ -696,7 +696,7 @@ func GetSampleUserMessageResponses(text string) schemas.ResponsesMessage {
 
 // CreateAgentTurnWithToolCallsResponses creates a mock Responses API response with tool calls
 func CreateAgentTurnWithToolCallsResponses(toolCalls ...schemas.ChatAssistantMessageToolCall) ResponsesResponseFunc {
-	return CreateDynamicResponsesResponse(func(history []schemas.ResponsesMessage) *schemas.UnifAIResponsesResponse {
+	return CreateDynamicResponsesResponse(func(history []schemas.ResponsesMessage) *schemas.RakshaResponsesResponse {
 		// Convert Chat tool calls to Responses tool messages
 		toolMessages := make([]schemas.ResponsesToolMessage, 0, len(toolCalls))
 		for _, tc := range toolCalls {
@@ -712,7 +712,7 @@ func CreateAgentTurnWithToolCallsResponses(toolCalls ...schemas.ChatAssistantMes
 
 // CreateAgentTurnWithTextResponses creates a mock Responses API response with text
 func CreateAgentTurnWithTextResponses(text string) ResponsesResponseFunc {
-	return CreateDynamicResponsesResponse(func(history []schemas.ResponsesMessage) *schemas.UnifAIResponsesResponse {
+	return CreateDynamicResponsesResponse(func(history []schemas.ResponsesMessage) *schemas.RakshaResponsesResponse {
 		return CreateResponsesResponseWithText(text)
 	})
 }
@@ -732,7 +732,7 @@ func AssertAgentStoppedAtTurnResponses(t *testing.T, mocker *DynamicLLMMocker, e
 }
 
 // AssertAgentFinalResponseResponses verifies the final response (Responses API)
-func AssertAgentFinalResponseResponses(t *testing.T, result *schemas.UnifAIResponsesResponse, mustContainInContent string) {
+func AssertAgentFinalResponseResponses(t *testing.T, result *schemas.RakshaResponsesResponse, mustContainInContent string) {
 	t.Helper()
 	require.NotEmpty(t, result.Output, "Should have output in response")
 

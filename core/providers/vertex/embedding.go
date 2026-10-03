@@ -1,24 +1,24 @@
 package vertex
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToVertexEmbeddingRequest converts a UnifAI embedding request to Vertex AI format
-func ToVertexEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *VertexEmbeddingRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil || (unifaiReq.Input.Text == nil && unifaiReq.Input.Texts == nil) {
+// ToVertexEmbeddingRequest converts a Raksha embedding request to Vertex AI format
+func ToVertexEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *VertexEmbeddingRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil || (rakshaReq.Input.Text == nil && rakshaReq.Input.Texts == nil) {
 		return nil
 	}
 	// Create the request
 	vertexReq := &VertexEmbeddingRequest{}
-	if unifaiReq.Params != nil {
-		vertexReq.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		vertexReq.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 	var texts []string
-	if unifaiReq.Input.Text != nil {
-		texts = []string{*unifaiReq.Input.Text}
+	if rakshaReq.Input.Text != nil {
+		texts = []string{*rakshaReq.Input.Text}
 	} else {
-		texts = unifaiReq.Input.Texts
+		texts = rakshaReq.Input.Texts
 	}
 
 	// Create instances for each text
@@ -29,12 +29,12 @@ func ToVertexEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Vertex
 		}
 
 		// Add optional task_type and title from params
-		if unifaiReq.Params != nil {
-			if taskTypeStr, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["task_type"]); ok {
+		if rakshaReq.Params != nil {
+			if taskTypeStr, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["task_type"]); ok {
 				delete(vertexReq.ExtraParams, "task_type")
 				instance.TaskType = taskTypeStr
 			}
-			if title, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["title"]); ok {
+			if title, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["title"]); ok {
 				delete(vertexReq.ExtraParams, "title")
 				instance.Title = title
 			}
@@ -44,13 +44,13 @@ func ToVertexEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Vertex
 	}
 	vertexReq.Instances = instances
 	// Add parameters if present
-	if unifaiReq.Params != nil {
+	if rakshaReq.Params != nil {
 		parameters := &VertexEmbeddingParameters{}
 
 		// Set autoTruncate (defaults to true)
 		autoTruncate := true
-		if unifaiReq.Params.ExtraParams != nil {
-			if autoTruncateVal, ok := schemas.SafeExtractBool(unifaiReq.Params.ExtraParams["autoTruncate"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			if autoTruncateVal, ok := schemas.SafeExtractBool(rakshaReq.Params.ExtraParams["autoTruncate"]); ok {
 				delete(vertexReq.ExtraParams, "autoTruncate")
 				autoTruncate = autoTruncateVal
 			}
@@ -58,9 +58,9 @@ func ToVertexEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Vertex
 		parameters.AutoTruncate = &autoTruncate
 
 		// Add outputDimensionality if specified
-		if unifaiReq.Params.Dimensions != nil {
+		if rakshaReq.Params.Dimensions != nil {
 			delete(vertexReq.ExtraParams, "dimensions")
-			parameters.OutputDimensionality = unifaiReq.Params.Dimensions
+			parameters.OutputDimensionality = rakshaReq.Params.Dimensions
 		}
 
 		vertexReq.Parameters = parameters
@@ -69,15 +69,15 @@ func ToVertexEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) *Vertex
 	return vertexReq
 }
 
-// ToUnifAIEmbeddingResponse converts a Vertex AI embedding response to UnifAI format
-func (response *VertexEmbeddingResponse) ToUnifAIEmbeddingResponse() *schemas.UnifAIEmbeddingResponse {
+// ToRakshaEmbeddingResponse converts a Vertex AI embedding response to Raksha format
+func (response *VertexEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.RakshaEmbeddingResponse {
 	if response == nil || len(response.Predictions) == 0 {
 		return nil
 	}
 
-	// Convert predictions to UnifAI embeddings
+	// Convert predictions to Raksha embeddings
 	embeddings := make([]schemas.EmbeddingData, 0, len(response.Predictions))
-	var usage *schemas.UnifAILLMUsage
+	var usage *schemas.RakshaLLMUsage
 
 	for i, prediction := range response.Predictions {
 		if prediction.Embeddings == nil || len(prediction.Embeddings.Values) == 0 {
@@ -96,7 +96,7 @@ func (response *VertexEmbeddingResponse) ToUnifAIEmbeddingResponse() *schemas.Un
 		// Extract statistics if available
 		if prediction.Embeddings.Statistics != nil {
 			if usage == nil {
-				usage = &schemas.UnifAILLMUsage{}
+				usage = &schemas.RakshaLLMUsage{}
 			}
 			usage.TotalTokens += prediction.Embeddings.Statistics.TokenCount
 			usage.PromptTokens += prediction.Embeddings.Statistics.TokenCount
@@ -105,11 +105,11 @@ func (response *VertexEmbeddingResponse) ToUnifAIEmbeddingResponse() *schemas.Un
 		embeddings = append(embeddings, embedding)
 	}
 
-	return &schemas.UnifAIEmbeddingResponse{
+	return &schemas.RakshaEmbeddingResponse{
 		Object: "list",
 		Data:   embeddings,
 		Usage:  usage,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 		},
 	}
 }

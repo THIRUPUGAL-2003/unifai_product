@@ -62,16 +62,16 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 	const hasCreateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Create);
 	const { toast } = useToast();
 	const [createMCPClient] = useCreateMCPClientMutation();
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
 	const oauthRedirectUri = useMemo(
-		() => mcpOAuthRedirectUri(getExternalBaseUrl(unifaiConfig?.client_config)),
-		[unifaiConfig?.client_config],
+		() => mcpOAuthRedirectUri(getExternalBaseUrl(rakshaConfig?.client_config)),
+		[rakshaConfig?.client_config],
 	);
 
 	const [isLoading, setIsLoading] = useState(false);
 	const [argsText, setArgsText] = useState("");
 	// STDIO env vars as a name→value map. Empty value = pass the bare name so the
-	// stdio process reads it from UnifAI's host environment.
+	// stdio process reads it from Raksha's host environment.
 	const [envVars, setEnvVars] = useState<Record<string, string>>({});
 	const [scopesText, setScopesText] = useState("");
 	const [oauthFlow, setOauthFlow] = useState<{
@@ -237,7 +237,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 							command: data.stdio_config?.command || "",
 							args: parseArrayFromText(argsText),
 							// Each row becomes KEY=value, or a bare KEY when no value is given
-							// (read from UnifAI's host environment). Rows without a name are skipped.
+							// (read from Raksha's host environment). Rows without a name are skipped.
 							envs: Object.entries(envVars)
 								.filter(([name]) => name.trim() !== "")
 								.map(([name, value]) => {
@@ -666,7 +666,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 																			</TooltipTrigger>
 																			<TooltipContent className="max-w-xs">
 																				<p>
-																					Leave empty to use Dynamic Client Registration (RFC 7591). UnifAI will automatically register
+																					Leave empty to use Dynamic Client Registration (RFC 7591). Raksha will automatically register
 																					with the OAuth provider if supported.
 																				</p>
 																			</TooltipContent>
@@ -868,7 +868,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 											<div className="flex-1">
 												<p className="text-xs font-medium text-amber-900">Docker Notice</p>
 												<p className="mt-0.5 text-xs text-amber-800">
-													If not using the official UnifAI Docker image, STDIO connections may not work if required commands (npx, python,
+													If not using the official Raksha Docker image, STDIO connections may not work if required commands (npx, python,
 													etc.) aren't installed. You can safely ignore this if running locally or using a custom image with the necessary
 													dependencies.
 												</p>
@@ -922,7 +922,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 													</TooltipTrigger>
 													<TooltipContent className="max-w-xs">
 														<p>
-															Add a value for each variable, or leave it blank to read the value from the environment where UnifAI runs.
+															Add a value for each variable, or leave it blank to read the value from the environment where Raksha runs.
 														</p>
 													</TooltipContent>
 												</Tooltip>

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/logstore"
-	"github.com/unifai/unifai/framework/streaming"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/logstore"
+	"github.com/raksha/raksha/framework/streaming"
 )
 
 // KeyPair represents an ID-Name pair for keys
@@ -500,7 +500,7 @@ func retryOnNotFound(ctx context.Context, operation func() error) error {
 }
 
 // extractInputHistory extracts input history from request input
-func (p *LoggerPlugin) extractInputHistory(request *schemas.UnifAIRequest) ([]schemas.ChatMessage, []schemas.ResponsesMessage) {
+func (p *LoggerPlugin) extractInputHistory(request *schemas.RakshaRequest) ([]schemas.ChatMessage, []schemas.ResponsesMessage) {
 	if request.ChatRequest != nil {
 		return request.ChatRequest.Input, []schemas.ResponsesMessage{}
 	}
@@ -745,12 +745,12 @@ func convertToProcessedStreamResponse(result *schemas.StreamAccumulatorResult, r
 	return resp
 }
 
-func mergeRealtimeMetadata(metadata map[string]interface{}, ctx *schemas.UnifAIContext) map[string]interface{} {
+func mergeRealtimeMetadata(metadata map[string]interface{}, ctx *schemas.RakshaContext) map[string]interface{} {
 	if ctx == nil {
 		return metadata
 	}
-	set := func(key string, ctxKey schemas.UnifAIContextKey) {
-		if value := unifai.GetStringFromContext(ctx, ctxKey); value != "" {
+	set := func(key string, ctxKey schemas.RakshaContextKey) {
+		if value := raksha.GetStringFromContext(ctx, ctxKey); value != "" {
 			if metadata == nil {
 				metadata = make(map[string]interface{})
 			}
@@ -758,13 +758,13 @@ func mergeRealtimeMetadata(metadata map[string]interface{}, ctx *schemas.UnifAIC
 		}
 	}
 
-	set("realtime_session_id", schemas.UnifAIContextKeyRealtimeSessionID)
-	set("provider_session_id", schemas.UnifAIContextKeyRealtimeProviderSessionID)
-	set("realtime_source", schemas.UnifAIContextKeyRealtimeSource)
-	set("realtime_event_type", schemas.UnifAIContextKeyRealtimeEventType)
-	set("realtime_transport", schemas.UnifAIContextKeyRealtimeTransport)
-	set("realtime_voice", schemas.UnifAIContextKeyRealtimeVoice)
-	if unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyRealtimeSessionID) != "" {
+	set("realtime_session_id", schemas.RakshaContextKeyRealtimeSessionID)
+	set("provider_session_id", schemas.RakshaContextKeyRealtimeProviderSessionID)
+	set("realtime_source", schemas.RakshaContextKeyRealtimeSource)
+	set("realtime_event_type", schemas.RakshaContextKeyRealtimeEventType)
+	set("realtime_transport", schemas.RakshaContextKeyRealtimeTransport)
+	set("realtime_voice", schemas.RakshaContextKeyRealtimeVoice)
+	if raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyRealtimeSessionID) != "" {
 		if metadata == nil {
 			metadata = make(map[string]interface{})
 		}

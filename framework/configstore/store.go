@@ -1,4 +1,4 @@
-// Package configstore provides a persistent configuration store for UnifAI.
+// Package configstore provides a persistent configuration store for Raksha.
 package configstore
 
 import (
@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/logstore"
-	"github.com/unifai/unifai/framework/objectstore"
-	"github.com/unifai/unifai/framework/vectorstore"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/logstore"
+	"github.com/raksha/raksha/framework/objectstore"
+	"github.com/raksha/raksha/framework/vectorstore"
 	"gorm.io/gorm"
 )
 

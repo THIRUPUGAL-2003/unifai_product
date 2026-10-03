@@ -120,7 +120,7 @@ export default function MCPServersPage() {
 	useEffect(() => {
 		if (error) {
 			const message = getErrorMessage(error);
-			if (message.toLowerCase().includes("mcp is not configured in this unifai instance")) return;
+			if (message.toLowerCase().includes("mcp is not configured in this raksha instance")) return;
 			toast({
 				title: "Error",
 				description: message,

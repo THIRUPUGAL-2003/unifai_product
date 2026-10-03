@@ -3,7 +3,7 @@ package loadbalancer
 import (
 	"testing"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 func TestSelectProviderKeySkipsKeysThatCannotServeModel(t *testing.T) {

@@ -5,60 +5,60 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToGeminiChatCompletionRequest converts a UnifAIChatRequest to Gemini's generation request format for chat completion
-func ToGeminiChatCompletionRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIChatRequest) (*GeminiGenerationRequest, error) {
-	return ToGeminiChatCompletionRequestWithImageURLSchemes(ctx, unifaiReq, defaultGeminiImageURLSchemes...)
+// ToGeminiChatCompletionRequest converts a RakshaChatRequest to Gemini's generation request format for chat completion
+func ToGeminiChatCompletionRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest) (*GeminiGenerationRequest, error) {
+	return ToGeminiChatCompletionRequestWithImageURLSchemes(ctx, rakshaReq, defaultGeminiImageURLSchemes...)
 }
 
-// ToGeminiChatCompletionRequestWithImageURLSchemes converts a UnifAIChatRequest
+// ToGeminiChatCompletionRequestWithImageURLSchemes converts a RakshaChatRequest
 // to Gemini format using the provider-specific allowlist for non-data image URLs.
-func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIChatRequest, allowedImageURLSchemes ...string) (*GeminiGenerationRequest, error) {
-	if unifaiReq == nil {
+func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest, allowedImageURLSchemes ...string) (*GeminiGenerationRequest, error) {
+	if rakshaReq == nil {
 		return nil, nil
 	}
 
-	unifaiReq.Model = NormalizeModelName(unifaiReq.Model)
+	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
 
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
 
 	// Canonical model for capability gating only; wire model is untouched.
-	capModel := NormalizeModelName(schemas.ResolveCanonicalModel(ctx, unifaiReq.Model))
+	capModel := NormalizeModelName(schemas.ResolveCanonicalModel(ctx, rakshaReq.Model))
 
 	// Convert parameters to generation config
-	if unifaiReq.Params != nil {
-		geminiReq.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
 		var err error
-		geminiReq.GenerationConfig, err = convertParamsToGenerationConfig(unifaiReq.Params, []string{}, capModel)
+		geminiReq.GenerationConfig, err = convertParamsToGenerationConfig(rakshaReq.Params, []string{}, capModel)
 		if err != nil {
 			return nil, err
 		}
 		// Handle tool-related parameters
-		if len(unifaiReq.Params.Tools) > 0 {
-			geminiReq.Tools, err = convertUnifAIToolsToGemini(unifaiReq.Params.Tools)
+		if len(rakshaReq.Params.Tools) > 0 {
+			geminiReq.Tools, err = convertRakshaToolsToGemini(rakshaReq.Params.Tools)
 			if err != nil {
 				return nil, err
 			}
 
 			// Convert tool choice to tool config
-			if unifaiReq.Params.ToolChoice != nil {
-				geminiReq.ToolConfig = convertToolChoiceToToolConfig(unifaiReq.Params.ToolChoice)
+			if rakshaReq.Params.ToolChoice != nil {
+				geminiReq.ToolConfig = convertToolChoiceToToolConfig(rakshaReq.Params.ToolChoice)
 			}
 		}
 
-		if unifaiReq.Params.ServiceTier != nil {
-			geminiReq.ServiceTier = mapUnifAIServiceTierToGemini(*unifaiReq.Params.ServiceTier)
+		if rakshaReq.Params.ServiceTier != nil {
+			geminiReq.ServiceTier = mapRakshaServiceTierToGemini(*rakshaReq.Params.ServiceTier)
 		}
 
 		// Handle extra parameters
-		if unifaiReq.Params.ExtraParams != nil {
+		if rakshaReq.Params.ExtraParams != nil {
 			// Safety settings
-			if safetySettings, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "safety_settings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safety_settings"); ok {
 				delete(geminiReq.ExtraParams, "safety_settings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
@@ -66,13 +66,13 @@ func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.UnifAIContext
 			}
 
 			// Cached content
-			if cachedContent, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["cached_content"]); ok {
+			if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cached_content"]); ok {
 				delete(geminiReq.ExtraParams, "cached_content")
 				geminiReq.CachedContent = cachedContent
 			}
 
 			// Labels
-			if labels, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "labels"); ok {
+			if labels, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "labels"); ok {
 				delete(geminiReq.ExtraParams, "labels")
 				if labelMap, ok := schemas.SafeExtractStringMap(labels); ok {
 					geminiReq.Labels = labelMap
@@ -81,7 +81,7 @@ func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.UnifAIContext
 		}
 	}
 	// Convert chat completion messages to Gemini format
-	contents, systemInstruction, err := convertUnifAIMessagesToGemini(unifaiReq.Input, allowedImageURLSchemes...)
+	contents, systemInstruction, err := convertRakshaMessagesToGemini(rakshaReq.Input, allowedImageURLSchemes...)
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +92,9 @@ func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.UnifAIContext
 	return geminiReq, nil
 }
 
-// ToUnifAIChatResponse converts a GenerateContentResponse to a UnifAIChatResponse
-func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIChatResponse {
-	unifaiResp := &schemas.UnifAIChatResponse{
+// ToRakshaChatResponse converts a GenerateContentResponse to a RakshaChatResponse
+func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaChatResponse {
+	rakshaResp := &schemas.RakshaChatResponse{
 		ID:     response.ResponseID,
 		Model:  response.ModelVersion,
 		Object: "chat.completion",
@@ -102,12 +102,12 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 
 	// Set creation timestamp if available
 	if !response.CreateTime.IsZero() {
-		unifaiResp.Created = int(response.CreateTime.Unix())
+		rakshaResp.Created = int(response.CreateTime.Unix())
 	}
 
 	// Handle empty candidates (filtered/malformed responses)
 	if len(response.Candidates) == 0 {
-		finishReason := ConvertGeminiFinishReasonToUnifAI(FinishReasonMalformedFunctionCall)
+		finishReason := ConvertGeminiFinishReasonToRaksha(FinishReasonMalformedFunctionCall)
 		return createErrorResponse(response, finishReason, false)
 	}
 
@@ -115,7 +115,7 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 
 	// Check for filtered finish reasons that indicate errors
 	if isErrorFinishReason(candidate.FinishReason) {
-		finishReason := ConvertGeminiFinishReasonToUnifAI(candidate.FinishReason)
+		finishReason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
 		return createErrorResponse(response, finishReason, false)
 	}
 
@@ -132,7 +132,7 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 			if part.Text != "" && part.Thought {
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index: len(reasoningDetails),
-					Type:  schemas.UnifAIReasoningDetailsTypeText,
+					Type:  schemas.RakshaReasoningDetailsTypeText,
 					Text:  &part.Text,
 				})
 				continue
@@ -148,7 +148,7 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 					thoughtSig := base64.StdEncoding.EncodeToString(part.ThoughtSignature)
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index:     len(reasoningDetails),
-						Type:      schemas.UnifAIReasoningDetailsTypeEncrypted,
+						Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
 						Signature: &thoughtSig,
 					})
 				}
@@ -195,7 +195,7 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 					}
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index:     len(reasoningDetails),
-						Type:      schemas.UnifAIReasoningDetailsTypeEncrypted,
+						Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
 						Signature: &thoughtSig,
 						ID:        schemas.Ptr(fmt.Sprintf("tool_call_%s", baseCallID)),
 					})
@@ -243,7 +243,7 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 				thoughtSig := base64.StdEncoding.EncodeToString(part.ThoughtSignature)
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index:     len(reasoningDetails),
-					Type:      schemas.UnifAIReasoningDetailsTypeEncrypted,
+					Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
 					Signature: &thoughtSig,
 				})
 			}
@@ -271,19 +271,19 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 			}
 		}
 
-		// Convert finish reason to UnifAI format.
+		// Convert finish reason to Raksha format.
 		// Gemini uses "STOP" for both normal text completions and tool call responses —
 		// it has no dedicated finish reason for tool calls. Override to "tool_calls" when
 		// tool calls are present so downstream consumers see a uniform signal.
-		finishReason := ConvertGeminiFinishReasonToUnifAI(candidate.FinishReason)
+		finishReason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
 		if len(toolCalls) > 0 && finishReason == "stop" {
 			finishReason = "tool_calls"
 		}
 
-		unifaiResp.Choices = append(unifaiResp.Choices, schemas.UnifAIResponseChoice{
+		rakshaResp.Choices = append(rakshaResp.Choices, schemas.RakshaResponseChoice{
 			Index:        0,
 			FinishReason: &finishReason,
-			LogProbs:     ConvertGeminiLogprobsResultToUnifAI(candidate.LogprobsResult),
+			LogProbs:     ConvertGeminiLogprobsResultToRaksha(candidate.LogprobsResult),
 			ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
 				Message: message,
 			},
@@ -291,18 +291,18 @@ func (response *GenerateContentResponse) ToUnifAIChatResponse() *schemas.UnifAIC
 	}
 
 	// Set usage information
-	unifaiResp.Usage = ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata)
+	rakshaResp.Usage = ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata)
 
 	if response.UsageMetadata != nil {
-		if t := mapGeminiTrafficTypeToUnifAI(response.UsageMetadata.TrafficType); t != nil {
-			unifaiResp.ServiceTier = t
+		if t := mapGeminiTrafficTypeToRaksha(response.UsageMetadata.TrafficType); t != nil {
+			rakshaResp.ServiceTier = t
 		} else if response.UsageMetadata.ServiceTier != "" {
-			tier := mapGeminiServiceTierToUnifAI(response.UsageMetadata.ServiceTier)
-			unifaiResp.ServiceTier = &tier
+			tier := mapGeminiServiceTierToRaksha(response.UsageMetadata.ServiceTier)
+			rakshaResp.ServiceTier = &tier
 		}
 	}
 
-	return unifaiResp
+	return rakshaResp
 }
 
 // GeminiStreamState tracks tool-call index across streaming chunks.
@@ -316,9 +316,9 @@ func NewGeminiStreamState() *GeminiStreamState {
 	return &GeminiStreamState{}
 }
 
-// ToUnifAIChatCompletionStream converts a Gemini streaming response to a UnifAI Chat Completion Stream response
+// ToRakshaChatCompletionStream converts a Gemini streaming response to a Raksha Chat Completion Stream response
 // Returns the response, error (if any), and a boolean indicating if this is the last chunk
-func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *GeminiStreamState) (*schemas.UnifAIChatResponse, *schemas.UnifAIError, bool) {
+func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *GeminiStreamState) (*schemas.RakshaChatResponse, *schemas.RakshaError, bool) {
 	if response == nil {
 		return nil, nil, false
 	}
@@ -329,7 +329,7 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 
 	// Handle empty candidates (filtered/malformed responses)
 	if len(response.Candidates) == 0 {
-		finishReason := ConvertGeminiFinishReasonToUnifAI(FinishReasonMalformedFunctionCall)
+		finishReason := ConvertGeminiFinishReasonToRaksha(FinishReasonMalformedFunctionCall)
 		return createErrorResponse(response, finishReason, true), nil, true
 	}
 
@@ -337,7 +337,7 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 
 	// Check for filtered finish reasons that indicate errors
 	if isErrorFinishReason(candidate.FinishReason) {
-		finishReason := ConvertGeminiFinishReasonToUnifAI(candidate.FinishReason)
+		finishReason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
 		return createErrorResponse(response, finishReason, true), nil, true
 	}
 
@@ -345,7 +345,7 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 	isLastChunk := candidate.FinishReason != "" && response.UsageMetadata != nil
 
 	// Create the streaming response
-	streamResponse := &schemas.UnifAIChatResponse{
+	streamResponse := &schemas.RakshaChatResponse{
 		ID:     response.ResponseID,
 		Model:  response.ModelVersion,
 		Object: "chat.completion.chunk",
@@ -380,7 +380,7 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 				// Thought/reasoning content - add to reasoning details
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index: len(reasoningDetails),
-					Type:  schemas.UnifAIReasoningDetailsTypeText,
+					Type:  schemas.RakshaReasoningDetailsTypeText,
 					Text:  &part.Text,
 				})
 
@@ -435,7 +435,7 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 					}
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index:     len(reasoningDetails),
-						Type:      schemas.UnifAIReasoningDetailsTypeEncrypted,
+						Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
 						Signature: &thoughtSig,
 						ID:        schemas.Ptr(fmt.Sprintf("tool_call_%s", baseCallID)),
 					})
@@ -465,7 +465,7 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 				thoughtSig := base64.StdEncoding.EncodeToString(part.ThoughtSignature)
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index:     len(reasoningDetails),
-					Type:      schemas.UnifAIReasoningDetailsTypeEncrypted,
+					Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
 					Signature: &thoughtSig,
 				})
 			}
@@ -497,7 +497,7 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 	// Build the choice
 	var finishReason *string
 	if isLastChunk && candidate.FinishReason != "" {
-		reason := ConvertGeminiFinishReasonToUnifAI(candidate.FinishReason)
+		reason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
 		// Gemini uses "STOP" for both text completions and tool call responses.
 		// Override to "tool_calls" when tool calls were seen in this stream for uniformity.
 		if (len(delta.ToolCalls) > 0 || state.hadToolCalls) && reason == "stop" {
@@ -506,24 +506,24 @@ func (response *GenerateContentResponse) ToUnifAIChatCompletionStream(state *Gem
 		finishReason = &reason
 	}
 
-	choice := schemas.UnifAIResponseChoice{
+	choice := schemas.RakshaResponseChoice{
 		Index:        int(candidate.Index),
 		FinishReason: finishReason,
-		LogProbs:     ConvertGeminiLogprobsResultToUnifAI(candidate.LogprobsResult),
+		LogProbs:     ConvertGeminiLogprobsResultToRaksha(candidate.LogprobsResult),
 		ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
 			Delta: delta,
 		},
 	}
 
-	streamResponse.Choices = []schemas.UnifAIResponseChoice{choice}
+	streamResponse.Choices = []schemas.RakshaResponseChoice{choice}
 
 	// Add usage information if this is the last chunk
 	if isLastChunk && response.UsageMetadata != nil {
 		streamResponse.Usage = ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata)
-		if t := mapGeminiTrafficTypeToUnifAI(response.UsageMetadata.TrafficType); t != nil {
+		if t := mapGeminiTrafficTypeToRaksha(response.UsageMetadata.TrafficType); t != nil {
 			streamResponse.ServiceTier = t
 		} else if response.UsageMetadata.ServiceTier != "" {
-			tier := mapGeminiServiceTierToUnifAI(response.UsageMetadata.ServiceTier)
+			tier := mapGeminiServiceTierToRaksha(response.UsageMetadata.ServiceTier)
 			streamResponse.ServiceTier = &tier
 		}
 	}
@@ -549,11 +549,11 @@ func isErrorFinishReason(reason FinishReason) bool {
 		reason == FinishReasonNoImage
 }
 
-// createErrorResponse creates a complete UnifAIChatResponse for error cases
-func createErrorResponse(response *GenerateContentResponse, finishReason string, isStream bool) *schemas.UnifAIChatResponse {
-	var choice schemas.UnifAIResponseChoice
+// createErrorResponse creates a complete RakshaChatResponse for error cases
+func createErrorResponse(response *GenerateContentResponse, finishReason string, isStream bool) *schemas.RakshaChatResponse {
+	var choice schemas.RakshaResponseChoice
 	if isStream {
-		choice = schemas.UnifAIResponseChoice{
+		choice = schemas.RakshaResponseChoice{
 			Index:        0,
 			FinishReason: &finishReason,
 			ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -561,7 +561,7 @@ func createErrorResponse(response *GenerateContentResponse, finishReason string,
 			},
 		}
 	} else {
-		choice = schemas.UnifAIResponseChoice{
+		choice = schemas.RakshaResponseChoice{
 			Index:        0,
 			FinishReason: &finishReason,
 			ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -578,11 +578,11 @@ func createErrorResponse(response *GenerateContentResponse, finishReason string,
 		objectType = "chat.completion.chunk"
 	}
 
-	errorResp := &schemas.UnifAIChatResponse{
+	errorResp := &schemas.RakshaChatResponse{
 		ID:      response.ResponseID,
 		Model:   response.ModelVersion,
 		Object:  objectType,
-		Choices: []schemas.UnifAIResponseChoice{choice},
+		Choices: []schemas.RakshaResponseChoice{choice},
 		Usage:   ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata),
 	}
 

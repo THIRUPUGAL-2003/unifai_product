@@ -4,10 +4,10 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func cloneUnifAIReq(req *schemas.UnifAIRequest) *schemas.UnifAIRequest {
+func cloneRakshaReq(req *schemas.RakshaRequest) *schemas.RakshaRequest {
 	if req == nil {
 		return nil
 	}

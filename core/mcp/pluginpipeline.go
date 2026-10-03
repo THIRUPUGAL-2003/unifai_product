@@ -7,19 +7,19 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/client"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // MCPOpFunc is the closure each call site provides to RunWithPluginPipeline. It receives the
 // (possibly mutated) request that flowed through PreHooks and is responsible for
 // performing the wire call (including any internal retries) and building a
-// UnifAIMCPResponse from the outcome. The plain Go error returned here is wrapped
-// into a UnifAIError by the gate before being handed to PostMCPHooks.
-type MCPOpFunc func(preReq *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPResponse, error)
+// RakshaMCPResponse from the outcome. The plain Go error returned here is wrapped
+// into a RakshaError by the gate before being handed to PostMCPHooks.
+type MCPOpFunc func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error)
 
 // RunWithPluginPipeline wraps an MCP wire operation (connect / ping / list_tools / execute_tool)
 // with the plugin pipeline. It is the single source of truth for the MCP plugin gate
-// pattern — handleMCPToolExecution in core/unifai.go calls into this same function,
+// pattern — handleMCPToolExecution in core/raksha.go calls into this same function,
 // and the Starlark codemode sandbox calls into it via the ClientManager interface for
 // nested tool calls.
 //
@@ -34,24 +34,24 @@ type MCPOpFunc func(preReq *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPRespons
 // sub-request struct (Headers, ConnectionString, ChatAssistantMessageToolCall, etc.)
 // and using them for the actual wire call.
 //
-// Returns *UnifAIError so callers can preserve rich error fields (AllowFallbacks,
+// Returns *RakshaError so callers can preserve rich error fields (AllowFallbacks,
 // MCPAuthRequired).
 func (m *MCPManager) RunWithPluginPipeline(
-	ctx *schemas.UnifAIContext,
-	req *schemas.UnifAIMCPRequest,
+	ctx *schemas.RakshaContext,
+	req *schemas.RakshaMCPRequest,
 	op MCPOpFunc,
-) (finalResponse *schemas.UnifAIMCPResponse, finalError *schemas.UnifAIError) {
+) (finalResponse *schemas.RakshaMCPResponse, finalError *schemas.RakshaError) {
 	// Ensure a request ID exists so plugin hooks have something to correlate on.
 	// Connect/ping/list_tools fire from background contexts that typically lack one.
 	if ctx != nil {
-		if _, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string); !ok {
-			ctx.SetValue(schemas.UnifAIContextKeyRequestID, uuid.New().String())
+		if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
+			ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
 		}
 	}
 
 	// Wrap the whole gate (PreHook + op + PostHook) in an outer span so traces show one
 	// row per MCP op alongside the per-plugin spans the pipeline emits internally.
-	tracer, _ := ctx.Value(schemas.UnifAIContextKeyTracer).(schemas.Tracer)
+	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
 	var spanHandle schemas.SpanHandle
 	if tracer != nil {
 		spanName := fmt.Sprintf("mcp.%s", req.RequestType)
@@ -108,7 +108,7 @@ func (m *MCPManager) RunWithPluginPipeline(
 		}
 	}()
 
-	// MCP request type stamped on every wrapped UnifAIError so downstream gates
+	// MCP request type stamped on every wrapped RakshaError so downstream gates
 	// (governance, logging) can discriminate execute-tool calls from ping/list_tools.
 	mcpReqType := schemas.MCPRequestType("")
 	if req != nil {
@@ -120,10 +120,10 @@ func (m *MCPManager) RunWithPluginPipeline(
 	if pipeline == nil {
 		resp, opErr := op(req)
 		if opErr != nil {
-			return resp, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return resp, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error:          &schemas.ErrorField{Message: opErr.Error()},
-				ExtraFields:    schemas.UnifAIErrorExtraFields{MCPRequestType: mcpReqType},
+				ExtraFields:    schemas.RakshaErrorExtraFields{MCPRequestType: mcpReqType},
 			}
 		}
 		return resp, nil
@@ -175,10 +175,10 @@ func (m *MCPManager) RunWithPluginPipeline(
 	}
 
 	if preReq == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "MCP request after plugin hooks cannot be nil"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{MCPRequestType: mcpReqType},
+			ExtraFields:    schemas.RakshaErrorExtraFields{MCPRequestType: mcpReqType},
 		}
 	}
 
@@ -188,17 +188,17 @@ func (m *MCPManager) RunWithPluginPipeline(
 		resp.PopulateExtraFields(mcpReqType, clientName, toolName)
 	}
 
-	// Wrap opErr as UnifAIError so PostHooks see a typed error.
-	var unifaiErr *schemas.UnifAIError
+	// Wrap opErr as RakshaError so PostHooks see a typed error.
+	var rakshaErr *schemas.RakshaError
 	if opErr != nil {
-		unifaiErr = &schemas.UnifAIError{
-			IsUnifAIError: false,
+		rakshaErr = &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: opErr.Error()},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{MCPRequestType: mcpReqType},
+			ExtraFields:    schemas.RakshaErrorExtraFields{MCPRequestType: mcpReqType},
 		}
 	}
 
-	finalResp, finalErr := pipeline.RunMCPPostHooks(ctx, resp, unifaiErr, preCount)
+	finalResp, finalErr := pipeline.RunMCPPostHooks(ctx, resp, rakshaErr, preCount)
 	drainMCPPluginLogs(ctx)
 
 	if finalErr != nil {
@@ -213,21 +213,21 @@ func (m *MCPManager) RunWithPluginPipeline(
 //
 // that flowed through PreMCPConnectionHook plugins and performs the actual transport
 // + initialize work (with internal retries), returning a typed sub-response.
-type MCPConnectOpFunc func(preReq *schemas.UnifAIMCPConnectRequest) (*schemas.UnifAIMCPConnectResponse, error)
+type MCPConnectOpFunc func(preReq *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectResponse, error)
 
 // runConnectWithPluginPipeline is the typed Connect-specific counterpart to
 // runWithPluginPipeline. Connect ops bypass the envelope-based pipeline entirely:
 // plugins implement MCPConnectionPlugin (not MCPPlugin), the request/response types
 // are the typed sub-structs, and the dispatch never wraps anything in
-// UnifAIMCPRequest/UnifAIMCPResponse.
+// RakshaMCPRequest/RakshaMCPResponse.
 func (m *MCPManager) runConnectWithPluginPipeline(
-	ctx *schemas.UnifAIContext,
-	req *schemas.UnifAIMCPConnectRequest,
+	ctx *schemas.RakshaContext,
+	req *schemas.RakshaMCPConnectRequest,
 	op MCPConnectOpFunc,
-) (*schemas.UnifAIMCPConnectResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError) {
 	if ctx != nil {
-		if _, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string); !ok {
-			ctx.SetValue(schemas.UnifAIContextKeyRequestID, uuid.New().String())
+		if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
+			ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
 		}
 	}
 
@@ -237,7 +237,7 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	}
 
 	// Outer span so traces show one row per Connect op.
-	tracer, _ := ctx.Value(schemas.UnifAIContextKeyTracer).(schemas.Tracer)
+	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
 	var spanHandle schemas.SpanHandle
 	if tracer != nil {
 		spanName := "mcp.connect"
@@ -257,8 +257,8 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	if pipeline == nil {
 		resp, opErr := op(req)
 		if opErr != nil {
-			return resp, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return resp, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error:          &schemas.ErrorField{Message: opErr.Error()},
 			}
 		}
@@ -296,8 +296,8 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	}
 
 	if preReq == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "Connect request after plugin hooks cannot be nil"},
 		}
 	}
@@ -307,15 +307,15 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 		resp.PopulateExtraFields(clientName)
 	}
 
-	var unifaiErr *schemas.UnifAIError
+	var rakshaErr *schemas.RakshaError
 	if opErr != nil {
-		unifaiErr = &schemas.UnifAIError{
-			IsUnifAIError: false,
+		rakshaErr = &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: opErr.Error()},
 		}
 	}
 
-	finalResp, finalErr := pipeline.RunMCPPostConnectionHooks(ctx, resp, unifaiErr, preCount)
+	finalResp, finalErr := pipeline.RunMCPPostConnectionHooks(ctx, resp, rakshaErr, preCount)
 	drainMCPPluginLogs(ctx)
 
 	if finalErr != nil {
@@ -324,17 +324,17 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	return finalResp, nil
 }
 
-// drainMCPPluginLogs mirrors unifai.drainAndAttachPluginLogs for the mcp package.
+// drainMCPPluginLogs mirrors raksha.drainAndAttachPluginLogs for the mcp package.
 // It attaches accumulated plugin log entries to the active trace, if any.
-func drainMCPPluginLogs(ctx *schemas.UnifAIContext) {
+func drainMCPPluginLogs(ctx *schemas.RakshaContext) {
 	if ctx == nil {
 		return
 	}
-	tracer, _ := ctx.Value(schemas.UnifAIContextKeyTracer).(schemas.Tracer)
+	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
 	if tracer == nil {
 		return
 	}
-	traceID, _ := ctx.Value(schemas.UnifAIContextKeyTraceID).(string)
+	traceID, _ := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
 	if traceID == "" {
 		return
 	}
@@ -355,40 +355,40 @@ func drainMCPPluginLogs(ctx *schemas.UnifAIContext) {
 // A PreHook short-circuit with Error returns the error; the caller decides whether to
 // keep existing state.
 func (m *MCPManager) runListToolsWithHooks(ctx context.Context, conn *client.Client, clientName string) (map[string]schemas.ChatTool, map[string]string, error) {
-	req := &schemas.UnifAIMCPRequest{
+	req := &schemas.RakshaMCPRequest{
 		RequestType:                schemas.MCPRequestTypeListTools,
 		ClientName:                 clientName,
-		UnifAIMCPListToolsRequest: &schemas.UnifAIMCPListToolsRequest{},
+		RakshaMCPListToolsRequest: &schemas.RakshaMCPListToolsRequest{},
 	}
-	gateCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+	gateCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 	start := time.Now()
 
-	resp, unifaiErr := m.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPResponse, error) {
+	resp, rakshaErr := m.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
 		// Use gateCtx (not the outer ctx) so values a PreMCPHook wrote during the
-		// gate — notably UnifAIContextKeyMCPExtraHeaders — are visible to the wire
-		// call. UnifAIContext.Value walks parent-ward only, so the outer ctx cannot
+		// gate — notably RakshaContextKeyMCPExtraHeaders — are visible to the wire
+		// call. RakshaContext.Value walks parent-ward only, so the outer ctx cannot
 		// see writes made to its gateCtx child.
 		detailed, opErr := retrieveExternalToolsDetailed(gateCtx, conn, clientName, m.logger)
 		if opErr != nil {
 			return nil, opErr
 		}
-		return &schemas.UnifAIMCPResponse{
-			UnifAIMCPListToolsResponse: &schemas.UnifAIMCPListToolsResponse{
+		return &schemas.RakshaMCPResponse{
+			RakshaMCPListToolsResponse: &schemas.RakshaMCPListToolsResponse{
 				Tools:           detailed.tools,
 				ToolNameMapping: detailed.toolNameMapping,
 				RawToolCount:    detailed.rawCount,
 				SkippedTools:    detailed.skipped,
 			},
-			ExtraFields: schemas.UnifAIMCPResponseExtraFields{
+			ExtraFields: schemas.RakshaMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}, nil
 	})
 
-	if unifaiErr != nil {
-		return nil, nil, fmt.Errorf("failed to list tools: %s", unifaiErr.GetErrorString())
+	if rakshaErr != nil {
+		return nil, nil, fmt.Errorf("failed to list tools: %s", rakshaErr.GetErrorString())
 	}
-	if resp == nil || resp.UnifAIMCPListToolsResponse == nil {
+	if resp == nil || resp.RakshaMCPListToolsResponse == nil {
 		// Defensive: response somehow lost its list_tools payload (e.g. PostHook nilled it).
 		// Surface empty maps rather than nil to mirror the underlying list_tools contract.
 		return make(map[string]schemas.ChatTool), make(map[string]string), nil
@@ -401,28 +401,28 @@ func (m *MCPManager) runListToolsWithHooks(ctx context.Context, conn *client.Cli
 // inspect the latency and outcome. Any error returned here is treated identically to a
 // real ping failure by the health-monitor state machine.
 func (chm *ClientHealthMonitor) runPingWithHooks(ctx context.Context, conn *client.Client, clientName string) error {
-	req := &schemas.UnifAIMCPRequest{
+	req := &schemas.RakshaMCPRequest{
 		RequestType:           schemas.MCPRequestTypePing,
 		ClientName:            clientName,
-		UnifAIMCPPingRequest: &schemas.UnifAIMCPPingRequest{},
+		RakshaMCPPingRequest: &schemas.RakshaMCPPingRequest{},
 	}
-	gateCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+	gateCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 	start := time.Now()
-	_, unifaiErr := chm.manager.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPResponse, error) {
-		// Use gateCtx so a PreMCPHook's context writes (e.g. UnifAIContextKeyMCPExtraHeaders)
+	_, rakshaErr := chm.manager.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
+		// Use gateCtx so a PreMCPHook's context writes (e.g. RakshaContextKeyMCPExtraHeaders)
 		// reach the transport headerFunc on this ping. See runListToolsWithHooks for details.
 		if pingErr := conn.Ping(gateCtx); pingErr != nil {
 			return nil, pingErr
 		}
-		return &schemas.UnifAIMCPResponse{
-			UnifAIMCPPingResponse: &schemas.UnifAIMCPPingResponse{},
-			ExtraFields: schemas.UnifAIMCPResponseExtraFields{
+		return &schemas.RakshaMCPResponse{
+			RakshaMCPPingResponse: &schemas.RakshaMCPPingResponse{},
+			ExtraFields: schemas.RakshaMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}, nil
 	})
-	if unifaiErr != nil {
-		return fmt.Errorf("ping failed: %s", unifaiErr.GetErrorString())
+	if rakshaErr != nil {
+		return fmt.Errorf("ping failed: %s", rakshaErr.GetErrorString())
 	}
 	return nil
 }

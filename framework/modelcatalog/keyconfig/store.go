@@ -10,7 +10,7 @@
 //
 // Aggregation semantics — provider-level blacklist as the intersection across
 // enabled keys, last-enabled-key-wins on alias collisions — are ported from
-// unifai-enterprise/core/loadbalancing/plugin.go and extended with per-key
+// raksha-enterprise/core/loadbalancing/plugin.go and extended with per-key
 // alias retention so routing can resolve (provider, model) → (keyID, AliasConfig).
 package keyconfig
 
@@ -19,8 +19,8 @@ import (
 	"strings"
 	"sync"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // KeyEntry is the per-key configuration snapshot the store maintains. Slice
@@ -65,7 +65,7 @@ type Store struct {
 // New constructs an empty Store.
 func New(logger schemas.Logger) *Store {
 	if logger == nil {
-		logger = unifai.NewNoOpLogger()
+		logger = raksha.NewNoOpLogger()
 	}
 	return &Store{
 		entries: make(map[schemas.ModelProvider]*providerState),
@@ -289,7 +289,7 @@ func (s *Store) buildState(provider schemas.ModelProvider, keys []schemas.Key) *
 
 	// Keyless non-standard providers (custom providers configured without keys)
 	// are unrestricted — there's no allow-list to derive from.
-	if len(keys) == 0 && !unifai.IsStandardProvider(provider) {
+	if len(keys) == 0 && !raksha.IsStandardProvider(provider) {
 		allModelsAllowed = true
 	}
 

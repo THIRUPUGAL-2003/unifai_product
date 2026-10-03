@@ -2,21 +2,21 @@ package vllm
 
 import (
 	"github.com/bytedance/sonic"
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // parseVLLMTranscriptionStreamChunk parses vLLM's transcription stream JSON and returns
-// a UnifAITranscriptionStreamResponse. It returns (nil, false) if the payload is not
+// a RakshaTranscriptionStreamResponse. It returns (nil, false) if the payload is not
 // valid vLLM format or has no content to emit.
-func parseVLLMTranscriptionStreamChunk(jsonData []byte) (*schemas.UnifAITranscriptionStreamResponse, bool) {
+func parseVLLMTranscriptionStreamChunk(jsonData []byte) (*schemas.RakshaTranscriptionStreamResponse, bool) {
 	var chunk vLLMTranscriptionStreamChunk
-	response := &schemas.UnifAITranscriptionStreamResponse{}
+	response := &schemas.RakshaTranscriptionStreamResponse{}
 	if err := sonic.Unmarshal(jsonData, &chunk); err != nil {
 		return nil, false
 	}
 	// Done chunk: has usage (e.g. final event)
 	if chunk.Usage != nil {
-		return &schemas.UnifAITranscriptionStreamResponse{
+		return &schemas.RakshaTranscriptionStreamResponse{
 			Type:  schemas.TranscriptionStreamResponseTypeDone,
 			Usage: chunk.Usage,
 		}, true

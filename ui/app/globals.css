@@ -3,7 +3,7 @@
 
 @source "../app/**/*.tsx";
 @source "../node_modules/streamdown/dist/*.js";
-@source "../../../unifai-enterprise/ui/**/*.tsx";
+@source "../../../raksha-enterprise/ui/**/*.tsx";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -351,7 +351,7 @@ div.content-container:has(.no-border-parent) #trial-notification-banner {
 	border: 1px solid transparent;
 }
 
-/* ReactFlow Controls — follow UnifAI colour schema */
+/* ReactFlow Controls — follow Raksha colour schema */
 
 .react-flow__controls {
 	background-color: var(--card);
@@ -464,7 +464,7 @@ div.content-container:has(.no-border-parent) #trial-notification-banner {
 	transform: translate(35%, -35%) !important;
 }
 
-/* UnifAI Guard login landing — CSS 3D stage */
+/* Raksha Guard login landing — CSS 3D stage */
 .ug-login-grid {
 	background-image:
 		linear-gradient(rgba(69, 243, 255, 0.05) 1px, transparent 1px),

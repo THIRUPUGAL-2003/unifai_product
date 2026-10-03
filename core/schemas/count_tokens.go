@@ -1,7 +1,7 @@
 package schemas
 
-// UnifAICountTokensResponse captures token counts for a provided input.
-type UnifAICountTokensResponse struct {
+// RakshaCountTokensResponse captures token counts for a provided input.
+type RakshaCountTokensResponse struct {
 	Object             string                        `json:"object,omitempty"`
 	Model              string                        `json:"model"`
 	InputTokens        int                           `json:"input_tokens"`
@@ -10,5 +10,5 @@ type UnifAICountTokensResponse struct {
 	TokenStrings       []string                      `json:"token_strings,omitempty"`
 	OutputTokens       *int                          `json:"output_tokens,omitempty"`
 	TotalTokens        *int                          `json:"total_tokens"`
-	ExtraFields        UnifAIResponseExtraFields    `json:"extra_fields"`
+	ExtraFields        RakshaResponseExtraFields    `json:"extra_fields"`
 }

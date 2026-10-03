@@ -1,11 +1,11 @@
-// Package logstore provides a logs store for UnifAI.
+// Package logstore provides a logs store for Raksha.
 package logstore
 
 import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/unifai/unifai/framework/objectstore"
+	"github.com/raksha/raksha/framework/objectstore"
 )
 
 // Config represents the configuration for the logs store.

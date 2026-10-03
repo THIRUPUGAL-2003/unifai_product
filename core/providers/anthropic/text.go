@@ -4,41 +4,41 @@ import (
 	"fmt"
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToAnthropicTextCompletionRequest converts a UnifAI text completion request to Anthropic format
-func ToAnthropicTextCompletionRequest(unifaiReq *schemas.UnifAITextCompletionRequest) *AnthropicTextRequest {
-	if unifaiReq == nil {
+// ToAnthropicTextCompletionRequest converts a Raksha text completion request to Anthropic format
+func ToAnthropicTextCompletionRequest(rakshaReq *schemas.RakshaTextCompletionRequest) *AnthropicTextRequest {
+	if rakshaReq == nil {
 		return nil
 	}
 
 	prompt := ""
-	if unifaiReq.Input.PromptStr != nil {
-		prompt = *unifaiReq.Input.PromptStr
-	} else if len(unifaiReq.Input.PromptArray) > 0 {
-		prompt = strings.Join(unifaiReq.Input.PromptArray, "\n\n")
+	if rakshaReq.Input.PromptStr != nil {
+		prompt = *rakshaReq.Input.PromptStr
+	} else if len(rakshaReq.Input.PromptArray) > 0 {
+		prompt = strings.Join(rakshaReq.Input.PromptArray, "\n\n")
 	}
 
 	anthropicReq := &AnthropicTextRequest{
-		Model:             unifaiReq.Model,
+		Model:             rakshaReq.Model,
 		Prompt:            fmt.Sprintf("\n\nHuman: %s\n\nAssistant:", prompt),
-		MaxTokensToSample: providerUtils.GetMaxOutputTokensOrDefault(unifaiReq.Model, AnthropicDefaultMaxTokens),
+		MaxTokensToSample: providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, AnthropicDefaultMaxTokens),
 	}
 
 	// Convert parameters
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.MaxTokens != nil {
-			anthropicReq.MaxTokensToSample = *unifaiReq.Params.MaxTokens
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.MaxTokens != nil {
+			anthropicReq.MaxTokensToSample = *rakshaReq.Params.MaxTokens
 		}
-		anthropicReq.Temperature = unifaiReq.Params.Temperature
-		anthropicReq.TopP = unifaiReq.Params.TopP
-		anthropicReq.StopSequences = unifaiReq.Params.Stop
+		anthropicReq.Temperature = rakshaReq.Params.Temperature
+		anthropicReq.TopP = rakshaReq.Params.TopP
+		anthropicReq.StopSequences = rakshaReq.Params.Stop
 
-		if unifaiReq.Params.ExtraParams != nil {
-			anthropicReq.ExtraParams = unifaiReq.Params.ExtraParams
-			if topK, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["top_k"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			anthropicReq.ExtraParams = rakshaReq.Params.ExtraParams
+			if topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"]); ok {
 				delete(anthropicReq.ExtraParams, "top_k")
 				anthropicReq.TopK = topK
 			}
@@ -48,15 +48,15 @@ func ToAnthropicTextCompletionRequest(unifaiReq *schemas.UnifAITextCompletionReq
 	return anthropicReq
 }
 
-// ToUnifAITextCompletionRequest converts an Anthropic text request back to UnifAI format
-func (req *AnthropicTextRequest) ToUnifAITextCompletionRequest(ctx *schemas.UnifAIContext) *schemas.UnifAITextCompletionRequest {
+// ToRakshaTextCompletionRequest converts an Anthropic text request back to Raksha format
+func (req *AnthropicTextRequest) ToRakshaTextCompletionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTextCompletionRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	unifaiReq := &schemas.UnifAITextCompletionRequest{
+	rakshaReq := &schemas.RakshaTextCompletionRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.TextCompletionInput{
@@ -73,23 +73,23 @@ func (req *AnthropicTextRequest) ToUnifAITextCompletionRequest(ctx *schemas.Unif
 
 	// Add extra params if present
 	if req.TopK != nil {
-		unifaiReq.Params.ExtraParams = map[string]interface{}{
+		rakshaReq.Params.ExtraParams = map[string]interface{}{
 			"top_k": *req.TopK,
 		}
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
-// ToUnifAITextCompletionResponse converts an Anthropic text response back to UnifAI format
-func (response *AnthropicTextResponse) ToUnifAITextCompletionResponse() *schemas.UnifAITextCompletionResponse {
+// ToRakshaTextCompletionResponse converts an Anthropic text response back to Raksha format
+func (response *AnthropicTextResponse) ToRakshaTextCompletionResponse() *schemas.RakshaTextCompletionResponse {
 	if response == nil {
 		return nil
 	}
-	return &schemas.UnifAITextCompletionResponse{
+	return &schemas.RakshaTextCompletionResponse{
 		ID:     response.ID,
 		Object: "text_completion",
-		Choices: []schemas.UnifAIResponseChoice{
+		Choices: []schemas.RakshaResponseChoice{
 			{
 				Index: 0,
 				TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
@@ -97,7 +97,7 @@ func (response *AnthropicTextResponse) ToUnifAITextCompletionResponse() *schemas
 				},
 			},
 		},
-		Usage: &schemas.UnifAILLMUsage{
+		Usage: &schemas.RakshaLLMUsage{
 			PromptTokens:     response.Usage.InputTokens,
 			CompletionTokens: response.Usage.OutputTokens,
 			TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
@@ -106,21 +106,21 @@ func (response *AnthropicTextResponse) ToUnifAITextCompletionResponse() *schemas
 	}
 }
 
-// ToAnthropicTextCompletionResponse converts a UnifAIResponse back to Anthropic text completion format
-func ToAnthropicTextCompletionResponse(unifaiResp *schemas.UnifAITextCompletionResponse) *AnthropicTextResponse {
-	if unifaiResp == nil {
+// ToAnthropicTextCompletionResponse converts a RakshaResponse back to Anthropic text completion format
+func ToAnthropicTextCompletionResponse(rakshaResp *schemas.RakshaTextCompletionResponse) *AnthropicTextResponse {
+	if rakshaResp == nil {
 		return nil
 	}
 
 	anthropicResp := &AnthropicTextResponse{
-		ID:    unifaiResp.ID,
+		ID:    rakshaResp.ID,
 		Type:  "completion",
-		Model: unifaiResp.Model,
+		Model: rakshaResp.Model,
 	}
 
 	// Convert choices to completion text
-	if len(unifaiResp.Choices) > 0 {
-		choice := unifaiResp.Choices[0] // Anthropic text API typically returns one choice
+	if len(rakshaResp.Choices) > 0 {
+		choice := rakshaResp.Choices[0] // Anthropic text API typically returns one choice
 
 		if choice.TextCompletionResponseChoice != nil && choice.TextCompletionResponseChoice.Text != nil {
 			anthropicResp.Completion = *choice.TextCompletionResponseChoice.Text
@@ -128,9 +128,9 @@ func ToAnthropicTextCompletionResponse(unifaiResp *schemas.UnifAITextCompletionR
 	}
 
 	// Convert usage information
-	if unifaiResp.Usage != nil {
-		anthropicResp.Usage.InputTokens = unifaiResp.Usage.PromptTokens
-		anthropicResp.Usage.OutputTokens = unifaiResp.Usage.CompletionTokens
+	if rakshaResp.Usage != nil {
+		anthropicResp.Usage.InputTokens = rakshaResp.Usage.PromptTokens
+		anthropicResp.Usage.OutputTokens = rakshaResp.Usage.CompletionTokens
 	}
 
 	return anthropicResp

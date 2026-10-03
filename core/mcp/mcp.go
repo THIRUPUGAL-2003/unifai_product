@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/core/mcp/credstore"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/mcp/credstore"
+	"github.com/raksha/raksha/core/schemas"
 
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -17,10 +17,10 @@ import (
 
 const (
 	// MCP defaults and identifiers
-	UnifAIMCPVersion                    = "1.0.0"          // Version identifier for UnifAI
-	UnifAIMCPClientName                 = "UnifAIClient"   // Name for internal UnifAI MCP client
-	UnifAIMCPClientKey                  = "unifaiInternal" // Key for internal UnifAI client in clientMap
-	MCPLogPrefix                        = "[UnifAI MCP]"   // Consistent logging prefix
+	RakshaMCPVersion                    = "1.0.0"          // Version identifier for Raksha
+	RakshaMCPClientName                 = "RakshaClient"   // Name for internal Raksha MCP client
+	RakshaMCPClientKey                  = "rakshaInternal" // Key for internal Raksha client in clientMap
+	MCPLogPrefix                        = "[Raksha MCP]"   // Consistent logging prefix
 	MCPClientConnectionEstablishTimeout = 30 * time.Second // Timeout for MCP client connection establishment
 )
 
@@ -28,8 +28,8 @@ const (
 // TYPE DEFINITIONS
 // ============================================================================
 
-// MCPManager manages MCP integration for UnifAI core.
-// It provides a bridge between UnifAI and various MCP servers, supporting
+// MCPManager manages MCP integration for Raksha core.
+// It provides a bridge between Raksha and various MCP servers, supporting
 // both local tool hosting and external MCP server connections.
 type MCPManager struct {
 	ctx                  context.Context
@@ -206,8 +206,8 @@ func (m *MCPManager) connectConfiguredClients(ctx context.Context) {
 }
 
 // SetPluginPipeline updates the plugin pipeline provider and release function on the manager's
-// ToolsManager and CodeMode. Call this after attaching an externally-created MCPManager to a UnifAI
-// instance so that nested tool calls in code mode can run through UnifAI's plugin hooks.
+// ToolsManager and CodeMode. Call this after attaching an externally-created MCPManager to a Raksha
+// instance so that nested tool calls in code mode can run through Raksha's plugin hooks.
 func (manager *MCPManager) SetPluginPipeline(provider func() PluginPipeline, release func(PluginPipeline)) {
 	manager.pluginPipelineProvider = provider
 	manager.releasePluginPipeline = release
@@ -234,15 +234,15 @@ func (manager *MCPManager) ReleasePluginPipeline(pipeline PluginPipeline) {
 //
 // Parameters:
 //   - ctx: Context containing optional client/tool filtering keys
-//   - req: The UnifAI request to add tools to
+//   - req: The Raksha request to add tools to
 //
 // Returns:
-//   - *schemas.UnifAIRequest: The request with tools added
-func (m *MCPManager) AddToolsToRequest(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) *schemas.UnifAIRequest {
+//   - *schemas.RakshaRequest: The request with tools added
+func (m *MCPManager) AddToolsToRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) *schemas.RakshaRequest {
 	return m.toolsManager.ParseAndAddToolsToRequest(ctx, req)
 }
 
-func (m *MCPManager) GetAvailableTools(ctx *schemas.UnifAIContext) []schemas.ChatTool {
+func (m *MCPManager) GetAvailableTools(ctx *schemas.RakshaContext) []schemas.ChatTool {
 	return m.toolsManager.GetAvailableTools(ctx)
 }
 
@@ -280,17 +280,17 @@ func (m *MCPManager) SetToolSyncInterval(interval time.Duration) {
 //   - makeReq: Function to make subsequent chat requests during agent execution
 //
 // Returns:
-//   - *schemas.UnifAIChatResponse: The final response after agent execution (or original if no tool calls)
-//   - *schemas.UnifAIError: Any error that occurred during agent execution
+//   - *schemas.RakshaChatResponse: The final response after agent execution (or original if no tool calls)
+//   - *schemas.RakshaError: Any error that occurred during agent execution
 func (m *MCPManager) CheckAndExecuteAgentForChatRequest(
-	ctx *schemas.UnifAIContext,
-	req *schemas.UnifAIChatRequest,
-	response *schemas.UnifAIChatResponse,
-	makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+	ctx *schemas.RakshaContext,
+	req *schemas.RakshaChatRequest,
+	response *schemas.RakshaChatResponse,
+	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError),
+) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	if makeReq == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: "makeReq is required to execute agent mode",
 			},
@@ -332,17 +332,17 @@ func (m *MCPManager) CheckAndExecuteAgentForChatRequest(
 //   - makeReq: Function to make subsequent responses requests during agent execution
 //
 // Returns:
-//   - *schemas.UnifAIResponsesResponse: The final response after agent execution (or original if no tool calls)
-//   - *schemas.UnifAIError: Any error that occurred during agent execution
+//   - *schemas.RakshaResponsesResponse: The final response after agent execution (or original if no tool calls)
+//   - *schemas.RakshaError: Any error that occurred during agent execution
 func (m *MCPManager) CheckAndExecuteAgentForResponsesRequest(
-	ctx *schemas.UnifAIContext,
-	req *schemas.UnifAIResponsesRequest,
-	response *schemas.UnifAIResponsesResponse,
-	makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+	ctx *schemas.RakshaContext,
+	req *schemas.RakshaResponsesRequest,
+	response *schemas.RakshaResponsesResponse,
+	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
+) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	if makeReq == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: "makeReq is required to execute agent mode",
 			},

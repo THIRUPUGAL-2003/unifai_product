@@ -12,8 +12,8 @@ import { toast } from "sonner";
 
 export default function LoggingView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const config = unifaiConfig?.client_config;
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const config = rakshaConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
 	const [needsRestart, setNeedsRestart] = useState<boolean>(false);
@@ -54,7 +54,7 @@ export default function LoggingView() {
 	}, []);
 
 	const handleSave = useCallback(async () => {
-		if (!unifaiConfig) {
+		if (!rakshaConfig) {
 			toast.error("Configuration not loaded");
 			return;
 		}
@@ -66,12 +66,12 @@ export default function LoggingView() {
 		}
 
 		try {
-			await updateCoreConfig({ ...unifaiConfig, client_config: localConfig }).unwrap();
+			await updateCoreConfig({ ...rakshaConfig, client_config: localConfig }).unwrap();
 			toast.success("Logging configuration updated successfully.");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [unifaiConfig, localConfig, updateCoreConfig]);
+	}, [rakshaConfig, localConfig, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4">
@@ -90,7 +90,7 @@ export default function LoggingView() {
 							</label>
 							<p className="text-muted-foreground text-sm">
 								Enable logging of requests and responses to a SQL database. This can add 40-60mb of overhead to the system memory.
-								{!unifaiConfig?.is_logs_connected && (
+								{!rakshaConfig?.is_logs_connected && (
 									<span className="text-destructive font-medium"> Requires logs store to be configured and enabled in config.json.</span>
 								)}
 							</p>
@@ -98,10 +98,10 @@ export default function LoggingView() {
 						<Switch
 							id="enable-logging"
 							size="md"
-							checked={localConfig.enable_logging && unifaiConfig?.is_logs_connected}
-							disabled={!unifaiConfig?.is_logs_connected || !hasSettingsUpdateAccess}
+							checked={localConfig.enable_logging && rakshaConfig?.is_logs_connected}
+							disabled={!rakshaConfig?.is_logs_connected || !hasSettingsUpdateAccess}
 							onCheckedChange={(checked) => {
-								if (unifaiConfig?.is_logs_connected) {
+								if (rakshaConfig?.is_logs_connected) {
 									handleConfigChange("enable_logging", checked);
 								}
 							}}
@@ -111,7 +111,7 @@ export default function LoggingView() {
 				</div>
 
 				{/* Disable Content Logging - Only show when logging is enabled */}
-				{localConfig.enable_logging && unifaiConfig?.is_logs_connected && (
+				{localConfig.enable_logging && rakshaConfig?.is_logs_connected && (
 					<div>
 						<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 							<div className="space-y-0.5">
@@ -137,7 +137,7 @@ export default function LoggingView() {
 				)}
 
 				{/* Allow Per-Request Content Storage Override - Only show when logging is enabled */}
-				{localConfig.enable_logging && unifaiConfig?.is_logs_connected && (
+				{localConfig.enable_logging && rakshaConfig?.is_logs_connected && (
 					<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="allow-per-request-content-storage-override" className="text-sm font-medium">
@@ -188,7 +188,7 @@ export default function LoggingView() {
 				</div>
 
 				{/* Log Retention Days */}
-				{localConfig.enable_logging && unifaiConfig?.is_logs_connected && (
+				{localConfig.enable_logging && rakshaConfig?.is_logs_connected && (
 					<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<Label htmlFor="log-retention-days" className="text-sm font-medium">
@@ -234,7 +234,7 @@ export default function LoggingView() {
 				</div>
 
 				{/* Logging Headers */}
-				{localConfig.enable_logging && unifaiConfig?.is_logs_connected && (
+				{localConfig.enable_logging && rakshaConfig?.is_logs_connected && (
 					<div className="space-y-2 rounded-sm border p-4">
 						<label htmlFor="logging-headers" className="text-sm font-medium">
 							Logging Headers
@@ -269,5 +269,5 @@ export default function LoggingView() {
 }
 
 const RestartWarning = () => {
-	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart UnifAI to apply changes.</div>;
+	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart Raksha to apply changes.</div>;
 };

@@ -13,8 +13,8 @@ import (
 	"slices"
 	"sync"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // Key identifies one cached response. KeyID is "" for keyless providers
@@ -38,7 +38,7 @@ type Store struct {
 
 func New(logger schemas.Logger) *Store {
 	if logger == nil {
-		logger = unifai.NewNoOpLogger()
+		logger = raksha.NewNoOpLogger()
 	}
 	return &Store{entries: make(map[Key]Entry), logger: logger}
 }

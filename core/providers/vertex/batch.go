@@ -8,17 +8,17 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/providers/gemini"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/gemini"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// vertexBatchCustomIDLabel is the request label used to carry the UnifAI custom_id
+// vertexBatchCustomIDLabel is the request label used to carry the Raksha custom_id
 // through a batch prediction job (Vertex JSONL has no native custom_id field; the
 // request — labels included — is echoed back in each output line).
-const vertexBatchCustomIDLabel = "unifai_custom_id"
+const vertexBatchCustomIDLabel = "raksha_custom_id"
 
-// vertexJobStateToBatchStatus maps Vertex JOB_STATE_* values to UnifAI batch statuses.
+// vertexJobStateToBatchStatus maps Vertex JOB_STATE_* values to Raksha batch statuses.
 func vertexJobStateToBatchStatus(state string) schemas.BatchStatus {
 	switch state {
 	case "JOB_STATE_QUEUED", "JOB_STATE_PENDING":
@@ -42,7 +42,7 @@ func vertexJobStateToBatchStatus(state string) schemas.BatchStatus {
 
 // vertexBatchJobsBaseURL returns ".../v1/projects/{project}/locations/{region}" for the
 // key's configured project and region. Batch prediction requires a regional endpoint.
-func vertexBatchJobsBaseURL(key schemas.Key) (string, *schemas.UnifAIError) {
+func vertexBatchJobsBaseURL(key schemas.Key) (string, *schemas.RakshaError) {
 	if key.VertexKeyConfig == nil {
 		return "", providerUtils.NewConfigurationError("vertex key config is not set")
 	}
@@ -57,16 +57,16 @@ func vertexBatchJobsBaseURL(key schemas.Key) (string, *schemas.UnifAIError) {
 	return getVertexProjectLocationURL(region, "v1", projectID), nil
 }
 
-// vertexBatchJobURL resolves a UnifAI batch ID (bare job ID or full resource name)
+// vertexBatchJobURL resolves a Raksha batch ID (bare job ID or full resource name)
 // to the job's REST URL.
-func vertexBatchJobURL(key schemas.Key, batchID string) (string, *schemas.UnifAIError) {
+func vertexBatchJobURL(key schemas.Key, batchID string) (string, *schemas.RakshaError) {
 	if strings.HasPrefix(batchID, "projects/") {
 		// Full resource name: projects/{p}/locations/{r}/batchPredictionJobs/{id}
 		parts := strings.Split(batchID, "/")
 		if len(parts) >= 6 && parts[2] == "locations" {
 			return getVertexAPIBaseURL(parts[3], "v1") + "/" + batchID, nil
 		}
-		return "", providerUtils.NewUnifAIOperationError(fmt.Sprintf("invalid Vertex batch ID %q", batchID), nil)
+		return "", providerUtils.NewRakshaOperationError(fmt.Sprintf("invalid Vertex batch ID %q", batchID), nil)
 	}
 	base, cfgErr := vertexBatchJobsBaseURL(key)
 	if cfgErr != nil {
@@ -75,10 +75,10 @@ func vertexBatchJobURL(key schemas.Key, batchID string) (string, *schemas.UnifAI
 	return base + "/batchPredictionJobs/" + batchID, nil
 }
 
-// vertexBatchJobToUnifAI maps a BatchPredictionJob resource to the UnifAI retrieve response.
-func vertexBatchJobToUnifAI(job *VertexBatchPredictionJob) schemas.UnifAIBatchRetrieveResponse {
+// vertexBatchJobToRaksha maps a BatchPredictionJob resource to the Raksha retrieve response.
+func vertexBatchJobToRaksha(job *VertexBatchPredictionJob) schemas.RakshaBatchRetrieveResponse {
 	status := vertexJobStateToBatchStatus(job.State)
-	resp := schemas.UnifAIBatchRetrieveResponse{
+	resp := schemas.RakshaBatchRetrieveResponse{
 		ID:        job.Name,
 		Object:    "batch",
 		Status:    status,
@@ -128,7 +128,7 @@ func vertexBatchJobToUnifAI(job *VertexBatchPredictionJob) schemas.UnifAIBatchRe
 }
 
 // parseVertexJobAPIError parses a Vertex AI error response (same envelope as GCS).
-func parseVertexJobAPIError(body []byte, statusCode int, op string) *schemas.UnifAIError {
+func parseVertexJobAPIError(body []byte, statusCode int, op string) *schemas.RakshaError {
 	var apiErr gcsErrorBody
 	_ = sonic.Unmarshal(body, &apiErr)
 	msg := apiErr.Error.Message
@@ -138,11 +138,11 @@ func parseVertexJobAPIError(body []byte, statusCode int, op string) *schemas.Uni
 	return providerUtils.NewProviderAPIError(msg, nil, statusCode, nil, nil)
 }
 
-// ToVertexBatchCreateRequest maps a UnifAI batch create request to a Vertex
+// ToVertexBatchCreateRequest maps a Raksha batch create request to a Vertex
 // BatchPredictionJob request. The model, display name and input/output GCS config are
 // mapped explicitly; every other field is taken from extra_params (e.g. modelParameters,
 // labels, modelVersionId, encryptionSpec) and merged verbatim into the job body.
-func ToVertexBatchCreateRequest(request *schemas.UnifAIBatchCreateRequest, displayName, inputURI, outputURI string) *VertexBatchCreateRequest {
+func ToVertexBatchCreateRequest(request *schemas.RakshaBatchCreateRequest, displayName, inputURI, outputURI string) *VertexBatchCreateRequest {
 	model := ""
 	if request.Model != nil {
 		model = *request.Model
@@ -231,8 +231,8 @@ func vertexConvertRequestsToJSONL(requests []schemas.BatchRequestItem) ([]byte, 
 
 // ============================ Integration Converters ============================
 // Convert between the native Vertex BatchPredictionJob wire shape (used by the aiplatform
-// JobServiceClient) and UnifAI's neutral batch types, for the genai HTTP integration.
-// Key/project selection happens in UnifAI from the vertex key config, so the project and
+// JobServiceClient) and Raksha's neutral batch types, for the genai HTTP integration.
+// Key/project selection happens in Raksha from the vertex key config, so the project and
 // location in the inbound request path are placeholders — only the job body is converted.
 
 // batchStatusToVertexJobState is the inverse of vertexJobStateToBatchStatus.
@@ -265,7 +265,7 @@ func formatVertexBatchTime(unix int64) string {
 	return time.Unix(unix, 0).UTC().Format(time.RFC3339)
 }
 
-// vertexCompletionStatsFromCounts maps UnifAI request counts to Vertex completion stats.
+// vertexCompletionStatsFromCounts maps Raksha request counts to Vertex completion stats.
 func vertexCompletionStatsFromCounts(c schemas.BatchRequestCounts) *VertexBatchCompletionStats {
 	if c.Total == 0 && c.Completed == 0 && c.Failed == 0 {
 		return nil
@@ -281,16 +281,16 @@ func vertexCompletionStatsFromCounts(c schemas.BatchRequestCounts) *VertexBatchC
 	}
 }
 
-// ToUnifAIBatchCreateRequest maps an inbound native Vertex BatchPredictionJob (as sent by
-// the aiplatform JobServiceClient) to a UnifAI batch create request. The model, GCS input
-// URI and display name are mapped to typed UnifAI fields; the GCS output prefix and every
+// ToRakshaBatchCreateRequest maps an inbound native Vertex BatchPredictionJob (as sent by
+// the aiplatform JobServiceClient) to a Raksha batch create request. The model, GCS input
+// URI and display name are mapped to typed Raksha fields; the GCS output prefix and every
 // other Vertex-native create-input field (modelParameters, labels, modelVersionId,
 // encryptionSpec, instanceConfig, ...) are carried through ExtraParams keyed by their Vertex
 // JSON names, so ToVertexBatchCreateRequest can merge them back into the job body verbatim
 // for a lossless round trip. Server-populated, output-only fields (state, outputInfo, error,
 // timestamps, completionStats, partialFailures, satisfiesPz*, ...) are intentionally omitted.
-func ToUnifAIBatchCreateRequest(job *VertexBatchPredictionJob) *schemas.UnifAIBatchCreateRequest {
-	req := &schemas.UnifAIBatchCreateRequest{Provider: schemas.Vertex}
+func ToRakshaBatchCreateRequest(job *VertexBatchPredictionJob) *schemas.RakshaBatchCreateRequest {
+	req := &schemas.RakshaBatchCreateRequest{Provider: schemas.Vertex}
 	if job == nil {
 		return req
 	}
@@ -362,7 +362,7 @@ func ToUnifAIBatchCreateRequest(job *VertexBatchPredictionJob) *schemas.UnifAIBa
 }
 
 // vertexBatchJobShell builds the BatchPredictionJob fields shared by the create and retrieve
-// response converters. name is whatever UnifAI returns (bare id or full resource name);
+// response converters. name is whatever Raksha returns (bare id or full resource name);
 // displayName is the human-readable job name, kept distinct from name.
 func vertexBatchJobShell(name, displayName string, status schemas.BatchStatus, createdAt int64, inputFileID string, outputFileID *string) *VertexBatchPredictionJob {
 	job := &VertexBatchPredictionJob{
@@ -387,9 +387,9 @@ func vertexBatchJobShell(name, displayName string, status schemas.BatchStatus, c
 	return job
 }
 
-// ToVertexBatchCreateResponse maps a UnifAI batch create response to a native Vertex
+// ToVertexBatchCreateResponse maps a Raksha batch create response to a native Vertex
 // BatchPredictionJob.
-func ToVertexBatchCreateResponse(resp *schemas.UnifAIBatchCreateResponse) *VertexBatchPredictionJob {
+func ToVertexBatchCreateResponse(resp *schemas.RakshaBatchCreateResponse) *VertexBatchPredictionJob {
 	if resp == nil {
 		return nil
 	}
@@ -402,9 +402,9 @@ func ToVertexBatchCreateResponse(resp *schemas.UnifAIBatchCreateResponse) *Verte
 	return job
 }
 
-// ToVertexBatchRetrieveResponse maps a UnifAI batch retrieve response to a native Vertex
+// ToVertexBatchRetrieveResponse maps a Raksha batch retrieve response to a native Vertex
 // BatchPredictionJob, including timestamps, completion stats and any terminal error.
-func ToVertexBatchRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse) *VertexBatchPredictionJob {
+func ToVertexBatchRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *VertexBatchPredictionJob {
 	if resp == nil {
 		return nil
 	}
@@ -437,9 +437,9 @@ func ToVertexBatchRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse) *V
 	return job
 }
 
-// ToVertexBatchListResponse maps a UnifAI batch list response to the native Vertex
+// ToVertexBatchListResponse maps a Raksha batch list response to the native Vertex
 // batchPredictionJobs.list response envelope.
-func ToVertexBatchListResponse(resp *schemas.UnifAIBatchListResponse) *VertexBatchJobListResponse {
+func ToVertexBatchListResponse(resp *schemas.RakshaBatchListResponse) *VertexBatchJobListResponse {
 	out := &VertexBatchJobListResponse{}
 	if resp == nil {
 		return out

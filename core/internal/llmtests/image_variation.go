@@ -9,12 +9,12 @@ import (
 	"os"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunImageVariationTest executes the end-to-end image variation test (non-streaming)
-func RunImageVariationTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageVariationTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if testConfig.ImageVariationModel == "" {
 		t.Logf("Image variation not configured for provider %s", testConfig.Provider)
 		return
@@ -74,8 +74,8 @@ func RunImageVariationTest(t *testing.T, client *unifai.UnifAI, ctx context.Cont
 		}
 
 		// Test basic image variation
-		imageVariationOperation := func() (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
-			request := &schemas.UnifAIImageVariationRequest{
+		imageVariationOperation := func() (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+			request := &schemas.RakshaImageVariationRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ImageVariationModel,
 				Input: &schemas.ImageVariationInput{
@@ -84,21 +84,21 @@ func RunImageVariationTest(t *testing.T, client *unifai.UnifAI, ctx context.Cont
 					},
 				},
 				Params: &schemas.ImageVariationParameters{
-					Size: unifai.Ptr("1024x1024"),
-					N:    unifai.Ptr(2), // Generate 2 variations
+					Size: raksha.Ptr("1024x1024"),
+					N:    raksha.Ptr(2), // Generate 2 variations
 				},
 				Fallbacks: testConfig.ImageVariationFallbacks,
 			}
 
-			response, err := client.ImageVariationRequest(schemas.NewUnifAIContext(ctx, schemas.NoDeadline), request)
+			response, err := client.ImageVariationRequest(schemas.NewRakshaContext(ctx, schemas.NoDeadline), request)
 			if err != nil {
 				return nil, err
 			}
 			if response != nil {
 				return response, nil
 			}
-			return nil, &schemas.UnifAIError{
-				IsUnifAIError: true,
+			return nil, &schemas.RakshaError{
+				IsRakshaError: true,
 				Error: &schemas.ErrorField{
 					Message: "No image variation response returned",
 				},
@@ -178,7 +178,7 @@ func RunImageVariationTest(t *testing.T, client *unifai.UnifAI, ctx context.Cont
 
 // RunImageVariationStreamTest executes the end-to-end streaming image variation test
 // Note: Currently, streaming image variation is not supported by any provider
-func RunImageVariationStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageVariationStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageVariationStream {
 		t.Logf("Image variation streaming not supported for provider %s", testConfig.Provider)
 		return

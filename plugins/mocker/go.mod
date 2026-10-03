@@ -1,10 +1,10 @@
-module github.com/unifai/unifai/plugins/mocker
+module github.com/raksha/raksha/plugins/mocker
 
 go 1.26.4
 
 require (
 	github.com/jaswdr/faker/v2 v2.8.0
-	github.com/unifai/unifai/core v1.6.2
+	github.com/raksha/raksha/core v1.6.2
 )
 
 require (

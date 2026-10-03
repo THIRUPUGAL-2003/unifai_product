@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunImageURLTest executes the image URL test scenario using dual API testing framework
-func RunImageURLTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageURLTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageURL {
 		t.Logf("Image URL not supported for provider %s", testConfig.Provider)
 		return
@@ -56,13 +56,13 @@ func RunImageURLTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, t
 		expectations.ShouldNotContainWords = append(expectations.ShouldNotContainWords, []string{"cannot see", "unable to view", "no image"}...) // Vision failure indicators
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(200),
+					MaxCompletionTokens: raksha.Ptr(200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -70,13 +70,13 @@ func RunImageURLTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, t
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(200),
+					MaxOutputTokens: raksha.Ptr(200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -109,12 +109,12 @@ func RunImageURLTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, t
 		}
 
 		// Additional vision-specific validation using universal content extraction
-		validateChatImageProcessing := func(response *schemas.UnifAIChatResponse, apiName string) {
+		validateChatImageProcessing := func(response *schemas.RakshaChatResponse, apiName string) {
 			content := GetChatContent(response)
 			validateImageProcessingContent(t, content, apiName)
 		}
 
-		validateResponsesImageProcessing := func(response *schemas.UnifAIResponsesResponse, apiName string) {
+		validateResponsesImageProcessing := func(response *schemas.RakshaResponsesResponse, apiName string) {
 			content := GetResponsesContent(response)
 			validateImageProcessingContent(t, content, apiName)
 		}

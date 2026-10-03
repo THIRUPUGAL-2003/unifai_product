@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // cosineSimilarity computes the cosine similarity between two vectors
@@ -36,7 +36,7 @@ func cosineSimilarity(a, b []float64) float64 {
 }
 
 // RunEmbeddingTest executes the embedding test scenario
-func RunEmbeddingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunEmbeddingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Embedding {
 		t.Logf("Embedding not supported for provider %s", testConfig.Provider)
 		return
@@ -58,14 +58,14 @@ func RunEmbeddingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, 
 			"Goodnight, moon!",
 		}
 
-		request := &schemas.UnifAIEmbeddingRequest{
+		request := &schemas.RakshaEmbeddingRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.EmbeddingModel,
 			Input: &schemas.EmbeddingInput{
 				Texts: testTexts,
 			},
 			Params: &schemas.EmbeddingParameters{
-				EncodingFormat: unifai.Ptr("float"),
+				EncodingFormat: raksha.Ptr("float"),
 			},
 			Fallbacks: testConfig.EmbeddingFallbacks,
 		}
@@ -98,13 +98,13 @@ func RunEmbeddingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, 
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		embeddingResponse, unifaiErr := WithEmbeddingTestRetry(t, embeddingRetryConfig, retryContext, expectations, "Embedding", func() (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		embeddingResponse, rakshaErr := WithEmbeddingTestRetry(t, embeddingRetryConfig, retryContext, expectations, "Embedding", func() (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.EmbeddingRequest(bfCtx, request)
 		})
 
-		if unifaiErr != nil {
-			t.Fatalf("❌ Embedding request failed after retries: %v", GetErrorMessage(unifaiErr))
+		if rakshaErr != nil {
+			t.Fatalf("❌ Embedding request failed after retries: %v", GetErrorMessage(rakshaErr))
 		}
 
 		// Additional embedding-specific validation (complementary to the main validation)
@@ -114,7 +114,7 @@ func RunEmbeddingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, 
 
 // validateEmbeddingSemantics performs semantic validation on embedding responses
 // This is complementary to the main validation framework and focuses on embedding-specific concerns
-func validateEmbeddingSemantics(t *testing.T, response *schemas.UnifAIEmbeddingResponse, testTexts []string) {
+func validateEmbeddingSemantics(t *testing.T, response *schemas.RakshaEmbeddingResponse, testTexts []string) {
 	if response == nil || response.Data == nil {
 		t.Fatal("Invalid embedding response structure")
 	}

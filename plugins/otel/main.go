@@ -1,4 +1,4 @@
-// Package otel is OpenTelemetry plugin for UnifAI
+// Package otel is OpenTelemetry plugin for Raksha
 package otel
 
 import (
@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"github.com/bytedance/sonic"
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
 	"go.opentelemetry.io/otel/attribute"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 )
@@ -346,7 +346,7 @@ type OtelPlugin struct {
 	// to every target's collector, and metrics are recorded against every target's exporter.
 	targets []*otelTarget
 
-	unifaiVersion string
+	rakshaVersion string
 
 	attributesFromEnvironment []*commonpb.KeyValue
 	instanceAttrs             []*commonpb.KeyValue // machine ID + pod labels, added only to root spans
@@ -357,7 +357,7 @@ type OtelPlugin struct {
 }
 
 // Init function for the OTEL plugin
-func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingManager *modelcatalog.ModelCatalog, unifaiVersion string) (*OtelPlugin, error) {
+func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingManager *modelcatalog.ModelCatalog, rakshaVersion string) (*OtelPlugin, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config is required")
 	}
@@ -400,7 +400,7 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 	// Preparing the plugin
 	p := &OtelPlugin{
 		pricingManager:            pricingManager,
-		unifaiVersion:            unifaiVersion,
+		rakshaVersion:            rakshaVersion,
 		attributesFromEnvironment: attributesFromEnvironment,
 		instanceAttrs:             instanceAttrs,
 		pluginSpanFilter:          config.PluginSpanFilter,
@@ -437,7 +437,7 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 
 	serviceName := profile.ServiceName
 	if serviceName == "" {
-		serviceName = "unifai"
+		serviceName = "raksha"
 	}
 
 	// Copy headers before resolving so the stored config is never mutated, then resolve
@@ -556,28 +556,28 @@ func (p *OtelPlugin) RedactConfig(raw map[string]any) (map[string]any, error) {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *OtelPlugin) HTTPTransportPreHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *OtelPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *OtelPlugin) HTTPTransportPostHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *OtelPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *OtelPlugin) HTTPTransportStreamChunkHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, chunk *schemas.UnifAIStreamChunk) (*schemas.UnifAIStreamChunk, error) {
+func (p *OtelPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *OtelPlugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAIRequest) error {
+func (p *OtelPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
 	return nil
 }
 
 // PreLLMHook is a no-op - tracing is handled via the Inject method.
 // The OTEL plugin receives completed traces from TracingMiddleware.
-func (p *OtelPlugin) PreLLMHook(_ *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *OtelPlugin) PreLLMHook(_ *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	return req, nil, nil
 }
 
@@ -589,13 +589,13 @@ func (p *OtelPlugin) PreLLMHook(_ *schemas.UnifAIContext, req *schemas.UnifAIReq
 //
 // This is the ONLY place RecordCacheHit is called — do not also emit it from
 // recordMetricsFromTrace, or cache hits will double-count.
-func (p *OtelPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
+func (p *OtelPlugin) PostLLMHook(ctx *schemas.RakshaContext, resp *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
 	if resp == nil || !p.anyMetricsEnabled() {
-		return resp, unifaiErr, nil
+		return resp, rakshaErr, nil
 	}
 	extra := resp.GetExtraFields()
 	if extra == nil || extra.CacheDebug == nil || !extra.CacheDebug.CacheHit {
-		return resp, unifaiErr, nil
+		return resp, rakshaErr, nil
 	}
 
 	cacheType := "unknown"
@@ -604,9 +604,9 @@ func (p *OtelPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas.UnifA
 	}
 
 	// Same dimensions as the trace-derived metrics (so the cache-hit counter shares labels
-	// with every other unifai_* OTEL metric), but sourced from context — a short-circuited
+	// with every other raksha_* OTEL metric), but sourced from context — a short-circuited
 	// cache hit has no span to read.
-	attrs := append(buildContextAttrs(ctx, resp, unifaiErr), attribute.String("cache_type", cacheType))
+	attrs := append(buildContextAttrs(ctx, resp, rakshaErr), attribute.String("cache_type", cacheType))
 
 	for _, t := range p.targets {
 		if t.metricsExporter != nil {
@@ -614,7 +614,7 @@ func (p *OtelPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas.UnifA
 		}
 	}
 
-	return resp, unifaiErr, nil
+	return resp, rakshaErr, nil
 }
 
 // anyMetricsEnabled reports whether at least one profile has a metrics exporter running.
@@ -752,7 +752,7 @@ func buildSpanAttrs(span *schemas.Span) []attribute.KeyValue {
 	if method == "" {
 		method = span.Name
 	}
-	return BuildUnifAIAttributes(
+	return BuildRakshaAttributes(
 		getStringAttr(attrs, schemas.AttrProviderName),
 		getStringAttr(attrs, schemas.AttrRequestModel),
 		method,
@@ -771,25 +771,25 @@ func buildSpanAttrs(span *schemas.Span) []attribute.KeyValue {
 // buildContextAttrs builds the same metric dimension attrs as buildSpanAttrs, but sourced
 // from the request context and response instead of a completed span. Used by hook-based
 // metrics (e.g. cache hits) that fire without a provider-attempt span to read from.
-func buildContextAttrs(ctx context.Context, resp *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) []attribute.KeyValue {
-	requestType, provider, originalModel, resolvedModel := unifai.GetResponseFields(resp, unifaiErr)
+func buildContextAttrs(ctx context.Context, resp *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) []attribute.KeyValue {
+	requestType, provider, originalModel, resolvedModel := raksha.GetResponseFields(resp, rakshaErr)
 	model := originalModel
 	if resolvedModel != "" {
 		model = resolvedModel
 	}
-	return BuildUnifAIAttributes(
+	return BuildRakshaAttributes(
 		string(provider),
 		model,
 		string(requestType),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyID),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyName),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeySelectedKeyID),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeySelectedKeyName),
-		unifai.GetIntFromContext(ctx, schemas.UnifAIContextKeyFallbackIndex),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceTeamID),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceTeamName),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceCustomerID),
-		unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceCustomerName),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyID),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyName),
+		raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyFallbackIndex),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamName),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerID),
+		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerName),
 	)
 }
 

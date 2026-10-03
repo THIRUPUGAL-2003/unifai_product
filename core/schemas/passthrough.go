@@ -1,6 +1,6 @@
 package schemas
 
-type UnifAIPassthroughRequest struct {
+type RakshaPassthroughRequest struct {
 	Provider    ModelProvider // provider extracted from path or body, used for key selection when non-empty
 	Model       string        // model extracted from path or body, used for key selection when non-empty
 	Method      string
@@ -10,13 +10,13 @@ type UnifAIPassthroughRequest struct {
 	SafeHeaders map[string]string // client headers, auth already stripped
 }
 
-// UnifAIPassthroughUsage carries usage data extracted by the provider at stream
+// RakshaPassthroughUsage carries usage data extracted by the provider at stream
 // completion. The pricing module converts this into cost using the existing compute
 // functions — no new pricing logic is required.
-type UnifAIPassthroughUsage struct {
+type RakshaPassthroughUsage struct {
 	// Text / chat / responses / embeddings
-	LLMUsage    *UnifAILLMUsage
-	ServiceTier *UnifAIServiceTier // "priority" | "flex" | nil (default)
+	LLMUsage    *RakshaLLMUsage
+	ServiceTier *RakshaServiceTier // "priority" | "flex" | nil (default)
 	Speed       *string             // "fast" | "standard" — speed actually served (Anthropic fast mode); drives fast-mode billing
 
 	// Image generation / edit / variation
@@ -40,13 +40,13 @@ type UnifAIPassthroughUsage struct {
 	ContainerIdentifier string
 }
 
-type UnifAIPassthroughResponse struct {
+type RakshaPassthroughResponse struct {
 	StatusCode       int
 	Headers          map[string]string
 	Body             []byte
-	ExtraFields      UnifAIResponseExtraFields
+	ExtraFields      RakshaResponseExtraFields
 	Path             string                   // stripped provider path, e.g. "/v1/chat/completions"
-	PassthroughUsage *UnifAIPassthroughUsage // usage extracted by the provider for billing — set on the unary response (non-streaming) or the final streaming chunk; nil when no billable usage could be extracted
+	PassthroughUsage *RakshaPassthroughUsage // usage extracted by the provider for billing — set on the unary response (non-streaming) or the final streaming chunk; nil when no billable usage could be extracted
 }
 
 type PassthroughLogParams struct {

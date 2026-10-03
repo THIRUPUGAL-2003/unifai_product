@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // OpusReasoningTestConfig holds configuration for Opus-specific reasoning tests
@@ -51,7 +51,7 @@ func GetOpusReasoningTestConfigs() []OpusReasoningTestConfig {
 }
 
 // RunOpus45ReasoningTest tests extended thinking with Opus 4.5 (budget_tokens mode)
-func RunOpus45ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, config OpusReasoningTestConfig) {
+func RunOpus45ReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.Context, config OpusReasoningTestConfig) {
 	if config.SkipOpus45 {
 		t.Skipf("Skipping Opus 4.5 test: %s", config.SkipReason)
 		return
@@ -90,14 +90,14 @@ func RunOpus45ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 				CreateBasicResponsesMessage(problemPrompt),
 			}
 
-			responsesReq := &schemas.UnifAIResponsesRequest{
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: config.Provider,
 				Model:    config.Opus45Model,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(4000),
+					MaxOutputTokens: raksha.Ptr(4000),
 					Reasoning: &schemas.ResponsesParametersReasoning{
-						Effort: unifai.Ptr("high"),
+						Effort: raksha.Ptr("high"),
 					},
 					Include: []string{"reasoning.encrypted_content"},
 				},
@@ -138,8 +138,8 @@ func RunOpus45ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 			})
 			expectations = ModifyExpectationsForProvider(expectations, config.Provider)
 
-			response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "Opus45_Reasoning_Responses", func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "Opus45_Reasoning_Responses", func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ResponsesRequest(bfCtx, responsesReq)
 			})
 
@@ -176,15 +176,15 @@ func RunOpus45ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 				CreateBasicChatMessage(problemPrompt),
 			}
 
-			chatReq := &schemas.UnifAIChatRequest{
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: config.Provider,
 				Model:    config.Opus45Model,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(4000),
+					MaxCompletionTokens: raksha.Ptr(4000),
 					Reasoning: &schemas.ChatReasoning{
-						Effort:    unifai.Ptr("high"),
-						MaxTokens: unifai.Ptr(2000), // Budget tokens for Opus 4.5
+						Effort:    raksha.Ptr("high"),
+						MaxTokens: raksha.Ptr(2000), // Budget tokens for Opus 4.5
 					},
 				},
 				Fallbacks: config.Fallbacks,
@@ -224,8 +224,8 @@ func RunOpus45ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 			})
 			expectations = ModifyExpectationsForProvider(expectations, config.Provider)
 
-			response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Opus45_Reasoning_Chat", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Opus45_Reasoning_Chat", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ChatCompletionRequest(bfCtx, chatReq)
 			})
 
@@ -255,7 +255,7 @@ func RunOpus45ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 }
 
 // RunOpus46ReasoningTest tests adaptive thinking with Opus 4.6 (adaptive mode + effort)
-func RunOpus46ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, config OpusReasoningTestConfig) {
+func RunOpus46ReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.Context, config OpusReasoningTestConfig) {
 	if config.SkipOpus46 {
 		t.Skipf("Skipping Opus 4.6 test: %s", config.SkipReason)
 		return
@@ -298,14 +298,14 @@ func RunOpus46ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 					CreateBasicResponsesMessage(problemPrompt),
 				}
 
-				responsesReq := &schemas.UnifAIResponsesRequest{
+				responsesReq := &schemas.RakshaResponsesRequest{
 					Provider: config.Provider,
 					Model:    config.Opus46Model,
 					Input:    responsesMessages,
 					Params: &schemas.ResponsesParameters{
-						MaxOutputTokens: unifai.Ptr(4000),
+						MaxOutputTokens: raksha.Ptr(4000),
 						Reasoning: &schemas.ResponsesParametersReasoning{
-							Effort: unifai.Ptr(effort), // Adaptive thinking uses effort parameter
+							Effort: raksha.Ptr(effort), // Adaptive thinking uses effort parameter
 						},
 						Include: []string{"reasoning.encrypted_content"},
 					},
@@ -348,8 +348,8 @@ func RunOpus46ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 				})
 				expectations = ModifyExpectationsForProvider(expectations, config.Provider)
 
-				response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "Opus46_Reasoning_Responses_"+effort, func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-					bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+				response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "Opus46_Reasoning_Responses_"+effort, func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 					return client.ResponsesRequest(bfCtx, responsesReq)
 				})
 
@@ -387,14 +387,14 @@ func RunOpus46ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 				CreateBasicChatMessage(problemPrompt),
 			}
 
-			chatReq := &schemas.UnifAIChatRequest{
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: config.Provider,
 				Model:    config.Opus46Model,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(4000),
+					MaxCompletionTokens: raksha.Ptr(4000),
 					Reasoning: &schemas.ChatReasoning{
-						Effort: unifai.Ptr("high"), // Opus 4.6 uses adaptive thinking with effort
+						Effort: raksha.Ptr("high"), // Opus 4.6 uses adaptive thinking with effort
 						// Note: MaxTokens (budget_tokens) is NOT used for Opus 4.6
 					},
 				},
@@ -435,8 +435,8 @@ func RunOpus46ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 			})
 			expectations = ModifyExpectationsForProvider(expectations, config.Provider)
 
-			response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Opus46_Reasoning_Chat", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Opus46_Reasoning_Chat", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ChatCompletionRequest(bfCtx, chatReq)
 			})
 
@@ -468,7 +468,7 @@ func RunOpus46ReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Con
 // RunOpus46MultiTurnReasoningTest tests multi-turn conversations with reasoning content passthrough.
 // This verifies that reasoning details (text + signature) from assistant messages are correctly
 // passed back to the model in follow-up turns.
-func RunOpus46MultiTurnReasoningTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, config OpusReasoningTestConfig) {
+func RunOpus46MultiTurnReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.Context, config OpusReasoningTestConfig) {
 	if config.SkipOpus46 {
 		t.Skipf("Skipping Opus 4.6 multi-turn test: %s", config.SkipReason)
 		return
@@ -497,14 +497,14 @@ func RunOpus46MultiTurnReasoningTest(t *testing.T, client *unifai.UnifAI, ctx co
 			CreateBasicChatMessage(initialPrompt),
 		}
 
-		chatReq := &schemas.UnifAIChatRequest{
+		chatReq := &schemas.RakshaChatRequest{
 			Provider: config.Provider,
 			Model:    config.Opus46Model,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(4000),
+				MaxCompletionTokens: raksha.Ptr(4000),
 				Reasoning: &schemas.ChatReasoning{
-					Effort: unifai.Ptr("low"),
+					Effort: raksha.Ptr("low"),
 				},
 			},
 			Fallbacks: config.Fallbacks,
@@ -537,8 +537,8 @@ func RunOpus46MultiTurnReasoningTest(t *testing.T, client *unifai.UnifAI, ctx co
 		})
 		expectations = ModifyExpectationsForProvider(expectations, config.Provider)
 
-		firstResponse, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Opus46_MultiTurn_Step1", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		firstResponse, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Opus46_MultiTurn_Step1", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		})
 
@@ -580,14 +580,14 @@ func RunOpus46MultiTurnReasoningTest(t *testing.T, client *unifai.UnifAI, ctx co
 			CreateBasicChatMessage("Now multiply that result by 2."),
 		}
 
-		multiTurnReq := &schemas.UnifAIChatRequest{
+		multiTurnReq := &schemas.RakshaChatRequest{
 			Provider: config.Provider,
 			Model:    config.Opus46Model,
 			Input:    multiTurnMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(4000),
+				MaxCompletionTokens: raksha.Ptr(4000),
 				Reasoning: &schemas.ChatReasoning{
-					Effort: unifai.Ptr("low"),
+					Effort: raksha.Ptr("low"),
 				},
 			},
 			Fallbacks: config.Fallbacks,
@@ -607,8 +607,8 @@ func RunOpus46MultiTurnReasoningTest(t *testing.T, client *unifai.UnifAI, ctx co
 			},
 		}
 
-		secondResponse, chatError2 := WithChatTestRetry(t, chatRetryConfig, retryContext2, expectations, "Opus46_MultiTurn_Step2", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		secondResponse, chatError2 := WithChatTestRetry(t, chatRetryConfig, retryContext2, expectations, "Opus46_MultiTurn_Step2", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, multiTurnReq)
 		})
 
@@ -628,7 +628,7 @@ func RunOpus46MultiTurnReasoningTest(t *testing.T, client *unifai.UnifAI, ctx co
 }
 
 // RunAllOpusReasoningTests runs Opus 4.5 and 4.6 reasoning tests for a given provider
-func RunAllOpusReasoningTests(t *testing.T, client *unifai.UnifAI, ctx context.Context, config OpusReasoningTestConfig) {
+func RunAllOpusReasoningTests(t *testing.T, client *raksha.Raksha, ctx context.Context, config OpusReasoningTestConfig) {
 	t.Run(string(config.Provider)+"_OpusReasoning", func(t *testing.T) {
 		t.Run("Opus45", func(t *testing.T) {
 			RunOpus45ReasoningTest(t, client, ctx, config)

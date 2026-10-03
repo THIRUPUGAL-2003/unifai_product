@@ -3,7 +3,7 @@ package cluster
 import (
 	"sync"
 
-	"github.com/unifai/unifai/framework/kvstore"
+	"github.com/raksha/raksha/framework/kvstore"
 )
 
 // SyncDelegate bridges cluster config to the in-memory KV store.

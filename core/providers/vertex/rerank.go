@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 func buildVertexRankingConfig(projectID, rankingConfigOverride string) (string, error) {
@@ -81,27 +81,27 @@ func getVertexRerankOptions(projectID string, params *schemas.RerankParameters) 
 	return options, nil
 }
 
-// ToVertexRankRequest converts a UnifAI rerank request to Discovery Engine rank API format.
-func ToVertexRankRequest(unifaiReq *schemas.UnifAIRerankRequest, options *vertexRerankOptions) (*VertexRankRequest, error) {
-	if unifaiReq == nil {
-		return nil, fmt.Errorf("unifai rerank request is nil")
+// ToVertexRankRequest converts a Raksha rerank request to Discovery Engine rank API format.
+func ToVertexRankRequest(rakshaReq *schemas.RakshaRerankRequest, options *vertexRerankOptions) (*VertexRankRequest, error) {
+	if rakshaReq == nil {
+		return nil, fmt.Errorf("raksha rerank request is nil")
 	}
 	if options == nil {
 		return nil, fmt.Errorf("vertex rerank options are nil")
 	}
-	if len(unifaiReq.Documents) == 0 {
+	if len(rakshaReq.Documents) == 0 {
 		return nil, fmt.Errorf("documents are required for rerank request")
 	}
-	if len(unifaiReq.Documents) > vertexMaxRerankRecordsPerQuery {
+	if len(rakshaReq.Documents) > vertexMaxRerankRecordsPerQuery {
 		return nil, fmt.Errorf("vertex rerank supports up to %d records per request", vertexMaxRerankRecordsPerQuery)
 	}
 
 	rankRequest := &VertexRankRequest{
-		Query:   unifaiReq.Query,
-		Records: make([]VertexRankRecord, len(unifaiReq.Documents)),
+		Query:   rakshaReq.Query,
+		Records: make([]VertexRankRecord, len(rakshaReq.Documents)),
 	}
 
-	for i, doc := range unifaiReq.Documents {
+	for i, doc := range rakshaReq.Documents {
 		recordID := fmt.Sprintf("%s%d", vertexSyntheticRecordPrefix, i)
 		content := doc.Text
 		record := VertexRankRecord{
@@ -120,18 +120,18 @@ func ToVertexRankRequest(unifaiReq *schemas.UnifAIRerankRequest, options *vertex
 		rankRequest.Records[i] = record
 	}
 
-	if unifaiReq.Params != nil && unifaiReq.Params.TopN != nil {
-		topN := *unifaiReq.Params.TopN
+	if rakshaReq.Params != nil && rakshaReq.Params.TopN != nil {
+		topN := *rakshaReq.Params.TopN
 		if topN < 1 {
 			return nil, fmt.Errorf("top_n must be at least 1")
 		}
-		if topN > len(unifaiReq.Documents) {
-			topN = len(unifaiReq.Documents)
+		if topN > len(rakshaReq.Documents) {
+			topN = len(rakshaReq.Documents)
 		}
 		rankRequest.TopN = &topN
 	}
 
-	trimmedModel := strings.TrimSpace(unifaiReq.Model)
+	trimmedModel := strings.TrimSpace(rakshaReq.Model)
 	if trimmedModel == "" {
 		trimmedModel = vertexDefaultRerankModel
 	}
@@ -147,8 +147,8 @@ func ToVertexRankRequest(unifaiReq *schemas.UnifAIRerankRequest, options *vertex
 	return rankRequest, nil
 }
 
-// ToUnifAIRerankRequest converts a Discovery Engine rank request to UnifAI format.
-func (req *VertexRankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIRerankRequest {
+// ToRakshaRerankRequest converts a Discovery Engine rank request to Raksha format.
+func (req *VertexRankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) *schemas.RakshaRerankRequest {
 	if req == nil {
 		return nil
 	}
@@ -161,7 +161,7 @@ func (req *VertexRankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContext) 
 		provider = schemas.Vertex
 	}
 
-	unifaiReq := &schemas.UnifAIRerankRequest{
+	rakshaReq := &schemas.RakshaRerankRequest{
 		Provider: provider,
 		Model:    model,
 		Query:    req.Query,
@@ -181,12 +181,12 @@ func (req *VertexRankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContext) 
 				"title": *record.Title,
 			}
 		}
-		unifaiReq.Documents = append(unifaiReq.Documents, doc)
+		rakshaReq.Documents = append(rakshaReq.Documents, doc)
 	}
 
 	// Extract TopN
 	if req.TopN != nil {
-		unifaiReq.Params.TopN = req.TopN
+		rakshaReq.Params.TopN = req.TopN
 	}
 
 	// Pass extra fields as ExtraParams
@@ -198,10 +198,10 @@ func (req *VertexRankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContext) 
 		extraParams["user_labels"] = req.UserLabels
 	}
 	if len(extraParams) > 0 {
-		unifaiReq.Params.ExtraParams = extraParams
+		rakshaReq.Params.ExtraParams = extraParams
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
 func parseVertexSyntheticRecordIndex(recordID string, maxDocs int) (int, error) {
@@ -219,8 +219,8 @@ func parseVertexSyntheticRecordIndex(recordID string, maxDocs int) (int, error) 
 	return index, nil
 }
 
-// ToUnifAIRerankResponse converts a Discovery Engine rank response to UnifAI format.
-func (response *VertexRankResponse) ToUnifAIRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) (*schemas.UnifAIRerankResponse, error) {
+// ToRakshaRerankResponse converts a Discovery Engine rank response to Raksha format.
+func (response *VertexRankResponse) ToRakshaRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) (*schemas.RakshaRerankResponse, error) {
 	if response == nil {
 		return nil, fmt.Errorf("vertex rerank response is nil")
 	}
@@ -259,7 +259,7 @@ func (response *VertexRankResponse) ToUnifAIRerankResponse(documents []schemas.R
 		return results[i].RelevanceScore > results[j].RelevanceScore
 	})
 
-	return &schemas.UnifAIRerankResponse{
+	return &schemas.RakshaRerankResponse{
 		Results: results,
 	}, nil
 }

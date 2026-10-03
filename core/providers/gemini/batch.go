@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-// ToGeminiBatchGenerateContentRequest converts one UnifAI batch request body into the
+// ToGeminiBatchGenerateContentRequest converts one Raksha batch request body into the
 // Gemini GenerateContentRequest shape used for batch input. OpenAI-style bodies (with
 // "messages") have their messages converted to Gemini "contents"/"systemInstruction";
 // bodies already in Gemini form are unmarshaled directly. Shared by the Gemini and Vertex
@@ -39,7 +39,7 @@ func ToGeminiBatchGenerateContentRequest(body map[string]interface{}) (GeminiBat
 		if err := sonic.Unmarshal(messagesBytes, &chatMessages); err != nil {
 			return geminiReq, fmt.Errorf("failed to unmarshal messages: %w", err)
 		}
-		contents, systemInstruction, err := convertUnifAIMessagesToGemini(chatMessages)
+		contents, systemInstruction, err := convertRakshaMessagesToGemini(chatMessages)
 		if err != nil {
 			return geminiReq, fmt.Errorf("failed to convert messages: %w", err)
 		}
@@ -50,8 +50,8 @@ func ToGeminiBatchGenerateContentRequest(body map[string]interface{}) (GeminiBat
 	return geminiReq, nil
 }
 
-// ToUnifAIBatchStatus converts Gemini batch job state to UnifAI status.
-func ToUnifAIBatchStatus(geminiState string) schemas.BatchStatus {
+// ToRakshaBatchStatus converts Gemini batch job state to Raksha status.
+func ToRakshaBatchStatus(geminiState string) schemas.BatchStatus {
 	switch geminiState {
 	case GeminiBatchStatePending, GeminiBatchStateRunning:
 		return schemas.BatchStatusInProgress
@@ -70,7 +70,7 @@ func ToUnifAIBatchStatus(geminiState string) schemas.BatchStatus {
 	}
 }
 
-// ToGeminiBatchStatus converts UnifAI batch status to Gemini batch job state.
+// ToGeminiBatchStatus converts Raksha batch status to Gemini batch job state.
 func ToGeminiBatchStatus(status schemas.BatchStatus) string {
 	switch status {
 	case schemas.BatchStatusValidating, schemas.BatchStatusInProgress:
@@ -92,8 +92,8 @@ func ToGeminiBatchStatus(status schemas.BatchStatus) string {
 	}
 }
 
-// ToGeminiBatchJobResponse converts UnifAI batch create response to Gemini batch job response format.
-func ToGeminiBatchJobResponse(resp *schemas.UnifAIBatchCreateResponse) *GeminiBatchJobResponse {
+// ToGeminiBatchJobResponse converts Raksha batch create response to Gemini batch job response format.
+func ToGeminiBatchJobResponse(resp *schemas.RakshaBatchCreateResponse) *GeminiBatchJobResponse {
 	if resp == nil {
 		return nil
 	}
@@ -150,8 +150,8 @@ func ToGeminiBatchJobResponse(resp *schemas.UnifAIBatchCreateResponse) *GeminiBa
 	return geminiResp
 }
 
-// ToGeminiBatchRetrieveResponse converts a UnifAI batch retrieve response to Gemini batch job response format.
-func ToGeminiBatchRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse) *GeminiBatchJobResponse {
+// ToGeminiBatchRetrieveResponse converts a Raksha batch retrieve response to Gemini batch job response format.
+func ToGeminiBatchRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *GeminiBatchJobResponse {
 	if resp == nil {
 		return nil
 	}
@@ -237,8 +237,8 @@ func ToGeminiBatchRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse) *G
 	return geminiResp
 }
 
-// ToGeminiBatchListResponse converts a UnifAI batch list response to Gemini format.
-func ToGeminiBatchListResponse(resp *schemas.UnifAIBatchListResponse) *GeminiBatchListResponse {
+// ToGeminiBatchListResponse converts a Raksha batch list response to Gemini format.
+func ToGeminiBatchListResponse(resp *schemas.RakshaBatchListResponse) *GeminiBatchListResponse {
 	if resp == nil {
 		return nil
 	}
@@ -275,7 +275,7 @@ func parseGeminiTimestamp(timestamp string) int64 {
 
 // downloadBatchResultsFile downloads and parses a batch results file from Gemini.
 // Returns the parsed result items from the JSONL file and any parse errors encountered.
-func (provider *GeminiProvider) downloadBatchResultsFile(ctx context.Context, key schemas.Key, fileName string) ([]schemas.BatchResultItem, []schemas.BatchError, *schemas.UnifAIError) {
+func (provider *GeminiProvider) downloadBatchResultsFile(ctx context.Context, key schemas.Key, fileName string) ([]schemas.BatchResultItem, []schemas.BatchError, *schemas.RakshaError) {
 	// Create request to download the file
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -304,10 +304,10 @@ func (provider *GeminiProvider) downloadBatchResultsFile(ctx context.Context, ke
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, nil, rakshaErr
 	}
 
 	// Handle error response
@@ -317,7 +317,7 @@ func (provider *GeminiProvider) downloadBatchResultsFile(ctx context.Context, ke
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Parse JSONL content - each line is a separate JSON object
@@ -416,7 +416,7 @@ func geminiGenerateContentToBatchResultBody(resp *GenerateContentResponse) map[s
 }
 
 // geminiInlineResponseToBatchResultItem converts a single Gemini inline batch response
-// into a UnifAI BatchResultItem. customIDFallback is used when the response carries no
+// into a Raksha BatchResultItem. customIDFallback is used when the response carries no
 // metadata key.
 func geminiInlineResponseToBatchResultItem(inlineResp GeminiInlinedResponse, customIDFallback string) schemas.BatchResultItem {
 	customID := customIDFallback

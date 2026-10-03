@@ -1,6 +1,6 @@
 //go:build !tinygo && !wasm
 
-// Package schemas defines the core schemas and types used by the UnifAI system.
+// Package schemas defines the core schemas and types used by the Raksha system.
 package schemas
 
 import (
@@ -108,30 +108,30 @@ type MCPCredentialStore interface {
 	//
 	//  1. At AddClient / Reconnect / UpdateClientConnection for shared-
 	//     connection auth types (none, headers, server_oauth). The caller
-	//     wraps the UnifAI lifecycle context into a synthetic UnifAIContext
+	//     wraps the Raksha lifecycle context into a synthetic RakshaContext
 	//     with no identity, so the resolver returns admin-level headers
 	//     (static config + admin Bearer for server_oauth).
 	//
 	//  2. Per call inside the ephemeral-transport path for per-user auth
-	//     types. The caller passes the real request UnifAIContext, and the
+	//     types. The caller passes the real request RakshaContext, and the
 	//     resolver returns the caller's full set (static + filtered
 	//     context-extras + per-user auth).
 	//
 	// May return *MCPAuthRequiredError when a per-user credential is missing
 	// and the caller must complete an inline auth flow (OAuth dance or
 	// headers submission) before retrying.
-	ConnectionHeaders(ctx *UnifAIContext, config *MCPClientConfig) (http.Header, error)
+	ConnectionHeaders(ctx *RakshaContext, config *MCPClientConfig) (http.Header, error)
 
 	// RequestHeaders returns the per-message headers attached to each
 	// CallTool / ListTools / Ping that flows over an already-open
 	// transport — currently just the filtered context-extras
-	// (UnifAIContextKeyMCPExtraHeaders, scoped by config.AllowedExtraHeaders).
+	// (RakshaContextKeyMCPExtraHeaders, scoped by config.AllowedExtraHeaders).
 	//
 	// Only meaningful when the connection is shared
 	// (RequiresPerCallConnection is false). Per-user types embed all
 	// caller-specific headers in the ephemeral transport itself via
 	// ConnectionHeaders; the caller skips RequestHeaders in that path.
-	RequestHeaders(ctx *UnifAIContext, config *MCPClientConfig) (http.Header, error)
+	RequestHeaders(ctx *RakshaContext, config *MCPClientConfig) (http.Header, error)
 
 	// RequiresPerCallConnection reports whether each tool invocation needs a
 	// freshly-built ephemeral upstream connection (rather than reusing a
@@ -140,7 +140,7 @@ type MCPCredentialStore interface {
 	RequiresPerCallConnection(config *MCPClientConfig) bool
 }
 
-// MCPConfig represents the configuration for MCP integration in UnifAI.
+// MCPConfig represents the configuration for MCP integration in Raksha.
 // It enables tool auto-discovery and execution from local and external MCP servers.
 type MCPConfig struct {
 	ClientConfigs     []*MCPClientConfig    `json:"client_configs,omitempty"`      // Per-client execution configurations
@@ -149,9 +149,9 @@ type MCPConfig struct {
 
 	// Function to fetch a new request ID for each tool call result message in agent mode,
 	// this is used to ensure that the tool call result messages are unique and can be tracked in plugins or by the user.
-	// This id is attached to ctx.Value(schemas.UnifAIContextKeyRequestID) in the agent mode.
+	// This id is attached to ctx.Value(schemas.RakshaContextKeyRequestID) in the agent mode.
 	// If not provider, same request ID is used for all tool call result messages without any overrides.
-	FetchNewRequestIDFunc func(ctx *UnifAIContext) string `json:"-"`
+	FetchNewRequestIDFunc func(ctx *RakshaContext) string `json:"-"`
 
 	// PluginPipelineProvider returns a plugin pipeline for running MCP plugin hooks.
 	// Used when executeCode tool calls nested MCP tools to ensure plugins run for them.
@@ -575,7 +575,7 @@ type MCPClientConnectionInfo struct {
 
 // MCPClient represents a connected MCP client with its configuration and tools,
 // and connection information, after it has been initialized.
-// It is returned by GetMCPClients() method in unifai.
+// It is returned by GetMCPClients() method in raksha.
 type MCPClient struct {
 	Config *MCPClientConfig   `json:"config"` // Tool filtering settings
 	Tools  []ChatToolFunction `json:"tools"`  // Available tools

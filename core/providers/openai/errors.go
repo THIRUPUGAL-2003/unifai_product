@@ -4,51 +4,51 @@ import (
 	"fmt"
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-// ErrorConverter is a function that converts provider-specific error responses to UnifAIError.
-type ErrorConverter func(resp *fasthttp.Response) *schemas.UnifAIError
+// ErrorConverter is a function that converts provider-specific error responses to RakshaError.
+type ErrorConverter func(resp *fasthttp.Response) *schemas.RakshaError
 
 // ParseOpenAIError parses OpenAI error responses.
-func ParseOpenAIError(resp *fasthttp.Response) *schemas.UnifAIError {
-	var errorResp schemas.UnifAIError
+func ParseOpenAIError(resp *fasthttp.Response) *schemas.RakshaError {
+	var errorResp schemas.RakshaError
 
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 
 	if errorResp.EventID != nil {
-		unifaiErr.EventID = errorResp.EventID
+		rakshaErr.EventID = errorResp.EventID
 	}
 
 	if errorResp.Error != nil {
-		if unifaiErr.Error == nil {
-			unifaiErr.Error = &schemas.ErrorField{}
+		if rakshaErr.Error == nil {
+			rakshaErr.Error = &schemas.ErrorField{}
 		}
-		unifaiErr.Error.Type = errorResp.Error.Type
-		unifaiErr.Error.Code = errorResp.Error.Code
+		rakshaErr.Error.Type = errorResp.Error.Type
+		rakshaErr.Error.Code = errorResp.Error.Code
 		if errorResp.Error.Message != "" {
-			unifaiErr.Error.Message = errorResp.Error.Message
+			rakshaErr.Error.Message = errorResp.Error.Message
 		}
-		unifaiErr.Error.Param = errorResp.Error.Param
+		rakshaErr.Error.Param = errorResp.Error.Param
 		if errorResp.Error.EventID != nil {
-			unifaiErr.Error.EventID = errorResp.Error.EventID
+			rakshaErr.Error.EventID = errorResp.Error.EventID
 		}
 	}
 
-	if unifaiErr.Error == nil {
-		unifaiErr.Error = &schemas.ErrorField{}
+	if rakshaErr.Error == nil {
+		rakshaErr.Error = &schemas.ErrorField{}
 	}
-	if strings.TrimSpace(unifaiErr.Error.Message) == "" {
-		if unifaiErr.StatusCode != nil {
-			unifaiErr.Error.Message = fmt.Sprintf("provider API error (status %d)", *unifaiErr.StatusCode)
+	if strings.TrimSpace(rakshaErr.Error.Message) == "" {
+		if rakshaErr.StatusCode != nil {
+			rakshaErr.Error.Message = fmt.Sprintf("provider API error (status %d)", *rakshaErr.StatusCode)
 		} else {
-			unifaiErr.Error.Message = "provider API error"
+			rakshaErr.Error.Message = "provider API error"
 		}
 	}
 
 	// Set ExtraFields unconditionally so provider/model/request metadata is always attached
 
-	return unifaiErr
+	return rakshaErr
 }

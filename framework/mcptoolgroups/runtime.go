@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/unifai/unifai/framework/configstore"
-	"github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/configstore"
+	"github.com/raksha/raksha/framework/configstore/tables"
 )
 
 // Group is the runtime view of an MCP tool group.

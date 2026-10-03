@@ -3,16 +3,16 @@ package elevenlabs
 import (
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func (response *ElevenlabsListModelsResponse) ToUnifAIListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.UnifAIListModelsResponse {
+func (response *ElevenlabsListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIListModelsResponse{
+	rakshaResponse := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0, len(*response)),
 	}
 
@@ -25,7 +25,7 @@ func (response *ElevenlabsListModelsResponse) ToUnifAIListModelsResponse(provide
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return unifaiResponse
+		return rakshaResponse
 	}
 
 	included := make(map[string]bool)
@@ -39,13 +39,13 @@ func (response *ElevenlabsListModelsResponse) ToUnifAIListModelsResponse(provide
 			if result.AliasValue != "" {
 				entry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			unifaiResponse.Data = append(unifaiResponse.Data, entry)
+			rakshaResponse.Data = append(rakshaResponse.Data, entry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	unifaiResponse.Data = append(unifaiResponse.Data,
+	rakshaResponse.Data = append(rakshaResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return unifaiResponse
+	return rakshaResponse
 }

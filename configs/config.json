@@ -1,5 +1,5 @@
 {
-  "$schema": "https://www.getunifai.ai/schema",
+  "$schema": "https://www.getraksha.ai/schema",
   "config_store": {
     "enabled": true,
     "type": "postgres",

@@ -4,47 +4,47 @@ import (
 	"sort"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"gopkg.in/yaml.v3"
 )
 
-// ToCohereRerankRequest converts a UnifAI rerank request to Cohere format
-func ToCohereRerankRequest(unifaiReq *schemas.UnifAIRerankRequest) *CohereRerankRequest {
-	if unifaiReq == nil {
+// ToCohereRerankRequest converts a Raksha rerank request to Cohere format
+func ToCohereRerankRequest(rakshaReq *schemas.RakshaRerankRequest) *CohereRerankRequest {
+	if rakshaReq == nil {
 		return nil
 	}
 
 	cohereReq := &CohereRerankRequest{
-		Model: unifaiReq.Model,
-		Query: unifaiReq.Query,
+		Model: rakshaReq.Model,
+		Query: rakshaReq.Query,
 	}
 
 	// Cohere v2 expects documents as a list of strings.
-	documents := make([]string, len(unifaiReq.Documents))
-	for i, doc := range unifaiReq.Documents {
+	documents := make([]string, len(rakshaReq.Documents))
+	for i, doc := range rakshaReq.Documents {
 		documents[i] = formatCohereRerankDocument(doc)
 	}
 	cohereReq.Documents = documents
 
-	if unifaiReq.Params != nil {
-		cohereReq.TopN = unifaiReq.Params.TopN
-		cohereReq.MaxTokensPerDoc = unifaiReq.Params.MaxTokensPerDoc
-		cohereReq.Priority = unifaiReq.Params.Priority
-		cohereReq.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		cohereReq.TopN = rakshaReq.Params.TopN
+		cohereReq.MaxTokensPerDoc = rakshaReq.Params.MaxTokensPerDoc
+		cohereReq.Priority = rakshaReq.Params.Priority
+		cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 
 	return cohereReq
 }
 
-// ToUnifAIRerankRequest converts a Cohere rerank request to UnifAI format
-func (req *CohereRerankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIRerankRequest {
+// ToRakshaRerankRequest converts a Cohere rerank request to Raksha format
+func (req *CohereRerankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) *schemas.RakshaRerankRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	unifaiReq := &schemas.UnifAIRerankRequest{
+	rakshaReq := &schemas.RakshaRerankRequest{
 		Provider: provider,
 		Model:    model,
 		Query:    req.Query,
@@ -53,34 +53,34 @@ func (req *CohereRerankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContext
 
 	// Convert documents
 	for _, doc := range req.Documents {
-		unifaiReq.Documents = append(unifaiReq.Documents, schemas.RerankDocument{
+		rakshaReq.Documents = append(rakshaReq.Documents, schemas.RerankDocument{
 			Text: doc,
 		})
 	}
 
 	if req.TopN != nil {
-		unifaiReq.Params.TopN = req.TopN
+		rakshaReq.Params.TopN = req.TopN
 	}
 	if req.MaxTokensPerDoc != nil {
-		unifaiReq.Params.MaxTokensPerDoc = req.MaxTokensPerDoc
+		rakshaReq.Params.MaxTokensPerDoc = req.MaxTokensPerDoc
 	}
 	if req.Priority != nil {
-		unifaiReq.Params.Priority = req.Priority
+		rakshaReq.Params.Priority = req.Priority
 	}
 	if req.ExtraParams != nil {
-		unifaiReq.Params.ExtraParams = req.ExtraParams
+		rakshaReq.Params.ExtraParams = req.ExtraParams
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
-// ToUnifAIRerankResponse converts a Cohere rerank response to UnifAI format.
-func (response *CohereRerankResponse) ToUnifAIRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.UnifAIRerankResponse {
+// ToRakshaRerankResponse converts a Cohere rerank response to Raksha format.
+func (response *CohereRerankResponse) ToRakshaRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.RakshaRerankResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIRerankResponse{
+	rakshaResponse := &schemas.RakshaRerankResponse{
 		ID: response.ID,
 	}
 
@@ -131,19 +131,19 @@ func (response *CohereRerankResponse) ToUnifAIRerankResponse(documents []schemas
 			}
 		}
 
-		unifaiResponse.Results = append(unifaiResponse.Results, rerankResult)
+		rakshaResponse.Results = append(rakshaResponse.Results, rerankResult)
 	}
-	sort.SliceStable(unifaiResponse.Results, func(i, j int) bool {
-		if unifaiResponse.Results[i].RelevanceScore == unifaiResponse.Results[j].RelevanceScore {
-			return unifaiResponse.Results[i].Index < unifaiResponse.Results[j].Index
+	sort.SliceStable(rakshaResponse.Results, func(i, j int) bool {
+		if rakshaResponse.Results[i].RelevanceScore == rakshaResponse.Results[j].RelevanceScore {
+			return rakshaResponse.Results[i].Index < rakshaResponse.Results[j].Index
 		}
-		return unifaiResponse.Results[i].RelevanceScore > unifaiResponse.Results[j].RelevanceScore
+		return rakshaResponse.Results[i].RelevanceScore > rakshaResponse.Results[j].RelevanceScore
 	})
 	if returnDocuments {
-		for i := range unifaiResponse.Results {
-			resultIndex := unifaiResponse.Results[i].Index
+		for i := range rakshaResponse.Results {
+			resultIndex := rakshaResponse.Results[i].Index
 			if resultIndex >= 0 && resultIndex < len(documents) {
-				unifaiResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
+				rakshaResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
 			}
 		}
 	}
@@ -173,7 +173,7 @@ func (response *CohereRerankResponse) ToUnifAIRerankResponse(documents []schemas
 			}
 		}
 		if hasTokenUsage {
-			unifaiResponse.Usage = &schemas.UnifAILLMUsage{
+			rakshaResponse.Usage = &schemas.RakshaLLMUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 				TotalTokens:      promptTokens + completionTokens,
@@ -181,7 +181,7 @@ func (response *CohereRerankResponse) ToUnifAIRerankResponse(documents []schemas
 		}
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
 func formatCohereRerankDocument(doc schemas.RerankDocument) string {

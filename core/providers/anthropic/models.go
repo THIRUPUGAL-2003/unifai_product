@@ -4,26 +4,26 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func (response *AnthropicListModelsResponse) ToUnifAIListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.UnifAIListModelsResponse {
+func (response *AnthropicListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIListModelsResponse{
+	rakshaResponse := &schemas.RakshaListModelsResponse{
 		Data:    make([]schemas.Model, 0, len(response.Data)),
 		FirstID: response.FirstID,
 		LastID:  response.LastID,
 		HasMore: schemas.Ptr(response.HasMore),
 	}
 
-	// Map Anthropic's cursor-based pagination to UnifAI's token-based pagination.
+	// Map Anthropic's cursor-based pagination to Raksha's token-based pagination.
 	// If there are more results, set next_page_token to last_id for the next request.
 	if response.HasMore && response.LastID != nil {
-		unifaiResponse.NextPageToken = *response.LastID
+		rakshaResponse.NextPageToken = *response.LastID
 	}
 
 	pipeline := &providerUtils.ListModelsPipeline{
@@ -35,7 +35,7 @@ func (response *AnthropicListModelsResponse) ToUnifAIListModelsResponse(provider
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return unifaiResponse
+		return rakshaResponse
 	}
 
 	included := make(map[string]bool)
@@ -57,18 +57,18 @@ func (response *AnthropicListModelsResponse) ToUnifAIListModelsResponse(provider
 			if result.AliasValue != "" {
 				entry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			unifaiResponse.Data = append(unifaiResponse.Data, entry)
+			rakshaResponse.Data = append(rakshaResponse.Data, entry)
 			included[resolvedKey] = true
 		}
 	}
 
-	unifaiResponse.Data = append(unifaiResponse.Data,
+	rakshaResponse.Data = append(rakshaResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
-func ToAnthropicListModelsResponse(response *schemas.UnifAIListModelsResponse) *AnthropicListModelsResponse {
+func ToAnthropicListModelsResponse(response *schemas.RakshaListModelsResponse) *AnthropicListModelsResponse {
 	if response == nil {
 		return nil
 	}

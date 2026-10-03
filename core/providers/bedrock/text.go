@@ -3,23 +3,23 @@ package bedrock
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/providers/anthropic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/anthropic"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToBedrockTextCompletionRequest converts a UnifAI text completion request to Bedrock format
-func ToBedrockTextCompletionRequest(unifaiReq *schemas.UnifAITextCompletionRequest) *BedrockTextCompletionRequest {
-	if unifaiReq == nil || (unifaiReq.Input.PromptStr == nil && len(unifaiReq.Input.PromptArray) == 0) {
+// ToBedrockTextCompletionRequest converts a Raksha text completion request to Bedrock format
+func ToBedrockTextCompletionRequest(rakshaReq *schemas.RakshaTextCompletionRequest) *BedrockTextCompletionRequest {
+	if rakshaReq == nil || (rakshaReq.Input.PromptStr == nil && len(rakshaReq.Input.PromptArray) == 0) {
 		return nil
 	}
 
-	// Extract the raw prompt from unifaiReq
+	// Extract the raw prompt from rakshaReq
 	prompt := ""
-	if unifaiReq.Input != nil {
-		if unifaiReq.Input.PromptStr != nil {
-			prompt = *unifaiReq.Input.PromptStr
-		} else if len(unifaiReq.Input.PromptArray) > 0 && unifaiReq.Input.PromptArray != nil {
-			prompt = strings.Join(unifaiReq.Input.PromptArray, "\n\n")
+	if rakshaReq.Input != nil {
+		if rakshaReq.Input.PromptStr != nil {
+			prompt = *rakshaReq.Input.PromptStr
+		} else if len(rakshaReq.Input.PromptArray) > 0 && rakshaReq.Input.PromptArray != nil {
+			prompt = strings.Join(rakshaReq.Input.PromptArray, "\n\n")
 		}
 	}
 
@@ -28,13 +28,13 @@ func ToBedrockTextCompletionRequest(unifaiReq *schemas.UnifAITextCompletionReque
 	}
 
 	// Apply parameters
-	if unifaiReq.Params != nil {
-		bedrockReq.Temperature = unifaiReq.Params.Temperature
-		bedrockReq.TopP = unifaiReq.Params.TopP
+	if rakshaReq.Params != nil {
+		bedrockReq.Temperature = rakshaReq.Params.Temperature
+		bedrockReq.TopP = rakshaReq.Params.TopP
 
-		if unifaiReq.Params.ExtraParams != nil {
-			bedrockReq.ExtraParams = unifaiReq.Params.ExtraParams
-			if topK, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["top_k"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			bedrockReq.ExtraParams = rakshaReq.Params.ExtraParams
+			if topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"]); ok {
 				delete(bedrockReq.ExtraParams, "top_k")
 				bedrockReq.TopK = topK
 			}
@@ -42,25 +42,25 @@ func ToBedrockTextCompletionRequest(unifaiReq *schemas.UnifAITextCompletionReque
 	}
 
 	// Apply model-specific formatting and field naming
-	if strings.Contains(unifaiReq.Model, "anthropic.") || strings.Contains(unifaiReq.Model, "claude") {
+	if strings.Contains(rakshaReq.Model, "anthropic.") || strings.Contains(rakshaReq.Model, "claude") {
 		// For Claude models, wrap the prompt in Anthropic format and use Anthropic field names
-		anthropicReq := anthropic.ToAnthropicTextCompletionRequest(unifaiReq)
+		anthropicReq := anthropic.ToAnthropicTextCompletionRequest(rakshaReq)
 		bedrockReq.Prompt = anthropicReq.Prompt
 		bedrockReq.MaxTokensToSample = &anthropicReq.MaxTokensToSample
 		bedrockReq.StopSequences = anthropicReq.StopSequences
 	} else {
 		// For other models, use standard field names with raw prompt
-		if unifaiReq.Params != nil {
-			bedrockReq.MaxTokens = unifaiReq.Params.MaxTokens
-			bedrockReq.Stop = unifaiReq.Params.Stop
+		if rakshaReq.Params != nil {
+			bedrockReq.MaxTokens = rakshaReq.Params.MaxTokens
+			bedrockReq.Stop = rakshaReq.Params.Stop
 		}
 	}
 
 	return bedrockReq
 }
 
-// ToUnifAITextCompletionRequest converts a Bedrock text completion request to UnifAI format
-func (request *BedrockTextCompletionRequest) ToUnifAITextCompletionRequest(ctx *schemas.UnifAIContext) *schemas.UnifAITextCompletionRequest {
+// ToRakshaTextCompletionRequest converts a Bedrock text completion request to Raksha format
+func (request *BedrockTextCompletionRequest) ToRakshaTextCompletionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTextCompletionRequest {
 	if request == nil {
 		return nil
 	}
@@ -81,7 +81,7 @@ func (request *BedrockTextCompletionRequest) ToUnifAITextCompletionRequest(ctx *
 
 	provider, model := schemas.ParseModelString(request.ModelID, "")
 
-	unifaiReq := &schemas.UnifAITextCompletionRequest{
+	rakshaReq := &schemas.RakshaTextCompletionRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.TextCompletionInput{
@@ -94,29 +94,29 @@ func (request *BedrockTextCompletionRequest) ToUnifAITextCompletionRequest(ctx *
 	}
 
 	if request.MaxTokens != nil {
-		unifaiReq.Params.MaxTokens = request.MaxTokens
+		rakshaReq.Params.MaxTokens = request.MaxTokens
 	} else if request.MaxTokensToSample != nil {
-		unifaiReq.Params.MaxTokens = request.MaxTokensToSample
+		rakshaReq.Params.MaxTokens = request.MaxTokensToSample
 	}
 
 	if len(request.Stop) > 0 {
-		unifaiReq.Params.Stop = request.Stop
+		rakshaReq.Params.Stop = request.Stop
 	} else if len(request.StopSequences) > 0 {
-		unifaiReq.Params.Stop = request.StopSequences
+		rakshaReq.Params.Stop = request.StopSequences
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
-// ToUnifAITextCompletionResponse converts a Bedrock Anthropic text response to UnifAI format
-func (response *BedrockAnthropicTextResponse) ToUnifAITextCompletionResponse() *schemas.UnifAITextCompletionResponse {
+// ToRakshaTextCompletionResponse converts a Bedrock Anthropic text response to Raksha format
+func (response *BedrockAnthropicTextResponse) ToRakshaTextCompletionResponse() *schemas.RakshaTextCompletionResponse {
 	if response == nil {
 		return nil
 	}
 
-	return &schemas.UnifAITextCompletionResponse{
+	return &schemas.RakshaTextCompletionResponse{
 		Object: "text_completion",
-		Choices: []schemas.UnifAIResponseChoice{
+		Choices: []schemas.RakshaResponseChoice{
 			{
 				Index: 0,
 				TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
@@ -125,19 +125,19 @@ func (response *BedrockAnthropicTextResponse) ToUnifAITextCompletionResponse() *
 				FinishReason: &response.StopReason,
 			},
 		},
-		ExtraFields: schemas.UnifAIResponseExtraFields{},
+		ExtraFields: schemas.RakshaResponseExtraFields{},
 	}
 }
 
-// ToUnifAITextCompletionResponse converts a Bedrock Mistral text response to UnifAI format
-func (response *BedrockMistralTextResponse) ToUnifAITextCompletionResponse() *schemas.UnifAITextCompletionResponse {
+// ToRakshaTextCompletionResponse converts a Bedrock Mistral text response to Raksha format
+func (response *BedrockMistralTextResponse) ToRakshaTextCompletionResponse() *schemas.RakshaTextCompletionResponse {
 	if response == nil {
 		return nil
 	}
 
-	var choices []schemas.UnifAIResponseChoice
+	var choices []schemas.RakshaResponseChoice
 	for i, output := range response.Outputs {
-		choices = append(choices, schemas.UnifAIResponseChoice{
+		choices = append(choices, schemas.RakshaResponseChoice{
 			Index: i,
 			TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
 				Text: &output.Text,
@@ -146,28 +146,28 @@ func (response *BedrockMistralTextResponse) ToUnifAITextCompletionResponse() *sc
 		})
 	}
 
-	return &schemas.UnifAITextCompletionResponse{
+	return &schemas.RakshaTextCompletionResponse{
 		Object:      "text_completion",
 		Choices:     choices,
-		ExtraFields: schemas.UnifAIResponseExtraFields{},
+		ExtraFields: schemas.RakshaResponseExtraFields{},
 	}
 }
 
-// ToBedrockTextCompletionResponse converts a UnifAITextCompletionResponse back to Bedrock text completion format
+// ToBedrockTextCompletionResponse converts a RakshaTextCompletionResponse back to Bedrock text completion format
 // Returns either *BedrockAnthropicTextResponse or *BedrockMistralTextResponse based on the model
-func ToBedrockTextCompletionResponse(unifaiResp *schemas.UnifAITextCompletionResponse) interface{} {
-	if unifaiResp == nil {
+func ToBedrockTextCompletionResponse(rakshaResp *schemas.RakshaTextCompletionResponse) interface{} {
+	if rakshaResp == nil {
 		return nil
 	}
 
 	// Determine response format based on resolved model identity.
 	// Use ResolvedModelUsed (actual provider ID) for accurate family detection,
-	// falling back to unifaiResp.Model, then OriginalModelRequested as a last resort.
-	model := unifaiResp.Model
-	if unifaiResp.ExtraFields.ResolvedModelUsed != "" {
-		model = unifaiResp.ExtraFields.ResolvedModelUsed
-	} else if model == "" && unifaiResp.ExtraFields.OriginalModelRequested != "" {
-		model = unifaiResp.ExtraFields.OriginalModelRequested
+	// falling back to rakshaResp.Model, then OriginalModelRequested as a last resort.
+	model := rakshaResp.Model
+	if rakshaResp.ExtraFields.ResolvedModelUsed != "" {
+		model = rakshaResp.ExtraFields.ResolvedModelUsed
+	} else if model == "" && rakshaResp.ExtraFields.OriginalModelRequested != "" {
+		model = rakshaResp.ExtraFields.OriginalModelRequested
 	}
 
 	if strings.Contains(model, "anthropic.") || strings.Contains(model, "claude") {
@@ -175,8 +175,8 @@ func ToBedrockTextCompletionResponse(unifaiResp *schemas.UnifAITextCompletionRes
 		bedrockResp := &BedrockAnthropicTextResponse{}
 
 		// Convert choices to completion text
-		if len(unifaiResp.Choices) > 0 {
-			choice := unifaiResp.Choices[0] // Anthropic text API typically returns one choice
+		if len(rakshaResp.Choices) > 0 {
+			choice := rakshaResp.Choices[0] // Anthropic text API typically returns one choice
 			if choice.TextCompletionResponseChoice != nil && choice.TextCompletionResponseChoice.Text != nil {
 				bedrockResp.Completion = *choice.TextCompletionResponseChoice.Text
 			}
@@ -191,7 +191,7 @@ func ToBedrockTextCompletionResponse(unifaiResp *schemas.UnifAITextCompletionRes
 		bedrockResp := &BedrockMistralTextResponse{}
 
 		// Convert choices to outputs
-		for _, choice := range unifaiResp.Choices {
+		for _, choice := range rakshaResp.Choices {
 			var output struct {
 				Text       string `json:"text"`
 				StopReason string `json:"stop_reason"`
@@ -212,8 +212,8 @@ func ToBedrockTextCompletionResponse(unifaiResp *schemas.UnifAITextCompletionRes
 
 	// Default to Anthropic format if model type cannot be determined
 	bedrockResp := &BedrockAnthropicTextResponse{}
-	if len(unifaiResp.Choices) > 0 {
-		choice := unifaiResp.Choices[0]
+	if len(rakshaResp.Choices) > 0 {
+		choice := rakshaResp.Choices[0]
 		if choice.TextCompletionResponseChoice != nil && choice.TextCompletionResponseChoice.Text != nil {
 			bedrockResp.Completion = *choice.TextCompletionResponseChoice.Text
 		}

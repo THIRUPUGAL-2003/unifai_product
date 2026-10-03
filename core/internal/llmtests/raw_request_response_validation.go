@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // validateRawFields checks raw request/response fields and integrates errors into the ValidationResult.
@@ -84,8 +84,8 @@ func truncateForError(b []byte) string {
 	return string(b[:maxLen]) + "... (truncated)"
 }
 
-// ValidateExtraFieldsRaw validates rawRequest and rawResponse on UnifAIResponseExtraFields
-func ValidateExtraFieldsRaw(extraFields schemas.UnifAIResponseExtraFields) []error {
+// ValidateExtraFieldsRaw validates rawRequest and rawResponse on RakshaResponseExtraFields
+func ValidateExtraFieldsRaw(extraFields schemas.RakshaResponseExtraFields) []error {
 	var errs []error
 	if err := ValidateRawField(extraFields.RawRequest, "RawRequest"); err != nil {
 		errs = append(errs, err)

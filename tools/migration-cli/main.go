@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unifai/unifai/scripts/unifai-migration-cli/litellm"
+	"github.com/raksha/raksha/scripts/raksha-migration-cli/litellm"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 // main parses CLI flags and runs all LiteLLM entity migrations in order.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Printf("unifai-migration-cli %s (%s)\n", version, commit)
+		fmt.Printf("raksha-migration-cli %s (%s)\n", version, commit)
 		return
 	}
 
@@ -57,7 +57,7 @@ func main() {
 // MigrationRunConfig carries all CLI/runtime state shared needed for migration.
 type MigrationRunConfig struct {
 	LiteLLMClient     *litellm.LiteLLMClient
-	UnifAIClient     *UnifAIClient
+	RakshaClient     *RakshaClient
 	LiteLLMConfigPath string
 	LiteLLMDBURL      string
 	LiteLLMSaltKey    string
@@ -98,9 +98,9 @@ func NewMigrationRunConfig() MigrationRunConfig {
 			BaseURL: requireEnv("LITELLM_URL"),
 			APIKey:  litellmMasterKey,
 		},
-		UnifAIClient: &UnifAIClient{
-			BaseURL: requireEnv("UNIFAI_URL"),
-			APIKey:  requireEnv("UNIFAI_API_KEY"),
+		RakshaClient: &RakshaClient{
+			BaseURL: requireEnv("RAKSHA_URL"),
+			APIKey:  requireEnv("RAKSHA_API_KEY"),
 		},
 		LiteLLMConfigPath: requireEnv("LITELLM_CONFIG"),
 		LiteLLMDBURL:      os.Getenv("LITELLM_DB_URL"),
@@ -111,7 +111,7 @@ func NewMigrationRunConfig() MigrationRunConfig {
 	}
 }
 
-// runOrganizations migrates every LiteLLM organization into a UnifAI customer. Per-org
+// runOrganizations migrates every LiteLLM organization into a Raksha customer. Per-org
 // failures are logged and counted but do not abort the whole run, so one bad
 // record never blocks the rest of the migration.
 func runOrganizations(ctx context.Context, cfg MigrationRunConfig) error {
@@ -123,7 +123,7 @@ func runOrganizations(ctx context.Context, cfg MigrationRunConfig) error {
 
 	var migrated, skipped, failed int
 	for _, org := range orgs {
-		customer, err := LiteLLMOrganizationToUnifAICustomer(org, cfg)
+		customer, err := LiteLLMOrganizationToRakshaCustomer(org, cfg)
 		if err != nil {
 			log.Printf("SKIP org %q: %v", org.OrganizationID, err)
 			skipped++
@@ -137,7 +137,7 @@ func runOrganizations(ctx context.Context, cfg MigrationRunConfig) error {
 			continue
 		}
 
-		if err := cfg.UnifAIClient.CreateCustomer(ctx, customer); err != nil {
+		if err := cfg.RakshaClient.CreateCustomer(ctx, customer); err != nil {
 			log.Printf("FAIL org %q: %v", org.OrganizationID, err)
 			failed++
 			continue
@@ -153,9 +153,9 @@ func runOrganizations(ctx context.Context, cfg MigrationRunConfig) error {
 	return nil
 }
 
-// runTeams migrates every LiteLLM team into a UnifAI team. A team inside an
+// runTeams migrates every LiteLLM team into a Raksha team. A team inside an
 // organization is linked to the migrated customer: team.organization_id -> the
-// org's alias -> the UnifAI customer of the same name. When that customer
+// org's alias -> the Raksha customer of the same name. When that customer
 // cannot be resolved (org has no alias, or was not migrated yet), the team is
 // created unlinked and a warning is logged rather than failing the run.
 // Per-team failures are logged and counted but do not abort the whole run.
@@ -170,7 +170,7 @@ func runTeams(ctx context.Context, cfg MigrationRunConfig) error {
 	}
 	log.Printf("fetched %d team(s) and %d organization(s) from LiteLLM", len(teams), len(orgs))
 
-	// org id -> alias, to map a team's organization onto its UnifAI customer.
+	// org id -> alias, to map a team's organization onto its Raksha customer.
 	aliasByOrgID := make(map[string]string, len(orgs))
 	for _, o := range orgs {
 		aliasByOrgID[o.OrganizationID] = strings.TrimSpace(o.OrganizationAlias)
@@ -185,7 +185,7 @@ func runTeams(ctx context.Context, cfg MigrationRunConfig) error {
 			if alias == "" {
 				log.Printf("WARN team %q: organization %q not found / has no alias; creating unlinked", team.TeamAlias, *team.OrganizationID)
 				unlinked++
-			} else if id, ok, err := cfg.UnifAIClient.FindCustomerByName(ctx, alias); err != nil {
+			} else if id, ok, err := cfg.RakshaClient.FindCustomerByName(ctx, alias); err != nil {
 				log.Printf("WARN team %q: resolving customer %q: %v; creating unlinked", team.TeamAlias, alias, err)
 				unlinked++
 			} else if !ok {
@@ -196,7 +196,7 @@ func runTeams(ctx context.Context, cfg MigrationRunConfig) error {
 			}
 		}
 
-		teamReq, err := LiteLLMTeamToUnifAITeam(team, customerID, cfg)
+		teamReq, err := LiteLLMTeamToRakshaTeam(team, customerID, cfg)
 		if err != nil {
 			log.Printf("SKIP team %q: %v", team.TeamID, err)
 			skipped++
@@ -214,7 +214,7 @@ func runTeams(ctx context.Context, cfg MigrationRunConfig) error {
 			continue
 		}
 
-		if err := cfg.UnifAIClient.CreateTeam(ctx, teamReq); err != nil {
+		if err := cfg.RakshaClient.CreateTeam(ctx, teamReq); err != nil {
 			log.Printf("FAIL team %q: %v", team.TeamID, err)
 			failed++
 			continue
@@ -230,11 +230,11 @@ func runTeams(ctx context.Context, cfg MigrationRunConfig) error {
 	return nil
 }
 
-// runUsers migrates every LiteLLM internal user into a UnifAI user, then links
-// each user to the UnifAI teams matching its LiteLLM team memberships:
-// LiteLLM user.teams (team_ids) -> team alias -> UnifAI team of the same name.
+// runUsers migrates every LiteLLM internal user into a Raksha user, then links
+// each user to the Raksha teams matching its LiteLLM team memberships:
+// LiteLLM user.teams (team_ids) -> team alias -> Raksha team of the same name.
 // This assumes teams were migrated first. Users without an email are skipped
-// (UnifAI requires one); unresolvable team links are warned and skipped. A
+// (Raksha requires one); unresolvable team links are warned and skipped. A
 // user that already exists (duplicate email) is reused so memberships still
 // link. Per-user failures are logged and counted but do not abort the run.
 func runUsers(ctx context.Context, cfg MigrationRunConfig) error {
@@ -248,13 +248,13 @@ func runUsers(ctx context.Context, cfg MigrationRunConfig) error {
 	}
 	log.Printf("fetched %d user(s) and %d team(s) from LiteLLM", len(users), len(teams))
 
-	// LiteLLM team_id -> alias, to map a user's memberships onto UnifAI teams.
+	// LiteLLM team_id -> alias, to map a user's memberships onto Raksha teams.
 	aliasByTeamID := make(map[string]string, len(teams))
 	for _, tm := range teams {
 		aliasByTeamID[tm.TeamID] = strings.TrimSpace(tm.TeamAlias)
 	}
 
-	plans, report := LiteLLMUsersToUnifAIUsers(users)
+	plans, report := LiteLLMUsersToRakshaUsers(users)
 	printUserReport(plans, report)
 
 	if cfg.DryRun {
@@ -264,7 +264,7 @@ func runUsers(ctx context.Context, cfg MigrationRunConfig) error {
 
 	var migrated, failed, links, linkSkipped int
 	for _, p := range plans {
-		userID, err := cfg.UnifAIClient.CreateUser(ctx, &UnifAICreateUserRequest{Name: p.Name, Email: p.Email})
+		userID, err := cfg.RakshaClient.CreateUser(ctx, &RakshaCreateUserRequest{Name: p.Name, Email: p.Email})
 		if err != nil {
 			log.Printf("FAIL user %q: %v", maskEmail(p.Email), err)
 			failed++
@@ -280,7 +280,7 @@ func runUsers(ctx context.Context, cfg MigrationRunConfig) error {
 				linkSkipped++
 				continue
 			}
-			teamID, ok, err := cfg.UnifAIClient.FindTeamByName(ctx, alias)
+			teamID, ok, err := cfg.RakshaClient.FindTeamByName(ctx, alias)
 			if err != nil {
 				log.Printf("WARN user %q: resolving team %q: %v; skipping link", maskEmail(p.Email), alias, err)
 				linkSkipped++
@@ -291,7 +291,7 @@ func runUsers(ctx context.Context, cfg MigrationRunConfig) error {
 				linkSkipped++
 				continue
 			}
-			if err := cfg.UnifAIClient.AddTeamMember(ctx, teamID, userID); err != nil {
+			if err := cfg.RakshaClient.AddTeamMember(ctx, teamID, userID); err != nil {
 				log.Printf("FAIL link user %q -> team %q: %v", maskEmail(p.Email), alias, err)
 				failed++
 				continue
@@ -322,17 +322,17 @@ func printUserReport(plans []UserPlan, r UserMigrationReport) {
 	for _, p := range plans {
 		log.Printf("PLAN user %q (%s) -> teams=%v", p.Name, maskEmail(p.Email), p.SourceTeamIDs)
 	}
-	logReportSection("skipped (no email; UnifAI requires one)", r.SkippedNoEmail)
-	logReportSection("dropped roles (no LiteLLM->UnifAI role mapping)", r.DroppedRoles)
+	logReportSection("skipped (no email; Raksha requires one)", r.SkippedNoEmail)
+	logReportSection("dropped roles (no LiteLLM->Raksha role mapping)", r.DroppedRoles)
 	logReportSection("dropped user budgets (no field on create-user; use access profiles)", r.DroppedBudgets)
 	logReportSection("dropped user rate limits (no field on create-user; use access profiles)", r.DroppedRateLimits)
 }
 
-// runVKs migrates every LiteLLM virtual key into a UnifAI virtual key. It
+// runVKs migrates every LiteLLM virtual key into a Raksha virtual key. It
 // reads the LiteLLM config to build a model_name -> (provider, model) index, so
 // each VK's allow-list (the union of the key's, its team's and its
-// organization's allowed models — UnifAI gates models only on the VK) maps to
-// UnifAI provider configs. Ownership resolves to a UnifAI team (preferred) or
+// organization's allowed models — Raksha gates models only on the VK) maps to
+// Raksha provider configs. Ownership resolves to a Raksha team (preferred) or
 // customer (mutually exclusive). LiteLLM user_id, expiry and the key value
 // itself have no VK-create field and are reported. Per-key failures are logged
 // and counted but do not abort the run.
@@ -355,29 +355,29 @@ func runVKs(ctx context.Context, cfg MigrationRunConfig) error {
 		return err
 	}
 	// Build the provider/key plans to derive which keys serve which models.
-	plans, _, _ := LiteLLMModelsToUnifAIProviders(models, store.Named(), deployments, cfg)
+	plans, _, _ := LiteLLMModelsToRakshaProviders(models, store.Named(), deployments, cfg)
 
-	// Fetch key UUIDs from UnifAI so VKs can attach specific keys by ID.
-	unifaiKeys, err := cfg.UnifAIClient.ListAllKeys(ctx)
+	// Fetch key UUIDs from Raksha so VKs can attach specific keys by ID.
+	rakshaKeys, err := cfg.RakshaClient.ListAllKeys(ctx)
 	if err != nil {
 		return err
 	}
-	keyIDByName := make(map[string]string, len(unifaiKeys))
-	for _, k := range unifaiKeys {
+	keyIDByName := make(map[string]string, len(rakshaKeys))
+	for _, k := range rakshaKeys {
 		keyIDByName[k.Name] = k.KeyID
 	}
 	keyModelIdx, wildcardKeys := BuildKeyModelIndex(plans, keyIDByName)
 
-	// Only providers that actually exist in UnifAI can be referenced by a VK
+	// Only providers that actually exist in Raksha can be referenced by a VK
 	// (a create rejects unknown providers). For "all proxy models" VKs, expand
-	// to ALL providers in UnifAI — not just those found in the model index —
+	// to ALL providers in Raksha — not just those found in the model index —
 	// so new providers added between migration runs are also covered.
-	unifaiProviders, err := cfg.UnifAIClient.ListProviders(ctx)
+	rakshaProviders, err := cfg.RakshaClient.ListProviders(ctx)
 	if err != nil {
 		return err
 	}
-	allProviders := make([]string, 0, len(unifaiProviders))
-	for p := range unifaiProviders {
+	allProviders := make([]string, 0, len(rakshaProviders))
+	for p := range rakshaProviders {
 		allProviders = append(allProviders, p)
 	}
 	sort.Strings(allProviders)
@@ -424,7 +424,7 @@ func runVKs(ctx context.Context, cfg MigrationRunConfig) error {
 		if key.TeamID != nil {
 			te := teamByID[*key.TeamID]
 			teamModels = te.models
-			// Fold in the team's org model restrictions: UnifAI has no org-level
+			// Fold in the team's org model restrictions: Raksha has no org-level
 			// model gates, so any restriction the org imposes must live on the VK.
 			if te.orgID != "" {
 				orgModels = orgByID[te.orgID].models
@@ -434,37 +434,37 @@ func runVKs(ctx context.Context, cfg MigrationRunConfig) error {
 			orgModels = orgByID[*key.OrgID].models
 		}
 
-		plan, err := LiteLLMVirtualKeyToUnifAI(key, teamModels, orgModels, keyModelIdx, wildcardKeys, allProviders, cfg.MaxBudgetPeriod)
+		plan, err := LiteLLMVirtualKeyToRaksha(key, teamModels, orgModels, keyModelIdx, wildcardKeys, allProviders, cfg.MaxBudgetPeriod)
 		if err != nil {
 			log.Printf("SKIP virtual key: %v", err)
 			skipped++
 			continue
 		}
 
-		req := &UnifAICreateVirtualKeyRequest{Name: plan.Name, IsActive: plan.IsActive, RateLimit: plan.RateLimit}
+		req := &RakshaCreateVirtualKeyRequest{Name: plan.Name, IsActive: plan.IsActive, RateLimit: plan.RateLimit}
 		for _, pc := range plan.ProviderConfigs {
-			// A VK create rejects providers that do not exist in UnifAI (e.g.
+			// A VK create rejects providers that do not exist in Raksha (e.g.
 			// one whose migration failed). Drop and report them.
-			if !unifaiProviders[pc.Provider] {
+			if !rakshaProviders[pc.Provider] {
 				droppedProviders = append(droppedProviders, fmt.Sprintf("%s: %s", plan.Name, pc.Provider))
 				continue
 			}
-			req.ProviderConfigs = append(req.ProviderConfigs, UnifAIVKProviderConfigRequest{
+			req.ProviderConfigs = append(req.ProviderConfigs, RakshaVKProviderConfigRequest{
 				Provider:      pc.Provider,
 				KeyIDs:        pc.KeyIDs,
 				AllowedModels: []string{"*"},
 			})
 		}
 		if plan.Budget != nil {
-			req.Budgets = []UnifAICreateBudgetRequest{*plan.Budget}
+			req.Budgets = []RakshaCreateBudgetRequest{*plan.Budget}
 		}
 
-		// Resolve owner -> UnifAI team (preferred) or customer.
+		// Resolve owner -> Raksha team (preferred) or customer.
 		owner := "none"
 		switch {
 		case plan.OwnerTeamID != nil:
 			alias := teamByID[*plan.OwnerTeamID].alias
-			if id, ok := resolveOwner(ctx, cfg.UnifAIClient.FindTeamByName, alias); ok {
+			if id, ok := resolveOwner(ctx, cfg.RakshaClient.FindTeamByName, alias); ok {
 				req.TeamID = &id
 				owner = "team:" + alias
 			} else {
@@ -473,7 +473,7 @@ func runVKs(ctx context.Context, cfg MigrationRunConfig) error {
 			}
 		case plan.OwnerOrgID != nil:
 			alias := orgByID[*plan.OwnerOrgID].alias
-			if id, ok := resolveOwner(ctx, cfg.UnifAIClient.FindCustomerByName, alias); ok {
+			if id, ok := resolveOwner(ctx, cfg.RakshaClient.FindCustomerByName, alias); ok {
 				req.CustomerID = &id
 				owner = "customer:" + alias
 			} else {
@@ -499,7 +499,7 @@ func runVKs(ctx context.Context, cfg MigrationRunConfig) error {
 			continue
 		}
 
-		if err := cfg.UnifAIClient.CreateVirtualKey(ctx, req); err != nil {
+		if err := cfg.RakshaClient.CreateVirtualKey(ctx, req); err != nil {
 			log.Printf("FAIL vkey %q: %v", plan.Name, err)
 			failed++
 			continue
@@ -509,7 +509,7 @@ func runVKs(ctx context.Context, cfg MigrationRunConfig) error {
 	}
 
 	logReportSection("unmapped models (not in config; not granted)", unmappedModels)
-	logReportSection("dropped providers (not migrated to UnifAI)", droppedProviders)
+	logReportSection("dropped providers (not migrated to Raksha)", droppedProviders)
 	logReportSection("dropped user links (no VK-create field; user gets VKs via access profiles)", droppedUserLinks)
 	logReportSection("dropped expiries (no VK-create field)", droppedExpiries)
 	if len(keys) > 0 {
@@ -522,7 +522,7 @@ func runVKs(ctx context.Context, cfg MigrationRunConfig) error {
 	return nil
 }
 
-// resolveOwner looks up a UnifAI owner id by alias using the given finder,
+// resolveOwner looks up a Raksha owner id by alias using the given finder,
 // returning ok=false when the alias is blank or no match is found.
 func resolveOwner(ctx context.Context, find func(context.Context, string) (string, bool, error), alias string) (string, bool) {
 	if alias == "" {
@@ -536,7 +536,7 @@ func resolveOwner(ctx context.Context, find func(context.Context, string) (strin
 }
 
 // runModels reads a LiteLLM proxy config, transforms its model deployments into
-// UnifAI providers, keys and global model configs
+// Raksha providers, keys and global model configs
 func runModels(ctx context.Context, cfg MigrationRunConfig) error {
 	models, err := cfg.LiteLLMClient.ListModelInfo(ctx)
 	if err != nil {
@@ -561,7 +561,7 @@ func runModels(ctx context.Context, cfg MigrationRunConfig) error {
 	}
 	log.Printf("fetched %d model deployment(s) from LiteLLM; resolved %d named credential(s) and %d deployment param set(s)", len(models), len(store.Named()), len(deployments))
 
-	plans, modelConfigs, skippedProviders := LiteLLMModelsToUnifAIProviders(models, store.Named(), deployments, cfg)
+	plans, modelConfigs, skippedProviders := LiteLLMModelsToRakshaProviders(models, store.Named(), deployments, cfg)
 	printModelReport(plans, modelConfigs, skippedProviders)
 
 	if cfg.DryRun {
@@ -571,7 +571,7 @@ func runModels(ctx context.Context, cfg MigrationRunConfig) error {
 
 	var providersOK, keysOK, modelConfigsOK, failed int
 	for _, p := range plans {
-		if err := cfg.UnifAIClient.EnsureProvider(ctx, p); err != nil {
+		if err := cfg.RakshaClient.EnsureProvider(ctx, p); err != nil {
 			log.Printf("FAIL provider %q: %v", p.Name, err)
 			failed++
 			continue
@@ -579,7 +579,7 @@ func runModels(ctx context.Context, cfg MigrationRunConfig) error {
 		providersOK++
 		log.Printf("OK   provider %q (custom=%v, base_url=%q)", p.Name, p.IsCustom, p.BaseURL)
 		for _, k := range p.Keys {
-			if err := cfg.UnifAIClient.CreateProviderKey(ctx, p.Name, k); err != nil {
+			if err := cfg.RakshaClient.CreateProviderKey(ctx, p.Name, k); err != nil {
 				log.Printf("FAIL key %q/%q: %v", p.Name, k.Name, err)
 				failed++
 				continue
@@ -589,7 +589,7 @@ func runModels(ctx context.Context, cfg MigrationRunConfig) error {
 		}
 	}
 	for _, mc := range modelConfigs {
-		if err := cfg.UnifAIClient.CreateModelConfig(ctx, mc); err != nil {
+		if err := cfg.RakshaClient.CreateModelConfig(ctx, mc); err != nil {
 			log.Printf("FAIL model config %q: %v", modelConfigSignature(mc), err)
 			failed++
 			continue

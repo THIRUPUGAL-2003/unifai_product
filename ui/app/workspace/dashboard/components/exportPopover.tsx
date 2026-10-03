@@ -95,7 +95,7 @@ export function ExportPopover({ onLoadData, onPdfExport, onPdfExportDone }: Expo
 				} else {
 					await downloadDocTable({
 						filename: "dashboard-export",
-						title: "UnifAI Dashboard Export",
+						title: "Raksha Dashboard Export",
 						subtitle: "Usage and ranking snapshot",
 						columns,
 						rows,

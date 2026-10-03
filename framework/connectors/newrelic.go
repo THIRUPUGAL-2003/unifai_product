@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 func exportNewRelic(ctx context.Context, cfg Settings, trace *schemas.Trace) error {
@@ -19,8 +19,8 @@ func exportNewRelic(ctx context.Context, cfg Settings, trace *schemas.Trace) err
 
 func testNewRelic(ctx context.Context, cfg Settings) error {
 	return sendNewRelic(ctx, cfg, map[string]any{
-		"message": "unifai connector test",
-		"source":  "unifai",
+		"message": "raksha connector test",
+		"source":  "raksha",
 	})
 }
 
@@ -43,18 +43,18 @@ func sendNewRelic(ctx context.Context, cfg Settings, attributes map[string]any) 
 	}
 	service := configValue(cfg.Config, "service")
 	if service == "" {
-		service = "unifai"
+		service = "raksha"
 	}
 	payload, err := sonic.Marshal([]map[string]any{{
 		"common": map[string]any{
 			"attributes": map[string]any{
 				"service": service,
-				"source":  "unifai",
+				"source":  "raksha",
 			},
 		},
 		"logs": []map[string]any{{
 			"timestamp": time.Now().UnixMilli(),
-			"message":   "unifai inference trace",
+			"message":   "raksha inference trace",
 			"attributes": attributes,
 		}},
 	}})

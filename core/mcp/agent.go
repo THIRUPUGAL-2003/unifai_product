@@ -8,7 +8,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 type AgentModeExecutor struct {
@@ -30,18 +30,18 @@ type AgentModeExecutor struct {
 //   - clientManager: Client manager for accessing MCP clients and tools
 //
 // Returns:
-//   - *schemas.UnifAIChatResponse: The final response after agent execution
-//   - *schemas.UnifAIError: Any error that occurred during agent execution
+//   - *schemas.RakshaChatResponse: The final response after agent execution
+//   - *schemas.RakshaError: Any error that occurred during agent execution
 func (a *AgentModeExecutor) ExecuteAgentForChatRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	maxAgentDepth int,
-	originalReq *schemas.UnifAIChatRequest,
-	initialResponse *schemas.UnifAIChatResponse,
-	makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError),
-	fetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string,
+	originalReq *schemas.RakshaChatRequest,
+	initialResponse *schemas.RakshaChatResponse,
+	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError),
+	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
 	executeToolFunc MCPToolExecutor,
 	clientManager ClientManager,
-) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	// Create adapter for Chat API
 	adapter := &chatAPIAdapter{
 		originalReq:     originalReq,
@@ -54,13 +54,13 @@ func (a *AgentModeExecutor) ExecuteAgentForChatRequest(
 		return nil, err
 	}
 
-	chatResponse, ok := result.(*schemas.UnifAIChatResponse)
+	chatResponse, ok := result.(*schemas.RakshaChatResponse)
 	// Should never happen, but just in case
 	if !ok {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
-				Message: "Failed to convert result to schemas.UnifAIChatResponse",
+				Message: "Failed to convert result to schemas.RakshaChatResponse",
 			},
 		}
 	}
@@ -83,18 +83,18 @@ func (a *AgentModeExecutor) ExecuteAgentForChatRequest(
 //   - clientManager: Client manager for accessing MCP clients and tools
 //
 // Returns:
-//   - *schemas.UnifAIResponsesResponse: The final response after agent execution
-//   - *schemas.UnifAIError: Any error that occurred during agent execution
+//   - *schemas.RakshaResponsesResponse: The final response after agent execution
+//   - *schemas.RakshaError: Any error that occurred during agent execution
 func (a *AgentModeExecutor) ExecuteAgentForResponsesRequest(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	maxAgentDepth int,
-	originalReq *schemas.UnifAIResponsesRequest,
-	initialResponse *schemas.UnifAIResponsesResponse,
-	makeReq func(ctx *schemas.UnifAIContext, req *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError),
-	fetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string,
+	originalReq *schemas.RakshaResponsesRequest,
+	initialResponse *schemas.RakshaResponsesResponse,
+	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
+	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
 	executeToolFunc MCPToolExecutor,
 	clientManager ClientManager,
-) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	// Create adapter for Responses API
 	adapter := &responsesAPIAdapter{
 		originalReq:     originalReq,
@@ -107,13 +107,13 @@ func (a *AgentModeExecutor) ExecuteAgentForResponsesRequest(
 		return nil, err
 	}
 
-	responsesResponse, ok := result.(*schemas.UnifAIResponsesResponse)
+	responsesResponse, ok := result.(*schemas.RakshaResponsesResponse)
 	// Should never happen, but just in case
 	if !ok {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
-				Message: "Failed to convert result to schemas.UnifAIResponsesResponse",
+				Message: "Failed to convert result to schemas.RakshaResponsesResponse",
 			},
 		}
 	}
@@ -136,15 +136,15 @@ func (a *AgentModeExecutor) ExecuteAgentForResponsesRequest(
 //
 // Returns:
 //   - interface{}: The final response after agent execution (type depends on adapter)
-//   - *schemas.UnifAIError: Any error that occurred during agent execution
+//   - *schemas.RakshaError: Any error that occurred during agent execution
 func (a *AgentModeExecutor) executeAgent(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	maxAgentDepth int,
 	adapter agentAPIAdapter,
-	fetchNewRequestIDFunc func(ctx *schemas.UnifAIContext) string,
+	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
 	executeToolFunc MCPToolExecutor,
 	clientManager ClientManager,
-) (interface{}, *schemas.UnifAIError) {
+) (interface{}, *schemas.RakshaError) {
 	// Get initial response from adapter
 	currentResponse := adapter.getInitialResponse()
 
@@ -160,9 +160,9 @@ func (a *AgentModeExecutor) executeAgent(
 	// Accumulate token usage across all LLM calls in the agent loop
 	accumulatedUsage := adapter.extractUsage(currentResponse)
 
-	originalRequestID, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string)
+	originalRequestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
 	if ok {
-		ctx.SetValue(schemas.UnifAIMCPAgentOriginalRequestID, originalRequestID)
+		ctx.SetValue(schemas.RakshaMCPAgentOriginalRequestID, originalRequestID)
 	}
 
 	for depth < maxAgentDepth {
@@ -293,11 +293,11 @@ func (a *AgentModeExecutor) executeAgent(
 					defer wg.Done()
 					// Create a derived context with a unique MCP log ID so that the logging
 					// plugin can create separate log entries for each parallel tool call.
-					toolCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-					toolCtx.SetValue(schemas.UnifAIContextKeyMCPLogID, uuid.New().String())
+					toolCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					toolCtx.SetValue(schemas.RakshaContextKeyMCPLogID, uuid.New().String())
 
 					// Create MCP request for this tool call
-					mcpRequest := &schemas.UnifAIMCPRequest{
+					mcpRequest := &schemas.RakshaMCPRequest{
 						RequestType:                  schemas.MCPRequestTypeChatToolCall,
 						ChatAssistantMessageToolCall: &toolCall,
 					}
@@ -331,14 +331,14 @@ func (a *AgentModeExecutor) executeAgent(
 			if authRequiredErr != nil {
 				statusCode := 401
 				errType := "mcp_auth_required"
-				return nil, &schemas.UnifAIError{
-					IsUnifAIError: true,
+				return nil, &schemas.RakshaError{
+					IsRakshaError: true,
 					StatusCode:     &statusCode,
 					Error: &schemas.ErrorField{
 						Message: authRequiredErr.Message,
 						Type:    &errType,
 					},
-					ExtraFields: schemas.UnifAIErrorExtraFields{
+					ExtraFields: schemas.RakshaErrorExtraFields{
 						MCPAuthRequired: authRequiredErr,
 					},
 				}
@@ -377,7 +377,7 @@ func (a *AgentModeExecutor) executeAgent(
 		if fetchNewRequestIDFunc != nil {
 			newID := fetchNewRequestIDFunc(ctx)
 			if newID != "" {
-				ctx.SetValue(schemas.UnifAIContextKeyRequestID, newID)
+				ctx.SetValue(schemas.RakshaContextKeyRequestID, newID)
 			}
 		}
 
@@ -396,9 +396,9 @@ func (a *AgentModeExecutor) executeAgent(
 	return currentResponse, nil
 }
 
-// mergeUsage sums token counts and costs from two UnifAILLMUsage values.
+// mergeUsage sums token counts and costs from two RakshaLLMUsage values.
 // Detail sub-fields are summed when both are present; if only one is non-nil it is kept as-is.
-func mergeUsage(base, add *schemas.UnifAILLMUsage) *schemas.UnifAILLMUsage {
+func mergeUsage(base, add *schemas.RakshaLLMUsage) *schemas.RakshaLLMUsage {
 	if add == nil {
 		return base
 	}
@@ -406,7 +406,7 @@ func mergeUsage(base, add *schemas.UnifAILLMUsage) *schemas.UnifAILLMUsage {
 		return add
 	}
 
-	merged := &schemas.UnifAILLMUsage{
+	merged := &schemas.RakshaLLMUsage{
 		PromptTokens:     base.PromptTokens + add.PromptTokens,
 		CompletionTokens: base.CompletionTokens + add.CompletionTokens,
 		TotalTokens:      base.TotalTokens + add.TotalTokens,
@@ -491,12 +491,12 @@ func mergeUsage(base, add *schemas.UnifAILLMUsage) *schemas.UnifAILLMUsage {
 		bc := base.Cost
 		ac := add.Cost
 		if bc == nil {
-			bc = &schemas.UnifAICost{}
+			bc = &schemas.RakshaCost{}
 		}
 		if ac == nil {
-			ac = &schemas.UnifAICost{}
+			ac = &schemas.RakshaCost{}
 		}
-		merged.Cost = &schemas.UnifAICost{
+		merged.Cost = &schemas.RakshaCost{
 			InputTokensCost:     bc.InputTokensCost + ac.InputTokensCost,
 			OutputTokensCost:    bc.OutputTokensCost + ac.OutputTokensCost,
 			ReasoningTokensCost: bc.ReasoningTokensCost + ac.ReasoningTokensCost,
@@ -519,7 +519,7 @@ func mergeUsage(base, add *schemas.UnifAILLMUsage) *schemas.UnifAILLMUsage {
 //
 // Returns:
 //   - []schemas.ChatAssistantMessageToolCall: List of extracted tool calls, or nil if none found
-func extractToolCalls(response *schemas.UnifAIChatResponse) []schemas.ChatAssistantMessageToolCall {
+func extractToolCalls(response *schemas.RakshaChatResponse) []schemas.ChatAssistantMessageToolCall {
 	if !hasToolCallsForChatResponse(response) {
 		return nil
 	}
@@ -582,7 +582,7 @@ func createToolResultMessage(toolCall schemas.ChatAssistantMessageToolCall, resu
 // Returns:
 //   - []string: List of all client names
 //   - map[string][]string: Map of client names to their auto-executable tool names (as they appear in code)
-func buildAllowedAutoExecutionTools(ctx *schemas.UnifAIContext, clientManager ClientManager) ([]string, map[string][]string) {
+func buildAllowedAutoExecutionTools(ctx *schemas.RakshaContext, clientManager ClientManager) ([]string, map[string][]string) {
 	allowedTools := make(map[string][]string)
 	availableToolsPerClient := clientManager.GetToolPerClient(ctx)
 	allClientNames := []string{}

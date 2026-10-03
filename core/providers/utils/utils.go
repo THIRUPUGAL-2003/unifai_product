@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/network"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/network"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"github.com/valyala/fasthttp"
@@ -128,11 +128,11 @@ var noop = func() {}
 
 // SetErrorLatency stamps provider/request latency onto an error so downstream
 // logging and client-facing error details can show timing even without a response.
-func SetErrorLatency(unifaiErr *schemas.UnifAIError, latency time.Duration) *schemas.UnifAIError {
-	if unifaiErr != nil {
-		unifaiErr.ExtraFields.Latency = latency.Milliseconds()
+func SetErrorLatency(rakshaErr *schemas.RakshaError, latency time.Duration) *schemas.RakshaError {
+	if rakshaErr != nil {
+		rakshaErr.ExtraFields.Latency = latency.Milliseconds()
 	}
-	return unifaiErr
+	return rakshaErr
 }
 
 // makeRequestWithDoFunc is the shared core behind MakeRequestWithContext and
@@ -148,7 +148,7 @@ func SetErrorLatency(unifaiErr *schemas.UnifAIError, latency time.Duration) *sch
 // response objects. On the normal path it is a no-op. On the context-cancellation path it
 // blocks until the background goroutine finishes, preventing a data race between the
 // still-running goroutine and the caller's release of req/resp.
-func makeRequestWithDoFunc(ctx context.Context, do func() error) (time.Duration, *schemas.UnifAIError, func()) {
+func makeRequestWithDoFunc(ctx context.Context, do func() error) (time.Duration, *schemas.RakshaError, func()) {
 	startTime := time.Now()
 	errChan := make(chan error, 1)
 
@@ -169,28 +169,28 @@ func makeRequestWithDoFunc(ctx context.Context, do func() error) (time.Duration,
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			statusCode := 504
 			errorType := schemas.RequestTimedOut
-			return latency, &schemas.UnifAIError{
-				IsUnifAIError: true,
+			return latency, &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Type:    &errorType,
 					Message: fmt.Sprintf("Request timed out by context: %v", ctx.Err()),
 					Error:   ctx.Err(),
 				},
-				ExtraFields: schemas.UnifAIErrorExtraFields{Latency: latency.Milliseconds()},
+				ExtraFields: schemas.RakshaErrorExtraFields{Latency: latency.Milliseconds()},
 			}, func() { <-errChan }
 		}
 		statusCode := 499
 		errorType := schemas.RequestCancelled
-		return latency, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return latency, &schemas.RakshaError{
+			IsRakshaError: true,
 			StatusCode:     &statusCode,
 			Error: &schemas.ErrorField{
 				Type:    &errorType,
 				Message: fmt.Sprintf("Request cancelled by context: %v", ctx.Err()),
 				Error:   ctx.Err(),
 			},
-			ExtraFields: schemas.UnifAIErrorExtraFields{Latency: latency.Milliseconds()},
+			ExtraFields: schemas.RakshaErrorExtraFields{Latency: latency.Milliseconds()},
 		}, func() { <-errChan }
 	case err := <-errChan:
 		// The do() call completed.
@@ -198,33 +198,33 @@ func makeRequestWithDoFunc(ctx context.Context, do func() error) (time.Duration,
 		latency := time.Since(startTime)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return latency, &schemas.UnifAIError{
-					IsUnifAIError: false,
+				return latency, &schemas.RakshaError{
+					IsRakshaError: false,
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(schemas.RequestCancelled),
 						Message: schemas.ErrRequestCancelled,
 						Error:   err,
 					},
-					ExtraFields: schemas.UnifAIErrorExtraFields{Latency: latency.Milliseconds()},
+					ExtraFields: schemas.RakshaErrorExtraFields{Latency: latency.Milliseconds()},
 				}, noop
 			}
 			// Check for timeout errors first before checking net.OpError to avoid misclassification.
 			if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-				return latency, SetErrorLatency(NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency), noop
+				return latency, SetErrorLatency(NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency), noop
 			}
 			// Check if error implements net.Error and has Timeout() == true.
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
-				return latency, SetErrorLatency(NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency), noop
+				return latency, SetErrorLatency(NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency), noop
 			}
 			// Check for DNS lookup and network errors after timeout checks.
 			var opErr *net.OpError
 			var dnsErr *net.DNSError
 			if errors.As(err, &opErr) || errors.As(err, &dnsErr) {
-				return latency, SetErrorLatency(NewUnifAIUpstreamConnectionError(schemas.ErrProviderNetworkError, err), latency), noop
+				return latency, SetErrorLatency(NewRakshaUpstreamConnectionError(schemas.ErrProviderNetworkError, err), latency), noop
 			}
 			// The HTTP request itself failed (e.g., connection error, fasthttp timeout).
-			return latency, SetErrorLatency(NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency), noop
+			return latency, SetErrorLatency(NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency), noop
 		}
 		// HTTP request was successful from fasthttp's perspective (err is nil).
 		// The caller should check resp.StatusCode() for HTTP-level errors (4xx, 5xx).
@@ -237,16 +237,16 @@ func makeRequestWithDoFunc(ctx context.Context, do func() error) (time.Duration,
 // request or response objects. On the normal path it is a no-op. On the context-cancellation
 // path it blocks until the background client.Do goroutine finishes, preventing a data race
 // between the still-running goroutine and the caller's release of req/resp.
-func MakeRequestWithContext(ctx context.Context, client *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response) (time.Duration, *schemas.UnifAIError, func()) {
-	latency, unifaiErr, wait := makeRequestWithDoFunc(ctx, func() error { return client.Do(req, resp) })
-	return latency, unifaiErr, wait
+func MakeRequestWithContext(ctx context.Context, client *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response) (time.Duration, *schemas.RakshaError, func()) {
+	latency, rakshaErr, wait := makeRequestWithDoFunc(ctx, func() error { return client.Do(req, resp) })
+	return latency, rakshaErr, wait
 }
 
 // MakeRequestWithContextFollowRedirects is like MakeRequestWithContext but follows up to
 // maxRedirects HTTP redirects automatically (equivalent to curl's -L flag).
-func MakeRequestWithContextFollowRedirects(ctx context.Context, client *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int) (time.Duration, *schemas.UnifAIError, func()) {
-	latency, unifaiErr, wait := makeRequestWithDoFunc(ctx, func() error { return client.DoRedirects(req, resp, maxRedirects) })
-	return latency, unifaiErr, wait
+func MakeRequestWithContextFollowRedirects(ctx context.Context, client *fasthttp.Client, req *fasthttp.Request, resp *fasthttp.Response, maxRedirects int) (time.Duration, *schemas.RakshaError, func()) {
+	latency, rakshaErr, wait := makeRequestWithDoFunc(ctx, func() error { return client.DoRedirects(req, resp, maxRedirects) })
+	return latency, rakshaErr, wait
 }
 
 // Deprecated: ConfigureRetry is now handled internally by ConfigureDialer.
@@ -681,7 +681,7 @@ func SetExtraHeaders(ctx context.Context, req *fasthttp.Request, extraHeaders ma
 		}
 	}
 	// Give priority to extra headers in the context
-	if extraHeaders, ok := (ctx).Value(schemas.UnifAIContextKeyExtraHeaders).(map[string][]string); ok {
+	if extraHeaders, ok := (ctx).Value(schemas.RakshaContextKeyExtraHeaders).(map[string][]string); ok {
 		for k, values := range filterHeaders(extraHeaders) {
 			if skipHeaders != nil && slices.Contains(skipHeaders, strings.ToLower(k)) {
 				continue
@@ -699,7 +699,7 @@ func SetExtraHeaders(ctx context.Context, req *fasthttp.Request, extraHeaders ma
 
 // GetPathFromContext gets the path from the context, if it exists, otherwise returns the default path.
 func GetPathFromContext(ctx context.Context, defaultPath string) string {
-	if pathInContext, ok := ctx.Value(schemas.UnifAIContextKeyURLPath).(string); ok {
+	if pathInContext, ok := ctx.Value(schemas.RakshaContextKeyURLPath).(string); ok {
 		return pathInContext
 	}
 	return defaultPath
@@ -710,7 +710,7 @@ func GetPathFromContext(ctx context.Context, defaultPath string) string {
 // If the boolean is false, the returned string is a path (leading slash ensured).
 func GetRequestPath(ctx context.Context, defaultPath string, customProviderConfig *schemas.CustomProviderConfig, requestType schemas.RequestType) (string, bool) {
 	// If path/url set in context, return it.
-	if pathInContext, ok := ctx.Value(schemas.UnifAIContextKeyURLPath).(string); ok {
+	if pathInContext, ok := ctx.Value(schemas.RakshaContextKeyURLPath).(string); ok {
 		trimmed := strings.TrimSpace(pathInContext)
 		if u, err := url.Parse(trimmed); err == nil && u != nil && u.IsAbs() && u.Host != "" {
 			return trimmed, true
@@ -749,7 +749,7 @@ type RequestBodyGetter interface {
 
 // CheckAndGetRawRequestBody checks if the raw request body should be used, and returns it if it exists.
 func CheckAndGetRawRequestBody(ctx context.Context, request RequestBodyGetter) ([]byte, bool) {
-	if rawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && rawBody {
+	if rawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && rawBody {
 		return request.GetRawRequestBody(), true
 	}
 	return nil, false
@@ -767,11 +767,11 @@ func IsLargePayloadPassthroughEnabled(ctx context.Context) bool {
 	if ctx == nil {
 		return false
 	}
-	isLargePayload, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadMode).(bool)
+	isLargePayload, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
 	if !ok || !isLargePayload {
 		return false
 	}
-	reader, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadReader).(io.Reader)
+	reader, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadReader).(io.Reader)
 	return ok && reader != nil
 }
 
@@ -797,15 +797,15 @@ func ApplyLargePayloadRequestBodyWithModelNormalization(
 		return false
 	}
 
-	bodyReader, _ := ctx.Value(schemas.UnifAIContextKeyLargePayloadReader).(io.Reader)
+	bodyReader, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadReader).(io.Reader)
 	bodySize := -1
-	if contentLength, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadContentLength).(int); ok {
+	if contentLength, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadContentLength).(int); ok {
 		bodySize = contentLength
 	}
 
-	if contentType, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadContentType).(string); ok && contentType != "" {
+	if contentType, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadContentType).(string); ok && contentType != "" {
 		ctLower := strings.ToLower(contentType)
-		if metadata, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadMetadata).(*schemas.LargePayloadMetadata); ok && metadata != nil {
+		if metadata, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMetadata).(*schemas.LargePayloadMetadata); ok && metadata != nil {
 			if rawModel := strings.TrimSpace(metadata.Model); rawModel != "" && defaultProvider != "" {
 				_, normalizedModel := schemas.ParseModelString(rawModel, defaultProvider)
 				if normalizedModel != "" && normalizedModel != rawModel {
@@ -958,7 +958,7 @@ func DrainLargePayloadRemainder(ctx context.Context) {
 	if !IsLargePayloadPassthroughEnabled(ctx) {
 		return
 	}
-	bodyReader, _ := ctx.Value(schemas.UnifAIContextKeyLargePayloadReader).(io.Reader)
+	bodyReader, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadReader).(io.Reader)
 	if bodyReader == nil {
 		return
 	}
@@ -1261,7 +1261,7 @@ func MergeExtraParamsIntoJSON(jsonBody []byte, extraParams map[string]interface{
 }
 
 // CheckContextAndGetRequestBody checks if the raw request body should be used, and returns it if it exists.
-func CheckContextAndGetRequestBody(ctx context.Context, request RequestBodyGetter, requestConverter RequestBodyConverter) ([]byte, *schemas.UnifAIError) {
+func CheckContextAndGetRequestBody(ctx context.Context, request RequestBodyGetter, requestConverter RequestBodyConverter) ([]byte, *schemas.RakshaError) {
 	if IsLargePayloadPassthroughEnabled(ctx) {
 		return nil, nil
 	}
@@ -1270,25 +1270,25 @@ func CheckContextAndGetRequestBody(ctx context.Context, request RequestBodyGette
 	if !ok {
 		convertedBody, err := requestConverter()
 		if err != nil {
-			return nil, NewUnifAIOperationError(schemas.ErrRequestBodyConversion, err)
+			return nil, NewRakshaOperationError(schemas.ErrRequestBodyConversion, err)
 		}
 		if convertedBody == nil {
-			return nil, NewUnifAIOperationError("request body is not provided", nil)
+			return nil, NewRakshaOperationError("request body is not provided", nil)
 		}
 
 		jsonBody, err := MarshalSortedIndent(convertedBody, "", "  ")
 		if err != nil {
-			return nil, NewUnifAIOperationError(schemas.ErrProviderRequestMarshal, err)
+			return nil, NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
 		}
 		// Merge ExtraParams into the JSON if passthrough is enabled
-		if ctx.Value(schemas.UnifAIContextKeyPassthroughExtraParams) != nil && ctx.Value(schemas.UnifAIContextKeyPassthroughExtraParams) == true {
+		if ctx.Value(schemas.RakshaContextKeyPassthroughExtraParams) != nil && ctx.Value(schemas.RakshaContextKeyPassthroughExtraParams) == true {
 			extraParams := convertedBody.GetExtraParams()
 			if len(extraParams) > 0 {
 				// Use order-preserving merge to avoid destroying key ordering in
 				// tool schemas and other order-sensitive JSON structures.
 				jsonBody, err = MergeExtraParamsIntoJSON(jsonBody, extraParams)
 				if err != nil {
-					return nil, NewUnifAIOperationError(schemas.ErrProviderRequestMarshal, err)
+					return nil, NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
 				}
 			}
 		}
@@ -1318,7 +1318,7 @@ func SetExtraHeadersHTTP(ctx context.Context, req *http.Request, extraHeaders ma
 	}
 
 	// Give priority to extra headers in the context
-	if extraHeaders, ok := (ctx).Value(schemas.UnifAIContextKeyExtraHeaders).(map[string][]string); ok {
+	if extraHeaders, ok := (ctx).Value(schemas.RakshaContextKeyExtraHeaders).(map[string][]string); ok {
 		for k, values := range filterHeaders(extraHeaders) {
 			if skipHeaders != nil && slices.Contains(skipHeaders, strings.ToLower(k)) {
 				continue
@@ -1335,12 +1335,12 @@ func SetExtraHeadersHTTP(ctx context.Context, req *http.Request, extraHeaders ma
 }
 
 // HandleProviderAPIError processes error responses from provider APIs.
-// It attempts to unmarshal the error response and returns a UnifAIError
+// It attempts to unmarshal the error response and returns a RakshaError
 // with the appropriate status code and error information.
 // HTML detection only runs if JSON parsing fails to avoid expensive regex operations
 // on responses that are almost certainly valid JSON. errorResp must be a pointer to
 // the target struct for unmarshaling.
-func HandleProviderAPIError(resp *fasthttp.Response, errorResp any) *schemas.UnifAIError {
+func HandleProviderAPIError(resp *fasthttp.Response, errorResp any) *schemas.RakshaError {
 	statusCode := resp.StatusCode()
 
 	// Decode body
@@ -1356,13 +1356,13 @@ func HandleProviderAPIError(resp *fasthttp.Response, errorResp any) *schemas.Uni
 			}
 		}
 
-		return &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return &schemas.RakshaError{
+			IsRakshaError: false,
 			StatusCode:     &statusCode,
 			Error: &schemas.ErrorField{
 				Message: err.Error(),
 			},
-			ExtraFields: schemas.UnifAIErrorExtraFields{
+			ExtraFields: schemas.RakshaErrorExtraFields{
 				RawResponse: rawErrorResponse,
 			},
 		}
@@ -1395,13 +1395,13 @@ func HandleProviderAPIError(resp *fasthttp.Response, errorResp any) *schemas.Uni
 		default:
 			errorMessage = fmt.Sprintf("%s (HTTP %d)", schemas.ErrProviderResponseEmpty, statusCode)
 		}
-		return &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return &schemas.RakshaError{
+			IsRakshaError: false,
 			StatusCode:     &statusCode,
 			Error: &schemas.ErrorField{
 				Message: errorMessage,
 			},
-			ExtraFields: schemas.UnifAIErrorExtraFields{
+			ExtraFields: schemas.RakshaErrorExtraFields{
 				RawResponse: rawErrorResponse,
 			},
 		}
@@ -1410,11 +1410,11 @@ func HandleProviderAPIError(resp *fasthttp.Response, errorResp any) *schemas.Uni
 	// Try JSON parsing first
 	if err := sonic.Unmarshal(decodedBody, errorResp); err == nil {
 		// JSON parsing succeeded, return success
-		return &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return &schemas.RakshaError{
+			IsRakshaError: false,
 			StatusCode:     &statusCode,
 			Error:          &schemas.ErrorField{},
-			ExtraFields: schemas.UnifAIErrorExtraFields{
+			ExtraFields: schemas.RakshaErrorExtraFields{
 				RawResponse: rawErrorResponse,
 			},
 		}
@@ -1422,14 +1422,14 @@ func HandleProviderAPIError(resp *fasthttp.Response, errorResp any) *schemas.Uni
 
 	// JSON parsing failed - now check if it's an HTML response (expensive operation)
 	if IsHTMLResponse(resp, decodedBody) {
-		return &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return &schemas.RakshaError{
+			IsRakshaError: false,
 			StatusCode:     &statusCode,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseHTML,
 				Error:   errors.New(string(decodedBody)),
 			},
-			ExtraFields: schemas.UnifAIErrorExtraFields{
+			ExtraFields: schemas.RakshaErrorExtraFields{
 				RawResponse: rawErrorResponse,
 			},
 		}
@@ -1437,68 +1437,68 @@ func HandleProviderAPIError(resp *fasthttp.Response, errorResp any) *schemas.Uni
 
 	// Not HTML either - return raw response as error message
 	message := fmt.Sprintf("provider API error: %s", string(decodedBody))
-	return &schemas.UnifAIError{
-		IsUnifAIError: false,
+	return &schemas.RakshaError{
+		IsRakshaError: false,
 		StatusCode:     &statusCode,
 		Error: &schemas.ErrorField{
 			Message: message,
 		},
-		ExtraFields: schemas.UnifAIErrorExtraFields{
+		ExtraFields: schemas.RakshaErrorExtraFields{
 			RawResponse: rawErrorResponse,
 		},
 	}
 }
 
-// EnrichError attaches the raw request and response to a UnifAIError.
-// Returns the request and response from provider embedded in UnifAIError.ExtraFields.
+// EnrichError attaches the raw request and response to a RakshaError.
+// Returns the request and response from provider embedded in RakshaError.ExtraFields.
 func EnrichError(
-	ctx *schemas.UnifAIContext,
-	unifaiErr *schemas.UnifAIError,
+	ctx *schemas.RakshaContext,
+	rakshaErr *schemas.RakshaError,
 	requestBody []byte,
 	responseBody []byte,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	latency ...time.Duration,
-) *schemas.UnifAIError {
-	if unifaiErr == nil {
-		return unifaiErr
+) *schemas.RakshaError {
+	if rakshaErr == nil {
+		return rakshaErr
 	}
 
 	if len(latency) > 0 {
-		SetErrorLatency(unifaiErr, latency[0])
+		SetErrorLatency(rakshaErr, latency[0])
 	}
 
 	if ShouldSendBackRawRequest(ctx, sendBackRawRequest) && len(requestBody) > 0 {
 		// Store as json.RawMessage to preserve exact JSON bytes (including key ordering).
 		// Compact to remove insignificant whitespace that would break SSE framing.
-		unifaiErr.ExtraFields.RawRequest = compactRawJSON(requestBody)
+		rakshaErr.ExtraFields.RawRequest = compactRawJSON(requestBody)
 	} else {
-		unifaiErr.ExtraFields.RawRequest = nil
+		rakshaErr.ExtraFields.RawRequest = nil
 	}
 
 	if ShouldSendBackRawResponse(ctx, sendBackRawResponse) {
 		if len(responseBody) > 0 {
-			unifaiErr.ExtraFields.RawResponse = compactRawJSON(responseBody)
+			rakshaErr.ExtraFields.RawResponse = compactRawJSON(responseBody)
 		}
 	} else {
-		unifaiErr.ExtraFields.RawResponse = nil
+		rakshaErr.ExtraFields.RawResponse = nil
 	}
 
-	return unifaiErr
+	return rakshaErr
 }
 
 // HandleProviderResponse handles common response parsing logic for provider responses.
 // It attempts to parse the response body into the provided response type
-// and returns either the parsed response or a UnifAIError if parsing fails.
+// and returns either the parsed response or a RakshaError if parsing fails.
 // If sendBackRawResponse is true, it returns the raw response interface, otherwise nil.
 // HTML detection only runs if JSON parsing fails to avoid expensive regex operations
 // on responses that are almost certainly valid JSON.
-func HandleProviderResponse[T any](responseBody []byte, response *T, requestBody []byte, sendBackRawRequest bool, sendBackRawResponse bool) (rawRequest interface{}, rawResponse interface{}, unifaiErr *schemas.UnifAIError) {
+func HandleProviderResponse[T any](responseBody []byte, response *T, requestBody []byte, sendBackRawRequest bool, sendBackRawResponse bool) (rawRequest interface{}, rawResponse interface{}, rakshaErr *schemas.RakshaError) {
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, nil, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, nil, &schemas.RakshaError{
+			IsRakshaError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -1525,8 +1525,8 @@ func HandleProviderResponse[T any](responseBody []byte, response *T, requestBody
 	if structuredErr != nil {
 		// JSON parsing failed - check if it's an HTML response (expensive operation)
 		if IsHTMLResponse(nil, responseBody) {
-			return nil, nil, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, nil, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderResponseHTML,
 					Error:   errors.New(string(responseBody)),
@@ -1534,8 +1534,8 @@ func HandleProviderResponse[T any](responseBody []byte, response *T, requestBody
 			}
 		}
 
-		return nil, nil, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, nil, &schemas.RakshaError{
+			IsRakshaError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseUnmarshal,
 				Error:   structuredErr,
@@ -1565,14 +1565,14 @@ func compactRawJSON(data []byte) json.RawMessage {
 // Uses json.RawMessage to preserve the exact JSON bytes (including key ordering).
 // The body is compacted to remove insignificant whitespace, which prevents
 // literal newlines from breaking SSE data-line framing during streaming.
-func ParseAndSetRawRequest(extraFields *schemas.UnifAIResponseExtraFields, jsonBody []byte) {
+func ParseAndSetRawRequest(extraFields *schemas.RakshaResponseExtraFields, jsonBody []byte) {
 	if len(jsonBody) > 0 {
 		extraFields.RawRequest = compactRawJSON(jsonBody)
 	}
 }
 
 // ParseAndSetRawRequestIfJSON parses the request body if it's JSON and sets the raw request in the extra fields.
-func ParseAndSetRawRequestIfJSON(fasthttpReq *fasthttp.Request, extraFields *schemas.UnifAIResponseExtraFields) {
+func ParseAndSetRawRequestIfJSON(fasthttpReq *fasthttp.Request, extraFields *schemas.RakshaResponseExtraFields) {
 	extraFields.RawRequest = nil
 	contentType := strings.ToLower(string(fasthttpReq.Header.ContentType()))
 	if strings.Contains(contentType, "application/json") {
@@ -1594,14 +1594,14 @@ func PassthroughJSONBody(fasthttpReq *fasthttp.Request, body []byte) []byte {
 
 // NewUnsupportedOperationError creates a standardized error for unsupported operations.
 // This helper reduces code duplication across providers that don't support certain operations.
-func NewUnsupportedOperationError(requestType schemas.RequestType, providerName schemas.ModelProvider) *schemas.UnifAIError {
-	return &schemas.UnifAIError{
-		IsUnifAIError: false,
+func NewUnsupportedOperationError(requestType schemas.RequestType, providerName schemas.ModelProvider) *schemas.RakshaError {
+	return &schemas.RakshaError{
+		IsRakshaError: false,
 		Error: &schemas.ErrorField{
 			Message: fmt.Sprintf("%s is not supported by %s provider", requestType, providerName),
 			Code:    schemas.Ptr("unsupported_operation"),
 		},
-		ExtraFields: schemas.UnifAIErrorExtraFields{
+		ExtraFields: schemas.RakshaErrorExtraFields{
 			Provider:    providerName,
 			RequestType: requestType,
 		},
@@ -1612,7 +1612,7 @@ func NewUnsupportedOperationError(requestType schemas.RequestType, providerName 
 // Behavior:
 // - If no gating is configured (config == nil or AllowedRequests == nil), the operation is allowed.
 // - If gating is configured, returns an error when the operation is not explicitly allowed.
-func CheckOperationAllowed(defaultProvider schemas.ModelProvider, config *schemas.CustomProviderConfig, operation schemas.RequestType) *schemas.UnifAIError {
+func CheckOperationAllowed(defaultProvider schemas.ModelProvider, config *schemas.CustomProviderConfig, operation schemas.RequestType) *schemas.RakshaError {
 	// No gating configured => allowed
 	if config == nil || config.AllowedRequests == nil {
 		return nil
@@ -1827,20 +1827,20 @@ func ParseJSONL(data []byte, parseLine func(line []byte) error) JSONLParseResult
 
 // NewConfigurationError creates a standardized error for configuration errors.
 // This helper reduces code duplication across providers that have configuration errors.
-func NewConfigurationError(message string) *schemas.UnifAIError {
-	return &schemas.UnifAIError{
-		IsUnifAIError: false,
+func NewConfigurationError(message string) *schemas.RakshaError {
+	return &schemas.RakshaError{
+		IsRakshaError: false,
 		Error: &schemas.ErrorField{
 			Message: message,
 		},
 	}
 }
 
-// NewUnifAIOperationError creates a standardized error for unifai operation errors.
-// This helper reduces code duplication across providers that have unifai operation errors.
-func NewUnifAIOperationError(message string, err error) *schemas.UnifAIError {
-	return &schemas.UnifAIError{
-		IsUnifAIError: true,
+// NewRakshaOperationError creates a standardized error for raksha operation errors.
+// This helper reduces code duplication across providers that have raksha operation errors.
+func NewRakshaOperationError(message string, err error) *schemas.RakshaError {
+	return &schemas.RakshaError{
+		IsRakshaError: true,
 		Error: &schemas.ErrorField{
 			Message: message,
 			Error:   err,
@@ -1848,14 +1848,14 @@ func NewUnifAIOperationError(message string, err error) *schemas.UnifAIError {
 	}
 }
 
-// NewUnifAITimeoutError creates a standardized error for provider request timeout errors.
+// NewRakshaTimeoutError creates a standardized error for provider request timeout errors.
 // Sets StatusCode to 504 (Gateway Timeout) and Error.Type to RequestTimedOut,
 // consistent with HandleStreamTimeout for streaming requests.
-func NewUnifAITimeoutError(message string, err error) *schemas.UnifAIError {
+func NewRakshaTimeoutError(message string, err error) *schemas.RakshaError {
 	statusCode := 504
 	errorType := schemas.RequestTimedOut
-	return &schemas.UnifAIError{
-		IsUnifAIError: true,
+	return &schemas.RakshaError{
+		IsRakshaError: true,
 		StatusCode:     &statusCode,
 		Error: &schemas.ErrorField{
 			Message: message,
@@ -1865,19 +1865,19 @@ func NewUnifAITimeoutError(message string, err error) *schemas.UnifAIError {
 	}
 }
 
-// NewUnifAIUpstreamConnectionError creates a standardized error for upstream
-// connectivity failures where UnifAI successfully dispatched to the provider
+// NewRakshaUpstreamConnectionError creates a standardized error for upstream
+// connectivity failures where Raksha successfully dispatched to the provider
 // but the provider failed to return a response body (DNS lookup failure,
 // connection refused, connection reset before the first response byte, etc.).
 // Sets StatusCode to 502 (Bad Gateway) and Error.Type to ProviderConnectionFailed,
 // distinguishing these retriable upstream failures from genuine HTTP 400
-// client-side bad-request errors. Mirrors NewUnifAITimeoutError; IsUnifAIError
+// client-side bad-request errors. Mirrors NewRakshaTimeoutError; IsRakshaError
 // is false because the upstream provider is the cause.
-func NewUnifAIUpstreamConnectionError(message string, err error) *schemas.UnifAIError {
+func NewRakshaUpstreamConnectionError(message string, err error) *schemas.RakshaError {
 	statusCode := 502
 	errorType := schemas.ProviderConnectionFailed
-	return &schemas.UnifAIError{
-		IsUnifAIError: false,
+	return &schemas.RakshaError{
+		IsRakshaError: false,
 		StatusCode:     &statusCode,
 		Error: &schemas.ErrorField{
 			Message: message,
@@ -1889,9 +1889,9 @@ func NewUnifAIUpstreamConnectionError(message string, err error) *schemas.UnifAI
 
 // NewProviderAPIError creates a standardized error for provider API errors.
 // This helper reduces code duplication across providers that have provider API errors.
-func NewProviderAPIError(message string, err error, statusCode int, errorType *string, eventID *string) *schemas.UnifAIError {
-	return &schemas.UnifAIError{
-		IsUnifAIError: false,
+func NewProviderAPIError(message string, err error, statusCode int, errorType *string, eventID *string) *schemas.RakshaError {
+	return &schemas.RakshaError{
+		IsRakshaError: false,
 		StatusCode:     &statusCode,
 		Type:           errorType,
 		EventID:        eventID,
@@ -1904,153 +1904,153 @@ func NewProviderAPIError(message string, err error, statusCode int, errorType *s
 }
 
 // ShouldSendBackRawRequest checks if raw request bytes should be captured.
-// unifai.go always writes UnifAIContextKeyCaptureRawRequest before provider dispatch,
+// raksha.go always writes RakshaContextKeyCaptureRawRequest before provider dispatch,
 // combining provider config, per-request overrides, and store_raw_request_response.
-// The default parameter is a fallback for callers outside the normal unifai dispatch path.
+// The default parameter is a fallback for callers outside the normal raksha dispatch path.
 func ShouldSendBackRawRequest(ctx context.Context, defaultSendBackRawRequest bool) bool {
-	if capture, ok := ctx.Value(schemas.UnifAIContextKeyCaptureRawRequest).(bool); ok {
+	if capture, ok := ctx.Value(schemas.RakshaContextKeyCaptureRawRequest).(bool); ok {
 		return capture
 	}
 	return defaultSendBackRawRequest
 }
 
 // ShouldSendBackRawResponse checks if raw response bytes should be captured.
-// unifai.go always writes UnifAIContextKeyCaptureRawResponse before provider dispatch,
+// raksha.go always writes RakshaContextKeyCaptureRawResponse before provider dispatch,
 // combining provider config, per-request overrides, and store_raw_request_response.
-// The default parameter is a fallback for callers outside the normal unifai dispatch path.
+// The default parameter is a fallback for callers outside the normal raksha dispatch path.
 func ShouldSendBackRawResponse(ctx context.Context, defaultSendBackRawResponse bool) bool {
-	if capture, ok := ctx.Value(schemas.UnifAIContextKeyCaptureRawResponse).(bool); ok {
+	if capture, ok := ctx.Value(schemas.RakshaContextKeyCaptureRawResponse).(bool); ok {
 		return capture
 	}
 	return defaultSendBackRawResponse
 }
 
 // SendCreatedEventResponsesChunk sends a ResponsesStreamResponseTypeCreated event.
-func SendCreatedEventResponsesChunk(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, startTime time.Time, responseChan chan *schemas.UnifAIStreamChunk, postHookSpanFinalizer func(context.Context)) {
-	firstChunk := &schemas.UnifAIResponsesStreamResponse{
+func SendCreatedEventResponsesChunk(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, startTime time.Time, responseChan chan *schemas.RakshaStreamChunk, postHookSpanFinalizer func(context.Context)) {
+	firstChunk := &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeCreated,
 		SequenceNumber: 0,
-		Response:       &schemas.UnifAIResponsesResponse{},
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		Response:       &schemas.RakshaResponsesResponse{},
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			ChunkIndex: 0,
 			Latency:    time.Since(startTime).Milliseconds(),
 		},
 	}
-	// TODO add unifai response pooling here
-	unifaiResponse := &schemas.UnifAIResponse{
+	// TODO add raksha response pooling here
+	rakshaResponse := &schemas.RakshaResponse{
 		ResponsesStreamResponse: firstChunk,
 	}
-	ProcessAndSendResponse(ctx, postHookRunner, unifaiResponse, responseChan, postHookSpanFinalizer)
+	ProcessAndSendResponse(ctx, postHookRunner, rakshaResponse, responseChan, postHookSpanFinalizer)
 }
 
 // SendInProgressEventResponsesChunk sends a ResponsesStreamResponseTypeInProgress event
-func SendInProgressEventResponsesChunk(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, startTime time.Time, responseChan chan *schemas.UnifAIStreamChunk, postHookSpanFinalizer func(context.Context)) {
-	chunk := &schemas.UnifAIResponsesStreamResponse{
+func SendInProgressEventResponsesChunk(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, startTime time.Time, responseChan chan *schemas.RakshaStreamChunk, postHookSpanFinalizer func(context.Context)) {
+	chunk := &schemas.RakshaResponsesStreamResponse{
 		Type:           schemas.ResponsesStreamResponseTypeInProgress,
 		SequenceNumber: 1,
-		Response:       &schemas.UnifAIResponsesResponse{},
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		Response:       &schemas.RakshaResponsesResponse{},
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			ChunkIndex: 1,
 			Latency:    time.Since(startTime).Milliseconds(),
 		},
 	}
-	// TODO add unifai response pooling here
-	unifaiResponse := &schemas.UnifAIResponse{
+	// TODO add raksha response pooling here
+	rakshaResponse := &schemas.RakshaResponse{
 		ResponsesStreamResponse: chunk,
 	}
-	ProcessAndSendResponse(ctx, postHookRunner, unifaiResponse, responseChan, postHookSpanFinalizer)
+	ProcessAndSendResponse(ctx, postHookRunner, rakshaResponse, responseChan, postHookSpanFinalizer)
 }
 
-// BuildClientStreamChunk constructs a UnifAIStreamChunk from post-hook results.
+// BuildClientStreamChunk constructs a RakshaStreamChunk from post-hook results.
 // It never mutates the shared processedResponse or processedError objects — when raw fields
 // need to be stripped (captured for storage but not for send-back), it shallow-copies each
 // inner response struct and nils only the appropriate per-side field on those copies.
 // This is safe for concurrent PostLLMHook goroutines that still hold references to the originals.
-func BuildClientStreamChunk(ctx context.Context, processedResponse *schemas.UnifAIResponse, processedError *schemas.UnifAIError) *schemas.UnifAIStreamChunk {
-	dropReq, _ := ctx.Value(schemas.UnifAIContextKeyDropRawRequestFromClient).(bool)
-	dropResp, _ := ctx.Value(schemas.UnifAIContextKeyDropRawResponseFromClient).(bool)
+func BuildClientStreamChunk(ctx context.Context, processedResponse *schemas.RakshaResponse, processedError *schemas.RakshaError) *schemas.RakshaStreamChunk {
+	dropReq, _ := ctx.Value(schemas.RakshaContextKeyDropRawRequestFromClient).(bool)
+	dropResp, _ := ctx.Value(schemas.RakshaContextKeyDropRawResponseFromClient).(bool)
 	drop := dropReq || dropResp
-	streamResponse := &schemas.UnifAIStreamChunk{}
+	streamResponse := &schemas.RakshaStreamChunk{}
 	if processedResponse != nil {
-		streamResponse.UnifAITextCompletionResponse = processedResponse.TextCompletionResponse
-		streamResponse.UnifAIChatResponse = processedResponse.ChatResponse
-		streamResponse.UnifAIResponsesStreamResponse = processedResponse.ResponsesStreamResponse
-		streamResponse.UnifAISpeechStreamResponse = processedResponse.SpeechStreamResponse
-		streamResponse.UnifAITranscriptionStreamResponse = processedResponse.TranscriptionStreamResponse
-		streamResponse.UnifAIImageGenerationStreamResponse = processedResponse.ImageGenerationStreamResponse
-		streamResponse.UnifAIPassthroughResponse = processedResponse.PassthroughResponse
+		streamResponse.RakshaTextCompletionResponse = processedResponse.TextCompletionResponse
+		streamResponse.RakshaChatResponse = processedResponse.ChatResponse
+		streamResponse.RakshaResponsesStreamResponse = processedResponse.ResponsesStreamResponse
+		streamResponse.RakshaSpeechStreamResponse = processedResponse.SpeechStreamResponse
+		streamResponse.RakshaTranscriptionStreamResponse = processedResponse.TranscriptionStreamResponse
+		streamResponse.RakshaImageGenerationStreamResponse = processedResponse.ImageGenerationStreamResponse
+		streamResponse.RakshaPassthroughResponse = processedResponse.PassthroughResponse
 		// Strip raw fields from client-facing copies without mutating the shared objects
 		// that PostLLMHook goroutines may still be reading.
 		if drop {
-			if streamResponse.UnifAITextCompletionResponse != nil {
-				cp := *streamResponse.UnifAITextCompletionResponse
+			if streamResponse.RakshaTextCompletionResponse != nil {
+				cp := *streamResponse.RakshaTextCompletionResponse
 				if dropReq {
 					cp.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
 					cp.ExtraFields.RawResponse = nil
 				}
-				streamResponse.UnifAITextCompletionResponse = &cp
+				streamResponse.RakshaTextCompletionResponse = &cp
 			}
-			if streamResponse.UnifAIChatResponse != nil {
-				cp := *streamResponse.UnifAIChatResponse
+			if streamResponse.RakshaChatResponse != nil {
+				cp := *streamResponse.RakshaChatResponse
 				if dropReq {
 					cp.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
 					cp.ExtraFields.RawResponse = nil
 				}
-				streamResponse.UnifAIChatResponse = &cp
+				streamResponse.RakshaChatResponse = &cp
 			}
-			if streamResponse.UnifAIResponsesStreamResponse != nil {
-				cp := *streamResponse.UnifAIResponsesStreamResponse
+			if streamResponse.RakshaResponsesStreamResponse != nil {
+				cp := *streamResponse.RakshaResponsesStreamResponse
 				if dropReq {
 					cp.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
 					cp.ExtraFields.RawResponse = nil
 				}
-				streamResponse.UnifAIResponsesStreamResponse = &cp
+				streamResponse.RakshaResponsesStreamResponse = &cp
 			}
-			if streamResponse.UnifAISpeechStreamResponse != nil {
-				cp := *streamResponse.UnifAISpeechStreamResponse
+			if streamResponse.RakshaSpeechStreamResponse != nil {
+				cp := *streamResponse.RakshaSpeechStreamResponse
 				if dropReq {
 					cp.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
 					cp.ExtraFields.RawResponse = nil
 				}
-				streamResponse.UnifAISpeechStreamResponse = &cp
+				streamResponse.RakshaSpeechStreamResponse = &cp
 			}
-			if streamResponse.UnifAITranscriptionStreamResponse != nil {
-				cp := *streamResponse.UnifAITranscriptionStreamResponse
+			if streamResponse.RakshaTranscriptionStreamResponse != nil {
+				cp := *streamResponse.RakshaTranscriptionStreamResponse
 				if dropReq {
 					cp.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
 					cp.ExtraFields.RawResponse = nil
 				}
-				streamResponse.UnifAITranscriptionStreamResponse = &cp
+				streamResponse.RakshaTranscriptionStreamResponse = &cp
 			}
-			if streamResponse.UnifAIImageGenerationStreamResponse != nil {
-				cp := *streamResponse.UnifAIImageGenerationStreamResponse
+			if streamResponse.RakshaImageGenerationStreamResponse != nil {
+				cp := *streamResponse.RakshaImageGenerationStreamResponse
 				if dropReq {
 					cp.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
 					cp.ExtraFields.RawResponse = nil
 				}
-				streamResponse.UnifAIImageGenerationStreamResponse = &cp
+				streamResponse.RakshaImageGenerationStreamResponse = &cp
 			}
-			if streamResponse.UnifAIPassthroughResponse != nil {
-				cp := *streamResponse.UnifAIPassthroughResponse
+			if streamResponse.RakshaPassthroughResponse != nil {
+				cp := *streamResponse.RakshaPassthroughResponse
 				if dropReq {
 					cp.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
 					cp.ExtraFields.RawResponse = nil
 				}
-				streamResponse.UnifAIPassthroughResponse = &cp
+				streamResponse.RakshaPassthroughResponse = &cp
 			}
 		}
 	}
@@ -2064,9 +2064,9 @@ func BuildClientStreamChunk(ctx context.Context, processedResponse *schemas.Unif
 			if dropResp {
 				errCopy.ExtraFields.RawResponse = nil
 			}
-			streamResponse.UnifAIError = &errCopy
+			streamResponse.RakshaError = &errCopy
 		} else {
-			streamResponse.UnifAIError = processedError
+			streamResponse.RakshaError = processedError
 		}
 	}
 	return streamResponse
@@ -2074,21 +2074,21 @@ func BuildClientStreamChunk(ctx context.Context, processedResponse *schemas.Unif
 
 // GateSendChunk routes a stream chunk through the tracer's pause/resume/end
 // gate ONLY when a plugin has engaged the gate for this stream (via
-// ctx.PauseStream/ResumeStream/EndStream, which sets UnifAIContextKeyStreamGated).
+// ctx.PauseStream/ResumeStream/EndStream, which sets RakshaContextKeyStreamGated).
 // Streams that never engage the gate (the overwhelmingly common case) take the
 // fast path: a direct channel send with ctx.Done() guard — same code as before
 // the gate was introduced, no extra lookups or locks.
-func GateSendChunk(ctx *schemas.UnifAIContext, chunk *schemas.UnifAIStreamChunk, responseChan chan *schemas.UnifAIStreamChunk) (ok bool) {
-	if gated, _ := ctx.Value(schemas.UnifAIContextKeyStreamGated).(bool); gated {
+func GateSendChunk(ctx *schemas.RakshaContext, chunk *schemas.RakshaStreamChunk, responseChan chan *schemas.RakshaStreamChunk) (ok bool) {
+	if gated, _ := ctx.Value(schemas.RakshaContextKeyStreamGated).(bool); gated {
 		isFinal := false
-		if v := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator); v != nil {
+		if v := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator); v != nil {
 			if b, ok := v.(bool); ok {
 				isFinal = b
 			}
 		}
-		isHardErr := chunk != nil && chunk.UnifAIError != nil && chunk.UnifAIError.IsUnifAIError
-		if tracer, ok := ctx.Value(schemas.UnifAIContextKeyTracer).(schemas.Tracer); ok && tracer != nil {
-			if traceID, ok := ctx.Value(schemas.UnifAIContextKeyTraceID).(string); ok && traceID != "" {
+		isHardErr := chunk != nil && chunk.RakshaError != nil && chunk.RakshaError.IsRakshaError
+		if tracer, ok := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer); ok && tracer != nil {
+			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && traceID != "" {
 				return tracer.GateSend(traceID, chunk, isFinal, isHardErr, responseChan, ctx)
 			}
 		}
@@ -2116,10 +2116,10 @@ func GateSendChunk(ctx *schemas.UnifAIContext, chunk *schemas.UnifAIStreamChunk,
 //
 // Provider streaming goroutines should `defer providerUtils.CloseStream(ctx,
 // responseChan)` instead of `defer close(responseChan)`.
-func CloseStream(ctx *schemas.UnifAIContext, ch chan *schemas.UnifAIStreamChunk) {
-	if gated, _ := ctx.Value(schemas.UnifAIContextKeyStreamGated).(bool); gated {
-		if tracer, ok := ctx.Value(schemas.UnifAIContextKeyTracer).(schemas.Tracer); ok && tracer != nil {
-			if traceID, ok := ctx.Value(schemas.UnifAIContextKeyTraceID).(string); ok && traceID != "" {
+func CloseStream(ctx *schemas.RakshaContext, ch chan *schemas.RakshaStreamChunk) {
+	if gated, _ := ctx.Value(schemas.RakshaContextKeyStreamGated).(bool); gated {
+		if tracer, ok := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer); ok && tracer != nil {
+			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && traceID != "" {
 				// Force-end so a still-paused gate transitions and the flusher exits.
 				// End is idempotent; flusher (if any) drains buffered chunks before returning.
 				tracer.EndStream(traceID, nil)
@@ -2136,15 +2136,15 @@ func CloseStream(ctx *schemas.UnifAIContext, ch chan *schemas.UnifAIStreamChunk)
 // proper context cancellation handling.
 // It also completes the deferred LLM span when the final chunk is sent (StreamEndIndicator is true).
 func ProcessAndSendResponse(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
-	response *schemas.UnifAIResponse,
-	responseChan chan *schemas.UnifAIStreamChunk,
+	response *schemas.RakshaResponse,
+	responseChan chan *schemas.RakshaStreamChunk,
 	postHookSpanFinalizer func(context.Context),
 ) {
 	// Accumulate chunk for tracing (common for all providers)
-	if tracer, ok := ctx.Value(schemas.UnifAIContextKeyTracer).(schemas.Tracer); ok && tracer != nil {
-		if traceID, ok := ctx.Value(schemas.UnifAIContextKeyTraceID).(string); ok && traceID != "" {
+	if tracer, ok := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer); ok && tracer != nil {
+		if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && traceID != "" {
 			tracer.AddStreamingChunk(traceID, response)
 		}
 	}
@@ -2154,7 +2154,7 @@ func ProcessAndSendResponse(
 
 	if HandleStreamControlSkip(processedError) {
 		// Even if skipping, complete the deferred span if this is the final chunk
-		if isFinalChunk := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator); isFinalChunk != nil {
+		if isFinalChunk := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator); isFinalChunk != nil {
 			if final, ok := isFinalChunk.(bool); ok && final {
 				completeDeferredSpan(ctx, processedResponse, processedError, postHookSpanFinalizer)
 			}
@@ -2168,32 +2168,32 @@ func ProcessAndSendResponse(
 	GateSendChunk(ctx, streamResponse, responseChan)
 
 	// Check if this is the final chunk and complete deferred span with post-processed data
-	if isFinalChunk := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator); isFinalChunk != nil {
+	if isFinalChunk := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator); isFinalChunk != nil {
 		if final, ok := isFinalChunk.(bool); ok && final {
 			completeDeferredSpan(ctx, processedResponse, processedError, postHookSpanFinalizer)
 		}
 	}
 }
 
-// ProcessAndSendUnifAIError handles post-hook processing and sends the unifai error to the channel.
+// ProcessAndSendRakshaError handles post-hook processing and sends the raksha error to the channel.
 // This utility reduces code duplication across streaming implementations by encapsulating
 // the common pattern of running post hooks, handling errors, and sending responses with
 // proper context cancellation handling.
 // It also completes the deferred LLM span when the final chunk is sent (StreamEndIndicator is true).
-func ProcessAndSendUnifAIError(
-	ctx *schemas.UnifAIContext,
+func ProcessAndSendRakshaError(
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
-	unifaiErr *schemas.UnifAIError,
-	responseChan chan *schemas.UnifAIStreamChunk,
+	rakshaErr *schemas.RakshaError,
+	responseChan chan *schemas.RakshaStreamChunk,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
 ) {
 	// Run post hooks first so span reflects post-processed data
-	processedResponse, processedError := postHookRunner(ctx, nil, unifaiErr)
+	processedResponse, processedError := postHookRunner(ctx, nil, rakshaErr)
 
 	if HandleStreamControlSkip(processedError) {
 		// Even if skipping, complete the deferred span if this is the final chunk
-		if isFinalChunk := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator); isFinalChunk != nil {
+		if isFinalChunk := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator); isFinalChunk != nil {
 			if final, ok := isFinalChunk.(bool); ok && final {
 				completeDeferredSpan(ctx, processedResponse, processedError, postHookSpanFinalizer)
 			}
@@ -2206,7 +2206,7 @@ func ProcessAndSendUnifAIError(
 	GateSendChunk(ctx, streamResponse, responseChan)
 
 	// Check if this is the final chunk and complete deferred span with post-processed data
-	if isFinalChunk := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator); isFinalChunk != nil {
+	if isFinalChunk := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator); isFinalChunk != nil {
 		if final, ok := isFinalChunk.(bool); ok && final {
 			completeDeferredSpan(ctx, processedResponse, processedError, postHookSpanFinalizer)
 		}
@@ -2244,10 +2244,10 @@ func EnsureStreamFinalizerCalled(ctx context.Context, finalizer func(context.Con
 
 	// Complete any span the terminal path left parked. Unended = died mid-flight
 	// (mark failed); ended = delivery failed after success (keep the OK status).
-	if bfCtx, ok := ctx.(*schemas.UnifAIContext); ok {
-		var streamErr *schemas.UnifAIError
-		if ended, _ := bfCtx.Value(schemas.UnifAIContextKeyStreamEndIndicator).(bool); !ended {
-			streamErr = &schemas.UnifAIError{
+	if bfCtx, ok := ctx.(*schemas.RakshaContext); ok {
+		var streamErr *schemas.RakshaError
+		if ended, _ := bfCtx.Value(schemas.RakshaContextKeyStreamEndIndicator).(bool); !ended {
+			streamErr = &schemas.RakshaError{
 				Error: &schemas.ErrorField{Message: "stream ended before completion"},
 			}
 		}
@@ -2265,7 +2265,7 @@ func EnsureStreamFinalizerCalled(ctx context.Context, finalizer func(context.Con
 // Returns a cleanup function that MUST be called when streaming is done to
 // prevent the goroutine from closing the stream during normal operation.
 // Works with both fasthttp's BodyStream() (io.Reader) and net/http's resp.Body (io.ReadCloser).
-func SetupStreamCancellation(ctx *schemas.UnifAIContext, bodyStream io.Reader, logger schemas.Logger) (cleanup func()) {
+func SetupStreamCancellation(ctx *schemas.RakshaContext, bodyStream io.Reader, logger schemas.Logger) (cleanup func()) {
 	done := make(chan struct{})
 	closed := make(chan struct{})
 
@@ -2281,7 +2281,7 @@ func SetupStreamCancellation(ctx *schemas.UnifAIContext, bodyStream io.Reader, l
 			// panics with a negative chunkLeft slice bound. GetAndSetValue is a
 			// single locked compare-and-swap, unlike the previous racy
 			// Value-then-SetValue check.
-			if prev, _ := ctx.GetAndSetValue(schemas.UnifAIContextKeyConnectionClosed, true).(bool); prev {
+			if prev, _ := ctx.GetAndSetValue(schemas.RakshaContextKeyConnectionClosed, true).(bool); prev {
 				return
 			}
 			// Context cancelled or deadline exceeded - close the body stream to unblock reads
@@ -2299,13 +2299,13 @@ func SetupStreamCancellation(ctx *schemas.UnifAIContext, bodyStream io.Reader, l
 			// chain (Read has returned), and ctx is also cancelled. The body may already be
 			// at EOF and fasthttp may have released the underlying conn to the idle pool.
 			// We still attempt a close to unblock any pending drain in ReleaseStreamingResponse,
-			// but we set UnifAIContextKeyConnectionClosed unconditionally (matching the
+			// but we set RakshaContextKeyConnectionClosed unconditionally (matching the
 			// ctx.Done branch above) so ReleaseStreamingResponse skips a second CloseWithError.
 			// A second close against an already-pooled conn nil-derefs in fasthttp's connsCleaner.
 			if ctx.Err() != nil {
 				// Same atomic claim as the ctx.Done branch: skip if another
 				// owner already closed/released the stream.
-				if prev, _ := ctx.GetAndSetValue(schemas.UnifAIContextKeyConnectionClosed, true).(bool); prev {
+				if prev, _ := ctx.GetAndSetValue(schemas.RakshaContextKeyConnectionClosed, true).(bool); prev {
 					return
 				}
 				if closer, ok := bodyStream.(io.Closer); ok {
@@ -2327,7 +2327,7 @@ func SetupStreamCancellation(ctx *schemas.UnifAIContext, bodyStream io.Reader, l
 }
 
 // DefaultStreamIdleTimeout is how long a stream read can block with zero data
-// before unifai considers the connection stalled and closes it. This protects
+// before raksha considers the connection stalled and closes it. This protects
 // against providers that stop sending data but keep the TCP connection open
 // (e.g., Azure TPM throttling).
 const DefaultStreamIdleTimeout = 120 * time.Second
@@ -2336,19 +2336,19 @@ const DefaultStreamIdleTimeout = 120 * time.Second
 // the provider's network config, but only if no valid timeout is already present.
 // This allows upstream layers (transport, headers) to set the timeout first,
 // with the provider config acting as a fallback.
-func SetStreamIdleTimeoutIfEmpty(ctx *schemas.UnifAIContext, configSeconds int) {
-	if existing, ok := ctx.Value(schemas.UnifAIContextKeyStreamIdleTimeout).(time.Duration); ok && existing > 0 {
+func SetStreamIdleTimeoutIfEmpty(ctx *schemas.RakshaContext, configSeconds int) {
+	if existing, ok := ctx.Value(schemas.RakshaContextKeyStreamIdleTimeout).(time.Duration); ok && existing > 0 {
 		return // already set from upstream (transport/header), respect it
 	}
 	if configSeconds > 0 {
-		ctx.SetValue(schemas.UnifAIContextKeyStreamIdleTimeout, time.Duration(configSeconds)*time.Second)
+		ctx.SetValue(schemas.RakshaContextKeyStreamIdleTimeout, time.Duration(configSeconds)*time.Second)
 	}
 }
 
 // GetStreamIdleTimeout reads the per-chunk idle timeout from context,
 // falling back to DefaultStreamIdleTimeout if not set.
-func GetStreamIdleTimeout(ctx *schemas.UnifAIContext) time.Duration {
-	if timeout, ok := ctx.Value(schemas.UnifAIContextKeyStreamIdleTimeout).(time.Duration); ok && timeout > 0 {
+func GetStreamIdleTimeout(ctx *schemas.RakshaContext) time.Duration {
+	if timeout, ok := ctx.Value(schemas.RakshaContextKeyStreamIdleTimeout).(time.Duration); ok && timeout > 0 {
 		return timeout
 	}
 	return DefaultStreamIdleTimeout
@@ -2375,7 +2375,7 @@ func closeBodyStream(bodyStream io.Reader, err error) {
 // if no data arrives within the configured timeout. This unblocks any pending
 // Read() call on the wrapped reader.
 type idleTimeoutReader struct {
-	ctx           *schemas.UnifAIContext
+	ctx           *schemas.RakshaContext
 	reader        io.Reader
 	bodyStream    io.Reader // closed via type assertion to io.Closer on timeout
 	timeout       time.Duration
@@ -2397,13 +2397,13 @@ type idleTimeoutReader struct {
 // Returns the wrapped reader and a cleanup function that MUST be called (via defer)
 // when streaming is complete, to stop the timer and prevent premature closure.
 //
-// ctx is used to set UnifAIContextKeyConnectionClosed when the timer fires.
+// ctx is used to set RakshaContextKeyConnectionClosed when the timer fires.
 // This prevents ReleaseStreamingResponse from calling fasthttp.ReleaseResponse a
 // second time after the idle-timeout callback already invoked closeFunc via
 // CloseWithError — a double invocation that would call hc.ReleaseConn on a
 // zeroed clientConn, placing a nil net.Conn into the HostClient pool and
 // causing a nil-pointer panic in the next request's ParseNetConn call.
-func NewIdleTimeoutReader(reader io.Reader, bodyStream io.Reader, timeout time.Duration, ctx *schemas.UnifAIContext) (io.Reader, func()) {
+func NewIdleTimeoutReader(reader io.Reader, bodyStream io.Reader, timeout time.Duration, ctx *schemas.RakshaContext) (io.Reader, func()) {
 	if timeout <= 0 {
 		timeout = DefaultStreamIdleTimeout
 	}
@@ -2424,7 +2424,7 @@ func NewIdleTimeoutReader(reader io.Reader, bodyStream io.Reader, timeout time.D
 			// Setting r.fired only on the winning path keeps the Read recover's
 			// idle-timeout vs closed error classification accurate.
 			if ctx != nil {
-				if prev, _ := ctx.GetAndSetValue(schemas.UnifAIContextKeyConnectionClosed, true).(bool); prev {
+				if prev, _ := ctx.GetAndSetValue(schemas.RakshaContextKeyConnectionClosed, true).(bool); prev {
 					return
 				}
 			}
@@ -2465,7 +2465,7 @@ func (r *idleTimeoutReader) connectionClosed() bool {
 	if r.ctx == nil {
 		return false
 	}
-	closed, ok := r.ctx.Value(schemas.UnifAIContextKeyConnectionClosed).(bool)
+	closed, ok := r.ctx.Value(schemas.RakshaContextKeyConnectionClosed).(bool)
 	return ok && closed
 }
 
@@ -2518,21 +2518,21 @@ var ErrStreamClosed = errors.New("stream closed")
 // This is critical for the logging plugin to update log status from "processing" to "error"
 // when a client disconnects mid-stream.
 func HandleStreamCancellation(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
-	responseChan chan *schemas.UnifAIStreamChunk,
+	responseChan chan *schemas.RakshaStreamChunk,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
 	jsonBody []byte,
 ) {
 	// Check if already handled (StreamEndIndicator already set)
-	if indicator := ctx.GetAndSetValue(schemas.UnifAIContextKeyStreamEndIndicator, true); indicator != nil {
+	if indicator := ctx.GetAndSetValue(schemas.RakshaContextKeyStreamEndIndicator, true); indicator != nil {
 		if set, ok := indicator.(bool); ok && set {
 			return // Already handled
 		}
 	}
 	// Create cancellation error
-	cancelErr := &schemas.UnifAIError{
+	cancelErr := &schemas.RakshaError{
 		StatusCode: new(499), // Client Closed Request
 		Error: &schemas.ErrorField{
 			Message: "Request cancelled: client disconnected",
@@ -2549,20 +2549,20 @@ func HandleStreamCancellation(
 	attachBilledUsageFromContext(ctx, cancelErr)
 
 	// Send through PostHook chain - this updates the log to "error" status
-	ProcessAndSendUnifAIError(ctx, postHookRunner, cancelErr, responseChan, logger, postHookSpanFinalizer)
+	ProcessAndSendRakshaError(ctx, postHookRunner, cancelErr, responseChan, logger, postHookSpanFinalizer)
 }
 
 // attachBilledUsageFromContext copies a streaming provider's in-place
-// accumulated usage handle (UnifAIContextKeyStreamAccumulatedUsage), if any,
+// accumulated usage handle (RakshaContextKeyStreamAccumulatedUsage), if any,
 // onto the error's BilledUsage so downstream post-hooks (governance billing,
 // logging cost) can charge for tokens the provider already processed before the
 // stream was cancelled or timed out. No-op when nothing measurable was
 // accumulated, so failures that consumed no tokens bill nothing.
-func attachBilledUsageFromContext(ctx *schemas.UnifAIContext, unifaiErr *schemas.UnifAIError) {
-	if ctx == nil || unifaiErr == nil {
+func attachBilledUsageFromContext(ctx *schemas.RakshaContext, rakshaErr *schemas.RakshaError) {
+	if ctx == nil || rakshaErr == nil {
 		return
 	}
-	usage, ok := ctx.Value(schemas.UnifAIContextKeyStreamAccumulatedUsage).(*schemas.UnifAILLMUsage)
+	usage, ok := ctx.Value(schemas.RakshaContextKeyStreamAccumulatedUsage).(*schemas.RakshaLLMUsage)
 	if !ok || usage == nil {
 		return
 	}
@@ -2594,7 +2594,7 @@ func attachBilledUsageFromContext(ctx *schemas.UnifAIContext, unifaiErr *schemas
 		costCopy := *usage.Cost
 		usageCopy.Cost = &costCopy
 	}
-	unifaiErr.ExtraFields.BilledUsage = &usageCopy
+	rakshaErr.ExtraFields.BilledUsage = &usageCopy
 }
 
 // HandleStreamTimeout should be called when a streaming goroutine exits
@@ -2606,21 +2606,21 @@ func attachBilledUsageFromContext(ctx *schemas.UnifAIContext, unifaiErr *schemas
 // This is critical for the logging plugin to update log status from "processing" to "error"
 // when a request times out mid-stream.
 func HandleStreamTimeout(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
-	responseChan chan *schemas.UnifAIStreamChunk,
+	responseChan chan *schemas.RakshaStreamChunk,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
 	jsonBody []byte,
 ) {
 	// Check if already handled (StreamEndIndicator already set)
-	if indicator := ctx.GetAndSetValue(schemas.UnifAIContextKeyStreamEndIndicator, true); indicator != nil {
+	if indicator := ctx.GetAndSetValue(schemas.RakshaContextKeyStreamEndIndicator, true); indicator != nil {
 		if set, ok := indicator.(bool); ok && set {
 			return // Already handled
 		}
 	}
 	// Create timeout error
-	timeoutErr := &schemas.UnifAIError{
+	timeoutErr := &schemas.RakshaError{
 		StatusCode: schemas.Ptr(504), // Gateway Timeout
 		Error: &schemas.ErrorField{
 			Message: "Request timed out: deadline exceeded",
@@ -2636,7 +2636,7 @@ func HandleStreamTimeout(
 	attachBilledUsageFromContext(ctx, timeoutErr)
 
 	// Send through PostHook chain - this updates the log to "error" status
-	ProcessAndSendUnifAIError(ctx, postHookRunner, timeoutErr, responseChan, logger, postHookSpanFinalizer)
+	ProcessAndSendRakshaError(ctx, postHookRunner, timeoutErr, responseChan, logger, postHookSpanFinalizer)
 }
 
 // ProcessAndSendError handles post-hook processing and sends the error to the channel.
@@ -2644,85 +2644,85 @@ func HandleStreamTimeout(
 // the common pattern of running post hooks, handling errors, and sending responses with
 // proper context cancellation handling.
 func ProcessAndSendError(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	err error,
-	responseChan chan *schemas.UnifAIStreamChunk,
+	responseChan chan *schemas.RakshaStreamChunk,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
 ) {
 	// Send scanner error through channel
-	unifaiError := &schemas.UnifAIError{
-		IsUnifAIError: true,
+	rakshaError := &schemas.RakshaError{
+		IsRakshaError: true,
 		Error: &schemas.ErrorField{
 			Message: fmt.Sprintf("Error reading stream: %v", err),
 			Error:   err,
 		},
 	}
-	processedResponse, processedError := postHookRunner(ctx, nil, unifaiError)
+	processedResponse, processedError := postHookRunner(ctx, nil, rakshaError)
 
 	if HandleStreamControlSkip(processedError) {
 		return
 	}
 
-	streamResponse := &schemas.UnifAIStreamChunk{}
+	streamResponse := &schemas.RakshaStreamChunk{}
 	if processedResponse != nil {
-		streamResponse.UnifAITextCompletionResponse = processedResponse.TextCompletionResponse
-		streamResponse.UnifAIChatResponse = processedResponse.ChatResponse
-		streamResponse.UnifAIResponsesStreamResponse = processedResponse.ResponsesStreamResponse
-		streamResponse.UnifAISpeechStreamResponse = processedResponse.SpeechStreamResponse
-		streamResponse.UnifAITranscriptionStreamResponse = processedResponse.TranscriptionStreamResponse
+		streamResponse.RakshaTextCompletionResponse = processedResponse.TextCompletionResponse
+		streamResponse.RakshaChatResponse = processedResponse.ChatResponse
+		streamResponse.RakshaResponsesStreamResponse = processedResponse.ResponsesStreamResponse
+		streamResponse.RakshaSpeechStreamResponse = processedResponse.SpeechStreamResponse
+		streamResponse.RakshaTranscriptionStreamResponse = processedResponse.TranscriptionStreamResponse
 	}
 	if processedError != nil {
-		streamResponse.UnifAIError = processedError
+		streamResponse.RakshaError = processedError
 	}
 
 	GateSendChunk(ctx, streamResponse, responseChan)
 }
 
-// CreateUnifAITextCompletionChunkResponse creates a unifai text completion chunk response.
-func CreateUnifAITextCompletionChunkResponse(
+// CreateRakshaTextCompletionChunkResponse creates a raksha text completion chunk response.
+func CreateRakshaTextCompletionChunkResponse(
 	id string,
-	usage *schemas.UnifAILLMUsage,
+	usage *schemas.RakshaLLMUsage,
 	finishReason *string,
 	currentChunkIndex int,
 	requestType schemas.RequestType,
 	model string,
-) *schemas.UnifAITextCompletionResponse {
-	response := &schemas.UnifAITextCompletionResponse{
+) *schemas.RakshaTextCompletionResponse {
+	response := &schemas.RakshaTextCompletionResponse{
 		ID:     id,
 		Model:  model,
 		Object: "text_completion",
 		Usage:  usage,
-		Choices: []schemas.UnifAIResponseChoice{
+		Choices: []schemas.RakshaResponseChoice{
 			{
 				FinishReason:                 finishReason,
 				TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{}, // empty delta
 			},
 		},
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			ChunkIndex: currentChunkIndex + 1,
 		},
 	}
 	return response
 }
 
-// CreateUnifAIChatCompletionChunkResponse creates a unifai chat completion chunk response.
-func CreateUnifAIChatCompletionChunkResponse(
+// CreateRakshaChatCompletionChunkResponse creates a raksha chat completion chunk response.
+func CreateRakshaChatCompletionChunkResponse(
 	id string,
-	usage *schemas.UnifAILLMUsage,
+	usage *schemas.RakshaLLMUsage,
 	finishReason *string,
 	currentChunkIndex int,
 	model string,
 	created int,
-) *schemas.UnifAIChatResponse {
-	response := &schemas.UnifAIChatResponse{
+) *schemas.RakshaChatResponse {
+	response := &schemas.RakshaChatResponse{
 		ID:      id,
 		Model:   model,
 		Created: created,
 		Object:  "chat.completion.chunk",
 		Usage:   usage,
-		Choices: []schemas.UnifAIResponseChoice{
+		Choices: []schemas.RakshaResponseChoice{
 			{
 				FinishReason: finishReason,
 				ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -2730,7 +2730,7 @@ func CreateUnifAIChatCompletionChunkResponse(
 				},
 			},
 		},
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			ChunkIndex: currentChunkIndex + 1,
 		},
 	}
@@ -2738,13 +2738,13 @@ func CreateUnifAIChatCompletionChunkResponse(
 }
 
 // HandleStreamControlSkip checks if the stream control should be skipped.
-func HandleStreamControlSkip(unifaiErr *schemas.UnifAIError) bool {
-	if unifaiErr == nil || unifaiErr.StreamControl == nil {
+func HandleStreamControlSkip(rakshaErr *schemas.RakshaError) bool {
+	if rakshaErr == nil || rakshaErr.StreamControl == nil {
 		return false
 	}
-	if unifaiErr.StreamControl.SkipStream != nil && *unifaiErr.StreamControl.SkipStream {
-		if unifaiErr.StreamControl.LogError != nil && *unifaiErr.StreamControl.LogError {
-			getLogger().Warn("Error in stream: " + unifaiErr.Error.Message)
+	if rakshaErr.StreamControl.SkipStream != nil && *rakshaErr.StreamControl.SkipStream {
+		if rakshaErr.StreamControl.LogError != nil && *rakshaErr.StreamControl.LogError {
+			getLogger().Warn("Error in stream: " + rakshaErr.Error.Message)
 		}
 		return true
 	}
@@ -2770,7 +2770,7 @@ func NormalizeOpenAICompatibleBaseURL(baseURL string) string {
 
 // GetProviderName extracts the provider name from custom provider configuration.
 // If a custom provider key is specified, it returns that; otherwise, it returns the default provider.
-// Note: CustomProviderKey is internally set by UnifAI and should always match the provider name.
+// Note: CustomProviderKey is internally set by Raksha and should always match the provider name.
 func GetProviderName(defaultProvider schemas.ModelProvider, customConfig *schemas.CustomProviderConfig) schemas.ModelProvider {
 	if customConfig != nil {
 		if key := strings.TrimSpace(customConfig.CustomProviderKey); key != "" {
@@ -2804,7 +2804,7 @@ func ProviderIsResponsesAPINative(providerName schemas.ModelProvider) bool {
 }
 
 // ReleaseStreamingResponse releases a streaming response by draining the body stream and releasing the response.
-func ReleaseStreamingResponse(ctx *schemas.UnifAIContext, resp *fasthttp.Response) {
+func ReleaseStreamingResponse(ctx *schemas.RakshaContext, resp *fasthttp.Response) {
 	if resp == nil {
 		return
 	}
@@ -2820,7 +2820,7 @@ func ReleaseStreamingResponse(ctx *schemas.UnifAIContext, resp *fasthttp.Respons
 	// intentional trade-off, so keep the defer below this check. GetAndSetValue
 	// is a single locked compare-and-swap, closing the race the previous
 	// Value-only check left open against a concurrent timer/cancellation close.
-	if prev, _ := ctx.GetAndSetValue(schemas.UnifAIContextKeyConnectionClosed, true).(bool); prev {
+	if prev, _ := ctx.GetAndSetValue(schemas.RakshaContextKeyConnectionClosed, true).(bool); prev {
 		return
 	}
 	defer func() {
@@ -2850,48 +2850,48 @@ func ReleaseStreamingResponse(ctx *schemas.UnifAIContext, resp *fasthttp.Respons
 	fasthttp.ReleaseResponse(resp)
 }
 
-// GetUnifAIResponseForStreamResponse converts the provided responses to a unifai response.
-func GetUnifAIResponseForStreamResponse(
-	textCompletionResponse *schemas.UnifAITextCompletionResponse,
-	chatResponse *schemas.UnifAIChatResponse,
-	responsesStreamResponse *schemas.UnifAIResponsesStreamResponse,
-	speechStreamResponse *schemas.UnifAISpeechStreamResponse,
-	transcriptionStreamResponse *schemas.UnifAITranscriptionStreamResponse,
-	imageGenerationStreamResponse *schemas.UnifAIImageGenerationStreamResponse,
-) *schemas.UnifAIResponse {
-	// TODO add unifai response pooling here
-	unifaiResponse := &schemas.UnifAIResponse{}
+// GetRakshaResponseForStreamResponse converts the provided responses to a raksha response.
+func GetRakshaResponseForStreamResponse(
+	textCompletionResponse *schemas.RakshaTextCompletionResponse,
+	chatResponse *schemas.RakshaChatResponse,
+	responsesStreamResponse *schemas.RakshaResponsesStreamResponse,
+	speechStreamResponse *schemas.RakshaSpeechStreamResponse,
+	transcriptionStreamResponse *schemas.RakshaTranscriptionStreamResponse,
+	imageGenerationStreamResponse *schemas.RakshaImageGenerationStreamResponse,
+) *schemas.RakshaResponse {
+	// TODO add raksha response pooling here
+	rakshaResponse := &schemas.RakshaResponse{}
 
 	switch {
 	case textCompletionResponse != nil:
-		unifaiResponse.TextCompletionResponse = textCompletionResponse
-		return unifaiResponse
+		rakshaResponse.TextCompletionResponse = textCompletionResponse
+		return rakshaResponse
 	case chatResponse != nil:
-		unifaiResponse.ChatResponse = chatResponse
-		return unifaiResponse
+		rakshaResponse.ChatResponse = chatResponse
+		return rakshaResponse
 	case responsesStreamResponse != nil:
-		unifaiResponse.ResponsesStreamResponse = responsesStreamResponse
-		return unifaiResponse
+		rakshaResponse.ResponsesStreamResponse = responsesStreamResponse
+		return rakshaResponse
 	case speechStreamResponse != nil:
-		unifaiResponse.SpeechStreamResponse = speechStreamResponse
-		return unifaiResponse
+		rakshaResponse.SpeechStreamResponse = speechStreamResponse
+		return rakshaResponse
 	case transcriptionStreamResponse != nil:
-		unifaiResponse.TranscriptionStreamResponse = transcriptionStreamResponse
-		return unifaiResponse
+		rakshaResponse.TranscriptionStreamResponse = transcriptionStreamResponse
+		return rakshaResponse
 	case imageGenerationStreamResponse != nil:
-		unifaiResponse.ImageGenerationStreamResponse = imageGenerationStreamResponse
-		return unifaiResponse
+		rakshaResponse.ImageGenerationStreamResponse = imageGenerationStreamResponse
+		return rakshaResponse
 	}
 	return nil
 }
 
-// aggregateListModelsResponses merges multiple UnifAIListModelsResponse objects into a single response.
+// aggregateListModelsResponses merges multiple RakshaListModelsResponse objects into a single response.
 // It concatenates all model arrays, deduplicates based on model ID, sums up latencies across all responses,
 // and concatenates raw responses into an array.
 // When duplicate IDs are found, the first occurrence is kept to maintain the original ordering.
-func aggregateListModelsResponses(responses []*schemas.UnifAIListModelsResponse) *schemas.UnifAIListModelsResponse {
+func aggregateListModelsResponses(responses []*schemas.RakshaListModelsResponse) *schemas.RakshaListModelsResponse {
 	if len(responses) == 0 {
-		return &schemas.UnifAIListModelsResponse{
+		return &schemas.RakshaListModelsResponse{
 			Data: []schemas.Model{},
 		}
 	}
@@ -2900,7 +2900,7 @@ func aggregateListModelsResponses(responses []*schemas.UnifAIListModelsResponse)
 
 	// Use a map to track unique model IDs for efficient deduplication
 	seenIDs := make(map[string]struct{})
-	aggregated := &schemas.UnifAIListModelsResponse{
+	aggregated := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0),
 	}
 
@@ -2941,10 +2941,10 @@ func aggregateListModelsResponses(responses []*schemas.UnifAIListModelsResponse)
 // extractSuccessfulListModelsResponses extracts successful responses from a results channel
 // and tracks per-key status information. This utility reduces code duplication across providers
 // for handling multi-key ListModels requests.
-func extractSuccessfulListModelsResponses(results chan schemas.ListModelsByKeyResult, provider schemas.ModelProvider) ([]*schemas.UnifAIListModelsResponse, []schemas.KeyStatus, *schemas.UnifAIError) {
-	var successfulResponses []*schemas.UnifAIListModelsResponse
+func extractSuccessfulListModelsResponses(results chan schemas.ListModelsByKeyResult, provider schemas.ModelProvider) ([]*schemas.RakshaListModelsResponse, []schemas.KeyStatus, *schemas.RakshaError) {
+	var successfulResponses []*schemas.RakshaListModelsResponse
 	var keyStatuses []schemas.KeyStatus
-	var lastError *schemas.UnifAIError
+	var lastError *schemas.RakshaError
 
 	for result := range results {
 		if result.Err != nil {
@@ -2979,8 +2979,8 @@ func extractSuccessfulListModelsResponses(results chan schemas.ListModelsByKeyRe
 		if lastError != nil {
 			return nil, keyStatuses, lastError
 		}
-		return nil, keyStatuses, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, keyStatuses, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: "all keys failed to list models",
 			},
@@ -2995,9 +2995,9 @@ func extractSuccessfulListModelsResponses(results chan schemas.ListModelsByKeyRe
 // This centralizes the status tracking logic for keyless providers.
 func HandleKeylessListModelsRequest(
 	provider schemas.ModelProvider,
-	listFunc func() (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
-	resp, unifaiErr := listFunc()
+	listFunc func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError),
+) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+	resp, rakshaErr := listFunc()
 
 	keyStatus := schemas.KeyStatus{
 		KeyID:    "", // Empty for keyless providers
@@ -3005,11 +3005,11 @@ func HandleKeylessListModelsRequest(
 	}
 
 	// If request failed, attach status to error
-	if unifaiErr != nil {
+	if rakshaErr != nil {
 		keyStatus.Status = schemas.KeyStatusListModelsFailed
-		keyStatus.Error = unifaiErr
-		unifaiErr.ExtraFields.KeyStatuses = []schemas.KeyStatus{keyStatus}
-		return nil, unifaiErr
+		keyStatus.Error = rakshaErr
+		rakshaErr.ExtraFields.KeyStatuses = []schemas.KeyStatus{keyStatus}
+		return nil, rakshaErr
 	}
 
 	// Success case
@@ -3019,18 +3019,18 @@ func HandleKeylessListModelsRequest(
 		return resp, nil
 	}
 
-	return resp, unifaiErr
+	return resp, rakshaErr
 }
 
 // HandleMultipleListModelsRequests handles multiple list models requests concurrently for different keys.
 // It launches concurrent requests for all keys and waits for all goroutines to complete.
 // It returns the aggregated response with per-key status information or an error if the request fails.
 func HandleMultipleListModelsRequests(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	keys []schemas.Key,
-	request *schemas.UnifAIListModelsRequest,
-	listModelsByKey func(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+	request *schemas.RakshaListModelsRequest,
+	listModelsByKey func(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError),
+) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	startTime := time.Now()
 
 	results := make(chan schemas.ListModelsByKeyResult, len(keys))
@@ -3046,8 +3046,8 @@ func HandleMultipleListModelsRequests(
 				if r := recover(); r != nil {
 					getLogger().Error("panic in listModelsByKey for key %s (%s): %v", k.Name, k.ID, r)
 					results <- schemas.ListModelsByKeyResult{
-						Err: &schemas.UnifAIError{
-							IsUnifAIError: true,
+						Err: &schemas.RakshaError{
+							IsRakshaError: true,
 							Error: &schemas.ErrorField{
 								Message: "internal error while listing models for key",
 							},
@@ -3056,8 +3056,8 @@ func HandleMultipleListModelsRequests(
 					}
 				}
 			}()
-			resp, unifaiErr := listModelsByKey(ctx, k, request)
-			results <- schemas.ListModelsByKeyResult{Response: resp, Err: unifaiErr, KeyID: k.ID}
+			resp, rakshaErr := listModelsByKey(ctx, k, request)
+			results <- schemas.ListModelsByKeyResult{Response: resp, Err: rakshaErr, KeyID: k.ID}
 		}(key)
 	}
 
@@ -3195,19 +3195,19 @@ func GetBudgetTokensFromReasoningEffort(
 // This is called when the final chunk is processed (when StreamEndIndicator is true).
 // It retrieves the deferred span handle from TraceStore using the trace ID from context,
 // populates response attributes from accumulated chunks, and ends the span.
-func completeDeferredSpan(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, err *schemas.UnifAIError, postHookSpanFinalizer func(context.Context)) {
+func completeDeferredSpan(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError, postHookSpanFinalizer func(context.Context)) {
 	if ctx == nil {
 		return
 	}
 
 	// Get the trace ID from context (this IS available in the provider's goroutine)
-	traceID, ok := ctx.Value(schemas.UnifAIContextKeyTraceID).(string)
+	traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
 	if !ok || traceID == "" {
 		return
 	}
 
 	// Get the tracer from context
-	tracerVal := ctx.Value(schemas.UnifAIContextKeyTracer)
+	tracerVal := ctx.Value(schemas.RakshaContextKeyTracer)
 	if tracerVal == nil {
 		return
 	}
@@ -3231,7 +3231,7 @@ func completeDeferredSpan(ctx *schemas.UnifAIContext, result *schemas.UnifAIResp
 	}
 
 	// Get accumulated response with full data (content, tool calls, reasoning, etc.)
-	// This builds a complete UnifAIResponse from all the streaming chunks
+	// This builds a complete RakshaResponse from all the streaming chunks
 	accumulatedResp, ttftNs, chunkCount := tracer.GetAccumulatedChunks(traceID)
 
 	// Set TTFT and chunk count attributes regardless of accumulated response availability
@@ -3259,7 +3259,7 @@ func completeDeferredSpan(ctx *schemas.UnifAIContext, result *schemas.UnifAIResp
 		// Get the deferred span ID (the llm.call span) to set as parent for post-hook spans
 		spanID := tracer.GetDeferredSpanID(traceID)
 		if spanID != "" {
-			finalizerCtx := context.WithValue(ctx, schemas.UnifAIContextKeySpanID, spanID)
+			finalizerCtx := context.WithValue(ctx, schemas.RakshaContextKeySpanID, spanID)
 			postHookSpanFinalizer(finalizerCtx)
 		} else {
 			postHookSpanFinalizer(ctx)

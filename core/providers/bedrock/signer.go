@@ -14,8 +14,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/smithy-go/encoding/httpbinding"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -280,16 +280,16 @@ func signAWSRequestFastHTTP(
 	accessKey, secretKey string,
 	sessionToken *string,
 	region, service string,
-) *schemas.UnifAIError {
+) *schemas.RakshaError {
 	// Get AWS credentials if not provided
 	if accessKey == "" && secretKey == "" {
 		cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 		if err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to load aws config", err)
+			return providerUtils.NewRakshaOperationError("failed to load aws config", err)
 		}
 		creds, err := cfg.Credentials.Retrieve(ctx)
 		if err != nil {
-			return providerUtils.NewUnifAIOperationError("failed to retrieve aws credentials", err)
+			return providerUtils.NewRakshaOperationError("failed to retrieve aws credentials", err)
 		}
 		accessKey = creds.AccessKeyID
 		secretKey = creds.SecretAccessKey

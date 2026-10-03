@@ -1,4 +1,4 @@
-"""MITM CA certificate helpers for UnifAI Guard."""
+"""MITM CA certificate helpers for Raksha Guard."""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ def ensure_mitm_certs() -> None:
         mitm_dir = Path(os.path.expanduser("~/.mitmproxy"))
         mitm_dir.mkdir(parents=True, exist_ok=True)
         CertStore.from_store(path=mitm_dir, basename="mitmproxy", key_size=2048)
-        print(f"[UnifAI Guard] mitmproxy cert store ready: {mitm_dir}")
+        print(f"[Raksha Guard] mitmproxy cert store ready: {mitm_dir}")
     except Exception as e:
-        print(f"[UnifAI Guard WARNING] Could not ensure mitm certs: {e}")
+        print(f"[Raksha Guard WARNING] Could not ensure mitm certs: {e}")
 
 
 def install_ca_certificate() -> bool:
@@ -35,6 +35,6 @@ def install_ca_certificate() -> bool:
     # macOS `security add-trusted-cert` can block on an admin password dialog forever.
     # If we already trust the CA, never re-prompt on every launch.
     if platform_ca_trusted(status_path):
-        print("[UnifAI Guard] CA already trusted — skip reinstall.")
+        print("[Raksha Guard] CA already trusted — skip reinstall.")
         return True
     return platform_install_ca(status_path)

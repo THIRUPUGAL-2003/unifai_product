@@ -1,14 +1,14 @@
 package openai
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAISpeechRequest converts an OpenAI speech request to UnifAI format
-func (request *OpenAISpeechRequest) ToUnifAISpeechRequest(ctx *schemas.UnifAIContext) *schemas.UnifAISpeechRequest {
+// ToRakshaSpeechRequest converts an OpenAI speech request to Raksha format
+func (request *OpenAISpeechRequest) ToRakshaSpeechRequest(ctx *schemas.RakshaContext) *schemas.RakshaSpeechRequest {
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.UnifAISpeechRequest{
+	return &schemas.RakshaSpeechRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     &schemas.SpeechInput{Input: request.Input},
@@ -17,17 +17,17 @@ func (request *OpenAISpeechRequest) ToUnifAISpeechRequest(ctx *schemas.UnifAICon
 	}
 }
 
-// ToOpenAISpeechRequest converts a UnifAI speech request to OpenAI format
-func ToOpenAISpeechRequest(unifaiReq *schemas.UnifAISpeechRequest) *OpenAISpeechRequest {
-	if unifaiReq == nil || unifaiReq.Input.Input == "" {
+// ToOpenAISpeechRequest converts a Raksha speech request to OpenAI format
+func ToOpenAISpeechRequest(rakshaReq *schemas.RakshaSpeechRequest) *OpenAISpeechRequest {
+	if rakshaReq == nil || rakshaReq.Input.Input == "" {
 		return nil
 	}
 
-	speechInput := unifaiReq.Input
-	params := unifaiReq.Params
+	speechInput := rakshaReq.Input
+	params := rakshaReq.Params
 
 	openaiReq := &OpenAISpeechRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 		Input: speechInput.Input,
 	}
 
@@ -35,8 +35,8 @@ func ToOpenAISpeechRequest(unifaiReq *schemas.UnifAISpeechRequest) *OpenAISpeech
 		openaiReq.SpeechParameters = *params
 	}
 
-	if unifaiReq.Params != nil {
-		openaiReq.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		openaiReq.ExtraParams = rakshaReq.Params.ExtraParams
 	}
 	return openaiReq
 }

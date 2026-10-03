@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
 )
 
 // SupportsRealtimeAPI returns true since ElevenLabs supports Conversational AI via WebSocket.
@@ -26,7 +26,7 @@ func (provider *ElevenlabsProvider) RealtimeWebSocketURL(key schemas.Key, model 
 }
 
 // RealtimeHeaders returns the headers required for the ElevenLabs Conversational AI WebSocket.
-func (provider *ElevenlabsProvider) RealtimeHeaders(_ *schemas.UnifAIContext, key schemas.Key) (map[string]string, *schemas.UnifAIError) {
+func (provider *ElevenlabsProvider) RealtimeHeaders(_ *schemas.RakshaContext, key schemas.Key) (map[string]string, *schemas.RakshaError) {
 	headers := map[string]string{
 		"xi-api-key": key.Value.GetValue(),
 	}
@@ -45,15 +45,15 @@ func (provider *ElevenlabsProvider) SupportsRealtimeWebRTC() bool {
 }
 
 // ExchangeRealtimeWebRTCSDP is not yet implemented for ElevenLabs.
-func (provider *ElevenlabsProvider) ExchangeRealtimeWebRTCSDP(_ *schemas.UnifAIContext, _ schemas.Key, _ string, _ string, _ json.RawMessage) (string, *schemas.UnifAIError) {
-	return "", &schemas.UnifAIError{
-		IsUnifAIError: true,
+func (provider *ElevenlabsProvider) ExchangeRealtimeWebRTCSDP(_ *schemas.RakshaContext, _ schemas.Key, _ string, _ string, _ json.RawMessage) (string, *schemas.RakshaError) {
+	return "", &schemas.RakshaError{
+		IsRakshaError: true,
 		StatusCode:     schemas.Ptr(400),
 		Error:          &schemas.ErrorField{Type: schemas.Ptr("invalid_request_error"), Message: "WebRTC SDP exchange is not yet implemented for ElevenLabs"},
 	}
 }
 
-func (provider *ElevenlabsProvider) ShouldStartRealtimeTurn(event *schemas.UnifAIRealtimeEvent) bool {
+func (provider *ElevenlabsProvider) ShouldStartRealtimeTurn(event *schemas.RakshaRealtimeEvent) bool {
 	return false
 }
 
@@ -69,7 +69,7 @@ func (provider *ElevenlabsProvider) RealtimeWebSocketSubprotocol() string {
 	return ""
 }
 
-func (provider *ElevenlabsProvider) ShouldForwardRealtimeEvent(event *schemas.UnifAIRealtimeEvent) bool {
+func (provider *ElevenlabsProvider) ShouldForwardRealtimeEvent(event *schemas.RakshaRealtimeEvent) bool {
 	return true
 }
 
@@ -130,14 +130,14 @@ type elevenlabsCorrectionEvent struct {
 	CorrectedAgentResponse string `json:"corrected_agent_response,omitempty"`
 }
 
-// ToUnifAIRealtimeEvent converts an ElevenLabs Conversational AI event to the unified UnifAI format.
-func (provider *ElevenlabsProvider) ToUnifAIRealtimeEvent(providerEvent json.RawMessage) (*schemas.UnifAIRealtimeEvent, error) {
+// ToRakshaRealtimeEvent converts an ElevenLabs Conversational AI event to the unified Raksha format.
+func (provider *ElevenlabsProvider) ToRakshaRealtimeEvent(providerEvent json.RawMessage) (*schemas.RakshaRealtimeEvent, error) {
 	var raw elevenlabsEvent
 	if err := json.Unmarshal(providerEvent, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ElevenLabs realtime event: %w", err)
 	}
 
-	event := &schemas.UnifAIRealtimeEvent{
+	event := &schemas.RakshaRealtimeEvent{
 		RawData: providerEvent,
 	}
 
@@ -230,16 +230,16 @@ func (provider *ElevenlabsProvider) ToUnifAIRealtimeEvent(providerEvent json.Raw
 	return event, nil
 }
 
-// ToProviderRealtimeEvent converts a unified UnifAI Realtime event to ElevenLabs' native JSON.
-func (provider *ElevenlabsProvider) ToProviderRealtimeEvent(unifaiEvent *schemas.UnifAIRealtimeEvent) (json.RawMessage, error) {
-	switch unifaiEvent.Type {
+// ToProviderRealtimeEvent converts a unified Raksha Realtime event to ElevenLabs' native JSON.
+func (provider *ElevenlabsProvider) ToProviderRealtimeEvent(rakshaEvent *schemas.RakshaRealtimeEvent) (json.RawMessage, error) {
+	switch rakshaEvent.Type {
 	case schemas.RTEventInputAudioAppend:
-		if unifaiEvent.Delta == nil {
+		if rakshaEvent.Delta == nil {
 			return nil, fmt.Errorf("delta must be set for input_audio_buffer.append events")
 		}
 		out := map[string]interface{}{
 			"type":             elUserAudioChunk,
-			"user_audio_chunk": unifaiEvent.Delta.Audio,
+			"user_audio_chunk": rakshaEvent.Delta.Audio,
 		}
 		return schemas.MarshalSorted(out)
 
@@ -250,7 +250,7 @@ func (provider *ElevenlabsProvider) ToProviderRealtimeEvent(unifaiEvent *schemas
 
 	default:
 		out := map[string]interface{}{
-			"type": string(unifaiEvent.Type),
+			"type": string(rakshaEvent.Type),
 		}
 		return schemas.MarshalSorted(out)
 	}

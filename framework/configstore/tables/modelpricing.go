@@ -3,7 +3,7 @@ package tables
 import (
 	"encoding/json"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"gorm.io/gorm"
 )
 

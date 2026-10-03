@@ -299,7 +299,7 @@ function ExpandedConfigPanel({
 						</SelectContent>
 					</Select>
 				</FieldRow>
-				<FieldRow label="Description" hint="Note for users. Not used by UnifAI.">
+				<FieldRow label="Description" hint="Note for users. Not used by Raksha.">
 					<Textarea
 						value={config.description ?? ""}
 						onChange={(e) => {

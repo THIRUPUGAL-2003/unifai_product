@@ -160,7 +160,7 @@ function ConsentView({ flowId }: { flowId: string }) {
 					{clientName} wants to connect
 				</h1>
 				<p className="text-muted-foreground mt-1.5 text-sm">
-					Choose how you'd like to identify yourself to UnifAI
+					Choose how you'd like to identify yourself to Raksha
 				</p>
 			</div>
 
@@ -219,7 +219,7 @@ function ConsentView({ flowId }: { flowId: string }) {
 							<div>
 								<p className="text-sm font-medium">Sign in with your account</p>
 								<p className="text-muted-foreground text-xs">
-									Requires a UnifAI dashboard account
+									Requires a Raksha dashboard account
 								</p>
 							</div>
 						</div>
@@ -252,7 +252,7 @@ function ConsentView({ flowId }: { flowId: string }) {
 							<div>
 								<p className="text-sm font-medium">Virtual Key</p>
 								<p className="text-muted-foreground text-xs">
-									Use a Virtual Key from your UnifAI workspace
+									Use a Virtual Key from your Raksha workspace
 								</p>
 							</div>
 						</div>

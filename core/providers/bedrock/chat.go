@@ -7,25 +7,25 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToBedrockChatCompletionRequest converts a UnifAI request to Bedrock Converse API format
-func ToBedrockChatCompletionRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIChatRequest) (*BedrockConverseRequest, error) {
-	if unifaiReq == nil {
-		return nil, fmt.Errorf("unifai request is nil")
+// ToBedrockChatCompletionRequest converts a Raksha request to Bedrock Converse API format
+func ToBedrockChatCompletionRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest) (*BedrockConverseRequest, error) {
+	if rakshaReq == nil {
+		return nil, fmt.Errorf("raksha request is nil")
 	}
 
-	if unifaiReq.Input == nil {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("only chat completion requests are supported for Bedrock Converse API")
 	}
 
 	bedrockReq := &BedrockConverseRequest{
-		ModelID: unifaiReq.Model,
+		ModelID: rakshaReq.Model,
 	}
 
-	input := unifaiReq.Input
-	if schemas.IsAnthropicModelFamily(ctx, unifaiReq.Model) && ctx.Value(schemas.UnifAIContextKeySupportsAssistantPrefill) == false {
+	input := rakshaReq.Input
+	if schemas.IsAnthropicModelFamily(ctx, rakshaReq.Model) && ctx.Value(schemas.RakshaContextKeySupportsAssistantPrefill) == false {
 		trimmed := len(input)
 		for trimmed > 0 && input[trimmed-1].Role == schemas.ChatMessageRoleAssistant {
 			trimmed--
@@ -46,7 +46,7 @@ func ToBedrockChatCompletionRequest(ctx *schemas.UnifAIContext, unifaiReq *schem
 	// Trim trailing whitespace from the last assistant message text blocks
 	// (only for Anthropic models which use text-based prefill)
 	lastMsgIndex := len(bedrockReq.Messages) - 1
-	if schemas.IsAnthropicModelFamily(ctx, unifaiReq.Model) && lastMsgIndex >= 0 && bedrockReq.Messages[lastMsgIndex].Role == BedrockMessageRoleAssistant {
+	if schemas.IsAnthropicModelFamily(ctx, rakshaReq.Model) && lastMsgIndex >= 0 && bedrockReq.Messages[lastMsgIndex].Role == BedrockMessageRoleAssistant {
 		blocks := bedrockReq.Messages[lastMsgIndex].Content
 		for j := len(blocks) - 1; j >= 0; j-- {
 			if blocks[j].Text != nil {
@@ -57,15 +57,15 @@ func ToBedrockChatCompletionRequest(ctx *schemas.UnifAIContext, unifaiReq *schem
 	}
 
 	// Convert parameters and configurations
-	if err := convertChatParameters(ctx, unifaiReq, bedrockReq); err != nil {
+	if err := convertChatParameters(ctx, rakshaReq, bedrockReq); err != nil {
 		return nil, fmt.Errorf("failed to convert chat parameters: %w", err)
 	}
 
 	// Ensure tool config is present when needed
-	ensureChatToolConfigForConversation(ctx, unifaiReq, bedrockReq)
+	ensureChatToolConfigForConversation(ctx, rakshaReq, bedrockReq)
 
 	// capModel is the canonical model used for capability gating (resolves aliases).
-	capModel := schemas.ResolveCanonicalModel(ctx, unifaiReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
 	if !schemas.BedrockModelSupportsCachePoints(capModel) {
 		stripCachePointsFromBedrockRequest(bedrockReq)
 	} else if !schemas.BedrockModelSupportsExtendedCacheTTL(capModel) {
@@ -75,8 +75,8 @@ func ToBedrockChatCompletionRequest(ctx *schemas.UnifAIContext, unifaiReq *schem
 	return bedrockReq, nil
 }
 
-// ToUnifAIChatResponse converts a Bedrock Converse API response to UnifAI format
-func (response *BedrockConverseResponse) ToUnifAIChatResponse(ctx context.Context, model string) (*schemas.UnifAIChatResponse, error) {
+// ToRakshaChatResponse converts a Bedrock Converse API response to Raksha format
+func (response *BedrockConverseResponse) ToRakshaChatResponse(ctx context.Context, model string) (*schemas.RakshaChatResponse, error) {
 	if response == nil {
 		return nil, fmt.Errorf("bedrock response is nil")
 	}
@@ -102,7 +102,7 @@ func (response *BedrockConverseResponse) ToUnifAIChatResponse(ctx context.Contex
 
 			if contentBlock.ToolUse != nil {
 				// Check if this is the structured output tool
-				if structuredOutputToolName, ok := ctx.Value(schemas.UnifAIContextKeyStructuredOutputToolName).(string); ok && contentBlock.ToolUse.Name == structuredOutputToolName {
+				if structuredOutputToolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok && contentBlock.ToolUse.Name == structuredOutputToolName {
 					// This is structured output - set contentStr and skip adding to toolCalls
 					if contentBlock.ToolUse.Input != nil {
 						jsonStr := string(contentBlock.ToolUse.Input)
@@ -141,7 +141,7 @@ func (response *BedrockConverseResponse) ToUnifAIChatResponse(ctx context.Contex
 				}
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index:     len(reasoningDetails),
-					Type:      schemas.UnifAIReasoningDetailsTypeText,
+					Type:      schemas.RakshaReasoningDetailsTypeText,
 					Text:      contentBlock.ReasoningContent.ReasoningText.Text,
 					Signature: contentBlock.ReasoningContent.ReasoningText.Signature,
 				})
@@ -233,7 +233,7 @@ func (response *BedrockConverseResponse) ToUnifAIChatResponse(ctx context.Contex
 	}
 
 	// Create the response choice
-	choices := []schemas.UnifAIResponseChoice{
+	choices := []schemas.RakshaResponseChoice{
 		{
 			Index: 0,
 			ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -246,17 +246,17 @@ func (response *BedrockConverseResponse) ToUnifAIChatResponse(ctx context.Contex
 			FinishReason: func() *string {
 				mapped := convertBedrockStopReason(response.StopReason)
 				if usedStructuredOutputTool && len(toolCalls) == 0 &&
-					mapped == string(schemas.UnifAIFinishReasonToolCalls) {
-					mapped = string(schemas.UnifAIFinishReasonStop)
+					mapped == string(schemas.RakshaFinishReasonToolCalls) {
+					mapped = string(schemas.RakshaFinishReasonStop)
 				}
 				return &mapped
 			}(),
 		},
 	}
-	var usage *schemas.UnifAILLMUsage
+	var usage *schemas.RakshaLLMUsage
 	if response.Usage != nil {
 		// Convert usage information
-		usage = &schemas.UnifAILLMUsage{
+		usage = &schemas.RakshaLLMUsage{
 			PromptTokens:     response.Usage.InputTokens,
 			CompletionTokens: response.Usage.OutputTokens,
 			TotalTokens:      response.Usage.TotalTokens,
@@ -291,23 +291,23 @@ func (response *BedrockConverseResponse) ToUnifAIChatResponse(ctx context.Contex
 		}
 	}
 
-	// Create the final UnifAI response
-	unifaiResponse := &schemas.UnifAIChatResponse{
+	// Create the final Raksha response
+	rakshaResponse := &schemas.RakshaChatResponse{
 		ID:          uuid.New().String(),
 		Model:       model,
 		Object:      "chat.completion",
 		Choices:     choices,
 		Usage:       usage,
 		Created:     int(time.Now().Unix()),
-		ExtraFields: schemas.UnifAIResponseExtraFields{},
+		ExtraFields: schemas.RakshaResponseExtraFields{},
 	}
 
 	if response.ServiceTier != nil && response.ServiceTier.Type != "" {
-		tier := mapBedrockServiceTierToUnifAI(response.ServiceTier.Type)
-		unifaiResponse.ServiceTier = &tier
+		tier := mapBedrockServiceTierToRaksha(response.ServiceTier.Type)
+		rakshaResponse.ServiceTier = &tier
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // BedrockStreamState tracks per-stream tool call index state.
@@ -331,7 +331,7 @@ func NewBedrockStreamStateWithContext(ctx context.Context) *BedrockStreamState {
 	return state
 }
 
-func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStreamState) (*schemas.UnifAIChatResponse, *schemas.UnifAIError, bool) {
+func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStreamState) (*schemas.RakshaChatResponse, *schemas.RakshaError, bool) {
 	if state == nil {
 		state = NewBedrockStreamState()
 	} else if state.contentBlockToToolCallIdx == nil {
@@ -342,9 +342,9 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 	switch {
 	case chunk.Role != nil:
 		// Send empty response to signal start
-		streamResponse := &schemas.UnifAIChatResponse{
+		streamResponse := &schemas.RakshaChatResponse{
 			Object: "chat.completion.chunk",
-			Choices: []schemas.UnifAIResponseChoice{
+			Choices: []schemas.RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -376,9 +376,9 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 		toolCall.Function.Name = schemas.Ptr(bedrockRestoreToolName(state.ctx, toolUseStart.Name))
 		toolCall.Function.Arguments = "" // Start with empty arguments
 
-		streamResponse := &schemas.UnifAIChatResponse{
+		streamResponse := &schemas.RakshaChatResponse{
 			Object: "chat.completion.chunk",
-			Choices: []schemas.UnifAIResponseChoice{
+			Choices: []schemas.RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -398,9 +398,9 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 			// Handle text delta
 			text := *chunk.Delta.Text
 			if text != "" {
-				streamResponse := &schemas.UnifAIChatResponse{
+				streamResponse := &schemas.RakshaChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.UnifAIResponseChoice{
+					Choices: []schemas.RakshaResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -433,9 +433,9 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 			// This is a simplified approach - in practice, you'd need to track tool calls across chunks
 			toolCall.Function.Arguments = toolUseDelta.Input
 
-			streamResponse := &schemas.UnifAIChatResponse{
+			streamResponse := &schemas.RakshaChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.UnifAIResponseChoice{
+				Choices: []schemas.RakshaResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -458,11 +458,11 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 				return nil, nil, false
 			}
 
-			var streamResponse *schemas.UnifAIChatResponse
+			var streamResponse *schemas.RakshaChatResponse
 			if reasoningContentDelta.Text != nil && *reasoningContentDelta.Text != "" {
-				streamResponse = &schemas.UnifAIChatResponse{
+				streamResponse = &schemas.RakshaChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.UnifAIResponseChoice{
+					Choices: []schemas.RakshaResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -471,7 +471,7 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 									ReasoningDetails: []schemas.ChatReasoningDetails{
 										{
 											Index: 0,
-											Type:  schemas.UnifAIReasoningDetailsTypeText,
+											Type:  schemas.RakshaReasoningDetailsTypeText,
 											Text:  reasoningContentDelta.Text,
 										},
 									},
@@ -481,9 +481,9 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 					},
 				}
 			} else if reasoningContentDelta.Signature != nil {
-				streamResponse = &schemas.UnifAIChatResponse{
+				streamResponse = &schemas.RakshaChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.UnifAIResponseChoice{
+					Choices: []schemas.RakshaResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -491,7 +491,7 @@ func (chunk *BedrockStreamEvent) ToUnifAIChatCompletionStream(state *BedrockStre
 									ReasoningDetails: []schemas.ChatReasoningDetails{
 										{
 											Index:     0,
-											Type:      schemas.UnifAIReasoningDetailsTypeText,
+											Type:      schemas.RakshaReasoningDetailsTypeText,
 											Signature: reasoningContentDelta.Signature,
 										},
 									},

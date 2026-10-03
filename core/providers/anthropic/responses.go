@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/tidwall/gjson"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
 )
 
 // AnthropicResponsesStreamState tracks state during streaming conversion for responses API
@@ -148,7 +148,7 @@ var anthropicResponsesStreamStatePool = sync.Pool{
 	},
 }
 
-// anthropicToResponsesStreamState holds per-request state for the UnifAI→Anthropic
+// anthropicToResponsesStreamState holds per-request state for the Raksha→Anthropic
 // stream conversion direction.
 type anthropicToResponsesStreamState struct {
 	// webSearchItemIDs tracks item IDs for WebSearch tools so their argument deltas
@@ -209,7 +209,7 @@ func (s *anthropicToResponsesStreamState) blockIndexFor(key string) *int {
 
 // reverseStreamItemKey derives a stable per-item key for content-block index
 // allocation, consistent across output_item.added / delta / output_item.done.
-func reverseStreamItemKey(resp *schemas.UnifAIResponsesStreamResponse) string {
+func reverseStreamItemKey(resp *schemas.RakshaResponsesStreamResponse) string {
 	if resp.Item != nil && resp.Item.ID != nil {
 		return *resp.Item.ID
 	}
@@ -231,7 +231,7 @@ var anthropicToResponsesStreamStateKey = anthropicToResponsesStreamStateKeyType{
 
 // getOrCreateAnthropicToResponsesStreamState returns the per-request conversion state,
 // creating and storing it in ctx on first access.
-func getOrCreateAnthropicToResponsesStreamState(ctx *schemas.UnifAIContext) *anthropicToResponsesStreamState {
+func getOrCreateAnthropicToResponsesStreamState(ctx *schemas.RakshaContext) *anthropicToResponsesStreamState {
 	if v := ctx.Value(anthropicToResponsesStreamStateKey); v != nil {
 		return v.(*anthropicToResponsesStreamState)
 	}
@@ -426,10 +426,10 @@ func (state *AnthropicResponsesStreamState) getOrCreateOutputIndex(contentIndex 
 	return outputIndex
 }
 
-// ToUnifAIResponsesStream converts an Anthropic stream event to a UnifAI Responses Stream response
+// ToRakshaResponsesStream converts an Anthropic stream event to a Raksha Responses Stream response
 // It maintains state via the state for handling multi-chunk conversions like computer tools
 // Returns a slice of responses to support cases where a single event produces multiple responses
-func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, sequenceNumber int, state *AnthropicResponsesStreamState) ([]*schemas.UnifAIResponsesStreamResponse, *schemas.UnifAIError, bool) {
+func (chunk *AnthropicStreamEvent) ToRakshaResponsesStream(ctx context.Context, sequenceNumber int, state *AnthropicResponsesStreamState) ([]*schemas.RakshaResponsesStreamResponse, *schemas.RakshaError, bool) {
 	switch chunk.Type {
 	case AnthropicStreamEventTypeMessageStart:
 		// Message start - emit response.created and response.in_progress (OpenAI-style lifecycle)
@@ -441,11 +441,11 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				state.CreatedAt = int(time.Now().Unix())
 			}
 
-			var responses []*schemas.UnifAIResponsesStreamResponse
+			var responses []*schemas.RakshaResponsesStreamResponse
 
 			// Emit response.created
 			if !state.HasEmittedCreated {
-				response := &schemas.UnifAIResponsesResponse{
+				response := &schemas.RakshaResponsesResponse{
 					ID:        state.MessageID,
 					CreatedAt: state.CreatedAt,
 				}
@@ -475,12 +475,12 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 							}
 						}
 						response.Usage.InputTokensDetails = inputTokensDetails
-						// UnifAI convention: InputTokens includes cached tokens
+						// Raksha convention: InputTokens includes cached tokens
 						response.Usage.InputTokens += chunk.Message.Usage.CacheReadInputTokens + chunk.Message.Usage.CacheCreationInputTokens
 						response.Usage.TotalTokens += chunk.Message.Usage.CacheReadInputTokens + chunk.Message.Usage.CacheCreationInputTokens
 					}
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeCreated,
 					SequenceNumber: sequenceNumber,
 					Response:       response,
@@ -490,11 +490,11 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 
 			// Emit response.in_progress
 			if !state.HasEmittedInProgress {
-				response := &schemas.UnifAIResponsesResponse{
+				response := &schemas.RakshaResponsesResponse{
 					ID:        state.MessageID,
 					CreatedAt: state.CreatedAt, // Use same timestamp
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeInProgress,
 					SequenceNumber: sequenceNumber + len(responses),
 					Response:       response,
@@ -531,7 +531,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					},
 				}
 
-				return []*schemas.UnifAIResponsesStreamResponse{{
+				return []*schemas.RakshaResponsesStreamResponse{{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -586,10 +586,10 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					ResponsesToolMessage: toolMsg,
 				}
 
-				var responses []*schemas.UnifAIResponsesStreamResponse
+				var responses []*schemas.RakshaResponsesStreamResponse
 
 				// Emit output_item.added
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -598,7 +598,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				})
 
 				// Emit web_search_call.in_progress
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeWebSearchCallInProgress,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -606,7 +606,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				})
 
 				// Emit web_search_call.searching
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeWebSearchCallSearching,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -636,7 +636,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					}
 
 					// Emit web_search_call.completed
-					return []*schemas.UnifAIResponsesStreamResponse{{
+					return []*schemas.RakshaResponsesStreamResponse{{
 						Type:           schemas.ResponsesStreamResponseTypeWebSearchCallCompleted,
 						SequenceNumber: sequenceNumber,
 						OutputIndex:    state.WebSearchOutputIndex,
@@ -670,9 +670,9 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					},
 				}
 
-				var responses []*schemas.UnifAIResponsesStreamResponse
+				var responses []*schemas.RakshaResponsesStreamResponse
 
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -680,14 +680,14 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					Item:           item,
 				})
 
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeWebFetchCallInProgress,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
 					ItemID:         chunk.ContentBlock.ID,
 				})
 
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeWebFetchCallFetching,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -710,7 +710,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 						delete(state.ContentIndexToBlockType, *chunk.Index)
 					}
 
-					return []*schemas.UnifAIResponsesStreamResponse{{
+					return []*schemas.RakshaResponsesStreamResponse{{
 						Type:           schemas.ResponsesStreamResponseTypeWebFetchCallCompleted,
 						SequenceNumber: sequenceNumber,
 						OutputIndex:    state.WebFetchOutputIndex,
@@ -745,7 +745,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					},
 				}
 
-				return []*schemas.UnifAIResponsesStreamResponse{{
+				return []*schemas.RakshaResponsesStreamResponse{{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -796,7 +796,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					},
 				}
 
-				return []*schemas.UnifAIResponsesStreamResponse{
+				return []*schemas.RakshaResponsesStreamResponse{
 					{
 						Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 						SequenceNumber: sequenceNumber,
@@ -874,10 +874,10 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					state.TextContentIndices[*chunk.Index] = true
 				}
 
-				var responses []*schemas.UnifAIResponsesStreamResponse
+				var responses []*schemas.RakshaResponsesStreamResponse
 
 				// Emit output_item.added
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -895,7 +895,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 						Annotations: []schemas.ResponsesOutputMessageContentTextAnnotation{},
 					},
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -962,7 +962,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					state.TextContentIndices[*chunk.Index] = false
 				}
 
-				return []*schemas.UnifAIResponsesStreamResponse{{
+				return []*schemas.RakshaResponsesStreamResponse{{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -1002,7 +1002,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					state.TextContentIndices[*chunk.Index] = false
 				}
 
-				return []*schemas.UnifAIResponsesStreamResponse{{
+				return []*schemas.RakshaResponsesStreamResponse{{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -1038,10 +1038,10 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					state.ReasoningContentIndices[*chunk.Index] = true
 				}
 
-				var responses []*schemas.UnifAIResponsesStreamResponse
+				var responses []*schemas.RakshaResponsesStreamResponse
 
 				// Emit output_item.added
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -1059,7 +1059,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				if chunk.ContentBlock.Signature != nil {
 					part.Signature = chunk.ContentBlock.Signature
 				}
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -1071,8 +1071,8 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				return responses, nil, false
 			default:
 				// Send down an empty response only when integration type is anthropic
-				if ctx.Value(schemas.UnifAIContextKeyIntegrationType) == "anthropic" {
-					return []*schemas.UnifAIResponsesStreamResponse{{
+				if ctx.Value(schemas.RakshaContextKeyIntegrationType) == "anthropic" {
+					return []*schemas.RakshaResponsesStreamResponse{{
 						Type:           "",
 						SequenceNumber: sequenceNumber,
 					}}, nil, false
@@ -1116,7 +1116,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					}
 
 					// Emit both output_item.added (with summary) and output_item.done
-					return []*schemas.UnifAIResponsesStreamResponse{
+					return []*schemas.RakshaResponsesStreamResponse{
 						{
 							Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 							SequenceNumber: sequenceNumber,
@@ -1143,7 +1143,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 
 					// Text content delta - emit output_text.delta with item ID
 					itemID := state.ItemIDs[outputIndex]
-					response := &schemas.UnifAIResponsesStreamResponse{
+					response := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 						SequenceNumber: sequenceNumber,
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1153,7 +1153,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					if itemID != "" {
 						response.ItemID = &itemID
 					}
-					return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+					return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 				}
 
 			case AnthropicStreamDeltaTypeInputJSON:
@@ -1184,7 +1184,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					}
 
 					itemID := state.ItemIDs[outputIndex]
-					response := &schemas.UnifAIResponsesStreamResponse{
+					response := &schemas.RakshaResponsesStreamResponse{
 						Type:           deltaType,
 						SequenceNumber: sequenceNumber,
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1194,14 +1194,14 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					if itemID != "" {
 						response.ItemID = &itemID
 					}
-					return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+					return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 				}
 
 			case AnthropicStreamDeltaTypeThinking:
 				// Reasoning/thinking content delta
 				if chunk.Delta.Thinking != nil && *chunk.Delta.Thinking != "" {
 					itemID := state.ItemIDs[outputIndex]
-					response := &schemas.UnifAIResponsesStreamResponse{
+					response := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryTextDelta,
 						SequenceNumber: sequenceNumber,
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1211,7 +1211,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					if itemID != "" {
 						response.ItemID = &itemID
 					}
-					return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+					return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 				}
 
 			case AnthropicStreamDeltaTypeSignature:
@@ -1221,7 +1221,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					state.ReasoningSignatures[outputIndex] = *chunk.Delta.Signature
 					// Emit signature_delta event using the signature field
 					itemID := state.ItemIDs[outputIndex]
-					response := &schemas.UnifAIResponsesStreamResponse{
+					response := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryTextDelta,
 						SequenceNumber: sequenceNumber,
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1231,7 +1231,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					if itemID != "" {
 						response.ItemID = &itemID
 					}
-					return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+					return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 				}
 				return nil, nil, false
 
@@ -1243,7 +1243,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 
 					// Emit output_text.annotation.added event
 					itemID := state.ItemIDs[outputIndex]
-					response := &schemas.UnifAIResponsesStreamResponse{
+					response := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeOutputTextAnnotationAdded,
 						SequenceNumber: sequenceNumber,
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1253,7 +1253,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					if itemID != "" {
 						response.ItemID = &itemID
 					}
-					return []*schemas.UnifAIResponsesStreamResponse{response}, nil, false
+					return []*schemas.RakshaResponsesStreamResponse{response}, nil, false
 				}
 				return nil, nil, false
 			}
@@ -1304,7 +1304,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					state.ComputerToolID = nil
 
 					// Return output_item.done
-					return []*schemas.UnifAIResponsesStreamResponse{
+					return []*schemas.RakshaResponsesStreamResponse{
 						{
 							Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 							SequenceNumber: sequenceNumber,
@@ -1353,9 +1353,9 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					outIdx := state.CodeExecOutputIndex
 					itemID := state.CodeExecToolID
 
-					var responses []*schemas.UnifAIResponsesStreamResponse
+					var responses []*schemas.RakshaResponsesStreamResponse
 					if code != "" {
-						responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+						responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeCodeInterpreterCallCodeDelta,
 							SequenceNumber: sequenceNumber + len(responses),
 							OutputIndex:    outIdx,
@@ -1368,14 +1368,14 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					// in each would yield the same (duplicate) sequence number.
 					codeDoneIdx := sequenceNumber + len(responses)
 					responses = append(responses,
-						&schemas.UnifAIResponsesStreamResponse{
+						&schemas.RakshaResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeCodeInterpreterCallCodeDone,
 							SequenceNumber: codeDoneIdx,
 							OutputIndex:    outIdx,
 							ItemID:         itemID,
 							Code:           schemas.Ptr(code),
 						},
-						&schemas.UnifAIResponsesStreamResponse{
+						&schemas.RakshaResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeCodeInterpreterCallInterpreting,
 							SequenceNumber: codeDoneIdx + 1,
 							OutputIndex:    outIdx,
@@ -1456,7 +1456,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				}
 
 				// Return output_item.done for the web_search_call (not the result block)
-				return []*schemas.UnifAIResponsesStreamResponse{
+				return []*schemas.RakshaResponsesStreamResponse{
 					{
 						Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 						SequenceNumber: sequenceNumber,
@@ -1510,7 +1510,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				if chunk.Index != nil {
 					delete(state.ContentIndexToBlockType, *chunk.Index)
 				}
-				return []*schemas.UnifAIResponsesStreamResponse{{
+				return []*schemas.RakshaResponsesStreamResponse{{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 					SequenceNumber: sequenceNumber,
 					OutputIndex:    outputIdx,
@@ -1532,7 +1532,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				if state.CodeExecInput != "" {
 					serverBlock.Input = json.RawMessage(state.CodeExecInput)
 				}
-				msgs := []schemas.ResponsesMessage{buildUnifAICodeExecutionCall(serverBlock)}
+				msgs := []schemas.ResponsesMessage{buildRakshaCodeExecutionCall(serverBlock)}
 				attachAnthropicCodeExecutionResult(msgs, *state.CodeExecToolID, *state.CodeExecResult)
 				item := &msgs[0]
 
@@ -1558,7 +1558,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					delete(state.ContentIndexToBlockType, *chunk.Index)
 				}
 
-				return []*schemas.UnifAIResponsesStreamResponse{
+				return []*schemas.RakshaResponsesStreamResponse{
 					{
 						Type:           schemas.ResponsesStreamResponseTypeCodeInterpreterCallCompleted,
 						SequenceNumber: sequenceNumber,
@@ -1597,7 +1597,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 			}
 
 			// Check if this is a text block - emit output_text.done and content_part.done
-			var responses []*schemas.UnifAIResponsesStreamResponse
+			var responses []*schemas.RakshaResponsesStreamResponse
 			itemID := state.ItemIDs[outputIndex]
 
 			// Capture accumulated text once — shared by output_text.done and output_item.done
@@ -1610,7 +1610,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 			if chunk.Index != nil {
 				if state.TextContentIndices[*chunk.Index] {
 					// Emit output_text.done with full accumulated text
-					textDoneResponse := &schemas.UnifAIResponsesStreamResponse{
+					textDoneResponse := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 						SequenceNumber: sequenceNumber + len(responses),
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1632,7 +1632,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 							LogProbs:    []schemas.ResponsesOutputMessageContentTextLogProb{},
 						},
 					}
-					partDoneResponse := &schemas.UnifAIResponsesStreamResponse{
+					partDoneResponse := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 						SequenceNumber: sequenceNumber + len(responses),
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1652,7 +1652,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				if state.ReasoningContentIndices[*chunk.Index] {
 					// Emit reasoning_summary_text.done (reasoning equivalent of output_text.done)
 					emptyText := ""
-					reasoningDoneResponse := &schemas.UnifAIResponsesStreamResponse{
+					reasoningDoneResponse := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeReasoningSummaryTextDone,
 						SequenceNumber: sequenceNumber + len(responses),
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1665,7 +1665,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					responses = append(responses, reasoningDoneResponse)
 
 					// Emit content_part.done for reasoning
-					partDoneResponse := &schemas.UnifAIResponsesStreamResponse{
+					partDoneResponse := &schemas.RakshaResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 						SequenceNumber: sequenceNumber + len(responses),
 						OutputIndex:    schemas.Ptr(outputIndex),
@@ -1712,7 +1712,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				}
 
 				// Emit output_item.added for the text message
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -1721,7 +1721,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 				})
 
 				// Emit output_item.done
-				responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+				responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 					Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -1755,7 +1755,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					doneType = schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDone
 				}
 
-				response := &schemas.UnifAIResponsesStreamResponse{
+				response := &schemas.RakshaResponsesStreamResponse{
 					Type:           doneType,
 					SequenceNumber: sequenceNumber + len(responses),
 					OutputIndex:    schemas.Ptr(outputIndex),
@@ -1820,7 +1820,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 					state.OutputItems[outputIndex] = &cloned
 				}
 			}
-			responses = append(responses, &schemas.UnifAIResponsesStreamResponse{
+			responses = append(responses, &schemas.RakshaResponsesStreamResponse{
 				Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 				SequenceNumber: sequenceNumber + len(responses),
 				OutputIndex:    schemas.Ptr(outputIndex),
@@ -1838,17 +1838,17 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 			state.Container = chunk.Delta.Container
 		}
 		if chunk.Delta.StopReason != nil {
-			mapped := ConvertAnthropicFinishReasonToUnifAI(*chunk.Delta.StopReason)
+			mapped := ConvertAnthropicFinishReasonToRaksha(*chunk.Delta.StopReason)
 			if state.UsedStructuredOutputTool && !state.SeenRealToolCall &&
-				mapped == string(schemas.UnifAIFinishReasonToolCalls) {
-				mapped = string(schemas.UnifAIFinishReasonStop)
+				mapped == string(schemas.RakshaFinishReasonToolCalls) {
+				mapped = string(schemas.RakshaFinishReasonStop)
 			}
 			state.StopReason = &mapped
 		}
 		// Check if integration type in ctx is anthropic
-		if ctx.Value(schemas.UnifAIContextKeyIntegrationType) == "anthropic" {
-			// Convert usage from Anthropic format to UnifAI
-			unifaiUsage := ConvertAnthropicUsageToUnifAIUsage(chunk.Usage)
+		if ctx.Value(schemas.RakshaContextKeyIntegrationType) == "anthropic" {
+			// Convert usage from Anthropic format to Raksha
+			rakshaUsage := ConvertAnthropicUsageToRakshaUsage(chunk.Usage)
 
 			// Use the already-remapped stop reason so SO overrides are preserved.
 			var stopReason *string
@@ -1857,7 +1857,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 			}
 
 			// Create response object with usage and stop reason
-			response := &schemas.UnifAIResponsesResponse{
+			response := &schemas.RakshaResponsesResponse{
 				CreatedAt: state.CreatedAt,
 			}
 			if state.MessageID != nil {
@@ -1869,8 +1869,8 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 			if stopReason != nil {
 				response.StopReason = stopReason
 			}
-			if unifaiUsage != nil {
-				response.Usage = unifaiUsage
+			if rakshaUsage != nil {
+				response.Usage = rakshaUsage
 			}
 			// Carry the sandbox container on the message_delta event so the reverse
 			// converter can re-emit it (Anthropic delivers it here, not earlier).
@@ -1885,7 +1885,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 			// doesn't synthesize a duplicate one.
 			state.HasEmittedMessageDelta = true
 
-			return []*schemas.UnifAIResponsesStreamResponse{{
+			return []*schemas.RakshaResponsesStreamResponse{{
 				Type:           "message_delta",
 				SequenceNumber: sequenceNumber,
 				Response:       response,
@@ -1898,7 +1898,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 
 	case AnthropicStreamEventTypeMessageStop:
 		// Message stop - emit response.completed (OpenAI-style)
-		response := &schemas.UnifAIResponsesResponse{
+		response := &schemas.RakshaResponsesResponse{
 			CreatedAt: state.CreatedAt,
 		}
 		if state.MessageID != nil {
@@ -1913,7 +1913,7 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 
 		// Fold the sandbox container (delivered on the final message_delta) onto
 		// every code_interpreter_call so response.completed carries it (mirrors the
-		// non-streaming container lift in ToUnifAIResponsesResponse). Also expose it
+		// non-streaming container lift in ToRakshaResponsesResponse). Also expose it
 		// at the response level so the reverse converter can re-emit it if it builds
 		// the message_delta from this completed event.
 		if state.Container != nil {
@@ -1952,14 +1952,14 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 			}
 		}
 
-		return []*schemas.UnifAIResponsesStreamResponse{{
+		return []*schemas.RakshaResponsesStreamResponse{{
 			Type:           schemas.ResponsesStreamResponseTypeCompleted,
 			SequenceNumber: sequenceNumber,
 			Response:       response,
 		}}, nil, true // Indicate stream is complete
 
 	case AnthropicStreamEventTypePing:
-		return []*schemas.UnifAIResponsesStreamResponse{{
+		return []*schemas.RakshaResponsesStreamResponse{{
 			Type:           schemas.ResponsesStreamResponseTypePing,
 			SequenceNumber: sequenceNumber,
 		}}, nil, false
@@ -1967,44 +1967,44 @@ func (chunk *AnthropicStreamEvent) ToUnifAIResponsesStream(ctx context.Context, 
 	case AnthropicStreamEventTypeError:
 		if chunk.Error != nil {
 			// Send error event
-			unifaiErr := &schemas.UnifAIError{
-				IsUnifAIError: false,
+			rakshaErr := &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    &chunk.Error.Type,
 					Message: chunk.Error.Message,
 				},
 			}
 
-			return []*schemas.UnifAIResponsesStreamResponse{{
+			return []*schemas.RakshaResponsesStreamResponse{{
 				Type:           schemas.ResponsesStreamResponseTypeError,
 				SequenceNumber: sequenceNumber,
 				Message:        &chunk.Error.Message,
-			}}, unifaiErr, false
+			}}, rakshaErr, false
 		}
 	}
 
 	return nil, nil, false
 }
 
-// ToAnthropicResponsesStreamResponse converts a UnifAI Responses stream response to Anthropic SSE string format
-func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *schemas.UnifAIResponsesStreamResponse) []*AnthropicStreamEvent {
-	if unifaiResp == nil {
+// ToAnthropicResponsesStreamResponse converts a Raksha Responses stream response to Anthropic SSE string format
+func ToAnthropicResponsesStreamResponse(ctx *schemas.RakshaContext, rakshaResp *schemas.RakshaResponsesStreamResponse) []*AnthropicStreamEvent {
+	if rakshaResp == nil {
 		return nil
 	}
 
 	streamResp := &AnthropicStreamEvent{}
 
 	// Map ResponsesStreamResponse types to Anthropic stream events
-	switch unifaiResp.Type {
+	switch rakshaResp.Type {
 	case schemas.ResponsesStreamResponseTypeCreated:
 		// Only convert response.created back to message_start (not response.in_progress to avoid duplicates)
 		streamResp.Type = AnthropicStreamEventTypeMessageStart
-		if unifaiResp.Response != nil {
+		if rakshaResp.Response != nil {
 			// Use actual usage if available (forwarded from upstream message_start),
 			// otherwise fall back to zeros for non-Anthropic providers
 			var messageUsage *AnthropicUsage
-			if unifaiResp.Response.Usage != nil {
-				messageUsage = ConvertUnifAIUsageToAnthropicUsage(unifaiResp.Response.Usage)
+			if rakshaResp.Response.Usage != nil {
+				messageUsage = ConvertRakshaUsageToAnthropicUsage(rakshaResp.Response.Usage)
 			} else {
 				messageUsage = &AnthropicUsage{
 					InputTokens:              0,
@@ -2023,20 +2023,20 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 				Content: []AnthropicContentBlock{}, // Always empty array in message_start
 				Usage:   messageUsage,
 			}
-			if unifaiResp.Response.ID != nil {
-				streamMessage.ID = *unifaiResp.Response.ID
+			if rakshaResp.Response.ID != nil {
+				streamMessage.ID = *rakshaResp.Response.ID
 			}
 			// Prefer Response.Model, then ResolvedModelUsed, then OriginalModelRequested
-			if unifaiResp.Response != nil && unifaiResp.Response.Model != "" {
-				streamMessage.Model = unifaiResp.Response.Model
-			} else if unifaiResp.ExtraFields.ResolvedModelUsed != "" {
-				streamMessage.Model = unifaiResp.ExtraFields.ResolvedModelUsed
-			} else if unifaiResp.ExtraFields.OriginalModelRequested != "" {
-				streamMessage.Model = unifaiResp.ExtraFields.OriginalModelRequested
+			if rakshaResp.Response != nil && rakshaResp.Response.Model != "" {
+				streamMessage.Model = rakshaResp.Response.Model
+			} else if rakshaResp.ExtraFields.ResolvedModelUsed != "" {
+				streamMessage.Model = rakshaResp.ExtraFields.ResolvedModelUsed
+			} else if rakshaResp.ExtraFields.OriginalModelRequested != "" {
+				streamMessage.Model = rakshaResp.ExtraFields.OriginalModelRequested
 			}
 			// Cache diagnostics arrives on message_start (cache-diagnosis-2026-04-07).
-			if unifaiResp.Response.Diagnostics != nil {
-				streamMessage.Diagnostics = unifaiResp.Response.Diagnostics
+			if rakshaResp.Response.Diagnostics != nil {
+				streamMessage.Diagnostics = rakshaResp.Response.Diagnostics
 			}
 			streamResp.Message = streamMessage
 		}
@@ -2050,12 +2050,12 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 		// allocate its index once (deltas/stops look it up, result blocks get fresh
 		// indices). This is the single source of truth for block numbering.
 		addedState := getOrCreateAnthropicToResponsesStreamState(ctx)
-		blockIdx := addedState.allocBlockIndex(reverseStreamItemKey(unifaiResp))
+		blockIdx := addedState.allocBlockIndex(reverseStreamItemKey(rakshaResp))
 
 		// Check if this is a computer tool call
-		if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeComputerCall {
+		if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeComputerCall {
 
 			// Computer tool - emit content_block_start
 			streamResp.Type = AnthropicStreamEventTypeContentBlockStart
@@ -2065,7 +2065,7 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			// Note: Computer tool calls should not be converted to thinking blocks
 			contentBlock := &AnthropicContentBlock{
 				Type: AnthropicContentBlockTypeToolUse,
-				ID:   unifaiResp.Item.ID,                            // The tool use ID
+				ID:   rakshaResp.Item.ID,                            // The tool use ID
 				Name: schemas.Ptr(string(AnthropicToolNameComputer)), // "computer"
 			}
 
@@ -2073,9 +2073,9 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			contentBlock.Input = json.RawMessage("{}")
 
 			streamResp.ContentBlock = contentBlock
-		} else if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
+		} else if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
 
 			// Web search call - emit content_block_start with server_tool_use
 			streamResp.Type = AnthropicStreamEventTypeContentBlockStart
@@ -2084,7 +2084,7 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			// Build the content_block as server_tool_use
 			contentBlock := &AnthropicContentBlock{
 				Type: AnthropicContentBlockTypeServerToolUse,
-				ID:   unifaiResp.Item.ID,                             // The tool use ID
+				ID:   rakshaResp.Item.ID,                             // The tool use ID
 				Name: schemas.Ptr(string(AnthropicToolNameWebSearch)), // "web_search"
 			}
 
@@ -2092,7 +2092,7 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			// matching native: a web_search is spawned atomically (in PTC, by the
 			// sandbox), so Anthropic never streams its input. Fall back to empty.
 			contentBlock.Input = json.RawMessage("{}")
-			if tm := unifaiResp.Item.ResponsesToolMessage; tm != nil && tm.Action != nil &&
+			if tm := rakshaResp.Item.ResponsesToolMessage; tm != nil && tm.Action != nil &&
 				tm.Action.ResponsesWebSearchToolCallAction != nil &&
 				tm.Action.ResponsesWebSearchToolCallAction.Query != nil {
 				if inputBytes, err := providerUtils.MarshalSorted(map[string]interface{}{"query": *tm.Action.ResponsesWebSearchToolCallAction.Query}); err == nil {
@@ -2102,7 +2102,7 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 
 			// Preserve the caller (set when this search was spawned from inside the
 			// code execution sandbox — programmatic tool calling).
-			if tm := unifaiResp.Item.ResponsesToolMessage; tm != nil && tm.Caller != nil {
+			if tm := rakshaResp.Item.ResponsesToolMessage; tm != nil && tm.Caller != nil {
 				contentBlock.Caller = &AnthropicToolCaller{
 					Type:   AnthropicToolCallerType(tm.Caller.Type),
 					ToolID: tm.Caller.ToolID,
@@ -2110,16 +2110,16 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			}
 
 			streamResp.ContentBlock = contentBlock
-		} else if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeAdvisorCall {
+		} else if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeAdvisorCall {
 
 			// Advisor call - emit content_block_start with server_tool_use (input is always empty)
 			streamResp.Type = AnthropicStreamEventTypeContentBlockStart
 			streamResp.Index = blockIdx
-			toolUseID := unifaiResp.Item.ID
-			if unifaiResp.Item.ResponsesToolMessage != nil && unifaiResp.Item.ResponsesToolMessage.CallID != nil {
-				toolUseID = unifaiResp.Item.ResponsesToolMessage.CallID
+			toolUseID := rakshaResp.Item.ID
+			if rakshaResp.Item.ResponsesToolMessage != nil && rakshaResp.Item.ResponsesToolMessage.CallID != nil {
+				toolUseID = rakshaResp.Item.ResponsesToolMessage.CallID
 			}
 			streamResp.ContentBlock = &AnthropicContentBlock{
 				Type:  AnthropicContentBlockTypeServerToolUse,
@@ -2127,17 +2127,17 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 				Name:  schemas.Ptr(string(AnthropicToolNameAdvisor)),
 				Input: json.RawMessage("{}"),
 			}
-		} else if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeCodeInterpreterCall {
+		} else if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeCodeInterpreterCall {
 
 			// Code interpreter call - emit content_block_start with server_tool_use.
 			// Input is empty here; the verbatim input is streamed at output_item.done.
 			streamResp.Type = AnthropicStreamEventTypeContentBlockStart
 			streamResp.Index = blockIdx
-			toolUseID := unifaiResp.Item.ID
+			toolUseID := rakshaResp.Item.ID
 			toolName := string(AnthropicToolNameCodeExecution)
-			if tm := unifaiResp.Item.ResponsesToolMessage; tm != nil {
+			if tm := rakshaResp.Item.ResponsesToolMessage; tm != nil {
 				if tm.CallID != nil {
 					toolUseID = tm.CallID
 				}
@@ -2149,7 +2149,7 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			if addedState.codeExecToolNameByItem == nil {
 				addedState.codeExecToolNameByItem = make(map[string]string)
 			}
-			addedState.codeExecToolNameByItem[reverseStreamItemKey(unifaiResp)] = toolName
+			addedState.codeExecToolNameByItem[reverseStreamItemKey(rakshaResp)] = toolName
 			streamResp.ContentBlock = &AnthropicContentBlock{
 				Type:  AnthropicContentBlockTypeServerToolUse,
 				ID:    toolUseID,
@@ -2162,18 +2162,18 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			streamResp.Index = blockIdx
 
 			// Build content_block based on item type
-			if unifaiResp.Item != nil {
+			if rakshaResp.Item != nil {
 				contentBlock := &AnthropicContentBlock{}
 
 				// Check if this is a compaction item (message with compaction content block)
-				if isCompactionItem(unifaiResp.Item) {
+				if isCompactionItem(rakshaResp.Item) {
 					contentBlock.Type = AnthropicContentBlockTypeCompaction
 					contentBlock.Content = &AnthropicContent{ContentStr: schemas.Ptr("")}
-					if unifaiResp.Item.Content.ContentBlocks[0].CacheControl != nil {
-						contentBlock.CacheControl = unifaiResp.Item.Content.ContentBlocks[0].CacheControl
+					if rakshaResp.Item.Content.ContentBlocks[0].CacheControl != nil {
+						contentBlock.CacheControl = rakshaResp.Item.Content.ContentBlocks[0].CacheControl
 					}
-				} else if unifaiResp.Item.Type != nil {
-					switch *unifaiResp.Item.Type {
+				} else if rakshaResp.Item.Type != nil {
+					switch *rakshaResp.Item.Type {
 					case schemas.ResponsesMessageTypeMessage:
 						contentBlock.Type = AnthropicContentBlockTypeText
 						contentBlock.Text = schemas.Ptr("")
@@ -2182,8 +2182,8 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 						contentBlock.Thinking = schemas.Ptr("")
 						contentBlock.Signature = schemas.Ptr("")
 						// Preserve signature if present
-						if unifaiResp.Item.ResponsesReasoning != nil && unifaiResp.Item.ResponsesReasoning.EncryptedContent != nil && *unifaiResp.Item.ResponsesReasoning.EncryptedContent != "" {
-							contentBlock.Data = unifaiResp.Item.ResponsesReasoning.EncryptedContent
+						if rakshaResp.Item.ResponsesReasoning != nil && rakshaResp.Item.ResponsesReasoning.EncryptedContent != nil && *rakshaResp.Item.ResponsesReasoning.EncryptedContent != "" {
+							contentBlock.Data = rakshaResp.Item.ResponsesReasoning.EncryptedContent
 							// When signature is present but thinking content is empty, use redacted_thinking
 							if contentBlock.Thinking != nil && *contentBlock.Thinking == "" {
 								contentBlock.Type = AnthropicContentBlockTypeRedactedThinking
@@ -2192,29 +2192,29 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 					case schemas.ResponsesMessageTypeFunctionCall:
 						// Check if this item actually has reasoning content (misclassified)
 						// When thinking is enabled, reasoning content might be incorrectly classified as FunctionCall
-						if unifaiResp.Item.ResponsesReasoning != nil {
+						if rakshaResp.Item.ResponsesReasoning != nil {
 							// This is actually reasoning content, not a function call
 							contentBlock.Type = AnthropicContentBlockTypeThinking
 							contentBlock.Thinking = schemas.Ptr("")
 							contentBlock.Signature = schemas.Ptr("")
 							// Check if there's encrypted content for redacted_thinking
-							if unifaiResp.Item.ResponsesReasoning.EncryptedContent != nil && *unifaiResp.Item.ResponsesReasoning.EncryptedContent != "" {
+							if rakshaResp.Item.ResponsesReasoning.EncryptedContent != nil && *rakshaResp.Item.ResponsesReasoning.EncryptedContent != "" {
 								contentBlock.Type = AnthropicContentBlockTypeRedactedThinking
-								contentBlock.Data = unifaiResp.Item.ResponsesReasoning.EncryptedContent
+								contentBlock.Data = rakshaResp.Item.ResponsesReasoning.EncryptedContent
 							}
 						} else {
 							// Regular function call - check if ContentIndex is 0 and thinking might be enabled
 							// If ContentIndex is 0, we need to check if there's reasoning content in the response
 							contentIndex := 0
-							if unifaiResp.ContentIndex != nil {
-								contentIndex = *unifaiResp.ContentIndex
+							if rakshaResp.ContentIndex != nil {
+								contentIndex = *rakshaResp.ContentIndex
 							}
 							isFirstBlock := contentIndex == 0
 
 							// Check if response has reasoning content (indicating thinking is enabled)
 							hasReasoningInResponse := false
-							if unifaiResp.Response != nil && unifaiResp.Response.Output != nil {
-								for _, msg := range unifaiResp.Response.Output {
+							if rakshaResp.Response != nil && rakshaResp.Response.Output != nil {
+								for _, msg := range rakshaResp.Response.Output {
 									if msg.Type != nil && *msg.Type == schemas.ResponsesMessageTypeReasoning {
 										hasReasoningInResponse = true
 										break
@@ -2229,33 +2229,33 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 								contentBlock.Signature = schemas.Ptr("")
 							} else {
 								contentBlock.Type = AnthropicContentBlockTypeToolUse
-								if unifaiResp.Item.ResponsesToolMessage != nil {
-									contentBlock.ID = unifaiResp.Item.ResponsesToolMessage.CallID
-									contentBlock.Name = unifaiResp.Item.ResponsesToolMessage.Name
+								if rakshaResp.Item.ResponsesToolMessage != nil {
+									contentBlock.ID = rakshaResp.Item.ResponsesToolMessage.CallID
+									contentBlock.Name = rakshaResp.Item.ResponsesToolMessage.Name
 									// Always start with empty input for streaming compatibility
 									contentBlock.Input = json.RawMessage("{}")
 
 									// Track WebSearch tools so we can skip their argument deltas
 									// and regenerate them synthetically (with sanitization) at output_item.done
-									if unifaiResp.Item.ResponsesToolMessage.Name != nil &&
-										*unifaiResp.Item.ResponsesToolMessage.Name == "WebSearch" &&
-										unifaiResp.Item.ID != nil {
+									if rakshaResp.Item.ResponsesToolMessage.Name != nil &&
+										*rakshaResp.Item.ResponsesToolMessage.Name == "WebSearch" &&
+										rakshaResp.Item.ID != nil {
 										streamState := getOrCreateAnthropicToResponsesStreamState(ctx)
 										if streamState.webSearchItemIDs == nil {
 											streamState.webSearchItemIDs = make(map[string]bool)
 										}
-										streamState.webSearchItemIDs[*unifaiResp.Item.ID] = true
+										streamState.webSearchItemIDs[*rakshaResp.Item.ID] = true
 									}
 								}
 							}
 						}
 					case schemas.ResponsesMessageTypeMCPCall:
 						contentBlock.Type = AnthropicContentBlockTypeMCPToolUse
-						if unifaiResp.Item.ResponsesToolMessage != nil {
-							contentBlock.ID = unifaiResp.Item.ID
-							contentBlock.Name = unifaiResp.Item.ResponsesToolMessage.Name
-							if unifaiResp.Item.ResponsesToolMessage.ResponsesMCPToolCall != nil {
-								contentBlock.ServerName = &unifaiResp.Item.ResponsesToolMessage.ResponsesMCPToolCall.ServerLabel
+						if rakshaResp.Item.ResponsesToolMessage != nil {
+							contentBlock.ID = rakshaResp.Item.ID
+							contentBlock.Name = rakshaResp.Item.ResponsesToolMessage.Name
+							if rakshaResp.Item.ResponsesToolMessage.ResponsesMCPToolCall != nil {
+								contentBlock.ServerName = &rakshaResp.Item.ResponsesToolMessage.ResponsesMCPToolCall.ServerLabel
 							}
 							// Always start with empty input for streaming compatibility
 							contentBlock.Input = json.RawMessage("{}")
@@ -2273,8 +2273,8 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 		events = append(events, streamResp)
 
 		// Generate compaction_delta event for compaction items
-		if isCompactionItem(unifaiResp.Item) {
-			block := unifaiResp.Item.Content.ContentBlocks[0]
+		if isCompactionItem(rakshaResp.Item) {
+			block := rakshaResp.Item.Content.ContentBlocks[0]
 			if block.ResponsesOutputMessageContentCompaction != nil {
 				events = append(events, &AnthropicStreamEvent{
 					Type:  AnthropicStreamEventTypeContentBlockDelta,
@@ -2288,24 +2288,24 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 		}
 
 		// Check if this is a tool call with arguments that need to be streamed
-		if unifaiResp.Item != nil && unifaiResp.Item.ResponsesToolMessage != nil {
+		if rakshaResp.Item != nil && rakshaResp.Item.ResponsesToolMessage != nil {
 			var argumentsJSON string
 			var shouldGenerateDeltas bool
 
-			switch *unifaiResp.Item.Type {
+			switch *rakshaResp.Item.Type {
 			case schemas.ResponsesMessageTypeFunctionCall:
-				if unifaiResp.Item.ResponsesToolMessage.Arguments != nil && *unifaiResp.Item.ResponsesToolMessage.Arguments != "" {
-					argumentsJSON = *unifaiResp.Item.ResponsesToolMessage.Arguments
+				if rakshaResp.Item.ResponsesToolMessage.Arguments != nil && *rakshaResp.Item.ResponsesToolMessage.Arguments != "" {
+					argumentsJSON = *rakshaResp.Item.ResponsesToolMessage.Arguments
 					shouldGenerateDeltas = true
 				}
 			case schemas.ResponsesMessageTypeMCPCall:
-				if unifaiResp.Item.ResponsesToolMessage.Arguments != nil && *unifaiResp.Item.ResponsesToolMessage.Arguments != "" {
-					argumentsJSON = *unifaiResp.Item.ResponsesToolMessage.Arguments
+				if rakshaResp.Item.ResponsesToolMessage.Arguments != nil && *rakshaResp.Item.ResponsesToolMessage.Arguments != "" {
+					argumentsJSON = *rakshaResp.Item.ResponsesToolMessage.Arguments
 					shouldGenerateDeltas = true
 				}
 			case schemas.ResponsesMessageTypeComputerCall:
-				if unifaiResp.Item.ResponsesToolMessage.Action != nil && unifaiResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction != nil {
-					actionInput := convertResponsesToAnthropicComputerAction(unifaiResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction)
+				if rakshaResp.Item.ResponsesToolMessage.Action != nil && rakshaResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction != nil {
+					actionInput := convertResponsesToAnthropicComputerAction(rakshaResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction)
 					if jsonBytes, err := providerUtils.MarshalSorted(actionInput); err == nil {
 						argumentsJSON = string(jsonBytes)
 						shouldGenerateDeltas = true
@@ -2325,64 +2325,64 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 
 	case schemas.ResponsesStreamResponseTypeOutputTextDelta:
 		streamResp.Type = AnthropicStreamEventTypeContentBlockDelta
-		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
-		if unifaiResp.Delta != nil {
+		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
+		if rakshaResp.Delta != nil {
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type: AnthropicStreamDeltaTypeText,
-				Text: unifaiResp.Delta,
+				Text: rakshaResp.Delta,
 			}
 		}
 
 	case schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDelta:
 		// Skip WebSearch tool argument deltas - they will be sent synthetically in output_item.done
-		if unifaiResp.ItemID != nil {
+		if rakshaResp.ItemID != nil {
 			streamState := getOrCreateAnthropicToResponsesStreamState(ctx)
-			if streamState.webSearchItemIDs[*unifaiResp.ItemID] {
+			if streamState.webSearchItemIDs[*rakshaResp.ItemID] {
 				return nil
 			}
 		}
 
 		streamResp.Type = AnthropicStreamEventTypeContentBlockDelta
-		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
-		if unifaiResp.Arguments != nil {
+		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
+		if rakshaResp.Arguments != nil {
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type:        AnthropicStreamDeltaTypeInputJSON,
-				PartialJSON: unifaiResp.Arguments,
+				PartialJSON: rakshaResp.Arguments,
 			}
-		} else if unifaiResp.Delta != nil {
+		} else if rakshaResp.Delta != nil {
 			// Handle cases where Delta field is used instead of Arguments
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type:        AnthropicStreamDeltaTypeInputJSON,
-				PartialJSON: unifaiResp.Delta,
+				PartialJSON: rakshaResp.Delta,
 			}
 		}
 
 	case schemas.ResponsesStreamResponseTypeReasoningSummaryTextDelta:
 		streamResp.Type = AnthropicStreamEventTypeContentBlockDelta
-		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
+		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
 
 		// Check if this is a signature delta or text delta
-		if unifaiResp.Signature != nil {
+		if rakshaResp.Signature != nil {
 			// This is a signature_delta
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type:      AnthropicStreamDeltaTypeSignature,
-				Signature: unifaiResp.Signature,
+				Signature: rakshaResp.Signature,
 			}
-		} else if unifaiResp.Delta != nil {
+		} else if rakshaResp.Delta != nil {
 			// This is a thinking_delta
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type:     AnthropicStreamDeltaTypeThinking,
-				Thinking: unifaiResp.Delta,
+				Thinking: rakshaResp.Delta,
 			}
 		}
 
 	case schemas.ResponsesStreamResponseTypeOutputTextAnnotationAdded:
 		// Convert OpenAI annotation to Anthropic citation
-		if unifaiResp.Annotation != nil {
+		if rakshaResp.Annotation != nil {
 			streamResp.Type = AnthropicStreamEventTypeContentBlockDelta
-			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
+			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
 
-			citation := convertAnnotationToAnthropicCitation(*unifaiResp.Annotation)
+			citation := convertAnnotationToAnthropicCitation(*rakshaResp.Annotation)
 
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type:     AnthropicStreamDeltaTypeCitations,
@@ -2395,22 +2395,22 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 
 	case schemas.ResponsesStreamResponseTypeOutputItemDone:
 		// Handle WebSearch tool completion with sanitization and synthetic delta generation
-		if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeFunctionCall &&
-			unifaiResp.Item.ResponsesToolMessage != nil &&
-			unifaiResp.Item.ResponsesToolMessage.Name != nil &&
-			*unifaiResp.Item.ResponsesToolMessage.Name == "WebSearch" &&
-			unifaiResp.Item.ResponsesToolMessage.Arguments != nil {
+		if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeFunctionCall &&
+			rakshaResp.Item.ResponsesToolMessage != nil &&
+			rakshaResp.Item.ResponsesToolMessage.Name != nil &&
+			*rakshaResp.Item.ResponsesToolMessage.Name == "WebSearch" &&
+			rakshaResp.Item.ResponsesToolMessage.Arguments != nil {
 
-			argumentsJSON := sanitizeWebSearchArguments(*unifaiResp.Item.ResponsesToolMessage.Arguments)
-			unifaiResp.Item.ResponsesToolMessage.Arguments = &argumentsJSON
+			argumentsJSON := sanitizeWebSearchArguments(*rakshaResp.Item.ResponsesToolMessage.Arguments)
+			rakshaResp.Item.ResponsesToolMessage.Arguments = &argumentsJSON
 
 			// Generate synthetic input_json_delta events for the sanitized WebSearch arguments
 			// This replaces the delta events that were skipped earlier
 			var events []*AnthropicStreamEvent
 
-			indexToUse := getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
+			indexToUse := getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
 			deltaEvents := generateSyntheticInputJSONDeltas(argumentsJSON, indexToUse)
 			events = append(events, deltaEvents...)
 
@@ -2422,30 +2422,30 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			events = append(events, stopEvent)
 
 			// Clean up the tracking for this WebSearch item
-			if unifaiResp.Item.ID != nil {
+			if rakshaResp.Item.ID != nil {
 				streamState := getOrCreateAnthropicToResponsesStreamState(ctx)
-				delete(streamState.webSearchItemIDs, *unifaiResp.Item.ID)
+				delete(streamState.webSearchItemIDs, *rakshaResp.Item.ID)
 			}
 
 			return events
 		}
 
-		if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeComputerCall {
+		if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeComputerCall {
 
 			// Computer tool complete - emit content_block_delta with the action, then stop
 			// Note: We're sending the complete action JSON in one delta
 			streamResp.Type = AnthropicStreamEventTypeContentBlockDelta
-			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
+			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
 
 			// Convert the action to Anthropic format and marshal to JSON
-			if unifaiResp.Item.ResponsesToolMessage != nil &&
-				unifaiResp.Item.ResponsesToolMessage.Action != nil &&
-				unifaiResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction != nil {
+			if rakshaResp.Item.ResponsesToolMessage != nil &&
+				rakshaResp.Item.ResponsesToolMessage.Action != nil &&
+				rakshaResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction != nil {
 
 				actionInput := convertResponsesToAnthropicComputerAction(
-					unifaiResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction,
+					rakshaResp.Item.ResponsesToolMessage.Action.ResponsesComputerToolCallAction,
 				)
 
 				// Marshal the action to JSON string
@@ -2457,16 +2457,16 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 					}
 				}
 			}
-		} else if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
+		} else if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
 
 			// Web search call complete - generate synthetic input_json_delta events, then emit content_block_stop
 			var events []*AnthropicStreamEvent
 			state := getOrCreateAnthropicToResponsesStreamState(ctx)
-			serverIdx := state.blockIndexFor(reverseStreamItemKey(unifaiResp))
+			serverIdx := state.blockIndexFor(reverseStreamItemKey(rakshaResp))
 
-			tm := unifaiResp.Item.ResponsesToolMessage
+			tm := rakshaResp.Item.ResponsesToolMessage
 			wsAction := (*schemas.ResponsesWebSearchToolCallAction)(nil)
 			if tm != nil && tm.Action != nil {
 				wsAction = tm.Action.ResponsesWebSearchToolCallAction
@@ -2501,7 +2501,7 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 
 				resultBlock := &AnthropicContentBlock{
 					Type:      AnthropicContentBlockTypeWebSearchToolResult,
-					ToolUseID: unifaiResp.Item.ID, // Link to the server_tool_use block
+					ToolUseID: rakshaResp.Item.ID, // Link to the server_tool_use block
 					Content:   &AnthropicContent{ContentBlocks: resultContentBlocks},
 				}
 				// Carry the programmatic-tool-calling caller onto the result too.
@@ -2518,21 +2518,21 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			}
 
 			return events
-		} else if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeCodeInterpreterCall {
+		} else if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeCodeInterpreterCall {
 
 			// Code interpreter call complete.
 			var events []*AnthropicStreamEvent
-			blocks := convertUnifAICodeExecCallToAnthropicBlocks(unifaiResp.Item)
+			blocks := convertRakshaCodeExecCallToAnthropicBlocks(rakshaResp.Item)
 			state := getOrCreateAnthropicToResponsesStreamState(ctx)
 
 			// For python/bash the server_tool_use block was already closed early on
 			// code.done. text_editor (and any item not closed there) is still open —
 			// close it now from the verbatim carry input, which carries its full
 			// multi-key payload (command/path/file_text/…) that Code can't.
-			if !state.codeExecServerClosedByItem[reverseStreamItemKey(unifaiResp)] {
-				serverIdx := state.blockIndexFor(reverseStreamItemKey(unifaiResp))
+			if !state.codeExecServerClosedByItem[reverseStreamItemKey(rakshaResp)] {
+				serverIdx := state.blockIndexFor(reverseStreamItemKey(rakshaResp))
 				if len(blocks) > 0 && len(blocks[0].Input) > 0 {
 					events = append(events, generateSyntheticInputJSONDeltas(string(blocks[0].Input), serverIdx)...)
 				}
@@ -2559,21 +2559,21 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			}
 
 			return events
-		} else if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			*unifaiResp.Item.Type == schemas.ResponsesMessageTypeAdvisorCall {
+		} else if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			*rakshaResp.Item.Type == schemas.ResponsesMessageTypeAdvisorCall {
 
 			// Advisor call complete - emit content_block_stop for the server_tool_use
 			// block, then the advisor_tool_result block (start + stop) at a fresh index.
 			var events []*AnthropicStreamEvent
 			state := getOrCreateAnthropicToResponsesStreamState(ctx)
 
-			toolUseID := unifaiResp.Item.ID
-			if unifaiResp.Item.ResponsesToolMessage != nil && unifaiResp.Item.ResponsesToolMessage.CallID != nil {
-				toolUseID = unifaiResp.Item.ResponsesToolMessage.CallID
+			toolUseID := rakshaResp.Item.ID
+			if rakshaResp.Item.ResponsesToolMessage != nil && rakshaResp.Item.ResponsesToolMessage.CallID != nil {
+				toolUseID = rakshaResp.Item.ResponsesToolMessage.CallID
 			}
 
-			serverIdx := state.blockIndexFor(reverseStreamItemKey(unifaiResp))
+			serverIdx := state.blockIndexFor(reverseStreamItemKey(rakshaResp))
 
 			// 1. content_block_stop for the server_tool_use block.
 			events = append(events, &AnthropicStreamEvent{
@@ -2587,8 +2587,8 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 				Type:      AnthropicContentBlockTypeAdvisorToolResult,
 				ToolUseID: toolUseID,
 			}
-			if unifaiResp.Item.ResponsesToolMessage != nil && unifaiResp.Item.ResponsesToolMessage.ResponsesAdvisorCall != nil {
-				adv := unifaiResp.Item.ResponsesToolMessage.ResponsesAdvisorCall
+			if rakshaResp.Item.ResponsesToolMessage != nil && rakshaResp.Item.ResponsesToolMessage.ResponsesAdvisorCall != nil {
+				adv := rakshaResp.Item.ResponsesToolMessage.ResponsesAdvisorCall
 				resultType := adv.ResultType
 				if resultType == "" {
 					resultType = "advisor_result"
@@ -2616,18 +2616,18 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 			})
 
 			return events
-		} else if unifaiResp.Item != nil &&
-			unifaiResp.Item.Type != nil &&
-			(*unifaiResp.Item.Type == schemas.ResponsesMessageTypeFunctionCall ||
-				*unifaiResp.Item.Type == schemas.ResponsesMessageTypeMCPCall) {
+		} else if rakshaResp.Item != nil &&
+			rakshaResp.Item.Type != nil &&
+			(*rakshaResp.Item.Type == schemas.ResponsesMessageTypeFunctionCall ||
+				*rakshaResp.Item.Type == schemas.ResponsesMessageTypeMCPCall) {
 
 			// Function call or MCP call complete - just emit content_block_stop
 			streamResp.Type = AnthropicStreamEventTypeContentBlockStop
-			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
+			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
 		} else {
 			// For text blocks and other content blocks, emit content_block_stop
 			streamResp.Type = AnthropicStreamEventTypeContentBlockStop
-			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
+			streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
 		}
 	case schemas.ResponsesStreamResponseTypeWebSearchCallInProgress,
 		schemas.ResponsesStreamResponseTypeWebSearchCallSearching,
@@ -2644,18 +2644,18 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 		// close. text_editor has a multi-key input that Code can't carry (Code is
 		// empty) and never spawns nested blocks, so leave its block open and let
 		// output_item.done close it from the verbatim carry input.
-		if unifaiResp.Code == nil || *unifaiResp.Code == "" {
+		if rakshaResp.Code == nil || *rakshaResp.Code == "" {
 			return nil
 		}
 		state := getOrCreateAnthropicToResponsesStreamState(ctx)
-		key := reverseStreamItemKey(unifaiResp)
+		key := reverseStreamItemKey(rakshaResp)
 		idx := state.blockIndexFor(key)
 		inputKey := "code"
 		if AnthropicToolName(state.codeExecToolNameByItem[key]) == AnthropicToolNameBashCodeExecution {
 			inputKey = "command"
 		}
 		var events []*AnthropicStreamEvent
-		if inputBytes, err := providerUtils.MarshalSorted(map[string]interface{}{inputKey: *unifaiResp.Code}); err == nil {
+		if inputBytes, err := providerUtils.MarshalSorted(map[string]interface{}{inputKey: *rakshaResp.Code}); err == nil {
 			events = append(events, generateSyntheticInputJSONDeltas(string(inputBytes), idx)...)
 		}
 		events = append(events, &AnthropicStreamEvent{Type: AnthropicStreamEventTypeContentBlockStop, Index: idx})
@@ -2679,7 +2679,7 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 		streamResp.Type = AnthropicStreamEventTypeMessageStop
 		// If a message_delta was already emitted from the upstream event, only emit message_stop
 		// to avoid sending a duplicate message_delta to the client.
-		if alreadyEmitted, ok := ctx.Value(schemas.UnifAIContextKeyHasEmittedMessageDelta).(bool); ok && alreadyEmitted {
+		if alreadyEmitted, ok := ctx.Value(schemas.RakshaContextKeyHasEmittedMessageDelta).(bool); ok && alreadyEmitted {
 			return []*AnthropicStreamEvent{streamResp}
 		}
 		anthropicContentDeltaEvent := &AnthropicStreamEvent{
@@ -2689,23 +2689,23 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 				StopSequence: schemas.Ptr(""),
 			},
 		}
-		// Convert usage from UnifAI to Anthropic
-		if unifaiResp.Response != nil {
-			anthropicContentDeltaEvent.Usage = ConvertUnifAIUsageToAnthropicUsage(unifaiResp.Response.Usage)
-			if unifaiResp.Response.StopReason != nil {
+		// Convert usage from Raksha to Anthropic
+		if rakshaResp.Response != nil {
+			anthropicContentDeltaEvent.Usage = ConvertRakshaUsageToAnthropicUsage(rakshaResp.Response.Usage)
+			if rakshaResp.Response.StopReason != nil {
 				anthropicContentDeltaEvent.Delta = &AnthropicStreamDelta{
-					StopReason:   schemas.Ptr(ConvertUnifAIFinishReasonToAnthropic(*unifaiResp.Response.StopReason)),
+					StopReason:   schemas.Ptr(ConvertRakshaFinishReasonToAnthropic(*rakshaResp.Response.StopReason)),
 					StopSequence: nil,
 				}
 			}
 			// Re-emit the code-execution sandbox container on the message_delta.
-			if unifaiResp.Response.Container != nil {
+			if rakshaResp.Response.Container != nil {
 				if anthropicContentDeltaEvent.Delta == nil {
 					anthropicContentDeltaEvent.Delta = &AnthropicStreamDelta{}
 				}
 				anthropicContentDeltaEvent.Delta.Container = &AnthropicResponseContainer{
-					ID:        unifaiResp.Response.Container.ID,
-					ExpiresAt: unifaiResp.Response.Container.ExpiresAt,
+					ID:        rakshaResp.Response.Container.ID,
+					ExpiresAt: rakshaResp.Response.Container.ExpiresAt,
 				}
 			}
 		}
@@ -2714,31 +2714,31 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 	case schemas.ResponsesStreamResponseTypeMCPCallArgumentsDelta:
 		// MCP call arguments delta - convert to content_block_delta with input_json
 		streamResp.Type = AnthropicStreamEventTypeContentBlockDelta
-		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
-		if unifaiResp.Delta != nil {
+		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
+		if rakshaResp.Delta != nil {
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type:        AnthropicStreamDeltaTypeInputJSON,
-				PartialJSON: unifaiResp.Delta,
+				PartialJSON: rakshaResp.Delta,
 			}
-		} else if unifaiResp.Arguments != nil {
+		} else if rakshaResp.Arguments != nil {
 			// Handle cases where Arguments field is used instead of Delta
 			streamResp.Delta = &AnthropicStreamDelta{
 				Type:        AnthropicStreamDeltaTypeInputJSON,
-				PartialJSON: unifaiResp.Arguments,
+				PartialJSON: rakshaResp.Arguments,
 			}
 		}
 
 	case schemas.ResponsesStreamResponseTypeMCPCallCompleted:
 		// MCP call completed - emit content_block_stop
 		streamResp.Type = AnthropicStreamEventTypeContentBlockStop
-		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(unifaiResp))
+		streamResp.Index = getOrCreateAnthropicToResponsesStreamState(ctx).blockIndexFor(reverseStreamItemKey(rakshaResp))
 
 	case schemas.ResponsesStreamResponseTypeMCPCallFailed:
 		// MCP call failed - emit error event
 		streamResp.Type = AnthropicStreamEventTypeError
 		errorMsg := "MCP call failed"
-		if unifaiResp.Message != nil {
-			errorMsg = *unifaiResp.Message
+		if rakshaResp.Message != nil {
+			errorMsg = *rakshaResp.Message
 		}
 		streamResp.Error = &AnthropicStreamError{
 			Type:    "error",
@@ -2747,46 +2747,46 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 
 	case "message_delta":
 		// Check if integration type in ctx is anthropic
-		if ctx.Value(schemas.UnifAIContextKeyIntegrationType) == "anthropic" {
+		if ctx.Value(schemas.RakshaContextKeyIntegrationType) == "anthropic" {
 			streamResp.Type = AnthropicStreamEventTypeMessageDelta
 
-			// Convert usage from UnifAI format to Anthropic format using common converter
-			if unifaiResp.Response != nil {
-				streamResp.Usage = ConvertUnifAIUsageToAnthropicUsage(unifaiResp.Response.Usage)
+			// Convert usage from Raksha format to Anthropic format using common converter
+			if rakshaResp.Response != nil {
+				streamResp.Usage = ConvertRakshaUsageToAnthropicUsage(rakshaResp.Response.Usage)
 			}
 
-			// Convert stop reason from UnifAI format to Anthropic format
-			if unifaiResp.Response != nil && unifaiResp.Response.StopReason != nil {
+			// Convert stop reason from Raksha format to Anthropic format
+			if rakshaResp.Response != nil && rakshaResp.Response.StopReason != nil {
 				streamResp.Delta = &AnthropicStreamDelta{
-					StopReason: schemas.Ptr(ConvertUnifAIFinishReasonToAnthropic(*unifaiResp.Response.StopReason)),
+					StopReason: schemas.Ptr(ConvertRakshaFinishReasonToAnthropic(*rakshaResp.Response.StopReason)),
 				}
-			} else if unifaiResp.Delta != nil {
+			} else if rakshaResp.Delta != nil {
 				// Handle text delta if present
 				streamResp.Delta = &AnthropicStreamDelta{
 					Type: AnthropicStreamDeltaTypeText,
-					Text: unifaiResp.Delta,
+					Text: rakshaResp.Delta,
 				}
 			}
 
 			// Re-emit the code-execution sandbox container on message_delta (read
 			// straight off the event — Anthropic delivers it here natively).
-			if unifaiResp.Response != nil && unifaiResp.Response.Container != nil {
+			if rakshaResp.Response != nil && rakshaResp.Response.Container != nil {
 				if streamResp.Delta == nil {
 					streamResp.Delta = &AnthropicStreamDelta{}
 				}
 				streamResp.Delta.Container = &AnthropicResponseContainer{
-					ID:        unifaiResp.Response.Container.ID,
-					ExpiresAt: unifaiResp.Response.Container.ExpiresAt,
+					ID:        rakshaResp.Response.Container.ID,
+					ExpiresAt: rakshaResp.Response.Container.ExpiresAt,
 				}
 			}
 		}
 
 	case schemas.ResponsesStreamResponseTypeError:
 		streamResp.Type = AnthropicStreamEventTypeError
-		if unifaiResp.Message != nil {
+		if rakshaResp.Message != nil {
 			streamResp.Error = &AnthropicStreamError{
 				Type:    "error",
-				Message: *unifaiResp.Message,
+				Message: *rakshaResp.Message,
 			}
 		}
 
@@ -2798,11 +2798,11 @@ func ToAnthropicResponsesStreamResponse(ctx *schemas.UnifAIContext, unifaiResp *
 	return []*AnthropicStreamEvent{streamResp}
 }
 
-// ToUnifAIResponsesRequest converts an Anthropic message request to UnifAI format
-func (req *AnthropicMessageRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIResponsesRequest {
+// ToRakshaResponsesRequest converts an Anthropic message request to Raksha format
+func (req *AnthropicMessageRequest) ToRakshaResponsesRequest(ctx *schemas.RakshaContext) *schemas.RakshaResponsesRequest {
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	unifaiReq := &schemas.UnifAIResponsesRequest{
+	rakshaReq := &schemas.RakshaResponsesRequest{
 		Provider:  provider,
 		Model:     model,
 		Fallbacks: schemas.ParseFallbacks(req.Fallbacks),
@@ -2880,7 +2880,7 @@ func (req *AnthropicMessageRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAI
 				summary = schemas.Ptr("none")
 			}
 			if req.OutputConfig != nil && req.OutputConfig.Effort != nil {
-				// Native effort present — map to UnifAI enum (e.g., "max" → "high")
+				// Native effort present — map to Raksha enum (e.g., "max" → "high")
 				params.Reasoning = &schemas.ResponsesParametersReasoning{
 					Effort:    schemas.Ptr(*req.OutputConfig.Effort),
 					MaxTokens: req.Thinking.BudgetTokens,
@@ -2910,7 +2910,7 @@ func (req *AnthropicMessageRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAI
 		params.Include = include
 	}
 	if req.ServiceTier != nil {
-		mapped := MapAnthropicRequestServiceTierToUnifAI(*req.ServiceTier)
+		mapped := MapAnthropicRequestServiceTierToRaksha(*req.ServiceTier)
 		params.ServiceTier = &mapped
 	}
 
@@ -2929,27 +2929,27 @@ func (req *AnthropicMessageRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAI
 		}
 	}
 
-	unifaiReq.Params = params
+	rakshaReq.Params = params
 
 	// Convert messages directly to ChatMessage format
-	var unifaiMessages []schemas.ResponsesMessage
+	var rakshaMessages []schemas.ResponsesMessage
 
 	// Convert regular messages using the new conversion method
-	convertedMessages := ConvertAnthropicMessagesToUnifAIMessages(ctx, req.Messages, req.System, false, provider == schemas.Bedrock)
-	unifaiMessages = append(unifaiMessages, convertedMessages...)
+	convertedMessages := ConvertAnthropicMessagesToRakshaMessages(ctx, req.Messages, req.System, false, provider == schemas.Bedrock)
+	rakshaMessages = append(rakshaMessages, convertedMessages...)
 
 	// Convert tools if present
 	if req.Tools != nil {
-		var unifaiTools []schemas.ResponsesTool
+		var rakshaTools []schemas.ResponsesTool
 		for _, tool := range req.Tools {
-			unifaiTool := convertAnthropicToolToUnifAI(&tool)
-			if unifaiTool != nil {
-				applyAnthropicToolFlagsToResponsesTool(&tool, unifaiTool)
-				unifaiTools = append(unifaiTools, *unifaiTool)
+			rakshaTool := convertAnthropicToolToRaksha(&tool)
+			if rakshaTool != nil {
+				applyAnthropicToolFlagsToResponsesTool(&tool, rakshaTool)
+				rakshaTools = append(rakshaTools, *rakshaTool)
 			}
 		}
-		if len(unifaiTools) > 0 {
-			unifaiReq.Params.Tools = unifaiTools
+		if len(rakshaTools) > 0 {
+			rakshaReq.Params.Tools = rakshaTools
 		}
 	}
 
@@ -2959,7 +2959,7 @@ func (req *AnthropicMessageRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAI
 		// top-level Anthropic tool flags (DeferLoading, AllowedCallers,
 		// InputExamples, EagerInputStreaming) survive the mcp_servers merge path —
 		// without this, mcp_toolset tools bypass applyAnthropicToolFlagsToResponsesTool
-		// because convertAnthropicToolToUnifAI skips them.
+		// because convertAnthropicToolToRaksha skips them.
 		toolsetByServer := make(map[string]*AnthropicTool)
 		if req.Tools != nil {
 			for i := range req.Tools {
@@ -2969,88 +2969,88 @@ func (req *AnthropicMessageRequest) ToUnifAIResponsesRequest(ctx *schemas.UnifAI
 			}
 		}
 
-		var unifaiMCPTools []schemas.ResponsesTool
+		var rakshaMCPTools []schemas.ResponsesTool
 		for _, mcpServer := range req.MCPServers {
-			unifaiMCPTool := convertAnthropicMCPServerV2ToUnifAITool(&mcpServer)
-			if unifaiMCPTool != nil {
+			rakshaMCPTool := convertAnthropicMCPServerV2ToRakshaTool(&mcpServer)
+			if rakshaMCPTool != nil {
 				// Merge mcp_toolset configs (allowed tools) + Anthropic tool flags if present
 				if toolWithFlags, ok := toolsetByServer[mcpServer.Name]; ok {
-					applyMCPToolsetConfigToUnifAITool(unifaiMCPTool, toolWithFlags.MCPToolset)
-					applyAnthropicToolFlagsToResponsesTool(toolWithFlags, unifaiMCPTool)
+					applyMCPToolsetConfigToRakshaTool(rakshaMCPTool, toolWithFlags.MCPToolset)
+					applyAnthropicToolFlagsToResponsesTool(toolWithFlags, rakshaMCPTool)
 				}
-				unifaiMCPTools = append(unifaiMCPTools, *unifaiMCPTool)
+				rakshaMCPTools = append(rakshaMCPTools, *rakshaMCPTool)
 			}
 		}
-		if len(unifaiMCPTools) > 0 {
-			unifaiReq.Params.Tools = append(unifaiReq.Params.Tools, unifaiMCPTools...)
+		if len(rakshaMCPTools) > 0 {
+			rakshaReq.Params.Tools = append(rakshaReq.Params.Tools, rakshaMCPTools...)
 		}
 	}
 
 	// Convert tool choice if present
 	if req.ToolChoice != nil {
-		unifaiToolChoice := convertAnthropicToolChoiceToUnifAI(req.ToolChoice)
-		if unifaiToolChoice != nil {
-			unifaiReq.Params.ToolChoice = unifaiToolChoice
+		rakshaToolChoice := convertAnthropicToolChoiceToRaksha(req.ToolChoice)
+		if rakshaToolChoice != nil {
+			rakshaReq.Params.ToolChoice = rakshaToolChoice
 		}
 	}
 
 	// Set the converted messages
-	if len(unifaiMessages) > 0 {
-		unifaiReq.Input = unifaiMessages
+	if len(rakshaMessages) > 0 {
+		rakshaReq.Input = rakshaMessages
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
-// ToAnthropicResponsesRequest converts a UnifAIRequest with Responses structure back to AnthropicMessageRequest
-func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.UnifAIResponsesRequest) (*AnthropicMessageRequest, error) {
-	if unifaiReq == nil {
-		return nil, fmt.Errorf("unifai request is nil")
+// ToAnthropicResponsesRequest converts a RakshaRequest with Responses structure back to AnthropicMessageRequest
+func ToAnthropicResponsesRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaResponsesRequest) (*AnthropicMessageRequest, error) {
+	if rakshaReq == nil {
+		return nil, fmt.Errorf("raksha request is nil")
 	}
 
 	anthropicReq := &AnthropicMessageRequest{
-		Model:     unifaiReq.Model,
-		MaxTokens: providerUtils.GetMaxOutputTokensOrDefault(unifaiReq.Model, AnthropicDefaultMaxTokens),
+		Model:     rakshaReq.Model,
+		MaxTokens: providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, AnthropicDefaultMaxTokens),
 	}
 
 	// capModel is the canonical model string used only for capability/version
-	capModel := schemas.ResolveCanonicalModel(ctx, unifaiReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
 
 	// Convert basic parameters
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.MaxOutputTokens != nil {
-			anthropicReq.MaxTokens = *unifaiReq.Params.MaxOutputTokens
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.MaxOutputTokens != nil {
+			anthropicReq.MaxTokens = *rakshaReq.Params.MaxOutputTokens
 		}
 		// Opus 4.7+ and the Fable/Mythos family reject temperature, top_p, and
 		// top_k with a 400 error.
 		if !IsAdaptiveOnlyThinkingModel(capModel) {
 			// Anthropic doesn't allow both temperature and top_p to be specified.
 			// If both are present, prefer temperature (more commonly used).
-			if unifaiReq.Params.Temperature != nil {
-				anthropicReq.Temperature = unifaiReq.Params.Temperature
-			} else if unifaiReq.Params.TopP != nil {
-				anthropicReq.TopP = unifaiReq.Params.TopP
+			if rakshaReq.Params.Temperature != nil {
+				anthropicReq.Temperature = rakshaReq.Params.Temperature
+			} else if rakshaReq.Params.TopP != nil {
+				anthropicReq.TopP = rakshaReq.Params.TopP
 			}
 		}
-		if unifaiReq.Params.User != nil {
+		if rakshaReq.Params.User != nil {
 			anthropicReq.Metadata = &AnthropicMetaData{
-				UserID: unifaiReq.Params.User,
+				UserID: rakshaReq.Params.User,
 			}
 		}
-		if unifaiReq.Params.Text != nil {
+		if rakshaReq.Params.Text != nil {
 			// Vertex and Bedrock Mantle don't accept native structured outputs
 			// (output_config.format), so convert to a tool instead.
-			if unifaiReq.Provider == schemas.Vertex || unifaiReq.Provider == schemas.BedrockMantle {
-				if unifaiReq.Params.Text.Format != nil {
-					responseFormatTool := convertResponsesTextFormatToTool(ctx, unifaiReq.Params.Text)
+			if rakshaReq.Provider == schemas.Vertex || rakshaReq.Provider == schemas.BedrockMantle {
+				if rakshaReq.Params.Text.Format != nil {
+					responseFormatTool := convertResponsesTextFormatToTool(ctx, rakshaReq.Params.Text)
 					if responseFormatTool != nil {
 						if anthropicReq.Tools == nil {
 							anthropicReq.Tools = []AnthropicTool{}
 						}
 						anthropicReq.Tools = append(anthropicReq.Tools, *responseFormatTool)
-						thinkingEnabled := unifaiReq.Params.Reasoning != nil &&
-							(unifaiReq.Params.Reasoning.MaxTokens != nil ||
-								(unifaiReq.Params.Reasoning.Effort != nil && *unifaiReq.Params.Reasoning.Effort != "none"))
+						thinkingEnabled := rakshaReq.Params.Reasoning != nil &&
+							(rakshaReq.Params.Reasoning.MaxTokens != nil ||
+								(rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none"))
 						if !thinkingEnabled {
 							anthropicReq.ToolChoice = &AnthropicToolChoice{
 								Type: "tool",
@@ -3063,7 +3063,7 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 				// Citations cannot be used together with Structured Outputs in anthropic.
 				hasCitationsEnabled := false
 				// loop over input messages and check if any message has citations enabled
-				for _, message := range unifaiReq.Input {
+				for _, message := range rakshaReq.Input {
 					if message.Content == nil || message.Content.ContentBlocks == nil {
 						continue
 					}
@@ -3084,7 +3084,7 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 				}
 				if !hasCitationsEnabled {
 					// Use GA structured outputs (output_config.format) instead of beta (output_format)
-					outputFormat := convertResponsesTextConfigToAnthropicOutputFormat(unifaiReq.Params.Text)
+					outputFormat := convertResponsesTextConfigToAnthropicOutputFormat(rakshaReq.Params.Text)
 					if outputFormat != nil {
 						anthropicReq.OutputConfig = &AnthropicOutputConfig{
 							Format: outputFormat,
@@ -3093,19 +3093,19 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 				}
 			}
 		}
-		if unifaiReq.Params.Reasoning != nil {
-			if unifaiReq.Params.Reasoning.MaxTokens != nil {
+		if rakshaReq.Params.Reasoning != nil {
+			if rakshaReq.Params.Reasoning.MaxTokens != nil {
 				if IsAdaptiveOnlyThinkingModel(capModel) {
 					// Opus 4.7+ and Fable/Mythos: budget_tokens removed; adaptive thinking is the only thinking-on mode.
 					anthropicReq.Thinking = &AnthropicThinking{Type: "adaptive"}
 					// Preserve a co-present effort — these models support
 					// output_config.effort, and the budget is otherwise dropped.
-					if unifaiReq.Params.Reasoning.Effort != nil && *unifaiReq.Params.Reasoning.Effort != "none" {
-						setEffortOnOutputConfig(anthropicReq, MapUnifAIEffortToAnthropic(*unifaiReq.Params.Reasoning.Effort))
+					if rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none" {
+						setEffortOnOutputConfig(anthropicReq, MapRakshaEffortToAnthropic(*rakshaReq.Params.Reasoning.Effort))
 					}
 				} else {
-					budgetTokens := *unifaiReq.Params.Reasoning.MaxTokens
-					if *unifaiReq.Params.Reasoning.MaxTokens == -1 {
+					budgetTokens := *rakshaReq.Params.Reasoning.MaxTokens
+					if *rakshaReq.Params.Reasoning.MaxTokens == -1 {
 						// anthropic does not support dynamic reasoning budget like gemini
 						// setting it to default max tokens
 						budgetTokens = MinimumReasoningMaxTokens
@@ -3119,9 +3119,9 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 					}
 				}
 			} else {
-				if unifaiReq.Params.Reasoning.Effort != nil {
-					if *unifaiReq.Params.Reasoning.Effort != "none" {
-						effort := MapUnifAIEffortToAnthropic(*unifaiReq.Params.Reasoning.Effort)
+				if rakshaReq.Params.Reasoning.Effort != nil {
+					if *rakshaReq.Params.Reasoning.Effort != "none" {
+						effort := MapRakshaEffortToAnthropic(*rakshaReq.Params.Reasoning.Effort)
 
 						if SupportsAdaptiveThinking(capModel) {
 							// Opus 4.6+ and Opus 4.7+: adaptive thinking + native effort
@@ -3161,9 +3161,9 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 				}
 			}
 			if anthropicReq.Thinking != nil && anthropicReq.Thinking.Type != "disabled" {
-				if unifaiReq.Params.Reasoning != nil &&
-					unifaiReq.Params.Reasoning.Summary != nil {
-					if *unifaiReq.Params.Reasoning.Summary == "none" {
+				if rakshaReq.Params.Reasoning != nil &&
+					rakshaReq.Params.Reasoning.Summary != nil {
+					if *rakshaReq.Params.Reasoning.Summary == "none" {
 						anthropicReq.Thinking.Display = schemas.Ptr("omitted")
 					} else {
 						anthropicReq.Thinking.Display = schemas.Ptr("summarized")
@@ -3174,14 +3174,14 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 			}
 		}
 		// Convert service tier
-		if unifaiReq.Params.ServiceTier != nil {
-			mapped := MapUnifAIServiceTierToAnthropicRequest(*unifaiReq.Params.ServiceTier)
+		if rakshaReq.Params.ServiceTier != nil {
+			mapped := MapRakshaServiceTierToAnthropicRequest(*rakshaReq.Params.ServiceTier)
 			anthropicReq.ServiceTier = &mapped
 		}
 
-		if unifaiReq.Params.ExtraParams != nil {
-			anthropicReq.ExtraParams = make(map[string]interface{}, len(unifaiReq.Params.ExtraParams))
-			for k, v := range unifaiReq.Params.ExtraParams {
+		if rakshaReq.Params.ExtraParams != nil {
+			anthropicReq.ExtraParams = make(map[string]interface{}, len(rakshaReq.Params.ExtraParams))
+			for k, v := range rakshaReq.Params.ExtraParams {
 				anthropicReq.ExtraParams[k] = v
 			}
 			if cacheControlRaw, exists := anthropicReq.ExtraParams["cache_control"]; exists {
@@ -3228,28 +3228,28 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 					delete(anthropicReq.ExtraParams, "diagnostics")
 				}
 			}
-			topK, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["top_k"])
+			topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"])
 			if ok {
 				delete(anthropicReq.ExtraParams, "top_k")
 				if !IsAdaptiveOnlyThinkingModel(capModel) {
 					anthropicReq.TopK = topK
 				}
 			}
-			if speed, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["speed"]); ok {
+			if speed, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["speed"]); ok {
 				delete(anthropicReq.ExtraParams, "speed")
 				if SupportsFastMode(capModel) {
 					anthropicReq.Speed = speed
 				}
 			}
-			if stop, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["stop"]); ok {
+			if stop, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["stop"]); ok {
 				delete(anthropicReq.ExtraParams, "stop")
 				anthropicReq.StopSequences = stop
 			}
-			if inferenceGeo, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["inference_geo"]); ok {
+			if inferenceGeo, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["inference_geo"]); ok {
 				delete(anthropicReq.ExtraParams, "inference_geo")
 				anthropicReq.InferenceGeo = inferenceGeo
 			}
-			if cmVal := unifaiReq.Params.ExtraParams["context_management"]; cmVal != nil {
+			if cmVal := rakshaReq.Params.ExtraParams["context_management"]; cmVal != nil {
 				if cm, ok := cmVal.(*ContextManagement); ok && cm != nil {
 					delete(anthropicReq.ExtraParams, "context_management")
 					anthropicReq.ContextManagement = cm
@@ -3261,7 +3261,7 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 					}
 				}
 			}
-			if tbVal, exists := unifaiReq.Params.ExtraParams["task_budget"]; exists {
+			if tbVal, exists := rakshaReq.Params.ExtraParams["task_budget"]; exists {
 				// Always consume provider-specific key from passthrough extras.
 				delete(anthropicReq.ExtraParams, "task_budget")
 				var taskBudget *AnthropicTaskBudget
@@ -3289,8 +3289,8 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 		}
 
 		// Convert tools
-		if unifaiReq.Params.Tools != nil {
-			anthropicTools, mcpServers := convertUnifAIToolsToAnthropic(capModel, unifaiReq.Params.Tools, unifaiReq.Provider)
+		if rakshaReq.Params.Tools != nil {
+			anthropicTools, mcpServers := convertRakshaToolsToAnthropic(capModel, rakshaReq.Params.Tools, rakshaReq.Provider)
 			if len(anthropicTools) > 0 {
 				if anthropicReq.Tools == nil {
 					anthropicReq.Tools = anthropicTools
@@ -3304,28 +3304,28 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 		}
 
 		// Convert tool choice
-		if unifaiReq.Params.ToolChoice != nil {
-			anthropicToolChoice := convertResponsesToolChoiceToAnthropic(unifaiReq.Params.ToolChoice)
+		if rakshaReq.Params.ToolChoice != nil {
+			anthropicToolChoice := convertResponsesToolChoiceToAnthropic(rakshaReq.Params.ToolChoice)
 			if anthropicToolChoice != nil {
 				anthropicReq.ToolChoice = anthropicToolChoice
 			}
 		}
 	}
 
-	if unifaiReq.Input != nil {
-		anthropicMessages, systemContent := ConvertUnifAIMessagesToAnthropicMessages(ctx, unifaiReq.Input, true, unifaiReq.Provider, capModel)
+	if rakshaReq.Input != nil {
+		anthropicMessages, systemContent := ConvertRakshaMessagesToAnthropicMessages(ctx, rakshaReq.Input, true, rakshaReq.Provider, capModel)
 
 		// Set system message if present
 		if systemContent != nil {
 			anthropicReq.System = systemContent
-		} else if unifaiReq.Params != nil && unifaiReq.Params.Instructions != nil && *unifaiReq.Params.Instructions != "" {
+		} else if rakshaReq.Params != nil && rakshaReq.Params.Instructions != nil && *rakshaReq.Params.Instructions != "" {
 			// if no system content, check if instructions are present
 			// system messages take precedence over instructions
 			anthropicReq.System = &AnthropicContent{
 				ContentBlocks: []AnthropicContentBlock{
 					{
 						Type: AnthropicContentBlockTypeText,
-						Text: unifaiReq.Params.Instructions,
+						Text: rakshaReq.Params.Instructions,
 					},
 				},
 			}
@@ -3338,14 +3338,14 @@ func ToAnthropicResponsesRequest(ctx *schemas.UnifAIContext, unifaiReq *schemas.
 	return anthropicReq, nil
 }
 
-// ConvertAnthropicUsageToUnifAIUsage converts Anthropic usage format to UnifAI usage format
+// ConvertAnthropicUsageToRakshaUsage converts Anthropic usage format to Raksha usage format
 // Handles iterations recursively
-func ConvertAnthropicUsageToUnifAIUsage(anthropicUsage *AnthropicUsage) *schemas.ResponsesResponseUsage {
+func ConvertAnthropicUsageToRakshaUsage(anthropicUsage *AnthropicUsage) *schemas.ResponsesResponseUsage {
 	if anthropicUsage == nil {
 		return nil
 	}
 
-	unifaiUsage := &schemas.ResponsesResponseUsage{
+	rakshaUsage := &schemas.ResponsesResponseUsage{
 		Type:         anthropicUsage.Type,
 		InputTokens:  anthropicUsage.InputTokens,
 		OutputTokens: anthropicUsage.OutputTokens,
@@ -3354,94 +3354,94 @@ func ConvertAnthropicUsageToUnifAIUsage(anthropicUsage *AnthropicUsage) *schemas
 
 	// Handle cache read tokens
 	if anthropicUsage.CacheReadInputTokens > 0 {
-		if unifaiUsage.InputTokensDetails == nil {
-			unifaiUsage.InputTokensDetails = &schemas.ResponsesResponseInputTokens{}
+		if rakshaUsage.InputTokensDetails == nil {
+			rakshaUsage.InputTokensDetails = &schemas.ResponsesResponseInputTokens{}
 		}
-		unifaiUsage.InputTokensDetails.CachedReadTokens = anthropicUsage.CacheReadInputTokens
-		unifaiUsage.InputTokens = unifaiUsage.InputTokens + anthropicUsage.CacheReadInputTokens
-		unifaiUsage.TotalTokens = unifaiUsage.TotalTokens + anthropicUsage.CacheReadInputTokens
+		rakshaUsage.InputTokensDetails.CachedReadTokens = anthropicUsage.CacheReadInputTokens
+		rakshaUsage.InputTokens = rakshaUsage.InputTokens + anthropicUsage.CacheReadInputTokens
+		rakshaUsage.TotalTokens = rakshaUsage.TotalTokens + anthropicUsage.CacheReadInputTokens
 	}
 
 	// Handle cache creation tokens
 	if anthropicUsage.CacheCreationInputTokens > 0 {
-		if unifaiUsage.InputTokensDetails == nil {
-			unifaiUsage.InputTokensDetails = &schemas.ResponsesResponseInputTokens{}
+		if rakshaUsage.InputTokensDetails == nil {
+			rakshaUsage.InputTokensDetails = &schemas.ResponsesResponseInputTokens{}
 		}
-		unifaiUsage.InputTokensDetails.CachedWriteTokens = anthropicUsage.CacheCreationInputTokens
+		rakshaUsage.InputTokensDetails.CachedWriteTokens = anthropicUsage.CacheCreationInputTokens
 		if anthropicUsage.CacheCreation.Ephemeral5mInputTokens > 0 || anthropicUsage.CacheCreation.Ephemeral1hInputTokens > 0 {
-			unifaiUsage.InputTokensDetails.CachedWriteTokenDetails = &schemas.ChatCachedWriteTokenDetails{
+			rakshaUsage.InputTokensDetails.CachedWriteTokenDetails = &schemas.ChatCachedWriteTokenDetails{
 				CachedWriteTokens5m: anthropicUsage.CacheCreation.Ephemeral5mInputTokens,
 				CachedWriteTokens1h: anthropicUsage.CacheCreation.Ephemeral1hInputTokens,
 			}
 		}
-		unifaiUsage.InputTokens = unifaiUsage.InputTokens + anthropicUsage.CacheCreationInputTokens
-		unifaiUsage.TotalTokens = unifaiUsage.TotalTokens + anthropicUsage.CacheCreationInputTokens
+		rakshaUsage.InputTokens = rakshaUsage.InputTokens + anthropicUsage.CacheCreationInputTokens
+		rakshaUsage.TotalTokens = rakshaUsage.TotalTokens + anthropicUsage.CacheCreationInputTokens
 	}
 
 	// Propagate server tool use (web search) counts
 	if anthropicUsage.ServerToolUse != nil && anthropicUsage.ServerToolUse.WebSearchRequests > 0 {
-		if unifaiUsage.OutputTokensDetails == nil {
-			unifaiUsage.OutputTokensDetails = &schemas.ResponsesResponseOutputTokens{}
+		if rakshaUsage.OutputTokensDetails == nil {
+			rakshaUsage.OutputTokensDetails = &schemas.ResponsesResponseOutputTokens{}
 		}
-		unifaiUsage.OutputTokensDetails.NumSearchQueries = schemas.Ptr(anthropicUsage.ServerToolUse.WebSearchRequests)
+		rakshaUsage.OutputTokensDetails.NumSearchQueries = schemas.Ptr(anthropicUsage.ServerToolUse.WebSearchRequests)
 	}
 
 	// Recursively convert iterations
 	if len(anthropicUsage.Iterations) > 0 {
-		unifaiUsage.Iterations = make([]schemas.ResponsesResponseUsage, len(anthropicUsage.Iterations))
+		rakshaUsage.Iterations = make([]schemas.ResponsesResponseUsage, len(anthropicUsage.Iterations))
 		for i, iteration := range anthropicUsage.Iterations {
-			if converted := ConvertAnthropicUsageToUnifAIUsage(&iteration); converted != nil {
-				unifaiUsage.Iterations[i] = *converted
+			if converted := ConvertAnthropicUsageToRakshaUsage(&iteration); converted != nil {
+				rakshaUsage.Iterations[i] = *converted
 			}
 		}
 	}
 
-	return unifaiUsage
+	return rakshaUsage
 }
 
-// ConvertUnifAIUsageToAnthropicUsage converts UnifAI usage format to Anthropic usage format
+// ConvertRakshaUsageToAnthropicUsage converts Raksha usage format to Anthropic usage format
 // Handles iterations recursively
-func ConvertUnifAIUsageToAnthropicUsage(unifaiUsage *schemas.ResponsesResponseUsage) *AnthropicUsage {
-	if unifaiUsage == nil {
+func ConvertRakshaUsageToAnthropicUsage(rakshaUsage *schemas.ResponsesResponseUsage) *AnthropicUsage {
+	if rakshaUsage == nil {
 		return nil
 	}
 
 	anthropicUsage := &AnthropicUsage{
-		Type:         unifaiUsage.Type,
-		InputTokens:  unifaiUsage.InputTokens,
-		OutputTokens: unifaiUsage.OutputTokens,
+		Type:         rakshaUsage.Type,
+		InputTokens:  rakshaUsage.InputTokens,
+		OutputTokens: rakshaUsage.OutputTokens,
 	}
 
 	// Handle cache read tokens
-	if unifaiUsage.InputTokensDetails != nil {
-		if unifaiUsage.InputTokensDetails.CachedReadTokens > 0 {
-			anthropicUsage.CacheReadInputTokens = unifaiUsage.InputTokensDetails.CachedReadTokens
-			anthropicUsage.InputTokens = anthropicUsage.InputTokens - unifaiUsage.InputTokensDetails.CachedReadTokens
+	if rakshaUsage.InputTokensDetails != nil {
+		if rakshaUsage.InputTokensDetails.CachedReadTokens > 0 {
+			anthropicUsage.CacheReadInputTokens = rakshaUsage.InputTokensDetails.CachedReadTokens
+			anthropicUsage.InputTokens = anthropicUsage.InputTokens - rakshaUsage.InputTokensDetails.CachedReadTokens
 		}
-		if unifaiUsage.InputTokensDetails.CachedWriteTokens > 0 {
-			anthropicUsage.CacheCreationInputTokens = unifaiUsage.InputTokensDetails.CachedWriteTokens
-			anthropicUsage.InputTokens = anthropicUsage.InputTokens - unifaiUsage.InputTokensDetails.CachedWriteTokens
-			if unifaiUsage.InputTokensDetails.CachedWriteTokenDetails != nil {
+		if rakshaUsage.InputTokensDetails.CachedWriteTokens > 0 {
+			anthropicUsage.CacheCreationInputTokens = rakshaUsage.InputTokensDetails.CachedWriteTokens
+			anthropicUsage.InputTokens = anthropicUsage.InputTokens - rakshaUsage.InputTokensDetails.CachedWriteTokens
+			if rakshaUsage.InputTokensDetails.CachedWriteTokenDetails != nil {
 				anthropicUsage.CacheCreation = AnthropicUsageCacheCreation{
-					Ephemeral5mInputTokens: unifaiUsage.InputTokensDetails.CachedWriteTokenDetails.CachedWriteTokens5m,
-					Ephemeral1hInputTokens: unifaiUsage.InputTokensDetails.CachedWriteTokenDetails.CachedWriteTokens1h,
+					Ephemeral5mInputTokens: rakshaUsage.InputTokensDetails.CachedWriteTokenDetails.CachedWriteTokens5m,
+					Ephemeral1hInputTokens: rakshaUsage.InputTokensDetails.CachedWriteTokenDetails.CachedWriteTokens1h,
 				}
 			}
 		}
 	}
 
 	// Handle server tool use statistics (e.g., web search)
-	if unifaiUsage.OutputTokensDetails != nil && unifaiUsage.OutputTokensDetails.NumSearchQueries != nil && *unifaiUsage.OutputTokensDetails.NumSearchQueries > 0 {
+	if rakshaUsage.OutputTokensDetails != nil && rakshaUsage.OutputTokensDetails.NumSearchQueries != nil && *rakshaUsage.OutputTokensDetails.NumSearchQueries > 0 {
 		anthropicUsage.ServerToolUse = &AnthropicServerToolUseUsage{
-			WebSearchRequests: *unifaiUsage.OutputTokensDetails.NumSearchQueries,
+			WebSearchRequests: *rakshaUsage.OutputTokensDetails.NumSearchQueries,
 		}
 	}
 
 	// Recursively convert iterations
-	if len(unifaiUsage.Iterations) > 0 {
-		anthropicUsage.Iterations = make([]AnthropicUsage, len(unifaiUsage.Iterations))
-		for i, iteration := range unifaiUsage.Iterations {
-			if converted := ConvertUnifAIUsageToAnthropicUsage(&iteration); converted != nil {
+	if len(rakshaUsage.Iterations) > 0 {
+		anthropicUsage.Iterations = make([]AnthropicUsage, len(rakshaUsage.Iterations))
+		for i, iteration := range rakshaUsage.Iterations {
+			if converted := ConvertRakshaUsageToAnthropicUsage(&iteration); converted != nil {
 				anthropicUsage.Iterations[i] = *converted
 			}
 		}
@@ -3450,20 +3450,20 @@ func ConvertUnifAIUsageToAnthropicUsage(unifaiUsage *schemas.ResponsesResponseUs
 	return anthropicUsage
 }
 
-// ToUnifAIResponsesResponse converts an Anthropic response to UnifAIResponse with Responses structure
-func (response *AnthropicMessageResponse) ToUnifAIResponsesResponse(ctx *schemas.UnifAIContext) *schemas.UnifAIResponsesResponse {
+// ToRakshaResponsesResponse converts an Anthropic response to RakshaResponse with Responses structure
+func (response *AnthropicMessageResponse) ToRakshaResponsesResponse(ctx *schemas.RakshaContext) *schemas.RakshaResponsesResponse {
 	if response == nil {
 		return nil
 	}
 
-	// Create the UnifAIResponse with Responses structure
-	unifaiResp := &schemas.UnifAIResponsesResponse{
+	// Create the RakshaResponse with Responses structure
+	rakshaResp := &schemas.RakshaResponsesResponse{
 		ID:        schemas.Ptr(response.ID),
 		CreatedAt: int(time.Now().Unix()),
 	}
 
 	// Convert usage information using common converter (handles iterations recursively)
-	unifaiResp.Usage = ConvertAnthropicUsageToUnifAIUsage(response.Usage)
+	rakshaResp.Usage = ConvertAnthropicUsageToRakshaUsage(response.Usage)
 
 	// Convert content to Responses output messages using the new conversion method
 	if len(response.Content) > 0 {
@@ -3474,7 +3474,7 @@ func (response *AnthropicMessageResponse) ToUnifAIResponsesResponse(ctx *schemas
 				ContentBlocks: response.Content,
 			},
 		}
-		outputMessages := ConvertAnthropicMessagesToUnifAIMessages(ctx, []AnthropicMessage{tempMsg}, nil, true, false)
+		outputMessages := ConvertAnthropicMessagesToRakshaMessages(ctx, []AnthropicMessage{tempMsg}, nil, true, false)
 		if len(outputMessages) > 0 {
 			// Lift the response-level code-execution container onto every
 			// code_interpreter_call so it round-trips (id is neutral; expiry is carried).
@@ -3496,16 +3496,16 @@ func (response *AnthropicMessageResponse) ToUnifAIResponsesResponse(ctx *schemas
 					}
 				}
 			}
-			unifaiResp.Output = outputMessages
+			rakshaResp.Output = outputMessages
 		}
 	}
 
-	unifaiResp.Model = response.Model
+	rakshaResp.Model = response.Model
 
 	if response.StopReason != "" {
-		mapped := ConvertAnthropicFinishReasonToUnifAI(response.StopReason)
-		if mapped == string(schemas.UnifAIFinishReasonToolCalls) {
-			if soToolName, ok := ctx.Value(schemas.UnifAIContextKeyStructuredOutputToolName).(string); ok && soToolName != "" {
+		mapped := ConvertAnthropicFinishReasonToRaksha(response.StopReason)
+		if mapped == string(schemas.RakshaFinishReasonToolCalls) {
+			if soToolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok && soToolName != "" {
 				hasRealToolUse := false
 				for _, block := range response.Content {
 					if block.Type == AnthropicContentBlockTypeServerToolUse ||
@@ -3516,48 +3516,48 @@ func (response *AnthropicMessageResponse) ToUnifAIResponsesResponse(ctx *schemas
 					}
 				}
 				if !hasRealToolUse {
-					mapped = string(schemas.UnifAIFinishReasonStop)
+					mapped = string(schemas.RakshaFinishReasonStop)
 				}
 			}
 		}
-		unifaiResp.StopReason = &mapped
+		rakshaResp.StopReason = &mapped
 	}
 
 	if response.Usage != nil && response.Usage.ServiceTier != nil {
-		mapped := MapAnthropicServiceTierToUnifAI(*response.Usage.ServiceTier)
-		unifaiResp.ServiceTier = &mapped
+		mapped := MapAnthropicServiceTierToRaksha(*response.Usage.ServiceTier)
+		rakshaResp.ServiceTier = &mapped
 	}
 
 	// Forward the speed actually served (fast mode) — drives fast-mode billing.
 	if response.Usage != nil && response.Usage.Speed != nil {
-		unifaiResp.Speed = response.Usage.Speed
+		rakshaResp.Speed = response.Usage.Speed
 	}
 
 	// Forward cache diagnostics (cache-diagnosis-2026-04-07) to the client.
 	if response.Diagnostics != nil {
-		unifaiResp.Diagnostics = response.Diagnostics
+		rakshaResp.Diagnostics = response.Diagnostics
 	}
 
-	return unifaiResp
+	return rakshaResp
 }
 
-// ToAnthropicResponsesResponse converts a UnifAIResponse with Responses structure back to AnthropicMessageResponse
-func ToAnthropicResponsesResponse(ctx *schemas.UnifAIContext, unifaiResp *schemas.UnifAIResponsesResponse) *AnthropicMessageResponse {
+// ToAnthropicResponsesResponse converts a RakshaResponse with Responses structure back to AnthropicMessageResponse
+func ToAnthropicResponsesResponse(ctx *schemas.RakshaContext, rakshaResp *schemas.RakshaResponsesResponse) *AnthropicMessageResponse {
 	anthropicResp := &AnthropicMessageResponse{
 		Type: "message",
 		Role: "assistant",
 	}
-	if unifaiResp.ID != nil {
-		anthropicResp.ID = *unifaiResp.ID
+	if rakshaResp.ID != nil {
+		anthropicResp.ID = *rakshaResp.ID
 	}
 
 	// Convert usage information using common converter (handles iterations recursively)
-	anthropicResp.Usage = ConvertUnifAIUsageToAnthropicUsage(unifaiResp.Usage)
+	anthropicResp.Usage = ConvertRakshaUsageToAnthropicUsage(rakshaResp.Usage)
 
 	// Convert output messages to Anthropic content blocks using the new conversion method
 	var contentBlocks []AnthropicContentBlock
-	if unifaiResp.Output != nil {
-		anthropicMessages, _ := ConvertUnifAIMessagesToAnthropicMessages(ctx, unifaiResp.Output, false, "", "")
+	if rakshaResp.Output != nil {
+		anthropicMessages, _ := ConvertRakshaMessagesToAnthropicMessages(ctx, rakshaResp.Output, false, "", "")
 		// Extract content blocks from the converted messages
 		for _, msg := range anthropicMessages {
 			if msg.Content.ContentBlocks != nil {
@@ -3579,8 +3579,8 @@ func ToAnthropicResponsesResponse(ctx *schemas.UnifAIContext, unifaiResp *schema
 
 	// Restore the response-level code-execution container from the first
 	// code_interpreter_call that carries one.
-	for i := range unifaiResp.Output {
-		m := &unifaiResp.Output[i]
+	for i := range rakshaResp.Output {
+		m := &rakshaResp.Output[i]
 		if m.Type == nil || *m.Type != schemas.ResponsesMessageTypeCodeInterpreterCall || m.ResponsesToolMessage == nil {
 			continue
 		}
@@ -3596,9 +3596,9 @@ func ToAnthropicResponsesResponse(ctx *schemas.UnifAIContext, unifaiResp *schema
 		break
 	}
 
-	// Map stop reason from UnifAI response if available, otherwise infer from content
-	if unifaiResp.StopReason != nil {
-		anthropicResp.StopReason = ConvertUnifAIFinishReasonToAnthropic(*unifaiResp.StopReason)
+	// Map stop reason from Raksha response if available, otherwise infer from content
+	if rakshaResp.StopReason != nil {
+		anthropicResp.StopReason = ConvertRakshaFinishReasonToAnthropic(*rakshaResp.StopReason)
 	} else {
 		anthropicResp.StopReason = AnthropicStopReasonEndTurn
 		for _, block := range contentBlocks {
@@ -3609,69 +3609,69 @@ func ToAnthropicResponsesResponse(ctx *schemas.UnifAIContext, unifaiResp *schema
 		}
 	}
 
-	anthropicResp.Model = unifaiResp.Model
+	anthropicResp.Model = rakshaResp.Model
 
-	if unifaiResp.ServiceTier != nil {
+	if rakshaResp.ServiceTier != nil {
 		if anthropicResp.Usage == nil {
 			anthropicResp.Usage = &AnthropicUsage{}
 		}
-		mapped := MapUnifAIServiceTierToAnthropicResponse(*unifaiResp.ServiceTier)
+		mapped := MapRakshaServiceTierToAnthropicResponse(*rakshaResp.ServiceTier)
 		anthropicResp.Usage.ServiceTier = &mapped
 	}
 
-	if unifaiResp.Speed != nil {
+	if rakshaResp.Speed != nil {
 		if anthropicResp.Usage == nil {
 			anthropicResp.Usage = &AnthropicUsage{}
 		}
-		anthropicResp.Usage.Speed = unifaiResp.Speed
+		anthropicResp.Usage.Speed = rakshaResp.Speed
 	}
 
-	if unifaiResp.Diagnostics != nil {
-		anthropicResp.Diagnostics = unifaiResp.Diagnostics
+	if rakshaResp.Diagnostics != nil {
+		anthropicResp.Diagnostics = rakshaResp.Diagnostics
 	}
 
 	return anthropicResp
 }
 
-// ConvertAnthropicMessagesToUnifAIMessages converts an array of Anthropic messages to UnifAI ResponsesMessage format
-func ConvertAnthropicMessagesToUnifAIMessages(ctx *schemas.UnifAIContext, anthropicMessages []AnthropicMessage, systemContent *AnthropicContent, isOutputMessage bool, keepToolsGrouped bool) []schemas.ResponsesMessage {
-	var unifaiMessages []schemas.ResponsesMessage
+// ConvertAnthropicMessagesToRakshaMessages converts an array of Anthropic messages to Raksha ResponsesMessage format
+func ConvertAnthropicMessagesToRakshaMessages(ctx *schemas.RakshaContext, anthropicMessages []AnthropicMessage, systemContent *AnthropicContent, isOutputMessage bool, keepToolsGrouped bool) []schemas.ResponsesMessage {
+	var rakshaMessages []schemas.ResponsesMessage
 
 	// Get structured output tool name from context if present
 	var structuredOutputToolName string
 	if ctx != nil {
-		if toolName, ok := ctx.Value(schemas.UnifAIContextKeyStructuredOutputToolName).(string); ok {
+		if toolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok {
 			structuredOutputToolName = toolName
 		}
 	}
 
 	// Handle system message first if present
 	if systemContent != nil {
-		systemMessages := convertAnthropicSystemToUnifAIMessages(systemContent)
-		unifaiMessages = append(unifaiMessages, systemMessages...)
+		systemMessages := convertAnthropicSystemToRakshaMessages(systemContent)
+		rakshaMessages = append(rakshaMessages, systemMessages...)
 	}
 
 	// Convert regular messages
 	for _, msg := range anthropicMessages {
 		var convertedMessages []schemas.ResponsesMessage
 		if keepToolsGrouped {
-			convertedMessages = convertSingleAnthropicMessageToUnifAIMessagesGrouped(&msg, isOutputMessage, structuredOutputToolName)
+			convertedMessages = convertSingleAnthropicMessageToRakshaMessagesGrouped(&msg, isOutputMessage, structuredOutputToolName)
 		} else {
-			convertedMessages = convertSingleAnthropicMessageToUnifAIMessages(ctx, &msg, isOutputMessage, structuredOutputToolName)
+			convertedMessages = convertSingleAnthropicMessageToRakshaMessages(ctx, &msg, isOutputMessage, structuredOutputToolName)
 		}
-		unifaiMessages = append(unifaiMessages, convertedMessages...)
+		rakshaMessages = append(rakshaMessages, convertedMessages...)
 	}
 
-	return unifaiMessages
+	return rakshaMessages
 }
 
-// ConvertUnifAIMessagesToAnthropicMessages converts an array of UnifAI ResponsesMessage to Anthropic message format
-// This is the main conversion method from UnifAI to Anthropic - handles all message types and returns messages + system content.
+// ConvertRakshaMessagesToAnthropicMessages converts an array of Raksha ResponsesMessage to Anthropic message format
+// This is the main conversion method from Raksha to Anthropic - handles all message types and returns messages + system content.
 // provider and model are used to gate mid-conversation system message support (Anthropic + Opus 4.8+ only).
-func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifaiMessages []schemas.ResponsesMessage, isRequestMessage bool, provider schemas.ModelProvider, model string) ([]AnthropicMessage, *AnthropicContent) {
+func ConvertRakshaMessagesToAnthropicMessages(ctx *schemas.RakshaContext, rakshaMessages []schemas.ResponsesMessage, isRequestMessage bool, provider schemas.ModelProvider, model string) ([]AnthropicMessage, *AnthropicContent) {
 	// If only a single system message is present, convert it user message (since openai allows it)
-	if len(unifaiMessages) == 1 && unifaiMessages[0].Role != nil && (*unifaiMessages[0].Role == schemas.ResponsesInputMessageRoleSystem || *unifaiMessages[0].Role == schemas.ResponsesInputMessageRoleDeveloper) {
-		if systemContent := convertUnifAIMessageToAnthropicSystemContent(&unifaiMessages[0]); systemContent != nil {
+	if len(rakshaMessages) == 1 && rakshaMessages[0].Role != nil && (*rakshaMessages[0].Role == schemas.ResponsesInputMessageRoleSystem || *rakshaMessages[0].Role == schemas.ResponsesInputMessageRoleDeveloper) {
+		if systemContent := convertRakshaMessageToAnthropicSystemContent(&rakshaMessages[0]); systemContent != nil {
 			return []AnthropicMessage{{
 				Role:    AnthropicMessageRoleUser,
 				Content: *systemContent,
@@ -3828,10 +3828,10 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 		}
 	}
 
-	trimIndex := len(unifaiMessages)
-	if isRequestMessage && ctx.Value(schemas.UnifAIContextKeySupportsAssistantPrefill) == false {
+	trimIndex := len(rakshaMessages)
+	if isRequestMessage && ctx.Value(schemas.RakshaContextKeySupportsAssistantPrefill) == false {
 		for trimIndex > 0 {
-			m := unifaiMessages[trimIndex-1]
+			m := rakshaMessages[trimIndex-1]
 			if m.Role != nil && *m.Role == schemas.ResponsesInputMessageRoleAssistant {
 				trimIndex--
 			} else {
@@ -3840,7 +3840,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 		}
 	}
 
-	for i, msg := range unifaiMessages {
+	for i, msg := range rakshaMessages {
 		// Handle nil Type as regular message
 		msgType := schemas.ResponsesMessageTypeMessage
 		if msg.Type != nil {
@@ -3880,7 +3880,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 					currentAssistantMessage != nil) {
 					seenConversation = true
 				}
-				if content := convertUnifAIMessageToAnthropicSystemContent(&msg); content != nil {
+				if content := convertRakshaMessageToAnthropicSystemContent(&msg); content != nil {
 					if seenConversation && midConvSystemSupported {
 						// Mid-conversation system message — emit as role:"system" in messages array.
 						anthropicMessages = append(anthropicMessages, AnthropicMessage{
@@ -3912,7 +3912,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			}
 
 			// Regular user/assistant message
-			anthropicMsg := convertUnifAIMessageToAnthropicMessage(&msg, &pendingReasoningContentBlocks)
+			anthropicMsg := convertRakshaMessageToAnthropicMessage(&msg, &pendingReasoningContentBlocks)
 			if anthropicMsg != nil {
 				anthropicMessages = append(anthropicMessages, *anthropicMsg)
 				// Register any tool_use ids carried on a regular assistant message so
@@ -3930,7 +3930,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			flushPendingToolResults()
 
 			// Handle reasoning as thinking content
-			reasoningBlocks := convertUnifAIReasoningToAnthropicThinking(&msg)
+			reasoningBlocks := convertRakshaReasoningToAnthropicThinking(&msg)
 			pendingReasoningContentBlocks = append(pendingReasoningContentBlocks, reasoningBlocks...)
 
 		case schemas.ResponsesMessageTypeFunctionCall:
@@ -3955,7 +3955,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 				pendingReasoningContentBlocks = nil
 			}
 
-			toolUseBlock := convertUnifAIFunctionCallToAnthropicToolUse(ctx, &msg)
+			toolUseBlock := convertRakshaFunctionCallToAnthropicToolUse(ctx, &msg)
 			if toolUseBlock != nil {
 				// If there was a previous assistant message (text only) that was just added,
 				// and we have no pending tool calls yet, we should merge the tool call into it.
@@ -4015,7 +4015,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			// Accumulate tool result blocks - they will be merged into a single user message
 			// This is required because Anthropic/Bedrock expect all tool results for parallel
 			// tool calls to be in the same user message, in the same order as the tool calls
-			toolResultBlock := convertUnifAIFunctionCallOutputToAnthropicToolResultBlock(&msg)
+			toolResultBlock := convertRakshaFunctionCallOutputToAnthropicToolResultBlock(&msg)
 			if toolResultBlock != nil {
 				pendingToolResultBlocks = append(pendingToolResultBlocks, *toolResultBlock)
 			}
@@ -4025,7 +4025,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			flushPendingToolResults()
 
 			// Handle item reference as regular text message
-			referenceMsg := convertUnifAIItemReferenceToAnthropicMessage(&msg)
+			referenceMsg := convertRakshaItemReferenceToAnthropicMessage(&msg)
 			if referenceMsg != nil {
 				anthropicMessages = append(anthropicMessages, *referenceMsg)
 			}
@@ -4049,7 +4049,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 				pendingReasoningContentBlocks = nil
 			}
 
-			computerToolUseBlock := convertUnifAIComputerCallToAnthropicToolUse(&msg)
+			computerToolUseBlock := convertRakshaComputerCallToAnthropicToolUse(&msg)
 			if computerToolUseBlock != nil {
 				pendingToolCalls = append(pendingToolCalls, *computerToolUseBlock)
 
@@ -4084,7 +4084,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 						pendingReasoningContentBlocks = nil
 					}
 
-					mcpToolUseBlock := convertUnifAIMCPCallToAnthropicToolUse(&msg)
+					mcpToolUseBlock := convertRakshaMCPCallToAnthropicToolUse(&msg)
 					if mcpToolUseBlock != nil {
 						pendingToolCalls = append(pendingToolCalls, *mcpToolUseBlock)
 
@@ -4099,7 +4099,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 				} else if msg.ResponsesToolMessage.CallID != nil {
 					// This is a tool result (user providing result of tool execution)
 					// Accumulate with other tool results
-					mcpToolResultBlock := convertUnifAIMCPCallOutputToAnthropicToolResultBlock(&msg)
+					mcpToolResultBlock := convertRakshaMCPCallOutputToAnthropicToolResultBlock(&msg)
 					if mcpToolResultBlock != nil {
 						pendingToolResultBlocks = append(pendingToolResultBlocks, *mcpToolResultBlock)
 					}
@@ -4126,7 +4126,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 				pendingReasoningContentBlocks = nil
 			}
 
-			mcpApprovalBlock := convertUnifAIMCPApprovalToAnthropicToolUse(&msg)
+			mcpApprovalBlock := convertRakshaMCPApprovalToAnthropicToolUse(&msg)
 			if mcpApprovalBlock != nil {
 				pendingToolCalls = append(pendingToolCalls, *mcpApprovalBlock)
 
@@ -4144,7 +4144,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			flushPendingToolResults()
 
 			// Web search calls need special handling: create server_tool_use + web_search_tool_result blocks
-			webSearchBlocks := convertUnifAIWebSearchCallToAnthropicBlocks(&msg)
+			webSearchBlocks := convertRakshaWebSearchCallToAnthropicBlocks(&msg)
 			if len(webSearchBlocks) > 0 {
 				// For web search, we create both server_tool_use and web_search_tool_result
 				// These should appear in an assistant message
@@ -4178,7 +4178,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			// Advisor calls, like web search, emit a server_tool_use + result
 			// pair that lives inside the assistant message.
 			flushPendingToolResults()
-			advisorBlocks := convertUnifAIAdvisorCallToAnthropicBlocks(&msg)
+			advisorBlocks := convertRakshaAdvisorCallToAnthropicBlocks(&msg)
 			if len(advisorBlocks) > 0 {
 				if currentAssistantMessage == nil {
 					currentAssistantMessage = &AnthropicMessage{
@@ -4204,7 +4204,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			// Code execution calls, like web search/advisor, emit a server_tool_use +
 			// *_code_execution_tool_result pair inside the assistant message.
 			flushPendingToolResults()
-			codeExecBlocks := convertUnifAICodeExecCallToAnthropicBlocks(&msg)
+			codeExecBlocks := convertRakshaCodeExecCallToAnthropicBlocks(&msg)
 			if len(codeExecBlocks) > 0 {
 				if currentAssistantMessage == nil {
 					currentAssistantMessage = &AnthropicMessage{
@@ -4282,7 +4282,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			flushPendingToolResults()
 
 			// Convert unsupported tool calls to regular text messages
-			unsupportedToolMsg := convertUnifAIUnsupportedToolCallToAnthropicMessage(&msg, msgType)
+			unsupportedToolMsg := convertRakshaUnsupportedToolCallToAnthropicMessage(&msg, msgType)
 			if unsupportedToolMsg != nil {
 				anthropicMessages = append(anthropicMessages, *unsupportedToolMsg)
 			}
@@ -4292,7 +4292,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 			flushPendingToolCallsWithTracking()
 
 			// Accumulate computer call output with other tool results
-			computerResultBlock := convertUnifAIComputerCallOutputToAnthropicToolResultBlock(&msg)
+			computerResultBlock := convertRakshaComputerCallOutputToAnthropicToolResultBlock(&msg)
 			if computerResultBlock != nil {
 				pendingToolResultBlocks = append(pendingToolResultBlocks, *computerResultBlock)
 			}
@@ -4300,7 +4300,7 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 		case schemas.ResponsesMessageTypeLocalShellCallOutput,
 			schemas.ResponsesMessageTypeCustomToolCallOutput:
 			// Handle tool outputs as user messages
-			toolOutputMsg := convertUnifAIToolOutputToAnthropicMessage(&msg)
+			toolOutputMsg := convertRakshaToolOutputToAnthropicMessage(&msg)
 			if toolOutputMsg != nil {
 				anthropicMessages = append(anthropicMessages, *toolOutputMsg)
 			}
@@ -4334,12 +4334,12 @@ func ConvertUnifAIMessagesToAnthropicMessages(ctx *schemas.UnifAIContext, unifai
 	return anthropicMessages, systemContent
 }
 
-// Helper function to convert Anthropic system content to UnifAI messages
-func convertAnthropicSystemToUnifAIMessages(systemContent *AnthropicContent) []schemas.ResponsesMessage {
-	var unifaiMessages []schemas.ResponsesMessage
+// Helper function to convert Anthropic system content to Raksha messages
+func convertAnthropicSystemToRakshaMessages(systemContent *AnthropicContent) []schemas.ResponsesMessage {
+	var rakshaMessages []schemas.ResponsesMessage
 
 	if systemContent.ContentStr != nil && *systemContent.ContentStr != "" {
-		unifaiMessages = append(unifaiMessages, schemas.ResponsesMessage{
+		rakshaMessages = append(rakshaMessages, schemas.ResponsesMessage{
 			Role: schemas.Ptr(schemas.ResponsesInputMessageRoleSystem),
 			Content: &schemas.ResponsesMessageContent{
 				ContentStr: systemContent.ContentStr,
@@ -4357,7 +4357,7 @@ func convertAnthropicSystemToUnifAIMessages(systemContent *AnthropicContent) []s
 			}
 		}
 		if len(contentBlocks) > 0 {
-			unifaiMessages = append(unifaiMessages, schemas.ResponsesMessage{
+			rakshaMessages = append(rakshaMessages, schemas.ResponsesMessage{
 				Role: schemas.Ptr(schemas.ResponsesInputMessageRoleSystem),
 				Content: &schemas.ResponsesMessageContent{
 					ContentBlocks: contentBlocks,
@@ -4366,11 +4366,11 @@ func convertAnthropicSystemToUnifAIMessages(systemContent *AnthropicContent) []s
 		}
 	}
 
-	return unifaiMessages
+	return rakshaMessages
 }
 
-// Helper function to convert a single Anthropic message to UnifAI messages
-func convertSingleAnthropicMessageToUnifAIMessages(ctx *schemas.UnifAIContext, msg *AnthropicMessage, isOutputMessage bool, structuredOutputToolName string) []schemas.ResponsesMessage {
+// Helper function to convert a single Anthropic message to Raksha messages
+func convertSingleAnthropicMessageToRakshaMessages(ctx *schemas.RakshaContext, msg *AnthropicMessage, isOutputMessage bool, structuredOutputToolName string) []schemas.ResponsesMessage {
 	// Determine if this message should use output types based on role
 	// Assistant messages in conversation history should use output_text
 	isOutput := isOutputMessage || msg.Role == AnthropicMessageRoleAssistant
@@ -4398,9 +4398,9 @@ func convertSingleAnthropicMessageToUnifAIMessages(ctx *schemas.UnifAIContext, m
 	return []schemas.ResponsesMessage{}
 }
 
-// Helper function to convert a single Anthropic message to UnifAI messages, grouping text and tool calls
+// Helper function to convert a single Anthropic message to Raksha messages, grouping text and tool calls
 // This keeps assistant messages with mixed text and tool_use blocks together
-func convertSingleAnthropicMessageToUnifAIMessagesGrouped(msg *AnthropicMessage, isOutputMessage bool, structuredOutputToolName string) []schemas.ResponsesMessage {
+func convertSingleAnthropicMessageToRakshaMessagesGrouped(msg *AnthropicMessage, isOutputMessage bool, structuredOutputToolName string) []schemas.ResponsesMessage {
 	// Determine if this message should use output types based on role
 	// Assistant messages in conversation history should use output_text
 	isOutput := isOutputMessage || msg.Role == AnthropicMessageRoleAssistant
@@ -4428,9 +4428,9 @@ func convertSingleAnthropicMessageToUnifAIMessagesGrouped(msg *AnthropicMessage,
 	return []schemas.ResponsesMessage{}
 }
 
-// Helper function to convert Anthropic content blocks to UnifAI ResponsesMessages, grouping text and tool_use blocks
+// Helper function to convert Anthropic content blocks to Raksha ResponsesMessages, grouping text and tool_use blocks
 func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []AnthropicContentBlock, role *schemas.ResponsesMessageRoleType, isOutputMessage bool) []schemas.ResponsesMessage {
-	var unifaiMessages []schemas.ResponsesMessage
+	var rakshaMessages []schemas.ResponsesMessage
 	var accumulatedTextContent []schemas.ResponsesMessageContentBlock
 	var pendingToolUseBlocks []*AnthropicContentBlock // Accumulate tool_use blocks
 
@@ -4451,7 +4451,7 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 					})
 				} else {
 					// For input messages, emit text immediately as separate message
-					unifaiMsg := schemas.ResponsesMessage{
+					rakshaMsg := schemas.ResponsesMessage{
 						Type: schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 						Role: role,
 						Content: &schemas.ResponsesMessageContent{
@@ -4468,45 +4468,45 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 							},
 						},
 					}
-					unifaiMessages = append(unifaiMessages, unifaiMsg)
+					rakshaMessages = append(rakshaMessages, rakshaMsg)
 				}
 			}
 
 		case AnthropicContentBlockTypeImage:
 			// Don't emit accumulated text or tool_use blocks for images
 			if block.Source != nil && block.Source.SourceObj != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 					Role: role,
 					Content: &schemas.ResponsesMessageContent{
-						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toUnifAIResponsesImageBlock()},
+						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toRakshaResponsesImageBlock()},
 					},
 				}
 				if isOutputMessage {
-					unifaiMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
+					rakshaMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 
 		case AnthropicContentBlockTypeDocument:
 			// Handle document blocks similar to images
 			if block.Source != nil && block.Source.SourceObj != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 					Role: role,
 					Content: &schemas.ResponsesMessageContent{
-						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toUnifAIResponsesDocumentBlock()},
+						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toRakshaResponsesDocumentBlock()},
 					},
 				}
 				if isOutputMessage {
-					unifaiMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
+					rakshaMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 
 		case AnthropicContentBlockTypeThinking:
 			if block.Thinking != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					ID:   schemas.Ptr("rs_" + providerUtils.GetRandomString(50)),
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeReasoning),
 					Role: role,
@@ -4520,13 +4520,13 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 						},
 					},
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 
 		case AnthropicContentBlockTypeRedactedThinking:
 			// Handle redacted thinking (encrypted content)
 			if block.Data != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					ID:   schemas.Ptr("rs_" + providerUtils.GetRandomString(50)),
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeReasoning),
 					ResponsesReasoning: &schemas.ResponsesReasoning{
@@ -4534,7 +4534,7 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 						EncryptedContent: block.Data,
 					},
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 
 		case AnthropicContentBlockTypeToolUse:
@@ -4548,7 +4548,7 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 			// Convert tool result to function call output message
 			if block.ToolUseID != nil {
 				if block.Content != nil {
-					unifaiMsg := schemas.ResponsesMessage{
+					rakshaMsg := schemas.ResponsesMessage{
 						Type:         schemas.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
 						Status:       schemas.Ptr("completed"),
 						CacheControl: block.CacheControl,
@@ -4557,10 +4557,10 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 						},
 					}
 					// Initialize the nested struct before any writes
-					unifaiMsg.ResponsesToolMessage.Output = &schemas.ResponsesToolMessageOutputStruct{}
+					rakshaMsg.ResponsesToolMessage.Output = &schemas.ResponsesToolMessageOutputStruct{}
 
 					if block.Content.ContentStr != nil {
-						unifaiMsg.ResponsesToolMessage.Output.ResponsesToolCallOutputStr = block.Content.ContentStr
+						rakshaMsg.ResponsesToolMessage.Output.ResponsesToolCallOutputStr = block.Content.ContentStr
 					} else if block.Content.ContentBlocks != nil {
 						var toolMsgContentBlocks []schemas.ResponsesMessageContentBlock
 						for _, contentBlock := range block.Content.ContentBlocks {
@@ -4581,19 +4581,19 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 								}
 							case AnthropicContentBlockTypeImage:
 								if contentBlock.Source != nil && contentBlock.Source.SourceObj != nil {
-									toolMsgContentBlocks = append(toolMsgContentBlocks, contentBlock.toUnifAIResponsesImageBlock())
+									toolMsgContentBlocks = append(toolMsgContentBlocks, contentBlock.toRakshaResponsesImageBlock())
 								}
 							}
 						}
-						unifaiMsg.ResponsesToolMessage.Output.ResponsesFunctionToolCallOutputBlocks = toolMsgContentBlocks
+						rakshaMsg.ResponsesToolMessage.Output.ResponsesFunctionToolCallOutputBlocks = toolMsgContentBlocks
 					}
 
 					// Handle is_error from Anthropic
 					if block.IsError != nil && *block.IsError {
-						unifaiMsg.Status = schemas.Ptr("incomplete")
+						rakshaMsg.Status = schemas.Ptr("incomplete")
 					}
 
-					unifaiMessages = append(unifaiMessages, unifaiMsg)
+					rakshaMessages = append(rakshaMessages, rakshaMsg)
 				}
 			}
 
@@ -4618,30 +4618,30 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 		case AnthropicContentBlockTypeWebSearchResult:
 			// Find the corresponding web_search_call by tool_use_id and attach sources
 			if block.ToolUseID != nil {
-				attachWebSearchSourcesToCall(unifaiMessages, *block.ToolUseID, block, true)
+				attachWebSearchSourcesToCall(rakshaMessages, *block.ToolUseID, block, true)
 			}
 		}
 	}
 
 	// Flush any remaining pending blocks
 	if len(accumulatedTextContent) > 0 {
-		unifaiMsg := schemas.ResponsesMessage{
+		rakshaMsg := schemas.ResponsesMessage{
 			Type: schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 			Role: role,
 		}
 		if isOutputMessage {
-			unifaiMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
-			unifaiMsg.Content = &schemas.ResponsesMessageContent{
+			rakshaMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
+			rakshaMsg.Content = &schemas.ResponsesMessageContent{
 				ContentBlocks: accumulatedTextContent,
 			}
-			unifaiMessages = append(unifaiMessages, unifaiMsg)
+			rakshaMessages = append(rakshaMessages, rakshaMsg)
 		}
 	}
 
 	// Emit any accumulated tool_use blocks as function_calls
 	if len(pendingToolUseBlocks) > 0 {
 		for _, toolBlock := range pendingToolUseBlocks {
-			unifaiMsg := schemas.ResponsesMessage{
+			rakshaMsg := schemas.ResponsesMessage{
 				Type:         schemas.Ptr(schemas.ResponsesMessageTypeFunctionCall),
 				Status:       schemas.Ptr("completed"),
 				CacheControl: toolBlock.CacheControl,
@@ -4651,25 +4651,25 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 				},
 			}
 			if isOutputMessage {
-				unifaiMsg.ID = schemas.Ptr("fc_" + providerUtils.GetRandomString(50))
+				rakshaMsg.ID = schemas.Ptr("fc_" + providerUtils.GetRandomString(50))
 			}
 
 			// Check for computer tool use
 			if toolBlock.Name != nil && *toolBlock.Name == string(AnthropicToolNameComputer) {
-				unifaiMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeComputerCall)
-				unifaiMsg.ResponsesToolMessage.Name = nil
+				rakshaMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeComputerCall)
+				rakshaMsg.ResponsesToolMessage.Name = nil
 				var inputMap map[string]interface{}
 				if err := sonic.Unmarshal(toolBlock.Input, &inputMap); err == nil {
-					unifaiMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
+					rakshaMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
 						ResponsesComputerToolCallAction: convertAnthropicToResponsesComputerAction(inputMap),
 					}
 				}
 			} else if toolBlock.Name != nil && *toolBlock.Name == string(AnthropicToolNameWebSearch) {
-				unifaiMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeWebSearchCall)
-				unifaiMsg.ResponsesToolMessage.Name = nil
+				rakshaMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeWebSearchCall)
+				rakshaMsg.ResponsesToolMessage.Name = nil
 				if q := providerUtils.GetJSONField(toolBlock.Input, "query"); q.Exists() && q.Type == gjson.String {
 					query := q.Str
-					unifaiMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
+					rakshaMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
 						ResponsesWebSearchToolCallAction: &schemas.ResponsesWebSearchToolCallAction{
 							Type:    "search",
 							Query:   schemas.Ptr(query),
@@ -4678,10 +4678,10 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 					}
 				}
 			} else if toolBlock.Name != nil && *toolBlock.Name == string(AnthropicToolNameWebFetch) {
-				unifaiMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeWebFetchCall)
-				unifaiMsg.ResponsesToolMessage.Name = nil
+				rakshaMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeWebFetchCall)
+				rakshaMsg.ResponsesToolMessage.Name = nil
 				if u := providerUtils.GetJSONField(toolBlock.Input, "url"); u.Exists() && u.Type == gjson.String {
-					unifaiMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
+					rakshaMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
 						ResponsesWebFetchToolCallAction: &schemas.ResponsesWebFetchToolCallAction{
 							URL: u.Str,
 						},
@@ -4689,20 +4689,20 @@ func convertAnthropicContentBlocksToResponsesMessagesGrouped(contentBlocks []Ant
 				}
 			} else {
 				if len(toolBlock.Input) > 0 {
-					unifaiMsg.ResponsesToolMessage.Arguments = schemas.Ptr(string(toolBlock.Input))
+					rakshaMsg.ResponsesToolMessage.Arguments = schemas.Ptr(string(toolBlock.Input))
 				}
 			}
 
-			unifaiMessages = append(unifaiMessages, unifaiMsg)
+			rakshaMessages = append(rakshaMessages, rakshaMsg)
 		}
 	}
 
-	return unifaiMessages
+	return rakshaMessages
 }
 
-// Helper function to convert Anthropic content blocks to UnifAI ResponsesMessages
-func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext, contentBlocks []AnthropicContentBlock, role *schemas.ResponsesMessageRoleType, isOutputMessage bool, structuredOutputToolName string) []schemas.ResponsesMessage {
-	var unifaiMessages []schemas.ResponsesMessage
+// Helper function to convert Anthropic content blocks to Raksha ResponsesMessages
+func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.RakshaContext, contentBlocks []AnthropicContentBlock, role *schemas.ResponsesMessageRoleType, isOutputMessage bool, structuredOutputToolName string) []schemas.ResponsesMessage {
+	var rakshaMessages []schemas.ResponsesMessage
 	var reasoningContentBlocks []schemas.ResponsesMessageContentBlock
 
 	// Process content blocks
@@ -4715,7 +4715,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 					summaryText = *block.Content.ContentStr
 				}
 
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					ID:     schemas.Ptr("cmp_" + providerUtils.GetRandomString(50)),
 					Type:   schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 					Role:   role,
@@ -4732,11 +4732,11 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 						},
 					},
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 		case AnthropicContentBlockTypeText:
 			if block.Text != nil {
-				var unifaiMsg schemas.ResponsesMessage
+				var rakshaMsg schemas.ResponsesMessage
 				if isOutputMessage {
 					// For output messages, use ContentBlocks with ResponsesOutputMessageContentTypeText
 					contentBlock := schemas.ResponsesMessageContentBlock{
@@ -4765,7 +4765,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 						}
 					}
 
-					unifaiMsg = schemas.ResponsesMessage{
+					rakshaMsg = schemas.ResponsesMessage{
 						ID:     schemas.Ptr("msg_" + providerUtils.GetRandomString(50)),
 						Type:   schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 						Role:   role,
@@ -4776,7 +4776,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 					}
 				} else {
 					// For input messages, use ContentStr
-					unifaiMsg = schemas.ResponsesMessage{
+					rakshaMsg = schemas.ResponsesMessage{
 						Type: schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 						Role: role,
 						Content: &schemas.ResponsesMessageContent{
@@ -4790,35 +4790,35 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 						},
 					}
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 		case AnthropicContentBlockTypeImage:
 			if block.Source != nil && block.Source.SourceObj != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 					Role: role,
 					Content: &schemas.ResponsesMessageContent{
-						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toUnifAIResponsesImageBlock()},
+						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toRakshaResponsesImageBlock()},
 					},
 				}
 				if isOutputMessage {
-					unifaiMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
+					rakshaMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 		case AnthropicContentBlockTypeDocument:
 			if block.Source != nil && block.Source.SourceObj != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 					Role: role,
 					Content: &schemas.ResponsesMessageContent{
-						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toUnifAIResponsesDocumentBlock()},
+						ContentBlocks: []schemas.ResponsesMessageContentBlock{block.toRakshaResponsesDocumentBlock()},
 					},
 				}
 				if isOutputMessage {
-					unifaiMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
+					rakshaMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 		case AnthropicContentBlockTypeThinking:
 			if block.Thinking != nil {
@@ -4831,7 +4831,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 			}
 		case AnthropicContentBlockTypeRedactedThinking:
 			if block.Data != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					ID:   schemas.Ptr("rs_" + providerUtils.GetRandomString(50)),
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeReasoning),
 					ResponsesReasoning: &schemas.ResponsesReasoning{
@@ -4839,7 +4839,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 						EncryptedContent: block.Data,
 					},
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 		case AnthropicContentBlockTypeToolUse:
 			// Check if this is the structured output tool - if so, convert to text content
@@ -4861,7 +4861,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 					},
 				}
 
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type:   schemas.Ptr(schemas.ResponsesMessageTypeMessage),
 					Role:   role,
 					Status: schemas.Ptr("completed"),
@@ -4870,13 +4870,13 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 					},
 				}
 				if isOutputMessage {
-					unifaiMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
+					rakshaMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			} else {
 				// Convert tool use to function call message
 				if block.ID != nil && block.Name != nil {
-					unifaiMsg := schemas.ResponsesMessage{
+					rakshaMsg := schemas.ResponsesMessage{
 						Type:         schemas.Ptr(schemas.ResponsesMessageTypeFunctionCall),
 						Status:       schemas.Ptr("completed"),
 						CacheControl: block.CacheControl,
@@ -4886,30 +4886,30 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 						},
 					}
 					if isOutputMessage {
-						unifaiMsg.ID = schemas.Ptr("fc_" + providerUtils.GetRandomString(50))
+						rakshaMsg.ID = schemas.Ptr("fc_" + providerUtils.GetRandomString(50))
 					}
 
 					// here need to check for computer tool use
 					if block.Name != nil && *block.Name == string(AnthropicToolNameComputer) {
-						unifaiMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeComputerCall)
-						unifaiMsg.ResponsesToolMessage.Name = nil
+						rakshaMsg.Type = schemas.Ptr(schemas.ResponsesMessageTypeComputerCall)
+						rakshaMsg.ResponsesToolMessage.Name = nil
 						var inputMap map[string]interface{}
 						if err := sonic.Unmarshal(block.Input, &inputMap); err == nil {
-							unifaiMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
+							rakshaMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
 								ResponsesComputerToolCallAction: convertAnthropicToResponsesComputerAction(inputMap),
 							}
 						}
 					} else if len(block.Input) > 0 {
-						unifaiMsg.ResponsesToolMessage.Arguments = schemas.Ptr(string(block.Input))
+						rakshaMsg.ResponsesToolMessage.Arguments = schemas.Ptr(string(block.Input))
 					}
-					unifaiMessages = append(unifaiMessages, unifaiMsg)
+					rakshaMessages = append(rakshaMessages, rakshaMsg)
 				}
 			}
 		case AnthropicContentBlockTypeToolResult:
 			// Convert tool result to function call output message
 			if block.ToolUseID != nil {
 				if block.Content != nil {
-					unifaiMsg := schemas.ResponsesMessage{
+					rakshaMsg := schemas.ResponsesMessage{
 						Type:         schemas.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
 						Status:       schemas.Ptr("completed"),
 						CacheControl: block.CacheControl,
@@ -4918,10 +4918,10 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 						},
 					}
 					// Initialize the nested struct before any writes
-					unifaiMsg.ResponsesToolMessage.Output = &schemas.ResponsesToolMessageOutputStruct{}
+					rakshaMsg.ResponsesToolMessage.Output = &schemas.ResponsesToolMessageOutputStruct{}
 
 					if block.Content.ContentStr != nil {
-						unifaiMsg.ResponsesToolMessage.Output.ResponsesToolCallOutputStr = block.Content.ContentStr
+						rakshaMsg.ResponsesToolMessage.Output.ResponsesToolCallOutputStr = block.Content.ContentStr
 					} else if block.Content.ContentBlocks != nil {
 						var toolMsgContentBlocks []schemas.ResponsesMessageContentBlock
 						for _, contentBlock := range block.Content.ContentBlocks {
@@ -4942,26 +4942,26 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 								}
 							case AnthropicContentBlockTypeImage:
 								if contentBlock.Source != nil && contentBlock.Source.SourceObj != nil {
-									toolMsgContentBlocks = append(toolMsgContentBlocks, contentBlock.toUnifAIResponsesImageBlock())
+									toolMsgContentBlocks = append(toolMsgContentBlocks, contentBlock.toRakshaResponsesImageBlock())
 								}
 							}
 						}
-						unifaiMsg.ResponsesToolMessage.Output.ResponsesFunctionToolCallOutputBlocks = toolMsgContentBlocks
+						rakshaMsg.ResponsesToolMessage.Output.ResponsesFunctionToolCallOutputBlocks = toolMsgContentBlocks
 					}
 
 					// Handle is_error from Anthropic
 					if block.IsError != nil && *block.IsError {
-						unifaiMsg.Status = schemas.Ptr("incomplete")
+						rakshaMsg.Status = schemas.Ptr("incomplete")
 					}
 
-					unifaiMessages = append(unifaiMessages, unifaiMsg)
+					rakshaMessages = append(rakshaMessages, rakshaMsg)
 				}
 			}
 
 		case AnthropicContentBlockTypeServerToolUse:
 			// Check if it's a web_search tool
 			if block.Name != nil && *block.Name == string(AnthropicToolNameWebSearch) {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type:                 schemas.Ptr(schemas.ResponsesMessageTypeWebSearchCall),
 					Status:               schemas.Ptr("completed"),
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{},
@@ -4970,7 +4970,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 				// Preserve the caller (set when this search was spawned from inside
 				// the code execution sandbox — programmatic tool calling).
 				if block.Caller != nil {
-					unifaiMsg.ResponsesToolMessage.Caller = &schemas.ResponsesToolCaller{
+					rakshaMsg.ResponsesToolMessage.Caller = &schemas.ResponsesToolCaller{
 						Type:   string(block.Caller.Type),
 						ToolID: block.Caller.ToolID,
 					}
@@ -4980,7 +4980,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 				if block.Input != nil {
 					if q := providerUtils.GetJSONField(block.Input, "query"); q.Exists() && q.Type == gjson.String {
 						query := q.Str
-						unifaiMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
+						rakshaMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
 							ResponsesWebSearchToolCallAction: &schemas.ResponsesWebSearchToolCallAction{
 								Type:    "search",
 								Query:   schemas.Ptr(query),
@@ -4991,18 +4991,18 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 				}
 
 				if isOutputMessage {
-					unifaiMsg.ID = block.ID
-					unifaiMessages = append(unifaiMessages, unifaiMsg)
+					rakshaMsg.ID = block.ID
+					rakshaMessages = append(rakshaMessages, rakshaMsg)
 				}
 			} else if block.Name != nil && *block.Name == string(AnthropicToolNameWebFetch) {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type:                 schemas.Ptr(schemas.ResponsesMessageTypeWebFetchCall),
 					Status:               schemas.Ptr("completed"),
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{},
 				}
 
 				if block.Caller != nil {
-					unifaiMsg.ResponsesToolMessage.Caller = &schemas.ResponsesToolCaller{
+					rakshaMsg.ResponsesToolMessage.Caller = &schemas.ResponsesToolCaller{
 						Type:   string(block.Caller.Type),
 						ToolID: block.Caller.ToolID,
 					}
@@ -5010,7 +5010,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 
 				if block.Input != nil {
 					if u := providerUtils.GetJSONField(block.Input, "url"); u.Exists() && u.Type == gjson.String {
-						unifaiMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
+						rakshaMsg.ResponsesToolMessage.Action = &schemas.ResponsesToolMessageActionStruct{
 							ResponsesWebFetchToolCallAction: &schemas.ResponsesWebFetchToolCallAction{
 								URL: u.Str,
 							},
@@ -5019,13 +5019,13 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 				}
 
 				if isOutputMessage {
-					unifaiMsg.ID = block.ID
-					unifaiMessages = append(unifaiMessages, unifaiMsg)
+					rakshaMsg.ID = block.ID
+					rakshaMessages = append(rakshaMessages, rakshaMsg)
 				}
 			} else if block.Name != nil && *block.Name == string(AnthropicToolNameAdvisor) {
 				// advisor server_tool_use — the paired advisor_tool_result is
 				// attached onto this message when it is encountered below.
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type:   schemas.Ptr(schemas.ResponsesMessageTypeAdvisorCall),
 					ID:     block.ID,
 					Status: schemas.Ptr("completed"),
@@ -5035,13 +5035,13 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 					},
 				}
 				if isOutputMessage {
-					unifaiMessages = append(unifaiMessages, unifaiMsg)
+					rakshaMessages = append(rakshaMessages, rakshaMsg)
 				}
 			} else if block.Name != nil && isAnthropicCodeExecutionToolName(*block.Name) {
 				// code_execution / bash_code_execution / text_editor_code_execution
 				// server_tool_use — the paired *_tool_result is attached below.
 				if isOutputMessage {
-					unifaiMessages = append(unifaiMessages, buildUnifAICodeExecutionCall(block))
+					rakshaMessages = append(rakshaMessages, buildRakshaCodeExecutionCall(block))
 				}
 			}
 
@@ -5050,14 +5050,14 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 			AnthropicContentBlockTypeTextEditorCodeExecutionToolResult:
 			// Fold the code-execution result onto the matching code_interpreter_call.
 			if block.ToolUseID != nil {
-				attachAnthropicCodeExecutionResult(unifaiMessages, *block.ToolUseID, block)
+				attachAnthropicCodeExecutionResult(rakshaMessages, *block.ToolUseID, block)
 			}
 
 		case AnthropicContentBlockTypeAdvisorToolResult:
 			// Attach the advisor result onto the matching advisor_call.
 			if block.ToolUseID != nil {
-				for i := len(unifaiMessages) - 1; i >= 0; i-- {
-					msg := &unifaiMessages[i]
+				for i := len(rakshaMessages) - 1; i >= 0; i-- {
+					msg := &rakshaMessages[i]
 					if msg.Type == nil || *msg.Type != schemas.ResponsesMessageTypeAdvisorCall {
 						continue
 					}
@@ -5089,7 +5089,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 		case AnthropicContentBlockTypeWebSearchToolResult:
 			// Find the corresponding web_search_call by tool_use_id
 			if block.ToolUseID != nil {
-				attachWebSearchSourcesToCall(unifaiMessages, *block.ToolUseID, block, true)
+				attachWebSearchSourcesToCall(rakshaMessages, *block.ToolUseID, block, true)
 			}
 
 		case AnthropicContentBlockTypeWebFetchToolResult:
@@ -5098,8 +5098,8 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 		case AnthropicContentBlockTypeWebSearchToolResultError:
 			// Handle web search errors — find matching web_search_call and mark as failed
 			if block.ToolUseID != nil {
-				for i := len(unifaiMessages) - 1; i >= 0; i-- {
-					msg := &unifaiMessages[i]
+				for i := len(rakshaMessages) - 1; i >= 0; i-- {
+					msg := &rakshaMessages[i]
 					if msg.Type != nil && *msg.Type == schemas.ResponsesMessageTypeWebSearchCall &&
 						msg.ID != nil && *msg.ID == *block.ToolUseID {
 						msg.Status = schemas.Ptr("failed")
@@ -5111,7 +5111,7 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 		case AnthropicContentBlockTypeMCPToolUse:
 			// Convert MCP tool use to MCP call (assistant's tool call)
 			if block.ID != nil && block.Name != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type: schemas.Ptr(schemas.ResponsesMessageTypeMCPCall),
 					ID:   block.ID,
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{
@@ -5119,19 +5119,19 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 					},
 				}
 				if len(block.Input) > 0 {
-					unifaiMsg.ResponsesToolMessage.Arguments = schemas.Ptr(string(block.Input))
+					rakshaMsg.ResponsesToolMessage.Arguments = schemas.Ptr(string(block.Input))
 				}
 				if block.ServerName != nil {
-					unifaiMsg.ResponsesToolMessage.ResponsesMCPToolCall = &schemas.ResponsesMCPToolCall{
+					rakshaMsg.ResponsesToolMessage.ResponsesMCPToolCall = &schemas.ResponsesMCPToolCall{
 						ServerLabel: *block.ServerName,
 					}
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 		case AnthropicContentBlockTypeMCPToolResult:
 			// Convert MCP tool result to MCP call (user's tool result)
 			if block.ToolUseID != nil {
-				unifaiMsg := schemas.ResponsesMessage{
+				rakshaMsg := schemas.ResponsesMessage{
 					Type:   schemas.Ptr(schemas.ResponsesMessageTypeMCPCall),
 					Status: schemas.Ptr("completed"),
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{
@@ -5139,14 +5139,14 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 					},
 				}
 				if isOutputMessage {
-					unifaiMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
+					rakshaMsg.ID = schemas.Ptr("msg_" + providerUtils.GetRandomString(50))
 				}
 				// Initialize the nested struct before any writes
-				unifaiMsg.ResponsesToolMessage.Output = &schemas.ResponsesToolMessageOutputStruct{}
+				rakshaMsg.ResponsesToolMessage.Output = &schemas.ResponsesToolMessageOutputStruct{}
 
 				if block.Content != nil {
 					if block.Content.ContentStr != nil {
-						unifaiMsg.ResponsesToolMessage.Output.ResponsesToolCallOutputStr = block.Content.ContentStr
+						rakshaMsg.ResponsesToolMessage.Output.ResponsesToolCallOutputStr = block.Content.ContentStr
 					} else if block.Content.ContentBlocks != nil {
 						var toolMsgContentBlocks []schemas.ResponsesMessageContentBlock
 						for _, contentBlock := range block.Content.ContentBlocks {
@@ -5166,10 +5166,10 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 								}
 							}
 						}
-						unifaiMsg.ResponsesToolMessage.Output.ResponsesFunctionToolCallOutputBlocks = toolMsgContentBlocks
+						rakshaMsg.ResponsesToolMessage.Output.ResponsesFunctionToolCallOutputBlocks = toolMsgContentBlocks
 					}
 				}
-				unifaiMessages = append(unifaiMessages, unifaiMsg)
+				rakshaMessages = append(rakshaMessages, rakshaMsg)
 			}
 		default:
 			// Handle other block types if needed
@@ -5191,22 +5191,22 @@ func convertAnthropicContentBlocksToResponsesMessages(ctx *schemas.UnifAIContext
 		}
 		// Prepend the reasoning message to the start of the messages list
 		// This ensures reasoning comes before text/tool responses
-		unifaiMessages = append([]schemas.ResponsesMessage{reasoningMessage}, unifaiMessages...)
+		rakshaMessages = append([]schemas.ResponsesMessage{reasoningMessage}, rakshaMessages...)
 	}
 
-	return unifaiMessages
+	return rakshaMessages
 }
 
-// Helper functions for converting individual UnifAI message types to Anthropic messages
-// convertUnifAIMessageToAnthropicSystemContent converts a UnifAI system message to Anthropic system content
-func convertUnifAIMessageToAnthropicSystemContent(msg *schemas.ResponsesMessage) *AnthropicContent {
+// Helper functions for converting individual Raksha message types to Anthropic messages
+// convertRakshaMessageToAnthropicSystemContent converts a Raksha system message to Anthropic system content
+func convertRakshaMessageToAnthropicSystemContent(msg *schemas.ResponsesMessage) *AnthropicContent {
 	if msg.Content != nil {
 		if msg.Content.ContentStr != nil {
 			return &AnthropicContent{
 				ContentStr: msg.Content.ContentStr,
 			}
 		} else if msg.Content.ContentBlocks != nil {
-			contentBlocks := convertUnifAIContentBlocksToAnthropic(msg.Content.ContentBlocks)
+			contentBlocks := convertRakshaContentBlocksToAnthropic(msg.Content.ContentBlocks)
 			if len(contentBlocks) > 0 {
 				return &AnthropicContent{
 					ContentBlocks: contentBlocks,
@@ -5217,8 +5217,8 @@ func convertUnifAIMessageToAnthropicSystemContent(msg *schemas.ResponsesMessage)
 	return nil
 }
 
-// convertUnifAIMessageToAnthropicMessage converts a regular UnifAI message to Anthropic message
-func convertUnifAIMessageToAnthropicMessage(msg *schemas.ResponsesMessage, pendingReasoningContentBlocks *[]AnthropicContentBlock) *AnthropicMessage {
+// convertRakshaMessageToAnthropicMessage converts a regular Raksha message to Anthropic message
+func convertRakshaMessageToAnthropicMessage(msg *schemas.ResponsesMessage, pendingReasoningContentBlocks *[]AnthropicContentBlock) *AnthropicMessage {
 	anthropicMsg := AnthropicMessage{}
 
 	// Set role
@@ -5251,7 +5251,7 @@ func convertUnifAIMessageToAnthropicMessage(msg *schemas.ResponsesMessage, pendi
 					Text: msg.Content.ContentStr,
 				})
 			} else if msg.Content.ContentBlocks != nil {
-				contentBlocks = append(contentBlocks, convertUnifAIContentBlocksToAnthropic(msg.Content.ContentBlocks)...)
+				contentBlocks = append(contentBlocks, convertRakshaContentBlocksToAnthropic(msg.Content.ContentBlocks)...)
 			}
 		}
 		anthropicMsg.Content = AnthropicContent{
@@ -5268,7 +5268,7 @@ func convertUnifAIMessageToAnthropicMessage(msg *schemas.ResponsesMessage, pendi
 					}},
 				}
 			} else if msg.Content.ContentBlocks != nil {
-				contentBlocks := convertUnifAIContentBlocksToAnthropic(msg.Content.ContentBlocks)
+				contentBlocks := convertRakshaContentBlocksToAnthropic(msg.Content.ContentBlocks)
 				if len(contentBlocks) > 0 {
 					anthropicMsg.Content = AnthropicContent{
 						ContentBlocks: contentBlocks,
@@ -5281,8 +5281,8 @@ func convertUnifAIMessageToAnthropicMessage(msg *schemas.ResponsesMessage, pendi
 	return &anthropicMsg
 }
 
-// convertUnifAIReasoningToAnthropicThinking converts a UnifAI reasoning message to Anthropic thinking blocks
-func convertUnifAIReasoningToAnthropicThinking(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
+// convertRakshaReasoningToAnthropicThinking converts a Raksha reasoning message to Anthropic thinking blocks
+func convertRakshaReasoningToAnthropicThinking(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
 	var thinkingBlocks []AnthropicContentBlock
 
 	if msg.Content != nil && msg.Content.ContentBlocks != nil {
@@ -5317,8 +5317,8 @@ func convertUnifAIReasoningToAnthropicThinking(msg *schemas.ResponsesMessage) []
 	return thinkingBlocks
 }
 
-// convertUnifAIFunctionCallToAnthropicToolUse converts a UnifAI function call to Anthropic tool use
-func convertUnifAIFunctionCallToAnthropicToolUse(ctx *schemas.UnifAIContext, msg *schemas.ResponsesMessage) *AnthropicContentBlock {
+// convertRakshaFunctionCallToAnthropicToolUse converts a Raksha function call to Anthropic tool use
+func convertRakshaFunctionCallToAnthropicToolUse(ctx *schemas.RakshaContext, msg *schemas.ResponsesMessage) *AnthropicContentBlock {
 	if msg.ResponsesToolMessage != nil {
 		toolUseBlock := AnthropicContentBlock{
 			Type:         AnthropicContentBlockTypeToolUse,
@@ -5358,9 +5358,9 @@ func convertUnifAIFunctionCallToAnthropicToolUse(ctx *schemas.UnifAIContext, msg
 	return nil
 }
 
-// convertUnifAIFunctionCallOutputToAnthropicToolResultBlock converts a UnifAI function call output to a single tool result block
+// convertRakshaFunctionCallOutputToAnthropicToolResultBlock converts a Raksha function call output to a single tool result block
 // This is used to accumulate multiple tool results into a single user message
-func convertUnifAIFunctionCallOutputToAnthropicToolResultBlock(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
+func convertRakshaFunctionCallOutputToAnthropicToolResultBlock(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
 	if msg.ResponsesToolMessage != nil {
 		toolResultBlock := AnthropicContentBlock{
 			Type:         AnthropicContentBlockTypeToolResult,
@@ -5414,9 +5414,9 @@ func toolResultBlockToText(block *AnthropicContentBlock) string {
 	return "Tool result: " + sb.String()
 }
 
-// convertUnifAIComputerCallOutputToAnthropicToolResultBlock converts a UnifAI computer call output to a single tool result block
+// convertRakshaComputerCallOutputToAnthropicToolResultBlock converts a Raksha computer call output to a single tool result block
 // This is used to accumulate multiple tool results into a single user message
-func convertUnifAIComputerCallOutputToAnthropicToolResultBlock(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
+func convertRakshaComputerCallOutputToAnthropicToolResultBlock(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
 	if msg.ResponsesToolMessage != nil && msg.ResponsesToolMessage.CallID != nil {
 		toolResultBlock := AnthropicContentBlock{
 			Type:      AnthropicContentBlockTypeToolResult,
@@ -5445,9 +5445,9 @@ func convertUnifAIComputerCallOutputToAnthropicToolResultBlock(msg *schemas.Resp
 	return nil
 }
 
-// convertUnifAIMCPCallOutputToAnthropicToolResultBlock converts a UnifAI MCP call output to a single tool result block
+// convertRakshaMCPCallOutputToAnthropicToolResultBlock converts a Raksha MCP call output to a single tool result block
 // This is used to accumulate multiple tool results into a single user message
-func convertUnifAIMCPCallOutputToAnthropicToolResultBlock(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
+func convertRakshaMCPCallOutputToAnthropicToolResultBlock(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
 	if msg.ResponsesToolMessage != nil && msg.ResponsesToolMessage.CallID != nil {
 		toolResultBlock := AnthropicContentBlock{
 			Type:      AnthropicContentBlockTypeMCPToolResult,
@@ -5476,8 +5476,8 @@ func convertUnifAIMCPCallOutputToAnthropicToolResultBlock(msg *schemas.Responses
 	return nil
 }
 
-// convertUnifAIItemReferenceToAnthropicMessage converts a UnifAI item reference to Anthropic message
-func convertUnifAIItemReferenceToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
+// convertRakshaItemReferenceToAnthropicMessage converts a Raksha item reference to Anthropic message
+func convertRakshaItemReferenceToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
 	if msg.Content != nil && msg.Content.ContentStr != nil {
 		referenceMsg := AnthropicMessage{
 			Role: AnthropicMessageRoleUser, // Default to user for references
@@ -5498,8 +5498,8 @@ func convertUnifAIItemReferenceToAnthropicMessage(msg *schemas.ResponsesMessage)
 	return nil
 }
 
-// convertUnifAIComputerCallToAnthropicToolUse converts a UnifAI computer call to Anthropic tool use
-func convertUnifAIComputerCallToAnthropicToolUse(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
+// convertRakshaComputerCallToAnthropicToolUse converts a Raksha computer call to Anthropic tool use
+func convertRakshaComputerCallToAnthropicToolUse(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
 	if msg.ResponsesToolMessage != nil {
 		toolUseBlock := AnthropicContentBlock{
 			Type: AnthropicContentBlockTypeToolUse,
@@ -5524,8 +5524,8 @@ func convertUnifAIComputerCallToAnthropicToolUse(msg *schemas.ResponsesMessage) 
 	return nil
 }
 
-// convertUnifAIMCPCallToAnthropicToolUse converts a UnifAI MCP call to Anthropic tool use
-func convertUnifAIMCPCallToAnthropicToolUse(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
+// convertRakshaMCPCallToAnthropicToolUse converts a Raksha MCP call to Anthropic tool use
+func convertRakshaMCPCallToAnthropicToolUse(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
 	if msg.ResponsesToolMessage != nil && msg.ResponsesToolMessage.Name != nil {
 		toolUseBlock := AnthropicContentBlock{
 			Type: AnthropicContentBlockTypeMCPToolUse,
@@ -5555,8 +5555,8 @@ func convertUnifAIMCPCallToAnthropicToolUse(msg *schemas.ResponsesMessage) *Anth
 	return nil
 }
 
-// convertUnifAIMCPCallOutputToAnthropicMessage converts a UnifAI MCP call output to Anthropic message
-func convertUnifAIMCPCallOutputToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
+// convertRakshaMCPCallOutputToAnthropicMessage converts a Raksha MCP call output to Anthropic message
+func convertRakshaMCPCallOutputToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
 	toolResultBlock := AnthropicContentBlock{
 		Type: AnthropicContentBlockTypeMCPToolResult,
 		ID:   msg.ResponsesToolMessage.CallID,
@@ -5574,8 +5574,8 @@ func convertUnifAIMCPCallOutputToAnthropicMessage(msg *schemas.ResponsesMessage)
 	}
 }
 
-// convertUnifAIMCPApprovalToAnthropicToolUse converts a UnifAI MCP approval request to Anthropic tool use
-func convertUnifAIMCPApprovalToAnthropicToolUse(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
+// convertRakshaMCPApprovalToAnthropicToolUse converts a Raksha MCP approval request to Anthropic tool use
+func convertRakshaMCPApprovalToAnthropicToolUse(msg *schemas.ResponsesMessage) *AnthropicContentBlock {
 	if msg.ResponsesToolMessage != nil && msg.ResponsesToolMessage.Name != nil {
 		toolUseBlock := AnthropicContentBlock{
 			Type: AnthropicContentBlockTypeMCPToolUse,
@@ -5605,8 +5605,8 @@ func convertUnifAIMCPApprovalToAnthropicToolUse(msg *schemas.ResponsesMessage) *
 	return nil
 }
 
-// convertUnifAIWebSearchCallToAnthropicBlocks converts a UnifAI web_search_call to Anthropic server_tool_use and web_search_tool_result blocks
-func convertUnifAIWebSearchCallToAnthropicBlocks(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
+// convertRakshaWebSearchCallToAnthropicBlocks converts a Raksha web_search_call to Anthropic server_tool_use and web_search_tool_result blocks
+func convertRakshaWebSearchCallToAnthropicBlocks(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
 	if msg.ResponsesToolMessage == nil || msg.ResponsesToolMessage.Action == nil || msg.ResponsesToolMessage.Action.ResponsesWebSearchToolCallAction == nil {
 		return nil
 	}
@@ -5683,10 +5683,10 @@ func convertUnifAIWebSearchCallToAnthropicBlocks(msg *schemas.ResponsesMessage) 
 	return blocks
 }
 
-// convertUnifAIAdvisorCallToAnthropicBlocks rebuilds the advisor server_tool_use
+// convertRakshaAdvisorCallToAnthropicBlocks rebuilds the advisor server_tool_use
 // block and its paired advisor_tool_result block from a neutral advisor_call.
 // Anthropic requires both blocks to appear together in the assistant message.
-func convertUnifAIAdvisorCallToAnthropicBlocks(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
+func convertRakshaAdvisorCallToAnthropicBlocks(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
 	// Resolve the tool-use id (server_tool_use.id == advisor_tool_result.tool_use_id).
 	var toolUseID *string
 	if msg.ResponsesToolMessage != nil && msg.ResponsesToolMessage.CallID != nil {
@@ -5775,11 +5775,11 @@ func anthropicCodeExecOutputBlockType(toolName string) AnthropicContentBlockType
 	return AnthropicContentBlockTypeCodeExecutionOutput
 }
 
-// buildUnifAICodeExecutionCall converts a code-execution server_tool_use block
+// buildRakshaCodeExecutionCall converts a code-execution server_tool_use block
 // into a neutral code_interpreter_call message that also carries the Anthropic
 // fidelity (sub-tool name, verbatim input, caller). The paired *_tool_result is
 // attached later by attachAnthropicCodeExecutionResult.
-func buildUnifAICodeExecutionCall(block AnthropicContentBlock) schemas.ResponsesMessage {
+func buildRakshaCodeExecutionCall(block AnthropicContentBlock) schemas.ResponsesMessage {
 	carry := &schemas.ResponsesCodeExecutionCall{}
 	if block.Name != nil {
 		carry.ToolName = *block.Name
@@ -5913,11 +5913,11 @@ func attachAnthropicCodeExecutionResult(msgs []schemas.ResponsesMessage, toolUse
 	}
 }
 
-// convertUnifAICodeExecCallToAnthropicBlocks rebuilds the Anthropic
+// convertRakshaCodeExecCallToAnthropicBlocks rebuilds the Anthropic
 // server_tool_use + *_code_execution_tool_result block pair from a neutral
 // code_interpreter_call carrying ResponsesCodeExecutionCall. Anthropic requires
 // both blocks to appear together in the assistant message.
-func convertUnifAICodeExecCallToAnthropicBlocks(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
+func convertRakshaCodeExecCallToAnthropicBlocks(msg *schemas.ResponsesMessage) []AnthropicContentBlock {
 	tm := msg.ResponsesToolMessage
 	if tm == nil {
 		return nil
@@ -6049,8 +6049,8 @@ func convertUnifAICodeExecCallToAnthropicBlocks(msg *schemas.ResponsesMessage) [
 	return []AnthropicContentBlock{serverToolUse, resultBlock}
 }
 
-// convertUnifAIUnsupportedToolCallToAnthropicMessage converts unsupported tool calls to text messages
-func convertUnifAIUnsupportedToolCallToAnthropicMessage(msg *schemas.ResponsesMessage, msgType schemas.ResponsesMessageType) *AnthropicMessage {
+// convertRakshaUnsupportedToolCallToAnthropicMessage converts unsupported tool calls to text messages
+func convertRakshaUnsupportedToolCallToAnthropicMessage(msg *schemas.ResponsesMessage, msgType schemas.ResponsesMessageType) *AnthropicMessage {
 	if msg.ResponsesToolMessage != nil {
 		var description string
 		if msg.ResponsesToolMessage.Name != nil {
@@ -6075,8 +6075,8 @@ func convertUnifAIUnsupportedToolCallToAnthropicMessage(msg *schemas.ResponsesMe
 	return nil
 }
 
-// convertUnifAIComputerCallOutputToAnthropicMessage converts a UnifAI computer call output to Anthropic message
-func convertUnifAIComputerCallOutputToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
+// convertRakshaComputerCallOutputToAnthropicMessage converts a Raksha computer call output to Anthropic message
+func convertRakshaComputerCallOutputToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
 	if msg.ResponsesToolMessage != nil {
 		toolResultBlock := AnthropicContentBlock{
 			Type:      AnthropicContentBlockTypeToolResult,
@@ -6097,8 +6097,8 @@ func convertUnifAIComputerCallOutputToAnthropicMessage(msg *schemas.ResponsesMes
 	return nil
 }
 
-// convertUnifAIToolOutputToAnthropicMessage converts tool outputs to user messages
-func convertUnifAIToolOutputToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
+// convertRakshaToolOutputToAnthropicMessage converts tool outputs to user messages
+func convertRakshaToolOutputToAnthropicMessage(msg *schemas.ResponsesMessage) *AnthropicMessage {
 	if msg.ResponsesToolMessage != nil {
 		var outputText string
 		// Try to extract output text based on tool type
@@ -6121,13 +6121,13 @@ func convertUnifAIToolOutputToAnthropicMessage(msg *schemas.ResponsesMessage) *A
 	return nil
 }
 
-// convertAnthropicToolToUnifAI converts AnthropicTool to schemas.Tool
-func convertAnthropicToolToUnifAI(tool *AnthropicTool) *schemas.ResponsesTool {
+// convertAnthropicToolToRaksha converts AnthropicTool to schemas.Tool
+func convertAnthropicToolToRaksha(tool *AnthropicTool) *schemas.ResponsesTool {
 	if tool == nil {
 		return nil
 	}
 
-	// Skip mcp_toolset entries — these are merged with mcp_servers in ToUnifAIResponsesRequest
+	// Skip mcp_toolset entries — these are merged with mcp_servers in ToRakshaResponsesRequest
 	if tool.MCPToolset != nil {
 		return nil
 	}
@@ -6136,41 +6136,41 @@ func convertAnthropicToolToUnifAI(tool *AnthropicTool) *schemas.ResponsesTool {
 	if tool.Type != nil {
 		switch *tool.Type {
 		case AnthropicToolTypeComputer20250124, AnthropicToolTypeComputer20251124:
-			unifaiTool := &schemas.ResponsesTool{
+			rakshaTool := &schemas.ResponsesTool{
 				Type: schemas.ResponsesToolTypeComputerUsePreview,
 			}
 			if tool.AnthropicToolComputerUse != nil {
-				unifaiTool.ResponsesToolComputerUsePreview = &schemas.ResponsesToolComputerUsePreview{
+				rakshaTool.ResponsesToolComputerUsePreview = &schemas.ResponsesToolComputerUsePreview{
 					Environment: "browser", // Default environment
 				}
 				if tool.AnthropicToolComputerUse.DisplayWidthPx != nil {
-					unifaiTool.ResponsesToolComputerUsePreview.DisplayWidth = *tool.AnthropicToolComputerUse.DisplayWidthPx
+					rakshaTool.ResponsesToolComputerUsePreview.DisplayWidth = *tool.AnthropicToolComputerUse.DisplayWidthPx
 				}
 				if tool.AnthropicToolComputerUse.DisplayHeightPx != nil {
-					unifaiTool.ResponsesToolComputerUsePreview.DisplayHeight = *tool.AnthropicToolComputerUse.DisplayHeightPx
+					rakshaTool.ResponsesToolComputerUsePreview.DisplayHeight = *tool.AnthropicToolComputerUse.DisplayHeightPx
 				}
 				if tool.AnthropicToolComputerUse.EnableZoom != nil {
-					unifaiTool.ResponsesToolComputerUsePreview.EnableZoom = tool.AnthropicToolComputerUse.EnableZoom
+					rakshaTool.ResponsesToolComputerUsePreview.EnableZoom = tool.AnthropicToolComputerUse.EnableZoom
 				}
 			}
-			return unifaiTool
+			return rakshaTool
 
 		case AnthropicToolTypeWebSearch20250305, AnthropicToolTypeWebSearch20260209:
-			unifaiTool := &schemas.ResponsesTool{
+			rakshaTool := &schemas.ResponsesTool{
 				Type: schemas.ResponsesToolTypeWebSearch,
 			}
 			if tool.AnthropicToolWebSearch != nil {
-				unifaiTool.ResponsesToolWebSearch = &schemas.ResponsesToolWebSearch{
+				rakshaTool.ResponsesToolWebSearch = &schemas.ResponsesToolWebSearch{
 					Filters: &schemas.ResponsesToolWebSearchFilters{
 						AllowedDomains: tool.AnthropicToolWebSearch.AllowedDomains,
 						BlockedDomains: tool.AnthropicToolWebSearch.BlockedDomains,
 					},
 				}
 				if tool.AnthropicToolWebSearch.MaxUses != nil {
-					unifaiTool.ResponsesToolWebSearch.MaxUses = tool.AnthropicToolWebSearch.MaxUses
+					rakshaTool.ResponsesToolWebSearch.MaxUses = tool.AnthropicToolWebSearch.MaxUses
 				}
 				if tool.AnthropicToolWebSearch.UserLocation != nil {
-					unifaiTool.ResponsesToolWebSearch.UserLocation = &schemas.ResponsesToolWebSearchUserLocation{
+					rakshaTool.ResponsesToolWebSearch.UserLocation = &schemas.ResponsesToolWebSearchUserLocation{
 						Type:     tool.AnthropicToolWebSearch.UserLocation.Type,
 						City:     tool.AnthropicToolWebSearch.UserLocation.City,
 						Country:  tool.AnthropicToolWebSearch.UserLocation.Country,
@@ -6179,25 +6179,25 @@ func convertAnthropicToolToUnifAI(tool *AnthropicTool) *schemas.ResponsesTool {
 				}
 			}
 
-			return unifaiTool
+			return rakshaTool
 
 		case AnthropicToolTypeWebFetch20250910, AnthropicToolTypeWebFetch20260209, AnthropicToolTypeWebFetch20260309:
-			unifaiTool := &schemas.ResponsesTool{
+			rakshaTool := &schemas.ResponsesTool{
 				Type: schemas.ResponsesToolTypeWebFetch,
 			}
 			if tool.AnthropicToolWebFetch != nil {
-				unifaiTool.ResponsesToolWebFetch = &schemas.ResponsesToolWebFetch{
+				rakshaTool.ResponsesToolWebFetch = &schemas.ResponsesToolWebFetch{
 					MaxUses:          tool.AnthropicToolWebFetch.MaxUses,
 					MaxContentTokens: tool.AnthropicToolWebFetch.MaxContentTokens,
 				}
 				if len(tool.AnthropicToolWebFetch.AllowedDomains) > 0 || len(tool.AnthropicToolWebFetch.BlockedDomains) > 0 {
-					unifaiTool.ResponsesToolWebFetch.Filters = &schemas.ResponsesToolWebSearchFilters{
+					rakshaTool.ResponsesToolWebFetch.Filters = &schemas.ResponsesToolWebSearchFilters{
 						AllowedDomains: tool.AnthropicToolWebFetch.AllowedDomains,
 						BlockedDomains: tool.AnthropicToolWebFetch.BlockedDomains,
 					}
 				}
 			}
-			return unifaiTool
+			return rakshaTool
 
 		case AnthropicToolTypeCodeExecution20250522, AnthropicToolTypeCodeExecution,
 			AnthropicToolTypeCodeExecution20260120, AnthropicToolTypeCodeExecution20260521:
@@ -6245,77 +6245,77 @@ func convertAnthropicToolToUnifAI(tool *AnthropicTool) *schemas.ResponsesTool {
 			}
 
 		case AnthropicToolTypeAdvisor20260301:
-			unifaiTool := &schemas.ResponsesTool{
+			rakshaTool := &schemas.ResponsesTool{
 				Type: schemas.ResponsesToolTypeAdvisor,
 			}
 			if tool.AnthropicToolAdvisor != nil {
-				unifaiTool.ResponsesToolAdvisor = &schemas.ResponsesToolAdvisor{
+				rakshaTool.ResponsesToolAdvisor = &schemas.ResponsesToolAdvisor{
 					Model:     tool.AnthropicToolAdvisor.Model,
 					MaxUses:   tool.AnthropicToolAdvisor.MaxUses,
 					MaxTokens: tool.AnthropicToolAdvisor.MaxTokens,
 				}
 				if tool.AnthropicToolAdvisor.Caching != nil {
-					unifaiTool.ResponsesToolAdvisor.Caching = &schemas.ResponsesToolAdvisorCaching{
+					rakshaTool.ResponsesToolAdvisor.Caching = &schemas.ResponsesToolAdvisorCaching{
 						Type: tool.AnthropicToolAdvisor.Caching.Type,
 						TTL:  tool.AnthropicToolAdvisor.Caching.TTL,
 					}
 				}
 			}
-			return unifaiTool
+			return rakshaTool
 		}
 	}
 
 	// Handle custom/default tool type (function)
-	unifaiTool := &schemas.ResponsesTool{
+	rakshaTool := &schemas.ResponsesTool{
 		Type:        schemas.ResponsesToolTypeFunction,
 		Name:        &tool.Name,
 		Description: tool.Description,
 	}
 
 	if tool.InputSchema != nil || tool.Strict != nil {
-		unifaiTool.ResponsesToolFunction = &schemas.ResponsesToolFunction{
+		rakshaTool.ResponsesToolFunction = &schemas.ResponsesToolFunction{
 			Parameters: tool.InputSchema,
 			Strict:     tool.Strict,
 		}
 	}
 
 	if tool.CacheControl != nil {
-		unifaiTool.CacheControl = tool.CacheControl
+		rakshaTool.CacheControl = tool.CacheControl
 	}
 
-	return unifaiTool
+	return rakshaTool
 }
 
-// convertAnthropicToolChoiceToUnifAI converts AnthropicToolChoice to schemas.ToolChoice
-func convertAnthropicToolChoiceToUnifAI(toolChoice *AnthropicToolChoice) *schemas.ResponsesToolChoice {
+// convertAnthropicToolChoiceToRaksha converts AnthropicToolChoice to schemas.ToolChoice
+func convertAnthropicToolChoiceToRaksha(toolChoice *AnthropicToolChoice) *schemas.ResponsesToolChoice {
 	if toolChoice == nil {
 		return nil
 	}
 
-	unifaiToolChoice := &schemas.ResponsesToolChoice{}
+	rakshaToolChoice := &schemas.ResponsesToolChoice{}
 
 	// Handle string format
 	if toolChoice.Type != "" {
 		switch toolChoice.Type {
 		case "auto":
-			unifaiToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeAuto))
+			rakshaToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeAuto))
 		case "any":
-			unifaiToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeAny))
+			rakshaToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeAny))
 		case "none":
-			unifaiToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeNone))
+			rakshaToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeNone))
 		case "tool":
 			// Handle forced tool choice with specific function name
-			unifaiToolChoice.ResponsesToolChoiceStruct = &schemas.ResponsesToolChoiceStruct{
+			rakshaToolChoice.ResponsesToolChoiceStruct = &schemas.ResponsesToolChoiceStruct{
 				Type: schemas.ResponsesToolChoiceTypeFunction,
 				Name: &toolChoice.Name,
 			}
-			return unifaiToolChoice
+			return rakshaToolChoice
 		default:
-			unifaiToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeAuto))
+			rakshaToolChoice.ResponsesToolChoiceStr = schemas.Ptr(string(schemas.ResponsesToolChoiceTypeAuto))
 		}
 	}
 
-	return unifaiToolChoice
+	return rakshaToolChoice
 }
 
 // flushPendingContentBlocks is a helper that flushes accumulated content blocks into an assistant message
@@ -6380,10 +6380,10 @@ func convertToolOutputToAnthropicContent(output *schemas.ResponsesToolMessageOut
 	return nil
 }
 
-// convertUnifAIToolsToAnthropic converts all UnifAI tools to Anthropic tools and MCP servers.
+// convertRakshaToolsToAnthropic converts all Raksha tools to Anthropic tools and MCP servers.
 // It handles context-dependent conversions like code_interpreter, which must be skipped when
 // web_search or web_fetch is present (Anthropic auto-injects code_execution in that case).
-func convertUnifAIToolsToAnthropic(model string, tools []schemas.ResponsesTool, provider schemas.ModelProvider) ([]AnthropicTool, []AnthropicMCPServerV2) {
+func convertRakshaToolsToAnthropic(model string, tools []schemas.ResponsesTool, provider schemas.ModelProvider) ([]AnthropicTool, []AnthropicMCPServerV2) {
 	// Check if web search or web fetch is present — when they are, Anthropic
 	// auto-injects code_execution so we must skip it to avoid conflicts.
 	hasWebSearchOrFetch := false
@@ -6398,7 +6398,7 @@ func convertUnifAIToolsToAnthropic(model string, tools []schemas.ResponsesTool, 
 	mcpServers := []AnthropicMCPServerV2{}
 	for _, tool := range tools {
 		if tool.Type == schemas.ResponsesToolTypeMCP && tool.ResponsesToolMCP != nil {
-			server, toolset := convertUnifAIMCPToolToAnthropicNew(&tool)
+			server, toolset := convertRakshaMCPToolToAnthropicNew(&tool)
 			if server != nil {
 				mcpServers = append(mcpServers, *server)
 			}
@@ -6409,7 +6409,7 @@ func convertUnifAIToolsToAnthropic(model string, tools []schemas.ResponsesTool, 
 			}
 			continue
 		}
-		anthropicTool := convertUnifAIToolToAnthropic(model, &tool, provider, hasWebSearchOrFetch)
+		anthropicTool := convertRakshaToolToAnthropic(model, &tool, provider, hasWebSearchOrFetch)
 		if anthropicTool != nil {
 			applyResponsesToolAnthropicFlags(anthropicTool, &tool)
 			anthropicTools = append(anthropicTools, *anthropicTool)
@@ -6423,7 +6423,7 @@ func convertUnifAIToolsToAnthropic(model string, tools []schemas.ResponsesTool, 
 // the inbound direction: from the incoming AnthropicTool onto the neutral
 // ResponsesTool when the native Anthropic /v1/messages endpoint is the entry
 // point. Called once per converted tool so every return path inside
-// convertAnthropicToolToUnifAI benefits.
+// convertAnthropicToolToRaksha benefits.
 func applyAnthropicToolFlagsToResponsesTool(at *AnthropicTool, rt *schemas.ResponsesTool) {
 	if at == nil || rt == nil {
 		return
@@ -6451,7 +6451,7 @@ func applyAnthropicToolFlagsToResponsesTool(at *AnthropicTool, rt *schemas.Respo
 // applyResponsesToolAnthropicFlags propagates the Anthropic-native tool flags
 // (DeferLoading, AllowedCallers, InputExamples, EagerInputStreaming) from the
 // neutral ResponsesTool onto the provider-native AnthropicTool. Called once
-// per converted tool so every branch in convertUnifAIToolToAnthropic
+// per converted tool so every branch in convertRakshaToolToAnthropic
 // benefits without duplicating the logic on each return path.
 func applyResponsesToolAnthropicFlags(at *AnthropicTool, rt *schemas.ResponsesTool) {
 	if at == nil || rt == nil {
@@ -6478,7 +6478,7 @@ func applyResponsesToolAnthropicFlags(at *AnthropicTool, rt *schemas.ResponsesTo
 }
 
 // Helper function to convert Tool back to AnthropicTool
-func convertUnifAIToolToAnthropic(model string, tool *schemas.ResponsesTool, provider schemas.ModelProvider, hasWebSearchOrFetch bool) *AnthropicTool {
+func convertRakshaToolToAnthropic(model string, tool *schemas.ResponsesTool, provider schemas.ModelProvider, hasWebSearchOrFetch bool) *AnthropicTool {
 	if tool == nil {
 		return nil
 	}
@@ -6815,8 +6815,8 @@ func convertContentBlockToAnthropic(block schemas.ResponsesMessageContentBlock) 
 	return nil
 }
 
-// Helper to convert UnifAI content blocks slice to Anthropic content blocks
-func convertUnifAIContentBlocksToAnthropic(blocks []schemas.ResponsesMessageContentBlock) []AnthropicContentBlock {
+// Helper to convert Raksha content blocks slice to Anthropic content blocks
+func convertRakshaContentBlocksToAnthropic(blocks []schemas.ResponsesMessageContentBlock) []AnthropicContentBlock {
 	if len(blocks) == 0 {
 		return nil
 	}
@@ -6832,7 +6832,7 @@ func convertUnifAIContentBlocksToAnthropic(blocks []schemas.ResponsesMessageCont
 	return nil
 }
 
-func (block AnthropicContentBlock) toUnifAIResponsesImageBlock() schemas.ResponsesMessageContentBlock {
+func (block AnthropicContentBlock) toRakshaResponsesImageBlock() schemas.ResponsesMessageContentBlock {
 	return schemas.ResponsesMessageContentBlock{
 		Type: schemas.ResponsesInputMessageContentBlockTypeImage,
 		ResponsesInputMessageContentBlockImage: &schemas.ResponsesInputMessageContentBlockImage{
@@ -6842,7 +6842,7 @@ func (block AnthropicContentBlock) toUnifAIResponsesImageBlock() schemas.Respons
 	}
 }
 
-func (block AnthropicContentBlock) toUnifAIResponsesDocumentBlock() schemas.ResponsesMessageContentBlock {
+func (block AnthropicContentBlock) toRakshaResponsesDocumentBlock() schemas.ResponsesMessageContentBlock {
 	resultBlock := schemas.ResponsesMessageContentBlock{
 		Type:                                  schemas.ResponsesInputMessageContentBlockTypeFile,
 		CacheControl:                          block.CacheControl,
@@ -6899,13 +6899,13 @@ func (block AnthropicContentBlock) toUnifAIResponsesDocumentBlock() schemas.Resp
 }
 
 // Helper functions for MCP tool/server conversion
-// convertAnthropicMCPServerV2ToUnifAITool converts a new-format MCP server to a UnifAI ResponsesTool.
-func convertAnthropicMCPServerV2ToUnifAITool(mcpServer *AnthropicMCPServerV2) *schemas.ResponsesTool {
+// convertAnthropicMCPServerV2ToRakshaTool converts a new-format MCP server to a Raksha ResponsesTool.
+func convertAnthropicMCPServerV2ToRakshaTool(mcpServer *AnthropicMCPServerV2) *schemas.ResponsesTool {
 	if mcpServer == nil {
 		return nil
 	}
 
-	unifaiTool := &schemas.ResponsesTool{
+	rakshaTool := &schemas.ResponsesTool{
 		Type: schemas.ResponsesToolTypeMCP,
 		ResponsesToolMCP: &schemas.ResponsesToolMCP{
 			ServerLabel: mcpServer.Name,
@@ -6913,19 +6913,19 @@ func convertAnthropicMCPServerV2ToUnifAITool(mcpServer *AnthropicMCPServerV2) *s
 	}
 
 	if mcpServer.URL != "" {
-		unifaiTool.ResponsesToolMCP.ServerURL = schemas.Ptr(mcpServer.URL)
+		rakshaTool.ResponsesToolMCP.ServerURL = schemas.Ptr(mcpServer.URL)
 	}
 	if mcpServer.AuthorizationToken != nil {
-		unifaiTool.ResponsesToolMCP.Authorization = mcpServer.AuthorizationToken
+		rakshaTool.ResponsesToolMCP.Authorization = mcpServer.AuthorizationToken
 	}
 
-	return unifaiTool
+	return rakshaTool
 }
 
-// applyMCPToolsetConfigToUnifAITool merges mcp_toolset tool configs (from tools[]) into a UnifAI MCP tool.
+// applyMCPToolsetConfigToRakshaTool merges mcp_toolset tool configs (from tools[]) into a Raksha MCP tool.
 // Extracts the allowlist pattern: tools explicitly enabled in configs while default_config has enabled=false.
-func applyMCPToolsetConfigToUnifAITool(unifaiTool *schemas.ResponsesTool, toolset *AnthropicMCPToolsetTool) {
-	if unifaiTool == nil || unifaiTool.ResponsesToolMCP == nil || toolset == nil {
+func applyMCPToolsetConfigToRakshaTool(rakshaTool *schemas.ResponsesTool, toolset *AnthropicMCPToolsetTool) {
+	if rakshaTool == nil || rakshaTool.ResponsesToolMCP == nil || toolset == nil {
 		return
 	}
 
@@ -6946,7 +6946,7 @@ func applyMCPToolsetConfigToUnifAITool(unifaiTool *schemas.ResponsesTool, toolse
 					allowedTools = append(allowedTools, toolName)
 				}
 			}
-			unifaiTool.ResponsesToolMCP.AllowedTools = &schemas.ResponsesToolMCPAllowedTools{
+			rakshaTool.ResponsesToolMCP.AllowedTools = &schemas.ResponsesToolMCPAllowedTools{
 				ToolNames: allowedTools,
 			}
 		}
@@ -6954,17 +6954,17 @@ func applyMCPToolsetConfigToUnifAITool(unifaiTool *schemas.ResponsesTool, toolse
 
 	// Apply cache control if present
 	if toolset.CacheControl != nil {
-		unifaiTool.CacheControl = toolset.CacheControl
+		rakshaTool.CacheControl = toolset.CacheControl
 	}
 }
 
-// convertAnthropicMCPServerToUnifAITool converts a deprecated-format Anthropic MCP server to a UnifAI ResponsesTool.
-func convertAnthropicMCPServerToUnifAITool(mcpServer *AnthropicMCPServer) *schemas.ResponsesTool {
+// convertAnthropicMCPServerToRakshaTool converts a deprecated-format Anthropic MCP server to a Raksha ResponsesTool.
+func convertAnthropicMCPServerToRakshaTool(mcpServer *AnthropicMCPServer) *schemas.ResponsesTool {
 	if mcpServer == nil {
 		return nil
 	}
 
-	unifaiTool := &schemas.ResponsesTool{
+	rakshaTool := &schemas.ResponsesTool{
 		Type: schemas.ResponsesToolTypeMCP,
 		ResponsesToolMCP: &schemas.ResponsesToolMCP{
 			ServerLabel: mcpServer.Name,
@@ -6973,27 +6973,27 @@ func convertAnthropicMCPServerToUnifAITool(mcpServer *AnthropicMCPServer) *schem
 
 	// Set server URL if present
 	if mcpServer.URL != "" {
-		unifaiTool.ResponsesToolMCP.ServerURL = schemas.Ptr(mcpServer.URL)
+		rakshaTool.ResponsesToolMCP.ServerURL = schemas.Ptr(mcpServer.URL)
 	}
 
 	// Set authorization token if present
 	if mcpServer.AuthorizationToken != nil {
-		unifaiTool.ResponsesToolMCP.Authorization = mcpServer.AuthorizationToken
+		rakshaTool.ResponsesToolMCP.Authorization = mcpServer.AuthorizationToken
 	}
 
 	// Set allowed tools from tool configuration
 	if mcpServer.ToolConfiguration != nil && len(mcpServer.ToolConfiguration.AllowedTools) > 0 {
-		unifaiTool.ResponsesToolMCP.AllowedTools = &schemas.ResponsesToolMCPAllowedTools{
+		rakshaTool.ResponsesToolMCP.AllowedTools = &schemas.ResponsesToolMCPAllowedTools{
 			ToolNames: mcpServer.ToolConfiguration.AllowedTools,
 		}
 	}
 
-	return unifaiTool
+	return rakshaTool
 }
 
-// convertUnifAIMCPToolToAnthropicNew converts a UnifAI MCP tool to the new mcp-client-2025-11-20 format.
+// convertRakshaMCPToolToAnthropicNew converts a Raksha MCP tool to the new mcp-client-2025-11-20 format.
 // Returns both a simplified server entry (for mcp_servers[]) and a toolset entry (for tools[]).
-func convertUnifAIMCPToolToAnthropicNew(tool *schemas.ResponsesTool) (*AnthropicMCPServerV2, *AnthropicMCPToolsetTool) {
+func convertRakshaMCPToolToAnthropicNew(tool *schemas.ResponsesTool) (*AnthropicMCPServerV2, *AnthropicMCPToolsetTool) {
 	if tool == nil || tool.Type != schemas.ResponsesToolTypeMCP || tool.ResponsesToolMCP == nil {
 		return nil, nil
 	}
@@ -7032,9 +7032,9 @@ func convertUnifAIMCPToolToAnthropicNew(tool *schemas.ResponsesTool) (*Anthropic
 	return server, toolset
 }
 
-// convertUnifAIMCPToolToAnthropicServer converts a UnifAI MCP tool to the deprecated mcp-client-2025-04-04 format.
+// convertRakshaMCPToolToAnthropicServer converts a Raksha MCP tool to the deprecated mcp-client-2025-04-04 format.
 // Kept for backward compatibility.
-func convertUnifAIMCPToolToAnthropicServer(tool *schemas.ResponsesTool) *AnthropicMCPServer {
+func convertRakshaMCPToolToAnthropicServer(tool *schemas.ResponsesTool) *AnthropicMCPServer {
 	if tool == nil || tool.Type != schemas.ResponsesToolTypeMCP || tool.ResponsesToolMCP == nil {
 		return nil
 	}

@@ -289,8 +289,8 @@ export function SkillsListView({
 	const hasCreateAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Create);
 	const hasEditAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Delete);
-	const { data: unifaiConfig } = useGetCoreConfigQuery({});
-	const isGitAvailable = unifaiConfig?.is_git_available ?? false;
+	const { data: rakshaConfig } = useGetCoreConfigQuery({});
+	const isGitAvailable = rakshaConfig?.is_git_available ?? false;
 	const [deleteSkill, { isLoading: isDeleting }] = useDeleteSkillMutation();
 	const { data: allSkillsVersionData, refetch: refetchAllSkillsVersion } = useGetAllSkillsVersionQuery();
 	const [bumpAllSkillsVersion, { isLoading: isBumpingAllSkillsVersion }] = useBumpAllSkillsVersionMutation();
@@ -375,7 +375,7 @@ export function SkillsListView({
 					<BookOpenText className="h-24 w-24" strokeWidth={1} />
 				</div>
 				<div className="flex flex-col gap-1">
-					<h1 className="text-muted-foreground text-xl font-medium">Create, version, and share Agent Skills from UnifAI</h1>
+					<h1 className="text-muted-foreground text-xl font-medium">Create, version, and share Agent Skills from Raksha</h1>
 					<div className="text-muted-foreground mx-auto mt-2 max-w-xl text-sm font-normal">
 						Manage SKILL.md instructions and supporting files in one place, publish immutable versions, and expose them as installable
 						plugins for Claude Code, Codex, and other skill-aware clients.
@@ -418,7 +418,7 @@ export function SkillsListView({
 							</TooltipTrigger>
 							<TooltipContent side="bottom">
 								<p className="max-w-xs text-xs">
-									Git is not available on the server. Install git and restart UnifAI to enable marketplace registration for Claude Code and
+									Git is not available on the server. Install git and restart Raksha to enable marketplace registration for Claude Code and
 									Codex.
 								</p>
 							</TooltipContent>

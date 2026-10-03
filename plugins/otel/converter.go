@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -93,7 +93,7 @@ func hexToBytes(hexStr string, length int) []byte {
 	return bytes
 }
 
-// convertTraceToResourceSpan converts a UnifAI trace to OTEL ResourceSpan for the given
+// convertTraceToResourceSpan converts a Raksha trace to OTEL ResourceSpan for the given
 // profile service name. Span filtering and instance attributes are shared across profiles;
 // only the resource service name differs per profile.
 func (p *OtelPlugin) convertTraceToResourceSpan(serviceName string, trace *schemas.Trace, requestHeaders []string, disableContentLogging bool, groupTracesBySession bool, disableRootSpanContent bool) *ResourceSpan {
@@ -146,8 +146,8 @@ func (p *OtelPlugin) convertTraceToResourceSpan(serviceName string, trace *schem
 			}
 			if requestID := trace.GetRequestID(); requestID != "" {
 				otelSpan.Attributes = append(otelSpan.Attributes,
-					kvStr(schemas.AttrRequestID, requestID), // legacy: gen_ai.* placement of unifai-internal attr; replaced by unifai.request.id
-					kvStr(schemas.AttrUnifAIRequestID, requestID),
+					kvStr(schemas.AttrRequestID, requestID), // legacy: gen_ai.* placement of raksha-internal attr; replaced by raksha.request.id
+					kvStr(schemas.AttrRakshaRequestID, requestID),
 				)
 			}
 			if len(p.instanceAttrs) > 0 {
@@ -170,7 +170,7 @@ func (p *OtelPlugin) convertTraceToResourceSpan(serviceName string, trace *schem
 	}
 }
 
-// convertSpanToOTELSpan converts a single UnifAI span to OTEL format
+// convertSpanToOTELSpan converts a single Raksha span to OTEL format
 func convertSpanToOTELSpan(traceID string, span *schemas.Span, disableContentLogging bool) *Span {
 	otelSpan := &Span{
 		TraceId:           hexToBytes(traceID, 16),
@@ -196,8 +196,8 @@ func convertSpanToOTELSpan(traceID string, span *schemas.Span, disableContentLog
 func (p *OtelPlugin) getResourceAttributes(serviceName string) []*KeyValue {
 	attrs := []*KeyValue{
 		kvStr("service.name", serviceName),
-		kvStr("service.version", p.unifaiVersion),
-		kvStr("telemetry.sdk.name", "unifai"),
+		kvStr("service.version", p.rakshaVersion),
+		kvStr("telemetry.sdk.name", "raksha"),
 		kvStr("telemetry.sdk.language", "go"),
 	}
 	// Add environment attributes
@@ -209,7 +209,7 @@ func (p *OtelPlugin) getResourceAttributes(serviceName string) []*KeyValue {
 func (p *OtelPlugin) getInstrumentationScope(serviceName string) *commonpb.InstrumentationScope {
 	return &commonpb.InstrumentationScope{
 		Name:    serviceName,
-		Version: p.unifaiVersion,
+		Version: p.rakshaVersion,
 	}
 }
 
@@ -357,7 +357,7 @@ func anyToKeyValue(key string, value any) *KeyValue {
 	}
 }
 
-// convertSpanKind maps UnifAI SpanKind to OTEL SpanKind
+// convertSpanKind maps Raksha SpanKind to OTEL SpanKind
 func convertSpanKind(kind schemas.SpanKind) tracepb.Span_SpanKind {
 	switch kind {
 	case schemas.SpanKindLLMCall:
@@ -385,7 +385,7 @@ func convertSpanKind(kind schemas.SpanKind) tracepb.Span_SpanKind {
 	}
 }
 
-// convertSpanStatus maps UnifAI SpanStatus to OTEL Status
+// convertSpanStatus maps Raksha SpanStatus to OTEL Status
 func convertSpanStatus(status schemas.SpanStatus, msg string) *tracepb.Status {
 	switch status {
 	case schemas.SpanStatusOk:
@@ -397,7 +397,7 @@ func convertSpanStatus(status schemas.SpanStatus, msg string) *tracepb.Status {
 	}
 }
 
-// convertSpanEvents converts UnifAI span events to OTEL events
+// convertSpanEvents converts Raksha span events to OTEL events
 func convertSpanEvents(events []schemas.SpanEvent, disableContentLogging bool) []*Event {
 	if len(events) == 0 {
 		return nil

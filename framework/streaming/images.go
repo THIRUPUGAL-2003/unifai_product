@@ -6,18 +6,18 @@ import (
 	"strings"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	schemas "github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	raksha "github.com/raksha/raksha/core"
+	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
 )
 
 // buildCompleteImageFromImageStreamChunks builds a complete image generation response from accumulated chunks
-func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStreamChunk) *schemas.UnifAIImageGenerationResponse {
+func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStreamChunk) *schemas.RakshaImageGenerationResponse {
 
 	// Special case for final chunk, return the complete image response
 	for i := range len(chunks) {
 		if chunks[i].Delta != nil && (chunks[i].FinishReason != nil || chunks[i].Delta.Type == schemas.ImageGenerationEventTypeCompleted || chunks[i].Delta.Type == schemas.ImageEditEventTypeCompleted) {
-			finalResponse := &schemas.UnifAIImageGenerationResponse{
+			finalResponse := &schemas.RakshaImageGenerationResponse{
 				ID:      chunks[i].Delta.ID,
 				Created: chunks[i].Delta.CreatedAt,
 				Model:   chunks[i].Delta.ExtraFields.OriginalModelRequested,
@@ -103,7 +103,7 @@ func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStr
 		}
 	}
 
-	finalResponse := &schemas.UnifAIImageGenerationResponse{
+	finalResponse := &schemas.RakshaImageGenerationResponse{
 		ID:      responseID,
 		Created: time.Now().Unix(),
 		Model:   model,
@@ -114,7 +114,7 @@ func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStr
 }
 
 // processAccumulatedImageStreamingChunks processes all accumulated image chunks in order
-func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, unifaiErr *schemas.UnifAIError, isFinalChunk bool) (*AccumulatedData, error) {
+func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, rakshaErr *schemas.RakshaError, isFinalChunk bool) (*AccumulatedData, error) {
 	acc := a.getOrCreateStreamAccumulator(requestID)
 	// Lock the accumulator
 	acc.mu.Lock()
@@ -151,7 +151,7 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, u
 
 	// Update database with complete message
 	data.Status = "success"
-	if unifaiErr != nil {
+	if rakshaErr != nil {
 		data.Status = "error"
 	}
 	if len(acc.ImageStreamChunks) > 0 {
@@ -167,7 +167,7 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, u
 	}
 	data.EndTimestamp = acc.FinalTimestamp
 	data.ImageGenerationOutput = completeImage
-	data.ErrorDetails = unifaiErr
+	data.ErrorDetails = rakshaErr
 
 	// Update token usage from final chunk if available
 	if len(acc.ImageStreamChunks) > 0 {
@@ -177,7 +177,7 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, u
 			if lastChunk.Delta.Usage.InputTokensDetails != nil {
 				promptTokens = lastChunk.Delta.Usage.InputTokensDetails.TextTokens
 			}
-			data.TokenUsage = &schemas.UnifAILLMUsage{
+			data.TokenUsage = &schemas.RakshaLLMUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: 0, // Image generation doesn't have completion tokens
 				TotalTokens:      lastChunk.Delta.Usage.TotalTokens,
@@ -209,21 +209,21 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, u
 }
 
 // processImageStreamingResponse processes an image streaming response
-func (a *Accumulator) processImageStreamingResponse(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
 	// Extract request ID from context
 	requestID, ok := getAccumulatorID(ctx)
 	if !ok || requestID == "" {
 		// Log error but don't fail the request
 		return nil, fmt.Errorf("accumulator-id not found in context or is empty")
 	}
-	_, provider, requestedModel, resolvedModel := unifai.GetResponseFields(result, unifaiErr)
+	_, provider, requestedModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
 
-	isFinalChunk := unifai.IsFinalChunk(ctx)
+	isFinalChunk := raksha.IsFinalChunk(ctx)
 	chunk := a.getImageStreamChunk()
 	chunk.Timestamp = time.Now()
-	chunk.ErrorDetails = unifaiErr
-	if unifaiErr != nil {
-		chunk.FinishReason = unifai.Ptr("error")
+	chunk.ErrorDetails = rakshaErr
+	if rakshaErr != nil {
+		chunk.FinishReason = raksha.Ptr("error")
 	} else if result != nil && result.ImageGenerationStreamResponse != nil {
 		// Create a deep copy of the delta to avoid pointing to stack memory
 		var partialImageIndex *int
@@ -231,7 +231,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.UnifAIContext, 
 			idx := *result.ImageGenerationStreamResponse.PartialImageIndex
 			partialImageIndex = &idx
 		}
-		newDelta := &schemas.UnifAIImageGenerationStreamResponse{
+		newDelta := &schemas.RakshaImageGenerationStreamResponse{
 			ID:                result.ImageGenerationStreamResponse.ID,
 			Type:              result.ImageGenerationStreamResponse.Type,
 			SequenceNumber:    result.ImageGenerationStreamResponse.SequenceNumber,
@@ -265,7 +265,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.UnifAIContext, 
 
 		// Extract raw response if available
 		if result.ImageGenerationStreamResponse.ExtraFields.RawResponse != nil {
-			chunk.RawResponse = unifai.Ptr(fmt.Sprintf("%v", result.ImageGenerationStreamResponse.ExtraFields.RawResponse))
+			chunk.RawResponse = raksha.Ptr(fmt.Sprintf("%v", result.ImageGenerationStreamResponse.ExtraFields.RawResponse))
 		}
 
 		// Extract usage if available
@@ -276,10 +276,10 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.UnifAIContext, 
 		if isFinalChunk {
 			if a.pricingManager != nil {
 				cost := a.pricingManager.CalculateCost(result, modelcatalog.PricingLookupScopesFromContext(ctx, string(result.GetExtraFields().Provider)))
-				chunk.Cost = unifai.Ptr(cost)
+				chunk.Cost = raksha.Ptr(cost)
 			}
 			chunk.SemanticCacheDebug = result.GetExtraFields().CacheDebug
-			chunk.FinishReason = unifai.Ptr("completed")
+			chunk.FinishReason = raksha.Ptr("completed")
 		}
 	}
 
@@ -301,7 +301,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.UnifAIContext, 
 		}
 		accumulator.mu.Unlock()
 		if shouldProcess {
-			data, processErr := a.processAccumulatedImageStreamingChunks(requestID, unifaiErr, isFinalChunk)
+			data, processErr := a.processAccumulatedImageStreamingChunks(requestID, rakshaErr, isFinalChunk)
 			if processErr != nil {
 				a.logger.Error(fmt.Sprintf("failed to process accumulated chunks for request %s: %v", requestID, processErr))
 				return nil, processErr
@@ -316,7 +316,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.UnifAIContext, 
 				Provider:       provider,
 				RequestedModel: requestedModel,
 				ResolvedModel:  resolvedModel,
-				RoutingInfo:    unifai.GetResponseRoutingInfo(result, unifaiErr),
+				RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
 				Data:           data,
 				RawRequest:     &rawRequest,
 			}, nil
@@ -333,7 +333,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.UnifAIContext, 
 		Provider:       provider,
 		RequestedModel: requestedModel,
 		ResolvedModel:  resolvedModel,
-		RoutingInfo:    unifai.GetResponseRoutingInfo(result, unifaiErr),
+		RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
 		Data:           nil,
 	}, nil
 }

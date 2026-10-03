@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "===================================================="
-echo "🛑 Stopping UnifAI & AI Guard Proxy"
+echo "🛑 Stopping Raksha & AI Guard Proxy"
 echo "===================================================="
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -11,10 +11,10 @@ cd "$SCRIPT_DIR"
 if [[ -f "$REPO_ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source <(grep -E '^(UNIFAI_PROXY_ADDR|PROXY_PORT|MITM_WEB_PORT)=' "$REPO_ROOT/.env" | sed 's/\r$//')
+  source <(grep -E '^(RAKSHA_PROXY_ADDR|PROXY_PORT|MITM_WEB_PORT)=' "$REPO_ROOT/.env" | sed 's/\r$//')
   set +a
 fi
-PROXY_HOST_PORT="${UNIFAI_PROXY_ADDR:?set UNIFAI_PROXY_ADDR in .env}"
+PROXY_HOST_PORT="${RAKSHA_PROXY_ADDR:?set RAKSHA_PROXY_ADDR in .env}"
 PROXY_PORT_ONLY="${PROXY_HOST_PORT##*:}"
 MITM_WEB_PORT="${MITM_WEB_PORT:?set MITM_WEB_PORT in .env}"
 

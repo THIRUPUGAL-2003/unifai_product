@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/stretchr/testify/require"
 )
 
 // This test verifies that the web search tool is properly invoked and returns results
-func RunWebSearchToolTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -33,9 +33,9 @@ func RunWebSearchToolTest(t *testing.T, client *unifai.UnifAI, ctx context.Conte
 			Type: schemas.ResponsesToolTypeWebSearch,
 			ResponsesToolWebSearch: &schemas.ResponsesToolWebSearch{
 				UserLocation: &schemas.ResponsesToolWebSearchUserLocation{
-					Type:    unifai.Ptr("approximate"),
-					Country: unifai.Ptr("US"),
-					City:    unifai.Ptr("New York"),
+					Type:    raksha.Ptr("approximate"),
+					Country: raksha.Ptr("US"),
+					City:    raksha.Ptr("New York"),
 				},
 			},
 		}
@@ -57,9 +57,9 @@ func RunWebSearchToolTest(t *testing.T, client *unifai.UnifAI, ctx context.Conte
 		expectations := WebSearchExpectations()
 
 		// Create operation for Responses API
-		responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
@@ -169,7 +169,7 @@ func WebSearchExpectations() ResponseExpectations {
 }
 
 // RunWebSearchToolStreamTest executes streaming web search test
-func RunWebSearchToolStreamTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -189,22 +189,22 @@ func RunWebSearchToolStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 			Type: schemas.ResponsesToolTypeWebSearch,
 			ResponsesToolWebSearch: &schemas.ResponsesToolWebSearch{
 				UserLocation: &schemas.ResponsesToolWebSearchUserLocation{
-					Type:     unifai.Ptr("approximate"),
-					Country:  unifai.Ptr("US"),
-					City:     unifai.Ptr("San Francisco"),
-					Region:   unifai.Ptr("California"),
-					Timezone: unifai.Ptr("America/Los_Angeles"),
+					Type:     raksha.Ptr("approximate"),
+					Country:  raksha.Ptr("US"),
+					City:     raksha.Ptr("San Francisco"),
+					Region:   raksha.Ptr("California"),
+					Timezone: raksha.Ptr("America/Los_Angeles"),
 				},
 			},
 		}
 
-		request := &schemas.UnifAIResponsesRequest{
+		request := &schemas.RakshaResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    responsesMessages,
 			Params: &schemas.ResponsesParameters{
 				Tools:           []schemas.ResponsesTool{*webSearchTool},
-				MaxOutputTokens: unifai.Ptr(1500),
+				MaxOutputTokens: raksha.Ptr(1500),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -224,11 +224,11 @@ func RunWebSearchToolStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 		}
 
 		validationResult := WithResponsesStreamValidationRetry(t, retryConfig, retryContext,
-			func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-				bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			},
-			func(responseChannel chan *schemas.UnifAIStreamChunk) ResponsesStreamValidationResult {
+			func(responseChannel chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult {
 				var hasWebSearchCall, hasMessageContent bool
 				var webSearchQuery string
 				var searchSources []schemas.ResponsesWebSearchToolCallActionSearchSource
@@ -251,21 +251,21 @@ func RunWebSearchToolStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 						chunkCount++
 
 						// Check streaming events for web_search_call and message content
-						if stream.UnifAIResponsesStreamResponse != nil {
-							streamType := stream.UnifAIResponsesStreamResponse.Type
+						if stream.RakshaResponsesStreamResponse != nil {
+							streamType := stream.RakshaResponsesStreamResponse.Type
 
 							// Check for output_item.added with web_search_call
 							if streamType == schemas.ResponsesStreamResponseTypeOutputItemAdded {
-								if stream.UnifAIResponsesStreamResponse.Item != nil {
-									if stream.UnifAIResponsesStreamResponse.Item.Type != nil &&
-										*stream.UnifAIResponsesStreamResponse.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
+								if stream.RakshaResponsesStreamResponse.Item != nil {
+									if stream.RakshaResponsesStreamResponse.Item.Type != nil &&
+										*stream.RakshaResponsesStreamResponse.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
 										hasWebSearchCall = true
 										t.Logf("✅ Found web_search_call in streaming event: %s", streamType)
 
 										// Extract query and sources if available
-										if stream.UnifAIResponsesStreamResponse.Item.ResponsesToolMessage != nil &&
-											stream.UnifAIResponsesStreamResponse.Item.ResponsesToolMessage.Action != nil {
-											action := stream.UnifAIResponsesStreamResponse.Item.ResponsesToolMessage.Action
+										if stream.RakshaResponsesStreamResponse.Item.ResponsesToolMessage != nil &&
+											stream.RakshaResponsesStreamResponse.Item.ResponsesToolMessage.Action != nil {
+											action := stream.RakshaResponsesStreamResponse.Item.ResponsesToolMessage.Action
 											if action.ResponsesWebSearchToolCallAction != nil {
 												if action.ResponsesWebSearchToolCallAction.Query != nil {
 													webSearchQuery = *action.ResponsesWebSearchToolCallAction.Query
@@ -288,9 +288,9 @@ func RunWebSearchToolStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 
 							// Check for message text content in streaming deltas
 							if streamType == schemas.ResponsesStreamResponseTypeOutputTextDelta {
-								if stream.UnifAIResponsesStreamResponse.Delta != nil && *stream.UnifAIResponsesStreamResponse.Delta != "" {
+								if stream.RakshaResponsesStreamResponse.Delta != nil && *stream.RakshaResponsesStreamResponse.Delta != "" {
 									hasMessageContent = true
-									t.Logf("✅ Found message text delta: %s", *stream.UnifAIResponsesStreamResponse.Delta)
+									t.Logf("✅ Found message text delta: %s", *stream.RakshaResponsesStreamResponse.Delta)
 								}
 							}
 						}
@@ -333,7 +333,7 @@ func RunWebSearchToolStreamTest(t *testing.T, client *unifai.UnifAI, ctx context
 }
 
 // RunWebSearchToolWithDomainsTest tests web search with domain filtering
-func RunWebSearchToolWithDomainsTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolWithDomainsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -379,15 +379,15 @@ func RunWebSearchToolWithDomainsTest(t *testing.T, client *unifai.UnifAI, ctx co
 
 		expectations := WebSearchExpectations()
 
-		responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: unifai.Ptr(1200),
+					MaxOutputTokens: raksha.Ptr(1200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -434,7 +434,7 @@ func RunWebSearchToolWithDomainsTest(t *testing.T, client *unifai.UnifAI, ctx co
 }
 
 // RunWebSearchToolContextSizesTest tests different search context sizes
-func RunWebSearchToolContextSizesTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolContextSizesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -483,15 +483,15 @@ func RunWebSearchToolContextSizesTest(t *testing.T, client *unifai.UnifAI, ctx c
 
 				expectations := WebSearchExpectations()
 
-				responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-					bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-					responsesReq := &schemas.UnifAIResponsesRequest{
+				responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					responsesReq := &schemas.RakshaResponsesRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.ChatModel,
 						Input:    responsesMessages,
 						Params: &schemas.ResponsesParameters{
 							Tools:           []schemas.ResponsesTool{*webSearchTool},
-							MaxOutputTokens: unifai.Ptr(1500),
+							MaxOutputTokens: raksha.Ptr(1500),
 						},
 						Fallbacks: testConfig.Fallbacks,
 					}
@@ -540,7 +540,7 @@ func RunWebSearchToolContextSizesTest(t *testing.T, client *unifai.UnifAI, ctx c
 }
 
 // RunWebSearchToolMultiTurnTest tests multi-turn conversation with web search
-func RunWebSearchToolMultiTurnTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -577,15 +577,15 @@ func RunWebSearchToolMultiTurnTest(t *testing.T, client *unifai.UnifAI, ctx cont
 
 		expectations := WebSearchExpectations()
 
-		firstOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		firstOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    firstMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: unifai.Ptr(1500),
+					MaxOutputTokens: raksha.Ptr(1500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -632,15 +632,15 @@ func RunWebSearchToolMultiTurnTest(t *testing.T, client *unifai.UnifAI, ctx cont
 			},
 		}
 
-		secondOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		secondOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    secondMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: unifai.Ptr(1500),
+					MaxOutputTokens: raksha.Ptr(1500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -675,7 +675,7 @@ func RunWebSearchToolMultiTurnTest(t *testing.T, client *unifai.UnifAI, ctx cont
 }
 
 // RunWebSearchToolMaxUsesTest tests Anthropic-specific max uses parameter
-func RunWebSearchToolMaxUsesTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolMaxUsesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -720,15 +720,15 @@ func RunWebSearchToolMaxUsesTest(t *testing.T, client *unifai.UnifAI, ctx contex
 
 		expectations := WebSearchExpectations()
 
-		responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: unifai.Ptr(2000),
+					MaxOutputTokens: raksha.Ptr(2000),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}

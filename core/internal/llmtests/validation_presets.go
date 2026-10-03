@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // =============================================================================
@@ -438,7 +438,7 @@ func ModifyExpectationsForProvider(expectations ResponseExpectations, provider s
 		expectations.ShouldHaveLatency = true
 
 	case schemas.Bedrock:
-		// Bedrock returns usage stats for most calls via UnifAI normalization, but not all
+		// Bedrock returns usage stats for most calls via Raksha normalization, but not all
 		expectations.ShouldHaveTimestamps = false // Bedrock does not return created timestamps
 		expectations.ShouldHaveLatency = true
 

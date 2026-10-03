@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAIImageGenerationRequest converts a Gemini generation request to a UnifAI image generation request
-func (request *GeminiGenerationRequest) ToUnifAIImageGenerationRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIImageGenerationRequest {
+// ToRakshaImageGenerationRequest converts a Gemini generation request to a Raksha image generation request
+func (request *GeminiGenerationRequest) ToRakshaImageGenerationRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageGenerationRequest {
 	if request == nil {
 		return nil
 	}
@@ -22,7 +22,7 @@ func (request *GeminiGenerationRequest) ToUnifAIImageGenerationRequest(ctx *sche
 	// This allows cross-provider routing through the GenAI endpoint
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	unifaiReq := &schemas.UnifAIImageGenerationRequest{
+	rakshaReq := &schemas.RakshaImageGenerationRequest{
 		Provider: provider,
 		Model:    model,
 		Input:    &schemas.ImageGenerationInput{},
@@ -30,53 +30,53 @@ func (request *GeminiGenerationRequest) ToUnifAIImageGenerationRequest(ctx *sche
 	}
 
 	fallbacks := schemas.ParseFallbacks(request.Fallbacks)
-	unifaiReq.Fallbacks = fallbacks
+	rakshaReq.Fallbacks = fallbacks
 
 	// First, try to extract prompt from Imagen format (instances)
 	if len(request.Instances) > 0 && request.Instances[0].Prompt != "" {
-		unifaiReq.Input.Prompt = request.Instances[0].Prompt
+		rakshaReq.Input.Prompt = request.Instances[0].Prompt
 
 		// Extract Imagen parameters
 		if request.Parameters != nil {
 			if request.Parameters.SampleCount != nil {
-				unifaiReq.Params.N = request.Parameters.SampleCount
+				rakshaReq.Params.N = request.Parameters.SampleCount
 			}
 			// Convert Imagen size format to standard format
 			if request.Parameters.SampleImageSize != nil || request.Parameters.AspectRatio != nil {
 				size := convertImagenFormatToSize(request.Parameters.SampleImageSize, request.Parameters.AspectRatio)
 				if size != "" && strings.ToLower(size) != "auto" {
-					unifaiReq.Params.Size = &size
+					rakshaReq.Params.Size = &size
 				}
 			}
 
-			// Map additional parameters to ExtraParams if not in UnifAI schema
-			if unifaiReq.Params.ExtraParams == nil {
-				unifaiReq.Params.ExtraParams = make(map[string]interface{})
+			// Map additional parameters to ExtraParams if not in Raksha schema
+			if rakshaReq.Params.ExtraParams == nil {
+				rakshaReq.Params.ExtraParams = make(map[string]interface{})
 			}
 
 			if request.Parameters.PersonGeneration != nil {
-				unifaiReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
+				rakshaReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
 			}
 			if request.Parameters.Seed != nil {
-				unifaiReq.Params.Seed = request.Parameters.Seed
+				rakshaReq.Params.Seed = request.Parameters.Seed
 			}
 			if request.Parameters.NegativePrompt != nil {
-				unifaiReq.Params.NegativePrompt = request.Parameters.NegativePrompt
+				rakshaReq.Params.NegativePrompt = request.Parameters.NegativePrompt
 			}
 			if request.Parameters.Language != nil {
-				unifaiReq.Params.ExtraParams["language"] = *request.Parameters.Language
+				rakshaReq.Params.ExtraParams["language"] = *request.Parameters.Language
 			}
 			if request.Parameters.EnhancePrompt != nil {
-				unifaiReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
+				rakshaReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
 			}
 			if request.Parameters.AddWatermark != nil {
-				unifaiReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
+				rakshaReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
 			}
 			if len(request.Parameters.SafetySettings) > 0 {
-				unifaiReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
+				rakshaReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
 			}
 		}
-		return unifaiReq
+		return rakshaReq
 	}
 
 	// Fall back to standard Gemini format (contents)
@@ -84,11 +84,11 @@ func (request *GeminiGenerationRequest) ToUnifAIImageGenerationRequest(ctx *sche
 		for _, content := range request.Contents {
 			for _, part := range content.Parts {
 				if part != nil && part.Text != "" {
-					unifaiReq.Input.Prompt = part.Text
+					rakshaReq.Input.Prompt = part.Text
 					break
 				}
 			}
-			if unifaiReq.Input.Prompt != "" {
+			if rakshaReq.Input.Prompt != "" {
 				break
 			}
 		}
@@ -99,15 +99,15 @@ func (request *GeminiGenerationRequest) ToUnifAIImageGenerationRequest(ctx *sche
 		if strings.TrimSpace(ic.ImageSize) != "" || strings.TrimSpace(ic.AspectRatio) != "" {
 			size := convertImagenFormatToSize(&ic.ImageSize, &ic.AspectRatio)
 			if size != "" {
-				unifaiReq.Params.Size = &size
+				rakshaReq.Params.Size = &size
 			}
 		}
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
-func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIImageEditRequest {
+func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageEditRequest {
 	if request == nil {
 		return nil
 	}
@@ -116,7 +116,7 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 	// This allows cross-provider routing through the GenAI endpoint
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	unifaiReq := &schemas.UnifAIImageEditRequest{
+	rakshaReq := &schemas.RakshaImageEditRequest{
 		Provider: provider,
 		Model:    model,
 		Input:    &schemas.ImageEditInput{},
@@ -124,16 +124,16 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 	}
 
 	fallbacks := schemas.ParseFallbacks(request.Fallbacks)
-	unifaiReq.Fallbacks = fallbacks
+	rakshaReq.Fallbacks = fallbacks
 
 	// Initialize ExtraParams if not present
-	if unifaiReq.Params.ExtraParams == nil {
-		unifaiReq.Params.ExtraParams = make(map[string]interface{})
+	if rakshaReq.Params.ExtraParams == nil {
+		rakshaReq.Params.ExtraParams = make(map[string]interface{})
 	}
 
 	// First, try to extract prompt from Imagen format (instances)
 	if len(request.Instances) > 0 && request.Instances[0].Prompt != "" {
-		unifaiReq.Input.Prompt = request.Instances[0].Prompt
+		rakshaReq.Input.Prompt = request.Instances[0].Prompt
 
 		// Extract all images from ReferenceImages using a loop
 		var images []schemas.ImageInput
@@ -178,35 +178,35 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 
 		// Set mask if present
 		if len(mask) > 0 {
-			unifaiReq.Params.Mask = mask
+			rakshaReq.Params.Mask = mask
 		}
 
 		// Store mask configuration in ExtraParams
 		if maskMode != "" {
-			unifaiReq.Params.ExtraParams["maskMode"] = maskMode
+			rakshaReq.Params.ExtraParams["maskMode"] = maskMode
 		}
 		if dilation != nil {
-			unifaiReq.Params.ExtraParams["dilation"] = *dilation
+			rakshaReq.Params.ExtraParams["dilation"] = *dilation
 		}
 		if len(maskClasses) > 0 {
-			unifaiReq.Params.ExtraParams["maskClasses"] = maskClasses
+			rakshaReq.Params.ExtraParams["maskClasses"] = maskClasses
 		}
 
 		if len(images) == 0 {
 			return nil // No valid images found
 		}
-		unifaiReq.Input.Images = images
+		rakshaReq.Input.Images = images
 
 		// Extract Imagen parameters
 		if request.Parameters != nil {
 			if request.Parameters.SampleCount != nil {
-				unifaiReq.Params.N = request.Parameters.SampleCount
+				rakshaReq.Params.N = request.Parameters.SampleCount
 			}
 			// Convert Imagen size format to standard format
 			if request.Parameters.SampleImageSize != nil || request.Parameters.AspectRatio != nil {
 				size := convertImagenFormatToSize(request.Parameters.SampleImageSize, request.Parameters.AspectRatio)
 				if size != "" && strings.ToLower(size) != "auto" {
-					unifaiReq.Params.Size = &size
+					rakshaReq.Params.Size = &size
 				}
 			}
 
@@ -215,11 +215,11 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 				if request.Parameters.OutputOptions.MimeType != nil {
 					outputFormat := convertMimeTypeToExtension(*request.Parameters.OutputOptions.MimeType)
 					if outputFormat != "" {
-						unifaiReq.Params.OutputFormat = &outputFormat
+						rakshaReq.Params.OutputFormat = &outputFormat
 					}
 				}
 				if request.Parameters.OutputOptions.CompressionQuality != nil {
-					unifaiReq.Params.OutputCompression = request.Parameters.OutputOptions.CompressionQuality
+					rakshaReq.Params.OutputCompression = request.Parameters.OutputOptions.CompressionQuality
 				}
 			}
 
@@ -227,49 +227,49 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 			if request.Parameters.EditMode != nil {
 				editType := mapImagenEditModeToType(*request.Parameters.EditMode)
 				if editType != "" {
-					unifaiReq.Params.Type = &editType
+					rakshaReq.Params.Type = &editType
 				}
 			}
 
 			if request.Parameters.Seed != nil {
-				unifaiReq.Params.Seed = request.Parameters.Seed
+				rakshaReq.Params.Seed = request.Parameters.Seed
 			}
 			if request.Parameters.NegativePrompt != nil {
-				unifaiReq.Params.NegativePrompt = request.Parameters.NegativePrompt
+				rakshaReq.Params.NegativePrompt = request.Parameters.NegativePrompt
 			}
 
 			if request.Parameters.PersonGeneration != nil {
-				unifaiReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
+				rakshaReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
 			}
 			if request.Parameters.Language != nil {
-				unifaiReq.Params.ExtraParams["language"] = *request.Parameters.Language
+				rakshaReq.Params.ExtraParams["language"] = *request.Parameters.Language
 			}
 			if request.Parameters.EnhancePrompt != nil {
-				unifaiReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
+				rakshaReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
 			}
 			if request.Parameters.AddWatermark != nil {
-				unifaiReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
+				rakshaReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
 			}
 			if len(request.Parameters.SafetySettings) > 0 {
-				unifaiReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
+				rakshaReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
 			}
 			if request.Parameters.GuidanceScale != nil {
-				unifaiReq.Params.ExtraParams["guidanceScale"] = *request.Parameters.GuidanceScale
+				rakshaReq.Params.ExtraParams["guidanceScale"] = *request.Parameters.GuidanceScale
 			}
 			if request.Parameters.BaseSteps != nil {
-				unifaiReq.Params.ExtraParams["baseSteps"] = *request.Parameters.BaseSteps
+				rakshaReq.Params.ExtraParams["baseSteps"] = *request.Parameters.BaseSteps
 			}
 			if request.Parameters.IncludeRaiReason != nil {
-				unifaiReq.Params.ExtraParams["includeRaiReason"] = *request.Parameters.IncludeRaiReason
+				rakshaReq.Params.ExtraParams["includeRaiReason"] = *request.Parameters.IncludeRaiReason
 			}
 			if request.Parameters.IncludeSafetyAttributes != nil {
-				unifaiReq.Params.ExtraParams["includeSafetyAttributes"] = *request.Parameters.IncludeSafetyAttributes
+				rakshaReq.Params.ExtraParams["includeSafetyAttributes"] = *request.Parameters.IncludeSafetyAttributes
 			}
 			if request.Parameters.StorageUri != nil {
-				unifaiReq.Params.ExtraParams["storageUri"] = *request.Parameters.StorageUri
+				rakshaReq.Params.ExtraParams["storageUri"] = *request.Parameters.StorageUri
 			}
 		}
-		return unifaiReq
+		return rakshaReq
 	}
 
 	// Fall back to standard Gemini format (contents)
@@ -279,7 +279,7 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 			for _, part := range content.Parts {
 				if part != nil {
 					if part.Text != "" {
-						unifaiReq.Input.Prompt = part.Text
+						rakshaReq.Input.Prompt = part.Text
 					}
 					// Extract images from InlineData
 					if part.InlineData != nil && part.InlineData.Data != "" {
@@ -294,7 +294,7 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 			}
 		}
 		if len(images) > 0 {
-			unifaiReq.Input.Images = images
+			rakshaReq.Input.Images = images
 		}
 	}
 
@@ -303,12 +303,12 @@ func (request *GeminiGenerationRequest) ToUnifAIImageEditRequest(ctx *schemas.Un
 		if strings.TrimSpace(ic.ImageSize) != "" || strings.TrimSpace(ic.AspectRatio) != "" {
 			size := convertImagenFormatToSize(&ic.ImageSize, &ic.AspectRatio)
 			if size != "" {
-				unifaiReq.Params.Size = &size
+				rakshaReq.Params.Size = &size
 			}
 		}
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
 // convertImagenFormatToSize converts Imagen sampleImageSize and aspectRatio to standard WxH format
@@ -348,8 +348,8 @@ func convertImagenFormatToSize(sampleImageSize *string, aspectRatio *string) str
 	return strconv.Itoa(baseSize) + "x" + strconv.Itoa(baseSize)
 }
 
-func (response *GenerateContentResponse) ToUnifAIImageGenerationResponse() (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
-	unifaiResp := &schemas.UnifAIImageGenerationResponse{
+func (response *GenerateContentResponse) ToRakshaImageGenerationResponse() (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+	rakshaResp := &schemas.RakshaImageGenerationResponse{
 		ID:    response.ResponseID,
 		Model: response.ModelVersion,
 		Data:  []schemas.ImageData{},
@@ -379,18 +379,18 @@ func (response *GenerateContentResponse) ToUnifAIImageGenerationResponse() (*sch
 			}
 
 			// Set usage information with modality details
-			unifaiResp.Usage = convertGeminiUsageMetadataToImageUsage(response.UsageMetadata)
+			rakshaResp.Usage = convertGeminiUsageMetadataToImageUsage(response.UsageMetadata)
 			// Only assign imageData when it has elements
 			if len(imageData) > 0 {
-				unifaiResp.Data = imageData
+				rakshaResp.Data = imageData
 				// Only set ImageGenerationResponseParameters when metadata exists
 				if len(imageMetadata) > 0 {
-					unifaiResp.ImageGenerationResponseParameters = &imageMetadata[0]
+					rakshaResp.ImageGenerationResponseParameters = &imageMetadata[0]
 				}
 			}
 		} else {
-			return nil, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Message: candidate.FinishMessage,
 					Code:    schemas.Ptr(string(candidate.FinishReason)),
@@ -398,59 +398,59 @@ func (response *GenerateContentResponse) ToUnifAIImageGenerationResponse() (*sch
 			}
 		}
 	} else {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error: &schemas.ErrorField{
 				Message: "No candidates found in response",
 			},
 		}
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
-func ToGeminiImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequest) *GeminiGenerationRequest {
-	if unifaiReq == nil {
+func ToGeminiImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) *GeminiGenerationRequest {
+	if rakshaReq == nil {
 		return nil
 	}
 
-	unifaiReq.Model = NormalizeModelName(unifaiReq.Model)
+	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
 
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
-	geminiReq.ExtraParams = unifaiReq.Params.ExtraParams
+	geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
 
 	// Set response modalities to indicate this is an image generation request
 	geminiReq.GenerationConfig.ResponseModalities = []Modality{ModalityImage}
 
 	// Convert parameters to generation config
-	if unifaiReq.Params != nil {
+	if rakshaReq.Params != nil {
 
 		// Prefer explicit aspect_ratio; fall back to deriving aspect ratio + resolution from size.
 		imageConfig := &GeminiImageConfig{}
-		if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*unifaiReq.Params.Size)
+		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
 			imageConfig.AspectRatio = aspectRatio
 			imageConfig.ImageSize = imageSize
 		}
-		if unifaiReq.Params.AspectRatio != nil && *unifaiReq.Params.AspectRatio != "" {
-			imageConfig.AspectRatio = *unifaiReq.Params.AspectRatio
+		if rakshaReq.Params.AspectRatio != nil && *rakshaReq.Params.AspectRatio != "" {
+			imageConfig.AspectRatio = *rakshaReq.Params.AspectRatio
 		}
 		if imageConfig.AspectRatio != "" || imageConfig.ImageSize != "" {
 			geminiReq.GenerationConfig.ImageConfig = imageConfig
 		}
 
 		// Handle extra parameters
-		if unifaiReq.Params.ExtraParams != nil {
+		if rakshaReq.Params.ExtraParams != nil {
 			// Safety settings - support both camelCase (canonical) and snake_case (legacy) keys
-			if safetySettings, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "safetySettings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safetySettings"); ok {
 				delete(geminiReq.ExtraParams, "safetySettings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
 				}
-			} else if safetySettings, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "safety_settings"); ok {
+			} else if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safety_settings"); ok {
 				delete(geminiReq.ExtraParams, "safety_settings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
@@ -458,16 +458,16 @@ func ToGeminiImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequ
 			}
 
 			// Cached content - support both camelCase (canonical) and snake_case (legacy) keys
-			if cachedContent, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["cachedContent"]); ok {
+			if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cachedContent"]); ok {
 				delete(geminiReq.ExtraParams, "cachedContent")
 				geminiReq.CachedContent = cachedContent
-			} else if cachedContent, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["cached_content"]); ok {
+			} else if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cached_content"]); ok {
 				delete(geminiReq.ExtraParams, "cached_content")
 				geminiReq.CachedContent = cachedContent
 			}
 
 			// Labels
-			if labels, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "labels"); ok {
+			if labels, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "labels"); ok {
 				switch m := labels.(type) {
 				case map[string]string:
 					delete(geminiReq.ExtraParams, "labels")
@@ -488,14 +488,14 @@ func ToGeminiImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequ
 		}
 	}
 
-	if unifaiReq.Input == nil {
+	if rakshaReq.Input == nil {
 		return nil
 	}
 
 	// Create parts for image gen request
 	parts := []*Part{
 		{
-			Text: unifaiReq.Input.Prompt,
+			Text: rakshaReq.Input.Prompt,
 		},
 	}
 
@@ -507,21 +507,21 @@ func ToGeminiImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequ
 	}
 
 	// Note: Gemini image generation always returns a single image, so we do not propagate
-	// unifaiReq.Params.N to GenerationConfig.CandidateCount. The N parameter is silently dropped.
+	// rakshaReq.Params.N to GenerationConfig.CandidateCount. The N parameter is silently dropped.
 
 	return geminiReq
 }
 
-// ToImagenImageGenerationRequest converts a UnifAI Image Request to Imagen format
-func ToImagenImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequest) *GeminiImagenRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil {
+// ToImagenImageGenerationRequest converts a Raksha Image Request to Imagen format
+func ToImagenImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) *GeminiImagenRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil {
 		return nil
 	}
 
-	unifaiReq.Model = NormalizeModelName(unifaiReq.Model)
+	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
 
 	// Create instances array with prompt
-	prompt := unifaiReq.Input.Prompt
+	prompt := rakshaReq.Input.Prompt
 	instances := []ImagenInstance{
 		{
 			Prompt: prompt,
@@ -533,14 +533,14 @@ func ToImagenImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequ
 		Parameters: GeminiImagenParameters{},
 	}
 
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.N != nil {
-			req.Parameters.SampleCount = unifaiReq.Params.N
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.N != nil {
+			req.Parameters.SampleCount = rakshaReq.Params.N
 		}
 
 		// Handle size conversion
-		if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*unifaiReq.Params.Size)
+		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
 			if imageSize != "" {
 				req.Parameters.SampleImageSize = &imageSize
 			}
@@ -550,14 +550,14 @@ func ToImagenImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequ
 		}
 
 		// Explicit aspect_ratio overrides the size-derived ratio.
-		if unifaiReq.Params.AspectRatio != nil && *unifaiReq.Params.AspectRatio != "" {
-			req.Parameters.AspectRatio = unifaiReq.Params.AspectRatio
+		if rakshaReq.Params.AspectRatio != nil && *rakshaReq.Params.AspectRatio != "" {
+			req.Parameters.AspectRatio = rakshaReq.Params.AspectRatio
 		}
 
 		// Handle output format conversion to mimeType
 		outputFormat := ""
-		if unifaiReq.Params.OutputFormat != nil {
-			outputFormat = *unifaiReq.Params.OutputFormat
+		if rakshaReq.Params.OutputFormat != nil {
+			outputFormat = *rakshaReq.Params.OutputFormat
 		}
 
 		if outputFormat != "" {
@@ -570,49 +570,49 @@ func ToImagenImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequ
 			}
 		}
 
-		if unifaiReq.Params.Seed != nil {
-			req.Parameters.Seed = unifaiReq.Params.Seed
+		if rakshaReq.Params.Seed != nil {
+			req.Parameters.Seed = rakshaReq.Params.Seed
 		}
-		if unifaiReq.Params.NegativePrompt != nil {
-			req.Parameters.NegativePrompt = unifaiReq.Params.NegativePrompt
+		if rakshaReq.Params.NegativePrompt != nil {
+			req.Parameters.NegativePrompt = rakshaReq.Params.NegativePrompt
 		}
 
 		// Handle extra parameters for Imagen-specific fields
-		if unifaiReq.Params.ExtraParams != nil {
-			req.ExtraParams = unifaiReq.Params.ExtraParams
-			if addWatermark, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["addWatermark"]); ok {
+		if rakshaReq.Params.ExtraParams != nil {
+			req.ExtraParams = rakshaReq.Params.ExtraParams
+			if addWatermark, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["addWatermark"]); ok {
 				delete(req.ExtraParams, "addWatermark")
 				req.Parameters.AddWatermark = addWatermark
 			}
-			if sampleImageSize, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["sampleImageSize"]); ok {
+			if sampleImageSize, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["sampleImageSize"]); ok {
 				delete(req.ExtraParams, "sampleImageSize")
 				req.Parameters.SampleImageSize = &sampleImageSize
 			}
 
-			if aspectRatio, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["aspectRatio"]); ok {
+			if aspectRatio, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["aspectRatio"]); ok {
 				delete(req.ExtraParams, "aspectRatio")
 				req.Parameters.AspectRatio = &aspectRatio
 			}
 
-			if personGeneration, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["personGeneration"]); ok {
+			if personGeneration, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["personGeneration"]); ok {
 				delete(req.ExtraParams, "personGeneration")
 				req.Parameters.PersonGeneration = &personGeneration
 			}
 
 			// Map language from ExtraParams
-			if language, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["language"]); ok {
+			if language, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["language"]); ok {
 				delete(req.ExtraParams, "language")
 				req.Parameters.Language = &language
 			}
 
 			// Map enhancePrompt from ExtraParams
-			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enhancePrompt"]); ok {
+			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enhancePrompt"]); ok {
 				delete(req.ExtraParams, "enhancePrompt")
 				req.Parameters.EnhancePrompt = enhancePrompt
 			}
 
 			// Map safetySettings from ExtraParams
-			if safetySettings, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "safetySettings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safetySettings"); ok {
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					delete(req.ExtraParams, "safetySettings")
 					req.Parameters.SafetySettings = settings
@@ -653,7 +653,7 @@ func convertMimeTypeToExtension(mimeType string) string {
 	}
 }
 
-// convertOutputFormatToMimeType converts UnifAI output_format to Imagen mimeType
+// convertOutputFormatToMimeType converts Raksha output_format to Imagen mimeType
 // Maps "png" -> "image/png", "jpg"/"jpeg" -> "image/jpeg", "webp" -> "image/webp"
 // Returns empty string for unsupported formats
 func convertOutputFormatToMimeType(outputFormat string) string {
@@ -670,19 +670,19 @@ func convertOutputFormatToMimeType(outputFormat string) string {
 	}
 }
 
-// ToUnifAIImageGenerationResponse converts an Imagen response to UnifAI format
-func (response *GeminiImagenResponse) ToUnifAIImageGenerationResponse() *schemas.UnifAIImageGenerationResponse {
+// ToRakshaImageGenerationResponse converts an Imagen response to Raksha format
+func (response *GeminiImagenResponse) ToRakshaImageGenerationResponse() *schemas.RakshaImageGenerationResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResp := &schemas.UnifAIImageGenerationResponse{
+	rakshaResp := &schemas.RakshaImageGenerationResponse{
 		Data: make([]schemas.ImageData, len(response.Predictions)),
 	}
 
 	// Convert each prediction to ImageData
 	for i, prediction := range response.Predictions {
-		unifaiResp.Data[i] = schemas.ImageData{
+		rakshaResp.Data[i] = schemas.ImageData{
 			B64JSON: prediction.BytesBase64Encoded,
 			Index:   i,
 		}
@@ -691,35 +691,35 @@ func (response *GeminiImagenResponse) ToUnifAIImageGenerationResponse() *schemas
 		if prediction.MimeType != "" && i == 0 {
 			// Convert MIME type to file extension for OutputFormat
 			outputFormat := convertMimeTypeToExtension(prediction.MimeType)
-			unifaiResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{
+			rakshaResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{
 				OutputFormat: outputFormat,
 			}
 		}
 	}
 
-	return unifaiResp
+	return rakshaResp
 }
 
-// ToGeminiImageGenerationResponse converts a UnifAIImageGenerationResponse back to Gemini format
-func ToGeminiImageGenerationResponse(ctx context.Context, unifaiResp *schemas.UnifAIImageGenerationResponse) (*GenerateContentResponse, error) {
-	if unifaiResp == nil {
+// ToGeminiImageGenerationResponse converts a RakshaImageGenerationResponse back to Gemini format
+func ToGeminiImageGenerationResponse(ctx context.Context, rakshaResp *schemas.RakshaImageGenerationResponse) (*GenerateContentResponse, error) {
+	if rakshaResp == nil {
 		return nil, nil
 	}
 
 	geminiResp := &GenerateContentResponse{
-		ResponseID:   unifaiResp.ID,
-		ModelVersion: unifaiResp.Model,
+		ResponseID:   rakshaResp.ID,
+		ModelVersion: rakshaResp.Model,
 	}
 
 	// Convert image data to candidate parts
-	if len(unifaiResp.Data) > 0 {
-		parts := make([]*Part, 0, len(unifaiResp.Data))
-		for i := range unifaiResp.Data {
-			imageData := &unifaiResp.Data[i]
+	if len(rakshaResp.Data) > 0 {
+		parts := make([]*Part, 0, len(rakshaResp.Data))
+		for i := range rakshaResp.Data {
+			imageData := &rakshaResp.Data[i]
 			// Determine MIME type - convert file extension back to MIME type
 			mimeType := "image/png" // default
-			if unifaiResp.ImageGenerationResponseParameters != nil && unifaiResp.ImageGenerationResponseParameters.OutputFormat != "" {
-				mimeType = convertOutputFormatToMimeType(unifaiResp.ImageGenerationResponseParameters.OutputFormat)
+			if rakshaResp.ImageGenerationResponseParameters != nil && rakshaResp.ImageGenerationResponseParameters.OutputFormat != "" {
+				mimeType = convertOutputFormatToMimeType(rakshaResp.ImageGenerationResponseParameters.OutputFormat)
 				if mimeType == "" {
 					// Fallback: if conversion fails, assume PNG
 					mimeType = "image/png"
@@ -754,32 +754,32 @@ func ToGeminiImageGenerationResponse(ctx context.Context, unifaiResp *schemas.Un
 	}
 
 	// Convert usage metadata with modality details
-	geminiResp.UsageMetadata = convertUnifAIImageUsageToGeminiUsageMetadata(unifaiResp.Usage)
+	geminiResp.UsageMetadata = convertRakshaImageUsageToGeminiUsageMetadata(rakshaResp.Usage)
 
 	return geminiResp, nil
 }
 
-func ToGeminiImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *GeminiGenerationRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil || len(unifaiReq.Input.Images) == 0 {
+func ToGeminiImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *GeminiGenerationRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil || len(rakshaReq.Input.Images) == 0 {
 		return nil
 	}
 
-	unifaiReq.Model = NormalizeModelName(unifaiReq.Model)
+	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
 
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
 	// Set response modalities to indicate this is an image generation request
 	geminiReq.GenerationConfig.ResponseModalities = []Modality{ModalityImage}
 
 	// Convert parameters to generation config
-	if unifaiReq.Params != nil {
-		geminiReq.ExtraParams = unifaiReq.Params.ExtraParams
+	if rakshaReq.Params != nil {
+		geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
 
 		// Derive aspect ratio + resolution from size (edit params carry no typed aspect_ratio).
-		if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*unifaiReq.Params.Size)
+		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
 			if aspectRatio != "" || imageSize != "" {
 				geminiReq.GenerationConfig.ImageConfig = &GeminiImageConfig{
 					ImageSize:   imageSize,
@@ -789,14 +789,14 @@ func ToGeminiImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 		}
 
 		// Handle extra parameters
-		if unifaiReq.Params.ExtraParams != nil {
+		if rakshaReq.Params.ExtraParams != nil {
 			// Safety settings - support both camelCase (canonical) and snake_case (legacy) keys
-			if safetySettings, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "safetySettings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safetySettings"); ok {
 				delete(geminiReq.ExtraParams, "safetySettings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
 				}
-			} else if safetySettings, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "safety_settings"); ok {
+			} else if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safety_settings"); ok {
 				delete(geminiReq.ExtraParams, "safety_settings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
@@ -804,16 +804,16 @@ func ToGeminiImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 			}
 
 			// Cached content - support both camelCase (canonical) and snake_case (legacy) keys
-			if cachedContent, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["cachedContent"]); ok {
+			if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cachedContent"]); ok {
 				delete(geminiReq.ExtraParams, "cachedContent")
 				geminiReq.CachedContent = cachedContent
-			} else if cachedContent, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["cached_content"]); ok {
+			} else if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cached_content"]); ok {
 				delete(geminiReq.ExtraParams, "cached_content")
 				geminiReq.CachedContent = cachedContent
 			}
 
 			// Labels
-			if labels, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "labels"); ok {
+			if labels, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "labels"); ok {
 				switch m := labels.(type) {
 				case map[string]string:
 					delete(geminiReq.ExtraParams, "labels")
@@ -834,18 +834,18 @@ func ToGeminiImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 		}
 	}
 
-	if unifaiReq.Input == nil {
+	if rakshaReq.Input == nil {
 		return nil
 	}
 
 	// Create parts for image gen request
 	parts := []*Part{
 		{
-			Text: unifaiReq.Input.Prompt,
+			Text: rakshaReq.Input.Prompt,
 		},
 	}
 
-	for _, image := range unifaiReq.Input.Images {
+	for _, image := range rakshaReq.Input.Images {
 		// Detect MIME type from image bytes
 		mimeType := http.DetectContentType(image.Image)
 		// Fallback to PNG if detection fails
@@ -910,7 +910,7 @@ func extractIntArray(v interface{}) []int {
 	return nil
 }
 
-// mapTypeToImagenEditMode maps UnifAI image edit type to Imagen editMode
+// mapTypeToImagenEditMode maps Raksha image edit type to Imagen editMode
 // Supported edit modes:
 //   - "inpainting" -> EDIT_MODE_INPAINT_INSERTION: Add objects from a given prompt
 //   - "outpainting" -> EDIT_MODE_OUTPAINT: Extend image beyond its borders
@@ -931,7 +931,7 @@ func mapTypeToImagenEditMode(editType string) string {
 	}
 }
 
-// mapImagenEditModeToType maps Imagen editMode to UnifAI image edit type
+// mapImagenEditModeToType maps Imagen editMode to Raksha image edit type
 // This is the reverse mapping of mapTypeToImagenEditMode
 func mapImagenEditModeToType(editMode string) string {
 	switch strings.ToUpper(editMode) {
@@ -948,7 +948,7 @@ func mapImagenEditModeToType(editMode string) string {
 	}
 }
 
-// ToImagenImageEditRequest converts a UnifAIImageEditRequest to Imagen edit format
+// ToImagenImageEditRequest converts a RakshaImageEditRequest to Imagen edit format
 // Mask modes (via ExtraParams["maskMode"]):
 //   - MASK_MODE_USER_PROVIDED: Use the mask from Params.Mask (default if mask is provided)
 //   - MASK_MODE_BACKGROUND: Auto-generated mask from background segmentation
@@ -965,12 +965,12 @@ func mapImagenEditModeToType(editMode string) string {
 //
 // Mask classes (via ExtraParams["maskClasses"]):
 //   - Optional list of integers. Mask classes for MASK_MODE_SEMANTIC mode
-func ToImagenImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *GeminiImagenRequest {
-	if unifaiReq == nil || unifaiReq.Input == nil || len(unifaiReq.Input.Images) == 0 {
+func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *GeminiImagenRequest {
+	if rakshaReq == nil || rakshaReq.Input == nil || len(rakshaReq.Input.Images) == 0 {
 		return nil
 	}
 
-	unifaiReq.Model = NormalizeModelName(unifaiReq.Model)
+	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
 
 	req := &GeminiImagenRequest{
 		Parameters: GeminiImagenParameters{},
@@ -979,7 +979,7 @@ func ToImagenImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 	var refImages []ImagenReferenceImage
 	refID := 1
 
-	for _, img := range unifaiReq.Input.Images {
+	for _, img := range rakshaReq.Input.Images {
 		refImages = append(refImages, ImagenReferenceImage{
 			ReferenceType: "REFERENCE_TYPE_RAW",
 			ReferenceID:   refID,
@@ -991,28 +991,28 @@ func ToImagenImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 	}
 
 	// Handle mask configuration
-	if unifaiReq.Params != nil {
+	if rakshaReq.Params != nil {
 		var maskMode string
 		var hasMaskData bool
 		var dilation *float64
 		var maskClasses []int
-		req.ExtraParams = unifaiReq.Params.ExtraParams
+		req.ExtraParams = rakshaReq.Params.ExtraParams
 		// Check if user provided a mask
-		if len(unifaiReq.Params.Mask) > 0 {
+		if len(rakshaReq.Params.Mask) > 0 {
 			hasMaskData = true
 			maskMode = "MASK_MODE_USER_PROVIDED" // Default when mask is provided
 		}
 
 		// Extract optional parameters from ExtraParams
-		if unifaiReq.Params.ExtraParams != nil {
+		if rakshaReq.Params.ExtraParams != nil {
 			// Allow override or specification of mask mode
-			if v, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["maskMode"]); ok {
+			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["maskMode"]); ok {
 				delete(req.ExtraParams, "maskMode")
 				maskMode = v
 			}
 
 			// Extract dilation (range [0, 1])
-			if v, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["dilation"]); ok {
+			if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["dilation"]); ok {
 				// Validate dilation is in valid range
 				if *v >= 0 && *v <= 1 {
 					delete(req.ExtraParams, "dilation")
@@ -1021,7 +1021,7 @@ func ToImagenImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 			}
 
 			// Extract maskClasses (for MASK_MODE_SEMANTIC)
-			if v, ok := unifaiReq.Params.ExtraParams["maskClasses"]; ok {
+			if v, ok := rakshaReq.Params.ExtraParams["maskClasses"]; ok {
 				delete(req.ExtraParams, "maskClasses")
 				maskClasses = extractIntArray(v)
 			}
@@ -1042,7 +1042,7 @@ func ToImagenImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 			// Only include mask data if provided
 			if hasMaskData {
 				maskRef.ReferenceImage = ImagenReferenceData{
-					BytesBase64Encoded: base64.StdEncoding.EncodeToString(unifaiReq.Params.Mask),
+					BytesBase64Encoded: base64.StdEncoding.EncodeToString(rakshaReq.Params.Mask),
 				}
 			}
 
@@ -1052,18 +1052,18 @@ func ToImagenImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 
 	req.Instances = append(req.Instances, ImagenInstance{
 		ReferenceImages: refImages,
-		Prompt:          unifaiReq.Input.Prompt,
+		Prompt:          rakshaReq.Input.Prompt,
 	})
 
 	// Set parameters
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.N != nil {
-			req.Parameters.SampleCount = unifaiReq.Params.N
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.N != nil {
+			req.Parameters.SampleCount = rakshaReq.Params.N
 		}
 
 		// Derive aspect ratio + resolution from size (edit params carry no typed aspect_ratio).
-		if unifaiReq.Params.Size != nil && strings.ToLower(*unifaiReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*unifaiReq.Params.Size)
+		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
 			if imageSize != "" {
 				req.Parameters.SampleImageSize = &imageSize
 			}
@@ -1072,76 +1072,76 @@ func ToImagenImageEditRequest(unifaiReq *schemas.UnifAIImageEditRequest) *Gemini
 			}
 		}
 
-		if unifaiReq.Params.OutputFormat != nil {
-			mimeType := convertOutputFormatToMimeType(*unifaiReq.Params.OutputFormat)
+		if rakshaReq.Params.OutputFormat != nil {
+			mimeType := convertOutputFormatToMimeType(*rakshaReq.Params.OutputFormat)
 			if mimeType != "" {
 				req.Parameters.OutputOptions = &ImagenOutputOptions{MimeType: &mimeType}
 			}
 		}
-		if unifaiReq.Params.OutputCompression != nil {
+		if rakshaReq.Params.OutputCompression != nil {
 			if req.Parameters.OutputOptions == nil {
 				req.Parameters.OutputOptions = &ImagenOutputOptions{}
 			}
-			req.Parameters.OutputOptions.CompressionQuality = unifaiReq.Params.OutputCompression
+			req.Parameters.OutputOptions.CompressionQuality = rakshaReq.Params.OutputCompression
 		}
 
-		// Map UnifAI type to Imagen editMode
-		if unifaiReq.Params.Type != nil {
-			editMode := mapTypeToImagenEditMode(*unifaiReq.Params.Type)
+		// Map Raksha type to Imagen editMode
+		if rakshaReq.Params.Type != nil {
+			editMode := mapTypeToImagenEditMode(*rakshaReq.Params.Type)
 			if editMode != "" {
 				req.Parameters.EditMode = &editMode
 			}
 		}
 
-		if unifaiReq.Params.NegativePrompt != nil {
-			req.Parameters.NegativePrompt = unifaiReq.Params.NegativePrompt
+		if rakshaReq.Params.NegativePrompt != nil {
+			req.Parameters.NegativePrompt = rakshaReq.Params.NegativePrompt
 		}
 
-		if unifaiReq.Params.Seed != nil {
-			req.Parameters.Seed = unifaiReq.Params.Seed
+		if rakshaReq.Params.Seed != nil {
+			req.Parameters.Seed = rakshaReq.Params.Seed
 		}
 
-		if unifaiReq.Params.ExtraParams != nil {
+		if rakshaReq.Params.ExtraParams != nil {
 			// Only use editMode from ExtraParams if Type was not set
-			if unifaiReq.Params.Type == nil {
-				if v, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["editMode"]); ok {
+			if rakshaReq.Params.Type == nil {
+				if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["editMode"]); ok {
 					delete(req.ExtraParams, "editMode")
 					req.Parameters.EditMode = &v
 				}
 			}
-			if v, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["guidanceScale"]); ok {
+			if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["guidanceScale"]); ok {
 				delete(req.ExtraParams, "guidanceScale")
 				req.Parameters.GuidanceScale = v
 			}
-			if v, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["baseSteps"]); ok {
+			if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["baseSteps"]); ok {
 				delete(req.ExtraParams, "baseSteps")
 				req.Parameters.BaseSteps = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["addWatermark"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["addWatermark"]); ok {
 				delete(req.ExtraParams, "addWatermark")
 				req.Parameters.AddWatermark = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["includeRaiReason"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["includeRaiReason"]); ok {
 				delete(req.ExtraParams, "includeRaiReason")
 				req.Parameters.IncludeRaiReason = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["includeSafetyAttributes"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["includeSafetyAttributes"]); ok {
 				delete(req.ExtraParams, "includeSafetyAttributes")
 				req.Parameters.IncludeSafetyAttributes = v
 			}
-			if v, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["personGeneration"]); ok {
+			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["personGeneration"]); ok {
 				delete(req.ExtraParams, "personGeneration")
 				req.Parameters.PersonGeneration = &v
 			}
-			if v, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["language"]); ok {
+			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["language"]); ok {
 				delete(req.ExtraParams, "language")
 				req.Parameters.Language = &v
 			}
-			if v, ok := schemas.SafeExtractString(unifaiReq.Params.ExtraParams["storageUri"]); ok {
+			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["storageUri"]); ok {
 				delete(req.ExtraParams, "storageUri")
 				req.Parameters.StorageUri = &v
 			}
-			if v, ok := SafeExtractSafetySettings(unifaiReq.Params.ExtraParams["safetySettings"]); ok {
+			if v, ok := SafeExtractSafetySettings(rakshaReq.Params.ExtraParams["safetySettings"]); ok {
 				delete(req.ExtraParams, "safetySettings")
 				req.Parameters.SafetySettings = v
 			}

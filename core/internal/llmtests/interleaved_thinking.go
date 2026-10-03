@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunInterleavedThinkingTest tests that the interleaved-thinking-2025-05-14 beta header
@@ -16,7 +16,7 @@ import (
 //  1. The interleaved-thinking beta header is properly injected when thinking is enabled
 //  2. The API accepts the request with thinking + tools without error
 //  3. The response contains reasoning content
-func RunInterleavedThinkingTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunInterleavedThinkingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.InterleavedThinking {
 		t.Logf("Interleaved thinking not supported for provider %s", testConfig.Provider)
 		return
@@ -43,17 +43,17 @@ func RunInterleavedThinkingTest(t *testing.T, client *unifai.UnifAI, ctx context
 		}
 
 		t.Run("NonStreaming", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
-			request := &schemas.UnifAIResponsesRequest{
+			request := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    messages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(4096),
+					MaxOutputTokens: raksha.Ptr(4096),
 					Tools:           []schemas.ResponsesTool{*weatherTool},
 					Reasoning: &schemas.ResponsesParametersReasoning{
-						Effort: unifai.Ptr("low"),
+						Effort: raksha.Ptr("low"),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -103,7 +103,7 @@ func RunInterleavedThinkingTest(t *testing.T, client *unifai.UnifAI, ctx context
 		})
 
 		t.Run("ChatNonStreaming", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
 			chatMessages := []schemas.ChatMessage{
 				CreateBasicChatMessage("What is the weather in Paris? Think step by step before calling the tool."),
@@ -111,15 +111,15 @@ func RunInterleavedThinkingTest(t *testing.T, client *unifai.UnifAI, ctx context
 
 			chatTool := GetSampleChatTool(SampleToolTypeWeather)
 
-			request := &schemas.UnifAIChatRequest{
+			request := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(4096),
+					MaxCompletionTokens: raksha.Ptr(4096),
 					Tools:               []schemas.ChatTool{*chatTool},
 					Reasoning: &schemas.ChatReasoning{
-						Effort: unifai.Ptr("low"),
+						Effort: raksha.Ptr("low"),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,

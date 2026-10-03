@@ -9,13 +9,13 @@ import (
 	"time"
 
 	ws "github.com/fasthttp/websocket"
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunWebSocketResponsesTest dials the provider's native WebSocket Responses endpoint,
 // sends a response.create event, and validates the streaming events that come back.
-func RunWebSocketResponsesTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSocketResponsesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSocketResponses || testConfig.ChatModel == "" {
 		t.Logf("WebSocketResponses not supported for provider %s", testConfig.Provider)
 		return
@@ -28,7 +28,7 @@ func RunWebSocketResponsesTest(t *testing.T, client *unifai.UnifAI, ctx context.
 
 		provider := client.GetProviderByKey(testConfig.Provider)
 		if provider == nil {
-			t.Fatalf("provider %s not found in unifai client", testConfig.Provider)
+			t.Fatalf("provider %s not found in raksha client", testConfig.Provider)
 		}
 
 		wsProvider, ok := provider.(schemas.WebSocketCapableProvider)
@@ -36,7 +36,7 @@ func RunWebSocketResponsesTest(t *testing.T, client *unifai.UnifAI, ctx context.
 			t.Skipf("provider %s does not implement WebSocketCapableProvider", testConfig.Provider)
 		}
 
-		bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 		defer bfCtx.Cancel()
 		key, err := client.SelectKeyForProviderRequestType(bfCtx, schemas.WebSocketResponsesRequest, testConfig.Provider, testConfig.ChatModel)
 		if err != nil {

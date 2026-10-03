@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunFastModeTest tests that the fast-mode-2026-02-01 beta header is correctly
@@ -18,7 +18,7 @@ import (
 //  3. The response is valid
 //
 // Note: Fast mode is currently only supported on Anthropic (direct API) with Opus 4.6.
-func RunFastModeTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFastModeTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FastMode {
 		t.Logf("Fast mode not supported for provider %s", testConfig.Provider)
 		return
@@ -45,14 +45,14 @@ func RunFastModeTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, t
 		}
 
 		t.Run("NonStreaming", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
-			request := &schemas.UnifAIResponsesRequest{
+			request := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    messages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(100),
+					MaxOutputTokens: raksha.Ptr(100),
 					ExtraParams: map[string]interface{}{
 						"speed": "fast",
 					},
@@ -86,18 +86,18 @@ func RunFastModeTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, t
 		})
 
 		t.Run("ChatNonStreaming", func(t *testing.T) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 
 			chatMessages := []schemas.ChatMessage{
 				CreateBasicChatMessage("What is 2+2? Answer in one word."),
 			}
 
-			request := &schemas.UnifAIChatRequest{
+			request := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    model,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(100),
+					MaxCompletionTokens: raksha.Ptr(100),
 					ExtraParams: map[string]interface{}{
 						"speed": "fast",
 					},

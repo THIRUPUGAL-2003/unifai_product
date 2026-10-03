@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/google/cel-go/cel"
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/plugins/prompts"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/plugins/prompts"
 )
 
 const PluginName = "guardrails"
@@ -31,8 +31,8 @@ type GuardrailsPlugin struct {
 
 // Provider interface for all guardrail types
 type Provider interface {
-	ValidateInput(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) error
-	ValidateOutput(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest, resp *schemas.UnifAIResponse) error
+	ValidateInput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error
+	ValidateOutput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, resp *schemas.RakshaResponse) error
 }
 
 func Init(ctx context.Context, config *Config, logger schemas.Logger) (schemas.BasePlugin, error) {
@@ -126,11 +126,11 @@ func (p *GuardrailsPlugin) Cleanup() error {
 	return nil
 }
 
-func (p *GuardrailsPlugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) error {
+func (p *GuardrailsPlugin) PreRequestHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error {
 	return nil
 }
 
-func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	if p.config == nil {
 		return nil, nil, nil
 	}
@@ -199,7 +199,7 @@ func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.U
 	return req, nil, nil
 }
 
-func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas.UnifAIResponse, err *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
+func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.RakshaContext, resp *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
 	if p.config == nil || err != nil || resp == nil {
 		return resp, err, nil
 	}
@@ -283,9 +283,9 @@ func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas
 }
 
 const (
-	guardrailsStreamTailKey    schemas.UnifAIContextKey = "guardrails.stream_output_tail"
-	guardrailsStreamBlockedKey schemas.UnifAIContextKey = "guardrails.stream_blocked"
-	guardrailsRequestModelKey  schemas.UnifAIContextKey = "guardrails.request_model"
+	guardrailsStreamTailKey    schemas.RakshaContextKey = "guardrails.stream_output_tail"
+	guardrailsStreamBlockedKey schemas.RakshaContextKey = "guardrails.stream_blocked"
+	guardrailsRequestModelKey  schemas.RakshaContextKey = "guardrails.request_model"
 )
 
 // streamScanOverlap is how much already-streamed text is re-scanned with each new chunk,
@@ -294,7 +294,7 @@ const streamScanOverlap = 4096
 
 // streamChunkText reports whether resp is a streaming chunk and returns its output text
 // (chat deltas, or Responses/Anthropic output_text and refusal deltas).
-func streamChunkText(resp *schemas.UnifAIResponse) (bool, string) {
+func streamChunkText(resp *schemas.RakshaResponse) (bool, string) {
 	if resp == nil {
 		return false, ""
 	}
@@ -330,7 +330,7 @@ func streamChunkText(resp *schemas.UnifAIResponse) (bool, string) {
 
 // appendStreamWindow returns the text to scan for this chunk (recent tail + chunk) and
 // keeps only the last streamScanOverlap bytes for the next chunk.
-func appendStreamWindow(ctx *schemas.UnifAIContext, chunk string) string {
+func appendStreamWindow(ctx *schemas.RakshaContext, chunk string) string {
 	if ctx == nil {
 		return chunk
 	}
@@ -344,7 +344,7 @@ func appendStreamWindow(ctx *schemas.UnifAIContext, chunk string) string {
 	return window
 }
 
-func streamBlocked(ctx *schemas.UnifAIContext) bool {
+func streamBlocked(ctx *schemas.RakshaContext) bool {
 	if ctx == nil {
 		return false
 	}
@@ -352,26 +352,26 @@ func streamBlocked(ctx *schemas.UnifAIContext) bool {
 	return blocked
 }
 
-func skipStreamChunkError() *schemas.UnifAIError {
+func skipStreamChunkError() *schemas.RakshaError {
 	skip := true
-	return &schemas.UnifAIError{
-		IsUnifAIError: true,
+	return &schemas.RakshaError{
+		IsRakshaError: true,
 		Error:         &schemas.ErrorField{Message: "stream blocked by guardrail"},
 		StreamControl: &schemas.StreamControl{SkipStream: &skip},
 	}
 }
 
-func promptIDFromContext(ctx *schemas.UnifAIContext) string {
+func promptIDFromContext(ctx *schemas.RakshaContext) string {
 	if ctx == nil {
 		return ""
 	}
-	if promptID := unifai.GetStringFromContext(ctx, prompts.PromptIDKey); promptID != "" {
+	if promptID := raksha.GetStringFromContext(ctx, prompts.PromptIDKey); promptID != "" {
 		return promptID
 	}
-	return unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeySelectedPromptID)
+	return raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedPromptID)
 }
 
-func modelNameFromResponse(resp *schemas.UnifAIResponse) string {
+func modelNameFromResponse(resp *schemas.RakshaResponse) string {
 	if resp == nil {
 		return ""
 	}
@@ -384,11 +384,11 @@ func modelNameFromResponse(resp *schemas.UnifAIResponse) string {
 	return ""
 }
 
-func guardrailViolationError(message string) *schemas.UnifAIError {
+func guardrailViolationError(message string) *schemas.RakshaError {
 	statusCode := 400
 	code := "guardrail_violation"
-	return &schemas.UnifAIError{
-		IsUnifAIError: true,
+	return &schemas.RakshaError{
+		IsRakshaError: true,
 		StatusCode:    &statusCode,
 		Error: &schemas.ErrorField{
 			Message: message,
@@ -397,34 +397,34 @@ func guardrailViolationError(message string) *schemas.UnifAIError {
 	}
 }
 
-func virtualKeyIDFromContext(ctx *schemas.UnifAIContext) string {
+func virtualKeyIDFromContext(ctx *schemas.RakshaContext) string {
 	if ctx == nil {
 		return ""
 	}
-	if vkID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyID); vkID != "" {
+	if vkID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID); vkID != "" {
 		return vkID
 	}
-	if v, ok := ctx.Value(schemas.UnifAIContextKeyVirtualKey).(string); ok && v != "" {
+	if v, ok := ctx.Value(schemas.RakshaContextKeyVirtualKey).(string); ok && v != "" {
 		return v
 	}
 	return ""
 }
 
-func rawVirtualKeyFromContext(ctx *schemas.UnifAIContext) string {
+func rawVirtualKeyFromContext(ctx *schemas.RakshaContext) string {
 	if ctx == nil {
 		return ""
 	}
-	if v, ok := ctx.Value(schemas.UnifAIContextKeyVirtualKey).(string); ok && v != "" {
+	if v, ok := ctx.Value(schemas.RakshaContextKeyVirtualKey).(string); ok && v != "" {
 		return v
 	}
 	return ""
 }
 
-func virtualKeyNameFromContext(ctx *schemas.UnifAIContext) string {
+func virtualKeyNameFromContext(ctx *schemas.RakshaContext) string {
 	if ctx == nil {
 		return ""
 	}
-	return unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyGovernanceVirtualKeyName)
+	return raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName)
 }
 
 func ruleMatchesVirtualKey(rule GuardrailRule, currentVKID string, rawVK string) bool {

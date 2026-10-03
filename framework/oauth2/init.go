@@ -1,6 +1,6 @@
 package oauth2
 
-import "github.com/unifai/unifai/core/schemas"
+import "github.com/raksha/raksha/core/schemas"
 
 var logger schemas.Logger
 

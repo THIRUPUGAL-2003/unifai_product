@@ -33,7 +33,7 @@ RUN go mod download
 # Copy source code and dependencies
 COPY transports/ ./
 
-COPY --from=ui-builder /app/out ./unifai-http/ui
+COPY --from=ui-builder /app/out ./raksha-http/ui
 
 # Build the binary with CGO enabled and static SQLite linking
 ENV GOWORK=off
@@ -43,7 +43,7 @@ RUN go build \
   -a -trimpath \
   -tags "sqlite_static" \
   -o /app/main \
-  ./unifai-http
+  ./raksha-http
 
 # Verify build succeeded
 RUN test -f /app/main || (echo "Build failed" && exit 1)
@@ -55,13 +55,13 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal@sha256:24650313873554b6ba16c1a1
 ARG VERSION=unknown
 
 # Required labels for Red Hat Preflight certification.
-LABEL name="unifai/unifai" \
+LABEL name="raksha/raksha" \
       vendor="H3 Labs Inc" \
       version="${VERSION}" \
       release="1" \
       summary="High-performance LLM gateway and proxy" \
       maintainer="Maxim Engineering <engineering@getmaxim.ai>" \
-      description="UnifAI is an open-source LLM gateway providing a unified API for routing requests across AI providers with fallbacks, load balancing, and observability."
+      description="Raksha is an open-source LLM gateway providing a unified API for routing requests across AI providers with fallbacks, load balancing, and observability."
 
 WORKDIR /app
 
@@ -76,19 +76,19 @@ COPY LICENSE /licenses/LICENSE
 COPY --from=builder /app/main .
 COPY deploy/docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY configs/ /app/configs/
-COPY apps/browser-guard/release/UnifAI_Guard_Setup.exe /app/release/UnifAI_Guard_Setup.exe
-COPY apps/browser-guard/release/UnifAI_Guard_macOS.zip /app/release/UnifAI_Guard_macOS.zip
+COPY apps/browser-guard/release/Raksha_Guard_Setup.exe /app/release/Raksha_Guard_Setup.exe
+COPY apps/browser-guard/release/Raksha_Guard_macOS.zip /app/release/Raksha_Guard_macOS.zip
 COPY apps/browser-guard/release/INSTALL_MACOS.txt /app/release/INSTALL_MACOS.txt
 COPY apps/browser-guard/release/UNINSTALL_MACOS.txt /app/release/UNINSTALL_MACOS.txt
 COPY apps/browser-guard/release/EMPLOYEE_README_MAC.txt /app/release/EMPLOYEE_README_MAC.txt
-COPY apps/browser-guard/release/Install_UnifAI_Guard.command /app/release/Install_UnifAI_Guard.command
-COPY apps/browser-guard/release/Uninstall_UnifAI_Guard.command /app/release/Uninstall_UnifAI_Guard.command
+COPY apps/browser-guard/release/Install_Raksha_Guard.command /app/release/Install_Raksha_Guard.command
+COPY apps/browser-guard/release/Uninstall_Raksha_Guard.command /app/release/Uninstall_Raksha_Guard.command
 COPY apps/browser-guard/release/VERSION.txt /app/release/VERSION.txt
 COPY apps/browser-guard/proxy/browser_ai_proxy.py /app/guard-proxy/browser_ai_proxy.py
-COPY apps/browser-guard/proxy/unifai_proxy_parts/ /app/guard-proxy/unifai_proxy_parts/
+COPY apps/browser-guard/proxy/raksha_proxy_parts/ /app/guard-proxy/raksha_proxy_parts/
 COPY apps/browser-guard/agent/*.py /app/guard-agent/
 COPY apps/browser-guard/installer/EMPLOYEE_README.txt /app/installer/EMPLOYEE_README.txt
-COPY apps/browser-guard/config/unifai_guard_config.json /app/unifai_guard_config.json
+COPY apps/browser-guard/config/raksha_guard_config.json /app/raksha_guard_config.json
 
 # Getting arguments
 ARG ARG_APP_PORT=8001

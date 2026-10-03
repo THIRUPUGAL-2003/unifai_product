@@ -1,10 +1,10 @@
-// Package tracing provides distributed tracing infrastructure for UnifAI
+// Package tracing provides distributed tracing infrastructure for Raksha
 package tracing
 
 import (
 	"context"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // GetTraceID retrieves the trace ID from the context
@@ -12,7 +12,7 @@ func GetTraceID(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	traceID, ok := ctx.Value(schemas.UnifAIContextKeyTraceID).(string)
+	traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
 	if !ok {
 		return ""
 	}

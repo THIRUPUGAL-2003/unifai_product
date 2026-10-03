@@ -30,7 +30,7 @@ create_org() {
 }
 
 # --- Happy path: every field populated -------------------------------------
-# Expected UnifAI customer: name "seed-full", budget {500, "1M"},
+# Expected Raksha customer: name "seed-full", budget {500, "1M"},
 # rate_limit {token 2000 / "1m", request 120 / "1m"}.
 create_org "seed-full: budget + tpm + rpm + monthly reset" '{
   "organization_alias": "seed-full",
@@ -57,7 +57,7 @@ create_org "seed-budget-monthly: budget only, 1mo reset" '{
 
 # --- LiteLLM UI "Reset Budget" dropdown values -----------------------------
 # The UI shows daily/weekly/monthly but stores 24h/7d/30d. These migrate
-# straight through - UnifAI accepts the same units.
+# straight through - Raksha accepts the same units.
 # Expected: budget {10, "24h"}.
 create_org "seed-reset-daily: UI \"daily\" -> 24h" '{
   "organization_alias": "seed-reset-daily",

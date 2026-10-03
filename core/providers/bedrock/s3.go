@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // uploadToS3 uploads content to an S3 bucket using the provided credentials.
@@ -22,7 +22,7 @@ func uploadToS3(
 	region string,
 	bucket, key string,
 	content []byte,
-) *schemas.UnifAIError {
+) *schemas.RakshaError {
 	// Create AWS config with credentials
 	var cfg aws.Config
 	var err error
@@ -46,7 +46,7 @@ func uploadToS3(
 	}
 
 	if err != nil {
-		return providerUtils.NewUnifAIOperationError("failed to load aws config for s3", err)
+		return providerUtils.NewRakshaOperationError("failed to load aws config for s3", err)
 	}
 
 	// Create S3 client
@@ -61,7 +61,7 @@ func uploadToS3(
 	})
 
 	if err != nil {
-		return providerUtils.NewUnifAIOperationError(fmt.Sprintf("failed to upload to s3: %s/%s", bucket, key), err)
+		return providerUtils.NewRakshaOperationError(fmt.Sprintf("failed to upload to s3: %s/%s", bucket, key), err)
 	}
 
 	return nil
@@ -70,7 +70,7 @@ func uploadToS3(
 // generateBatchInputS3Key generates a unique S3 key for batch input files.
 func generateBatchInputS3Key(jobName string) string {
 	timestamp := time.Now().UnixNano()
-	return fmt.Sprintf("unifai-batch-input/%s-%d.jsonl", jobName, timestamp)
+	return fmt.Sprintf("raksha-batch-input/%s-%d.jsonl", jobName, timestamp)
 }
 
 // deriveInputS3URIFromOutput derives an input S3 URI from the output S3 URI.

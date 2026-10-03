@@ -22,14 +22,14 @@ export function guardRuleNoticeCopy(action: GuardRuleAction): GuardRuleNoticeCop
 		return {
 			label: "Warning message (shown in chat)",
 			placeholder: "Warning employees see when this rule matches…",
-			hint: "Prompt is still sent; this notice is appended as [UNIFAI WARNING]. Leave blank for the default warning.",
+			hint: "Prompt is still sent; this notice is appended as [RAKSHA WARNING]. Leave blank for the default warning.",
 			listLabel: "Warning message",
 		};
 	}
 	return {
 		label: "Redaction notice (appended in chat)",
 		placeholder: "Notice appended when this rule redacts…",
-		hint: "Prompt is still sent; this notice is appended as [UNIFAI REDACTED]. Leave blank for the default notice.",
+		hint: "Prompt is still sent; this notice is appended as [RAKSHA REDACTED]. Leave blank for the default notice.",
 		listLabel: "Redaction notice",
 	};
 }
@@ -41,7 +41,7 @@ export function guardRuleActionHint(action: GuardRuleAction): string {
 	if (action === "WARN") {
 		return "Allows send; shows a warning notice only (no block).";
 	}
-	return "Allows send; appends a [UNIFAI REDACTED] notice in chat.";
+	return "Allows send; appends a [RAKSHA REDACTED] notice in chat.";
 }
 
 export function isMultimodalGuardModel(model: string): boolean {

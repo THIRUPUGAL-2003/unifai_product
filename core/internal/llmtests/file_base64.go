@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // HelloWorldPDFBase64 is a base64 encoded PDF file containing "Hello World!" text.
@@ -31,12 +31,12 @@ func CreateDocumentChatMessage(text, documentBase64 string) schemas.ChatMessage 
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
 			ContentBlocks: []schemas.ChatContentBlock{
-				{Type: schemas.ChatContentBlockTypeText, Text: unifai.Ptr(text)},
+				{Type: schemas.ChatContentBlockTypeText, Text: raksha.Ptr(text)},
 				{
 					Type: schemas.ChatContentBlockTypeFile,
 					File: &schemas.ChatInputFile{
-						FileData: unifai.Ptr(documentBase64),
-						Filename: unifai.Ptr("test_document.pdf"),
+						FileData: raksha.Ptr(documentBase64),
+						Filename: raksha.Ptr("test_document.pdf"),
 					},
 				},
 			},
@@ -47,16 +47,16 @@ func CreateDocumentChatMessage(text, documentBase64 string) schemas.ChatMessage 
 // CreateDocumentResponsesMessage creates a ResponsesMessage with a PDF document in base64 format
 func CreateDocumentResponsesMessage(text, documentBase64 string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: unifai.Ptr(schemas.ResponsesMessageTypeMessage),
-		Role: unifai.Ptr(schemas.ResponsesInputMessageRoleUser),
+		Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
+		Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
 		Content: &schemas.ResponsesMessageContent{
 			ContentBlocks: []schemas.ResponsesMessageContentBlock{
-				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: unifai.Ptr(text)},
+				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: raksha.Ptr(text)},
 				{
 					Type: schemas.ResponsesInputMessageContentBlockTypeFile,
 					ResponsesInputMessageContentBlockFile: &schemas.ResponsesInputMessageContentBlockFile{
-						FileData: unifai.Ptr(documentBase64),
-						Filename: unifai.Ptr("test_document.pdf"),
+						FileData: raksha.Ptr(documentBase64),
+						Filename: raksha.Ptr("test_document.pdf"),
 					},
 				},
 			},
@@ -65,7 +65,7 @@ func CreateDocumentResponsesMessage(text, documentBase64 string) schemas.Respons
 }
 
 // RunFileBase64Test executes the PDF file input test scenario with separate subtests for each API
-func RunFileBase64Test(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileBase64Test(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileBase64 {
 		t.Logf("File base64 not supported for provider %s", testConfig.Provider)
 		return
@@ -79,7 +79,7 @@ func RunFileBase64Test(t *testing.T, client *unifai.UnifAI, ctx context.Context,
 }
 
 // RunFileBase64ChatCompletionsTest executes the file base64 test using Chat Completions API
-func RunFileBase64ChatCompletionsTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileBase64ChatCompletionsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileBase64 {
 		t.Logf("File base64 not supported for provider %s", testConfig.Provider)
 		return
@@ -133,14 +133,14 @@ func RunFileBase64ChatCompletionsTest(t *testing.T, client *unifai.UnifAI, ctx c
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "FileBase64", func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "FileBase64", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(500),
+					MaxCompletionTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -160,7 +160,7 @@ func RunFileBase64ChatCompletionsTest(t *testing.T, client *unifai.UnifAI, ctx c
 }
 
 // RunFileBase64ResponsesTest executes the file base64 test using Responses API
-func RunFileBase64ResponsesTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileBase64ResponsesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileBase64 {
 		t.Logf("File base64 not supported for provider %s", testConfig.Provider)
 		return
@@ -214,14 +214,14 @@ func RunFileBase64ResponsesTest(t *testing.T, client *unifai.UnifAI, ctx context
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "FileBase64", func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "FileBase64", func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(500),
+					MaxOutputTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}

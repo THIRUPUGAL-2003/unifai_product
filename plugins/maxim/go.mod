@@ -1,10 +1,10 @@
-module github.com/unifai/unifai/plugins/maxim
+module github.com/raksha/raksha/plugins/maxim
 
 go 1.26.4
 
 require (
-	github.com/unifai/unifai/core v1.6.2
-	github.com/unifai/unifai/framework v1.4.2
+	github.com/raksha/raksha/core v1.6.2
+	github.com/raksha/raksha/framework v1.4.2
 	github.com/maximhq/maxim-go v0.2.1
 )
 

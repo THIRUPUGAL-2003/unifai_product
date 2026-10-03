@@ -6,9 +6,9 @@ import (
 )
 
 // LiteLLMTeam mirrors a row from GET /team/list. Only the fields relevant to a
-// UnifAI team are decoded; members, keys, models, metadata and spend are
+// Raksha team are decoded; members, keys, models, metadata and spend are
 // intentionally ignored (members/keys/models are their own entities, and
-// UnifAI teams carry no membership).
+// Raksha teams carry no membership).
 //
 // Unlike organizations, a team's spend cap and rate limits are inline on the
 // team object (max_budget / budget_duration / tpm_limit / rpm_limit), not in a
@@ -17,7 +17,7 @@ type LiteLLMTeam struct {
 	TeamID         string   `json:"team_id"`
 	TeamAlias      string   `json:"team_alias"`
 	OrganizationID *string  `json:"organization_id"` // nil/empty => standalone team
-	Models         []string `json:"models"`          // allowed model names (UnifAI gates these on the VK)
+	Models         []string `json:"models"`          // allowed model names (Raksha gates these on the VK)
 	MaxBudget      *float64 `json:"max_budget"`
 	BudgetDuration *string  `json:"budget_duration"`
 	TPMLimit       *int64   `json:"tpm_limit"`

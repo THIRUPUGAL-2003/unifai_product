@@ -405,7 +405,7 @@ func (cm *ChatMessage) ToResponsesMessages() []ResponsesMessage {
 			var encryptedContent *string
 			for _, d := range am.ReasoningDetails {
 				switch d.Type {
-				case UnifAIReasoningDetailsTypeText:
+				case RakshaReasoningDetailsTypeText:
 					if d.Text != nil && *d.Text != "" {
 						contentBlocks = append(contentBlocks, ResponsesMessageContentBlock{
 							Type:      ResponsesOutputMessageContentTypeReasoning,
@@ -413,14 +413,14 @@ func (cm *ChatMessage) ToResponsesMessages() []ResponsesMessage {
 							Signature: d.Signature,
 						})
 					}
-				case UnifAIReasoningDetailsTypeSummary:
+				case RakshaReasoningDetailsTypeSummary:
 					if d.Summary != nil {
 						summaries = append(summaries, ResponsesReasoningSummary{
 							Type: ResponsesReasoningContentBlockTypeSummaryText,
 							Text: *d.Summary,
 						})
 					}
-				case UnifAIReasoningDetailsTypeEncrypted:
+				case RakshaReasoningDetailsTypeEncrypted:
 					if d.Data != nil {
 						encryptedContent = d.Data
 					}
@@ -743,7 +743,7 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 						pendingReasoning.WriteString(*block.Text)
 						pendingReasoningDetails = append(pendingReasoningDetails, ChatReasoningDetails{
 							Index:     len(pendingReasoningDetails),
-							Type:      UnifAIReasoningDetailsTypeText,
+							Type:      RakshaReasoningDetailsTypeText,
 							Text:      block.Text,
 							Signature: block.Signature,
 						})
@@ -755,14 +755,14 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 					summaryText := summary.Text
 					pendingReasoningDetails = append(pendingReasoningDetails, ChatReasoningDetails{
 						Index:   len(pendingReasoningDetails),
-						Type:    UnifAIReasoningDetailsTypeSummary,
+						Type:    RakshaReasoningDetailsTypeSummary,
 						Summary: &summaryText,
 					})
 				}
 				if rm.ResponsesReasoning.EncryptedContent != nil {
 					pendingReasoningDetails = append(pendingReasoningDetails, ChatReasoningDetails{
 						Index: len(pendingReasoningDetails),
-						Type:  UnifAIReasoningDetailsTypeEncrypted,
+						Type:  RakshaReasoningDetailsTypeEncrypted,
 						Data:  rm.ResponsesReasoning.EncryptedContent,
 					})
 				}
@@ -972,7 +972,7 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 	return chatMessages
 }
 
-func (cu *UnifAILLMUsage) ToResponsesResponseUsage() *ResponsesResponseUsage {
+func (cu *RakshaLLMUsage) ToResponsesResponseUsage() *ResponsesResponseUsage {
 	if cu == nil {
 		return nil
 	}
@@ -1009,12 +1009,12 @@ func (cu *UnifAILLMUsage) ToResponsesResponseUsage() *ResponsesResponseUsage {
 	return usage
 }
 
-func (ru *ResponsesResponseUsage) ToUnifAILLMUsage() *UnifAILLMUsage {
+func (ru *ResponsesResponseUsage) ToRakshaLLMUsage() *RakshaLLMUsage {
 	if ru == nil {
 		return nil
 	}
 
-	usage := &UnifAILLMUsage{
+	usage := &RakshaLLMUsage{
 		PromptTokens:     ru.InputTokens,
 		CompletionTokens: ru.OutputTokens,
 		TotalTokens:      ru.TotalTokens,
@@ -1051,13 +1051,13 @@ func (ru *ResponsesResponseUsage) ToUnifAILLMUsage() *UnifAILLMUsage {
 // REQUEST CONVERSION METHODS
 // =============================================================================
 
-// ToResponsesRequest converts a UnifAIChatRequest to UnifAIResponsesRequest format
-func (cr *UnifAIChatRequest) ToResponsesRequest() *UnifAIResponsesRequest {
+// ToResponsesRequest converts a RakshaChatRequest to RakshaResponsesRequest format
+func (cr *RakshaChatRequest) ToResponsesRequest() *RakshaResponsesRequest {
 	if cr == nil {
-		return &UnifAIResponsesRequest{}
+		return &RakshaResponsesRequest{}
 	}
 
-	brr := &UnifAIResponsesRequest{
+	brr := &RakshaResponsesRequest{
 		Provider:  cr.Provider,
 		Model:     cr.Model,
 		Fallbacks: cr.Fallbacks, // Copy fallbacks as-is
@@ -1170,13 +1170,13 @@ func (cr *UnifAIChatRequest) ToResponsesRequest() *UnifAIResponsesRequest {
 	return brr
 }
 
-// ToChatRequest converts a UnifAIResponsesRequest to UnifAIChatRequest format
-func (brr *UnifAIResponsesRequest) ToChatRequest() *UnifAIChatRequest {
+// ToChatRequest converts a RakshaResponsesRequest to RakshaChatRequest format
+func (brr *RakshaResponsesRequest) ToChatRequest() *RakshaChatRequest {
 	if brr == nil {
-		return &UnifAIChatRequest{}
+		return &RakshaChatRequest{}
 	}
 
-	bcr := &UnifAIChatRequest{
+	bcr := &RakshaChatRequest{
 		Provider:  brr.Provider,
 		Model:     brr.Model,
 		Fallbacks: brr.Fallbacks, // Copy fallbacks as-is
@@ -1342,9 +1342,9 @@ func sanitizeChatToolChoiceForFallback(toolChoice *ChatToolChoice, tools []ChatT
 
 func responsesStatusFromChatFinishReason(finishReason string) (status string, incompleteDetails *ResponsesResponseIncompleteDetails, mapped bool) {
 	switch finishReason {
-	case string(UnifAIFinishReasonLength):
+	case string(RakshaFinishReasonLength):
 		return "incomplete", &ResponsesResponseIncompleteDetails{Reason: "max_output_tokens"}, true
-	case string(UnifAIFinishReasonStop), string(UnifAIFinishReasonToolCalls):
+	case string(RakshaFinishReasonStop), string(RakshaFinishReasonToolCalls):
 		return "completed", nil, true
 	default:
 		return "", nil, false
@@ -1382,15 +1382,15 @@ func responsesTerminalFromChatFinishReason(finishReason *string) (eventType Resp
 	return eventType, mappedStatus, mappedIncompleteDetails
 }
 
-// ToUnifAIResponsesResponse converts the UnifAIChatResponse to UnifAIResponsesResponse format
+// ToRakshaResponsesResponse converts the RakshaChatResponse to RakshaResponsesResponse format
 // This converts Chat-style fields (Choices) to Responses API format
-func (cr *UnifAIChatResponse) ToUnifAIResponsesResponse() *UnifAIResponsesResponse {
+func (cr *RakshaChatResponse) ToRakshaResponsesResponse() *RakshaResponsesResponse {
 	if cr == nil {
 		return nil
 	}
 
-	// Create new UnifAIResponsesResponse from Chat fields
-	responsesResp := &UnifAIResponsesResponse{
+	// Create new RakshaResponsesResponse from Chat fields
+	responsesResp := &RakshaResponsesResponse{
 		ID:            Ptr(cr.ID),
 		Object:        "response",
 		CreatedAt:     cr.Created,
@@ -1452,15 +1452,15 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesResponse() *UnifAIResponsesRespon
 	return responsesResp
 }
 
-// ToUnifAIChatResponse converts a UnifAIResponsesResponse to UnifAIChatResponse format
+// ToRakshaChatResponse converts a RakshaResponsesResponse to RakshaChatResponse format
 // This converts Responses API format to Chat-style fields (Choices)
-func (responsesResp *UnifAIResponsesResponse) ToUnifAIChatResponse() *UnifAIChatResponse {
+func (responsesResp *RakshaResponsesResponse) ToRakshaChatResponse() *RakshaChatResponse {
 	if responsesResp == nil {
 		return nil
 	}
 
-	// Create new UnifAIChatResponse from Responses fields
-	chatResp := &UnifAIChatResponse{
+	// Create new RakshaChatResponse from Responses fields
+	chatResp := &RakshaChatResponse{
 		Created:       responsesResp.CreatedAt,
 		Object:        "chat.completion",
 		Model:         responsesResp.Model,
@@ -1479,9 +1479,9 @@ func (responsesResp *UnifAIResponsesResponse) ToUnifAIChatResponse() *UnifAIChat
 		chatMessages := ToChatMessages(responsesResp.Output)
 
 		// Create choices from chat messages
-		choices := make([]UnifAIResponseChoice, 0, len(chatMessages))
+		choices := make([]RakshaResponseChoice, 0, len(chatMessages))
 		for i, chatMsg := range chatMessages {
-			choice := UnifAIResponseChoice{
+			choice := RakshaResponseChoice{
 				Index: i,
 				ChatNonStreamResponseChoice: &ChatNonStreamResponseChoice{
 					Message: &chatMsg,
@@ -1496,7 +1496,7 @@ func (responsesResp *UnifAIResponsesResponse) ToUnifAIChatResponse() *UnifAIChat
 	// Convert Usage if needed
 	if responsesResp.Usage != nil {
 		// Map Responses usage to Chat usage
-		chatResp.Usage = responsesResp.Usage.ToUnifAILLMUsage()
+		chatResp.Usage = responsesResp.Usage.ToRakshaLLMUsage()
 	}
 
 	// Copy other relevant fields
@@ -1629,10 +1629,10 @@ func ReleaseChatToResponsesStreamState(state *ChatToResponsesStreamState) {
 	}
 }
 
-// ToUnifAIResponsesStreamResponse converts the UnifAIChatResponse from Chat streaming format to Responses streaming format
-// This converts Chat stream chunks (Choices with Deltas) to UnifAIResponsesStreamResponse format
+// ToRakshaResponsesStreamResponse converts the RakshaChatResponse from Chat streaming format to Responses streaming format
+// This converts Chat stream chunks (Choices with Deltas) to RakshaResponsesStreamResponse format
 // Returns a slice of responses to support cases where a single event produces multiple responses
-func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToResponsesStreamState) []*UnifAIResponsesStreamResponse {
+func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToResponsesStreamState) []*RakshaResponsesStreamResponse {
 	if cr == nil || state == nil {
 		return nil
 	}
@@ -1642,7 +1642,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 		return nil
 	}
 
-	// Convert first streaming choice to UnifAIResponsesStreamResponse
+	// Convert first streaming choice to RakshaResponsesStreamResponse
 	// Note: Chat API typically has one choice per chunk in streaming
 	choice := cr.Choices[0]
 	if choice.ChatStreamResponseChoice == nil || choice.ChatStreamResponseChoice.Delta == nil {
@@ -1650,7 +1650,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 	}
 
 	delta := choice.ChatStreamResponseChoice.Delta
-	var responses []*UnifAIResponsesStreamResponse
+	var responses []*RakshaResponsesStreamResponse
 
 	// Store message ID and model from first chunk
 	if state.MessageID == nil && cr.ID != "" {
@@ -1663,11 +1663,11 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 	// Emit lifecycle events on first chunk with role
 	if delta.Role != nil && !state.HasEmittedCreated {
 		// Emit response.created
-		response := &UnifAIResponsesResponse{
+		response := &RakshaResponsesResponse{
 			ID:        state.MessageID,
 			CreatedAt: state.CreatedAt,
 		}
-		responses = append(responses, &UnifAIResponsesStreamResponse{
+		responses = append(responses, &RakshaResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeCreated,
 			SequenceNumber: state.SequenceNumber,
 			Response:       response,
@@ -1677,11 +1677,11 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 		state.HasEmittedCreated = true
 
 		// Emit response.in_progress
-		response = &UnifAIResponsesResponse{
+		response = &RakshaResponsesResponse{
 			ID:        state.MessageID,
 			CreatedAt: state.CreatedAt,
 		}
-		responses = append(responses, &UnifAIResponsesStreamResponse{
+		responses = append(responses, &RakshaResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeInProgress,
 			SequenceNumber: state.SequenceNumber,
 			Response:       response,
@@ -1722,7 +1722,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 				},
 			}
 
-			responses = append(responses, &UnifAIResponsesStreamResponse{
+			responses = append(responses, &RakshaResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputItemAdded,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -1743,7 +1743,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 					Annotations: []ResponsesOutputMessageContentTextAnnotation{},
 				},
 			}
-			responses = append(responses, &UnifAIResponsesStreamResponse{
+			responses = append(responses, &RakshaResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeContentPartAdded,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -1769,7 +1769,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 				contentDelta = ""
 			}
 
-			response := &UnifAIResponsesStreamResponse{
+			response := &RakshaResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputTextDelta,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(0),
@@ -1816,7 +1816,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 					itemID := state.ItemIDs["text"]
 
 					finalText := state.TextBuffer.String()
-					responses = append(responses, &UnifAIResponsesStreamResponse{
+					responses = append(responses, &RakshaResponsesStreamResponse{
 						Type:           ResponsesStreamResponseTypeOutputTextDone,
 						SequenceNumber: state.SequenceNumber,
 						OutputIndex:    Ptr(outputIndex),
@@ -1837,7 +1837,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 							Annotations: []ResponsesOutputMessageContentTextAnnotation{},
 						},
 					}
-					responses = append(responses, &UnifAIResponsesStreamResponse{
+					responses = append(responses, &RakshaResponsesStreamResponse{
 						Type:           ResponsesStreamResponseTypeContentPartDone,
 						SequenceNumber: state.SequenceNumber,
 						OutputIndex:    Ptr(outputIndex),
@@ -1873,7 +1873,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 					if itemID != "" {
 						doneItem.ID = &itemID
 					}
-					responses = append(responses, &UnifAIResponsesStreamResponse{
+					responses = append(responses, &RakshaResponsesStreamResponse{
 						Type:           ResponsesStreamResponseTypeOutputItemDone,
 						SequenceNumber: state.SequenceNumber,
 						OutputIndex:    Ptr(outputIndex),
@@ -1916,7 +1916,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 					},
 				}
 
-				responses = append(responses, &UnifAIResponsesStreamResponse{
+				responses = append(responses, &RakshaResponsesStreamResponse{
 					Type:           ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: state.SequenceNumber,
 					OutputIndex:    Ptr(outputIndex),
@@ -1935,7 +1935,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 			state.ToolArgumentBuffers[toolCallID] += toolCall.Function.Arguments
 
 			itemID := state.ItemIDs[toolCallID]
-			response := &UnifAIResponsesStreamResponse{
+			response := &RakshaResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeFunctionCallArgumentsDelta,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -1953,7 +1953,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 
 	if delta.Reasoning != nil && *delta.Reasoning != "" {
 		// Reasoning/thought content delta (for models that support reasoning)
-		response := &UnifAIResponsesStreamResponse{
+		response := &RakshaResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeReasoningSummaryTextDelta,
 			SequenceNumber: state.SequenceNumber,
 			OutputIndex:    Ptr(0),
@@ -1966,7 +1966,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 
 	if delta.Refusal != nil && *delta.Refusal != "" {
 		// Refusal delta
-		response := &UnifAIResponsesStreamResponse{
+		response := &RakshaResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeRefusalDelta,
 			SequenceNumber: state.SequenceNumber,
 			OutputIndex:    Ptr(0),
@@ -1987,7 +1987,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 			itemID := state.ItemIDs["text"]
 
 			finalText := state.TextBuffer.String()
-			responses = append(responses, &UnifAIResponsesStreamResponse{
+			responses = append(responses, &RakshaResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputTextDone,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -2008,7 +2008,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 					Annotations: []ResponsesOutputMessageContentTextAnnotation{},
 				},
 			}
-			responses = append(responses, &UnifAIResponsesStreamResponse{
+			responses = append(responses, &RakshaResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeContentPartDone,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -2044,7 +2044,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 			if itemID != "" {
 				doneItem.ID = &itemID
 			}
-			responses = append(responses, &UnifAIResponsesStreamResponse{
+			responses = append(responses, &RakshaResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputItemDone,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -2064,7 +2064,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 				contentIndex := 1 // Tool calls use content_index:1
 				argsCopy := args
 				// Emit function_call_arguments.done with full arguments (no item field, just item_id and arguments)
-				response := &UnifAIResponsesStreamResponse{
+				response := &RakshaResponsesStreamResponse{
 					Type:           ResponsesStreamResponseTypeFunctionCallArgumentsDone,
 					SequenceNumber: state.SequenceNumber,
 					OutputIndex:    Ptr(outputIndex),
@@ -2099,7 +2099,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 				if itemID != "" {
 					outputItemDone.ID = &itemID
 				}
-				responses = append(responses, &UnifAIResponsesStreamResponse{
+				responses = append(responses, &RakshaResponsesStreamResponse{
 					Type:           ResponsesStreamResponseTypeOutputItemDone,
 					SequenceNumber: state.SequenceNumber,
 					OutputIndex:    Ptr(outputIndex),
@@ -2119,7 +2119,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 
 		responseStatus := terminalStatus
 
-		response := &UnifAIResponsesResponse{
+		response := &RakshaResponsesResponse{
 			ID:                state.MessageID,
 			CreatedAt:         state.CreatedAt,
 			Usage:             usage,
@@ -2207,7 +2207,7 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 			response.Output = allOutput
 		}
 
-		responses = append(responses, &UnifAIResponsesStreamResponse{
+		responses = append(responses, &RakshaResponsesStreamResponse{
 			Type:           terminalEventType,
 			SequenceNumber: state.SequenceNumber,
 			Response:       response,
@@ -2230,8 +2230,8 @@ func (cr *UnifAIChatResponse) ToUnifAIResponsesStreamResponse(state *ChatToRespo
 	return responses
 }
 
-// ToUnifAIChatResponse converts a UnifAIResponsesStreamResponse chunk to a UnifAIChatResponse (chat.completion.chunk).
-func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResponse {
+// ToRakshaChatResponse converts a RakshaResponsesStreamResponse chunk to a RakshaChatResponse (chat.completion.chunk).
+func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResponse {
 	if rsr == nil {
 		return nil
 	}
@@ -2239,7 +2239,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 	extraFields := rsr.ExtraFields
 	extraFields.RequestType = ChatCompletionStreamRequest
 
-	resp := &UnifAIChatResponse{
+	resp := &RakshaChatResponse{
 		Object:        "chat.completion.chunk",
 		ExtraFields:   extraFields,
 		SearchResults: rsr.SearchResults,
@@ -2257,7 +2257,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 
 	switch rsr.Type {
 	case ResponsesStreamResponseTypeOutputTextDelta:
-		resp.Choices = []UnifAIResponseChoice{
+		resp.Choices = []RakshaResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2270,7 +2270,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 		return resp
 
 	case ResponsesStreamResponseTypeReasoningSummaryTextDelta:
-		resp.Choices = []UnifAIResponseChoice{
+		resp.Choices = []RakshaResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2283,7 +2283,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 		return resp
 
 	case ResponsesStreamResponseTypeRefusalDelta:
-		resp.Choices = []UnifAIResponseChoice{
+		resp.Choices = []RakshaResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2297,7 +2297,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 
 	case ResponsesStreamResponseTypeOutputItemAdded:
 		if rsr.Item == nil || rsr.Item.Type == nil {
-			resp.Choices = []UnifAIResponseChoice{
+			resp.Choices = []RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2311,7 +2311,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 		switch *rsr.Item.Type {
 		case ResponsesMessageTypeFunctionCall:
 			if rsr.Item.ResponsesToolMessage == nil {
-				resp.Choices = []UnifAIResponseChoice{
+				resp.Choices = []RakshaResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2326,7 +2326,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 			if rsr.OutputIndex != nil && *rsr.OutputIndex > 0 {
 				idx = uint16(*rsr.OutputIndex - 1)
 			}
-			resp.Choices = []UnifAIResponseChoice{
+			resp.Choices = []RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2349,7 +2349,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 
 		case ResponsesMessageTypeMessage:
 			role := "assistant"
-			resp.Choices = []UnifAIResponseChoice{
+			resp.Choices = []RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2364,7 +2364,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 		default:
 			// reasoning, file_search_call, web_search_call, etc. — no chat equivalent,
 			// actual content arrives via separate delta events.
-			resp.Choices = []UnifAIResponseChoice{
+			resp.Choices = []RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2377,7 +2377,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 
 	case ResponsesStreamResponseTypeFunctionCallArgumentsDelta:
 		if rsr.Delta == nil {
-			resp.Choices = []UnifAIResponseChoice{
+			resp.Choices = []RakshaResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2392,7 +2392,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 			idx = uint16(*rsr.OutputIndex - 1)
 		}
 
-		resp.Choices = []UnifAIResponseChoice{
+		resp.Choices = []RakshaResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2412,11 +2412,11 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 		return resp
 
 	case ResponsesStreamResponseTypeCompleted, ResponsesStreamResponseTypeIncomplete:
-		finishReason := string(UnifAIFinishReasonStop)
+		finishReason := string(RakshaFinishReasonStop)
 		if rsr.Type == ResponsesStreamResponseTypeIncomplete {
-			finishReason = string(UnifAIFinishReasonLength)
+			finishReason = string(RakshaFinishReasonLength)
 		}
-		resp.Choices = []UnifAIResponseChoice{
+		resp.Choices = []RakshaResponseChoice{
 			{
 				Index:        0,
 				FinishReason: &finishReason,
@@ -2427,13 +2427,13 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 		}
 		if rsr.Response != nil {
 			if rsr.Response.Usage != nil {
-				resp.Usage = rsr.Response.Usage.ToUnifAILLMUsage()
+				resp.Usage = rsr.Response.Usage.ToRakshaLLMUsage()
 			}
 			// Check for tool_calls finish reason
 			if rsr.Type == ResponsesStreamResponseTypeCompleted {
 				for _, output := range rsr.Response.Output {
 					if output.Type != nil && *output.Type == ResponsesMessageTypeFunctionCall {
-						finishReason = string(UnifAIFinishReasonToolCalls)
+						finishReason = string(RakshaFinishReasonToolCalls)
 						resp.Choices[0].FinishReason = &finishReason
 						break
 					}
@@ -2445,7 +2445,7 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 	default:
 		// Lifecycle events (created, in_progress, content_part.added/done, output_text.done,
 		// output_item.done, function_call_arguments.done, etc.) → empty chat chunk with no content.
-		resp.Choices = []UnifAIResponseChoice{
+		resp.Choices = []RakshaResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2461,20 +2461,20 @@ func (rsr *UnifAIResponsesStreamResponse) ToUnifAIChatResponse() *UnifAIChatResp
 // RESPONSE CONVERSION METHODS
 // =============================================================================
 
-// ToUnifAITextCompletionResponse converts a UnifAIChatResponse to a UnifAITextCompletionResponse
-func (cr *UnifAIChatResponse) ToUnifAITextCompletionResponse() *UnifAITextCompletionResponse {
+// ToRakshaTextCompletionResponse converts a RakshaChatResponse to a RakshaTextCompletionResponse
+func (cr *RakshaChatResponse) ToRakshaTextCompletionResponse() *RakshaTextCompletionResponse {
 	if cr == nil {
 		return nil
 	}
 
 	if len(cr.Choices) == 0 {
-		return &UnifAITextCompletionResponse{
+		return &RakshaTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
 			Usage:             cr.Usage,
-			ExtraFields: UnifAIResponseExtraFields{
+			ExtraFields: RakshaResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -2491,12 +2491,12 @@ func (cr *UnifAIChatResponse) ToUnifAITextCompletionResponse() *UnifAITextComple
 
 	// Handle streaming response choice
 	if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
-		return &UnifAITextCompletionResponse{
+		return &RakshaTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []UnifAIResponseChoice{
+			Choices: []RakshaResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -2507,7 +2507,7 @@ func (cr *UnifAIChatResponse) ToUnifAITextCompletionResponse() *UnifAITextComple
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: UnifAIResponseExtraFields{
+			ExtraFields: RakshaResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -2540,12 +2540,12 @@ func (cr *UnifAIChatResponse) ToUnifAITextCompletionResponse() *UnifAITextComple
 				}
 			}
 		}
-		return &UnifAITextCompletionResponse{
+		return &RakshaTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []UnifAIResponseChoice{
+			Choices: []RakshaResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -2556,7 +2556,7 @@ func (cr *UnifAIChatResponse) ToUnifAITextCompletionResponse() *UnifAITextComple
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: UnifAIResponseExtraFields{
+			ExtraFields: RakshaResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -2570,13 +2570,13 @@ func (cr *UnifAIChatResponse) ToUnifAITextCompletionResponse() *UnifAITextComple
 	}
 
 	// Fallback case - return basic response structure
-	return &UnifAITextCompletionResponse{
+	return &RakshaTextCompletionResponse{
 		ID:                cr.ID,
 		Model:             cr.Model,
 		Object:            "text_completion",
 		SystemFingerprint: cr.SystemFingerprint,
 		Usage:             cr.Usage,
-		ExtraFields: UnifAIResponseExtraFields{
+		ExtraFields: RakshaResponseExtraFields{
 			RequestType:             TextCompletionRequest,
 			ChunkIndex:              cr.ExtraFields.ChunkIndex,
 			Provider:                cr.ExtraFields.Provider,

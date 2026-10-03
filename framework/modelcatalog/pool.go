@@ -5,7 +5,7 @@
 package modelcatalog
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // UpsertLive caches one (provider, keyID, unfiltered) list-models response.
@@ -13,12 +13,12 @@ func (mc *ModelCatalog) UpsertLive(provider schemas.ModelProvider, keyID string,
 	mc.live.Upsert(provider, keyID, unfiltered, models)
 }
 
-// UpsertLiveFromResponse extracts model IDs from a UnifAIListModelsResponse
+// UpsertLiveFromResponse extracts model IDs from a RakshaListModelsResponse
 // (parsing "provider/model" prefixes, filtering by provider match,
 // deduplicating) and pushes them into the live cache. A nil resp is a no-op
 // so callers can't accidentally clear an existing cache entry by handing in
 // a missing response.
-func (mc *ModelCatalog) UpsertLiveFromResponse(provider schemas.ModelProvider, keyID string, unfiltered bool, resp *schemas.UnifAIListModelsResponse) {
+func (mc *ModelCatalog) UpsertLiveFromResponse(provider schemas.ModelProvider, keyID string, unfiltered bool, resp *schemas.RakshaListModelsResponse) {
 	if resp == nil {
 		return
 	}
@@ -92,7 +92,7 @@ func (mc *ModelCatalog) ConfiguredProviders() []schemas.ModelProvider {
 // extractModelIDs flattens a list-models response into bare model
 // identifiers, filtering entries whose ID prefix doesn't match the
 // requested provider.
-func extractModelIDs(resp *schemas.UnifAIListModelsResponse, provider schemas.ModelProvider) []string {
+func extractModelIDs(resp *schemas.RakshaListModelsResponse, provider schemas.ModelProvider) []string {
 	if resp == nil {
 		return nil
 	}

@@ -3,15 +3,15 @@ package governance
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/plugins/governance/complexity"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/plugins/governance/complexity"
 )
 
-// buildComplexityInput extracts text from normalized UnifAIRequest values for
+// buildComplexityInput extracts text from normalized RakshaRequest values for
 // complexity_tier routing. It intentionally runs after the transport converters
-// have produced UnifAI's typed request shape, so governance does not duplicate
+// have produced Raksha's typed request shape, so governance does not duplicate
 // provider-specific raw payload parsing.
-func buildComplexityInput(req *schemas.UnifAIRequest) (complexity.ComplexityInput, bool) {
+func buildComplexityInput(req *schemas.RakshaRequest) (complexity.ComplexityInput, bool) {
 	if req == nil {
 		return complexity.ComplexityInput{}, false
 	}
@@ -73,7 +73,7 @@ func extractFromChatMessages(messages []schemas.ChatMessage) (complexity.Complex
 
 // extractFromTextCompletionRequest builds a complexity input from a single text
 // completion prompt and deliberately skips batched prompt arrays.
-func extractFromTextCompletionRequest(req *schemas.UnifAITextCompletionRequest) (complexity.ComplexityInput, bool) {
+func extractFromTextCompletionRequest(req *schemas.RakshaTextCompletionRequest) (complexity.ComplexityInput, bool) {
 	if req == nil || req.Input == nil || req.Input.PromptStr == nil || strings.TrimSpace(*req.Input.PromptStr) == "" {
 		return complexity.ComplexityInput{}, false
 	}
@@ -85,7 +85,7 @@ func extractFromTextCompletionRequest(req *schemas.UnifAITextCompletionRequest) 
 
 // extractFromResponsesRequest builds a complexity input from Responses API
 // messages while combining instructions with system/developer message text.
-func extractFromResponsesRequest(req *schemas.UnifAIResponsesRequest) (complexity.ComplexityInput, bool) {
+func extractFromResponsesRequest(req *schemas.RakshaResponsesRequest) (complexity.ComplexityInput, bool) {
 	if req == nil || len(req.Input) == 0 {
 		return complexity.ComplexityInput{}, false
 	}

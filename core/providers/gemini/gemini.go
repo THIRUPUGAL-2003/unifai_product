@@ -16,13 +16,13 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 const (
-	UnifAIContextKeyResponseFormat schemas.UnifAIContextKey = "unifai_context_key_response_format"
+	RakshaContextKeyResponseFormat schemas.RakshaContextKey = "raksha_context_key_response_format"
 )
 
 type GeminiProvider struct {
@@ -30,8 +30,8 @@ type GeminiProvider struct {
 	client               *fasthttp.Client              // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient      *fasthttp.Client              // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig         // Network configuration including extra headers
-	sendBackRawRequest   bool                          // Whether to include raw request in UnifAIResponse
-	sendBackRawResponse  bool                          // Whether to include raw response in UnifAIResponse
+	sendBackRawRequest   bool                          // Whether to include raw request in RakshaResponse
+	sendBackRawResponse  bool                          // Whether to include raw response in RakshaResponse
 	customProviderConfig *schemas.CustomProviderConfig // Custom provider config
 }
 
@@ -47,8 +47,8 @@ func setGeminiRequestBody(req *fasthttp.Request, bodyReader io.Reader, bodySize 
 	req.SetBody(jsonData)
 }
 
-func normalizeRawGenerateContentBody(ctx *schemas.UnifAIContext, body []byte) []byte {
-	if rawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && rawBody {
+func normalizeRawGenerateContentBody(ctx *schemas.RakshaContext, body []byte) []byte {
+	if rawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && rawBody {
 		body = NormalizeRawGenerateContentRequestForCompatibility(body)
 	}
 	if updated, err := providerUtils.DeleteJSONField(body, "fallbacks"); err == nil {
@@ -103,9 +103,9 @@ func (provider *GeminiProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // completeRequest handles the common HTTP request pattern for Gemini API calls.
-// When large response streaming is activated (UnifAIContextKeyLargeResponseMode set in ctx),
+// When large response streaming is activated (RakshaContextKeyLargeResponseMode set in ctx),
 // returns (nil, nil, latency, nil) — callers must check the context flag.
-func (provider *GeminiProvider) completeRequest(ctx *schemas.UnifAIContext, model string, key schemas.Key, jsonBody []byte, endpoint string) (*GenerateContentResponse, interface{}, time.Duration, map[string]string, *schemas.UnifAIError) {
+func (provider *GeminiProvider) completeRequest(ctx *schemas.RakshaContext, model string, key schemas.Key, jsonBody []byte, endpoint string) (*GenerateContentResponse, interface{}, time.Duration, map[string]string, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -138,10 +138,10 @@ func (provider *GeminiProvider) completeRequest(ctx *schemas.UnifAIContext, mode
 
 	// Send the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, nil, latency, nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, nil, latency, nil, rakshaErr
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
@@ -168,13 +168,13 @@ func (provider *GeminiProvider) completeRequest(ctx *schemas.UnifAIContext, mode
 	// Parse Gemini's response
 	var geminiResponse GenerateContentResponse
 	if err := sonic.Unmarshal(body, &geminiResponse); err != nil {
-		return nil, nil, latency, providerResponseHeaders, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	var rawResponse interface{}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		if err := sonic.Unmarshal(body, &rawResponse); err != nil {
-			return nil, nil, latency, providerResponseHeaders, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+			return nil, nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 		}
 	}
 
@@ -183,7 +183,7 @@ func (provider *GeminiProvider) completeRequest(ctx *schemas.UnifAIContext, mode
 
 // listModelsByKey performs a list models request for a single key.
 // Returns the response and latency, or an error if the request fails.
-func (provider *GeminiProvider) listModelsByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 	// Create request
 	req := fasthttp.AcquireRequest()
@@ -203,14 +203,14 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -219,9 +219,9 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 
 	// Parse Gemini's response
 	var geminiResponse GeminiListModelsResponse
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(resp.Body(), &geminiResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &geminiResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if len(geminiResponse.Models) == 0 {
 		var singleModel GeminiModel
@@ -230,7 +230,7 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 		}
 	}
 
-	response := geminiResponse.ToUnifAIListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	response := geminiResponse.ToRakshaListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 
 	response.ExtraFields.Latency = latency.Milliseconds()
 
@@ -249,12 +249,12 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 
 // ListModels performs a list models request to Gemini's API.
 // Requests are made concurrently for improved performance.
-func (provider *GeminiProvider) ListModels(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
 	if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
-		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 			return provider.listModelsByKey(ctx, schemas.Key{Models: schemas.WhiteList{"*"}}, request)
 		})
 	}
@@ -267,19 +267,19 @@ func (provider *GeminiProvider) ListModels(ctx *schemas.UnifAIContext, keys []sc
 }
 
 // TextCompletion is not supported by the Gemini provider.
-func (provider *GeminiProvider) TextCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITextCompletionRequest) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
 // TextCompletionStream performs a streaming text completion request to Gemini's API.
 // It formats the request, sends it to Gemini, and processes the response.
-// Returns a channel of UnifAIStreamChunk objects or an error if the request fails.
-func (provider *GeminiProvider) TextCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITextCompletionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
+func (provider *GeminiProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
 // ChatCompletion performs a chat completion request to the Gemini API.
-func (provider *GeminiProvider) ChatCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	// Check if chat completion is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
@@ -295,47 +295,47 @@ func (provider *GeminiProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 		return nil, err
 	}
 
-	geminiResponse, rawResponse, latency, providerResponseHeaders, unifaiErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.UnifAIContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.UnifAIChatResponse{
+	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.RakshaChatResponse{
 			Model: request.Model,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	unifaiResponse := geminiResponse.ToUnifAIChatResponse()
+	rakshaResponse := geminiResponse.ToRakshaChatResponse()
 
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // ChatCompletionStream performs a streaming chat completion request to the Gemini API.
 // It supports real-time streaming of responses using Server-Sent Events (SSE).
-// Returns a channel containing UnifAIStreamChunk objects representing the stream or an error if the request fails.
-func (provider *GeminiProvider) ChatCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIChatRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel containing RakshaStreamChunk objects representing the stream or an error if the request fails.
+func (provider *GeminiProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	// Check if chat completion stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
@@ -390,7 +390,7 @@ func (provider *GeminiProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 
 // HandleGeminiChatCompletionStream handles streaming for Gemini-compatible APIs.
 func HandleGeminiChatCompletionStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
 	jsonBody []byte,
@@ -401,10 +401,10 @@ func HandleGeminiChatCompletionStream(
 	providerName schemas.ModelProvider,
 	model string,
 	postHookRunner schemas.PostHookRunner,
-	postResponseConverter func(*schemas.UnifAIChatResponse) *schemas.UnifAIChatResponse,
+	postResponseConverter func(*schemas.RakshaChatResponse) *schemas.RakshaChatResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	resp.StreamBody = true
@@ -433,8 +433,8 @@ func HandleGeminiChatCompletionStream(
 	if doErr != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(doErr, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -443,13 +443,13 @@ func HandleGeminiChatCompletionStream(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(doErr, fasthttp.ErrTimeout) || errors.Is(doErr, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors — use parseGeminiError to preserve upstream error details
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -460,13 +460,13 @@ func HandleGeminiChatCompletionStream(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -482,12 +482,12 @@ func HandleGeminiChatCompletionStream(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
 		if resp.BodyStream() == nil {
-			unifaiErr := providerUtils.NewUnifAIOperationError(
+			rakshaErr := providerUtils.NewRakshaOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"),
 			)
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -524,8 +524,8 @@ func HandleGeminiChatCompletionStream(
 		// Running usage handle so a mid-stream cancel/timeout can bill for
 		// tokens already processed. Gemini's usageMetadata is cumulative, so the
 		// latest non-nil copy below is the running total.
-		streamUsage := &schemas.UnifAILLMUsage{}
-		ctx.SetValue(schemas.UnifAIContextKeyStreamAccumulatedUsage, streamUsage)
+		streamUsage := &schemas.RakshaLLMUsage{}
+		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, streamUsage)
 
 		for {
 			// If context was cancelled/timed out, let defer handle it
@@ -549,7 +549,7 @@ func HandleGeminiChatCompletionStream(
 				if ctx.Err() != nil {
 					return
 				}
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 				logger.Warn("Error reading stream: %v", readErr)
 				providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				return
@@ -559,16 +559,16 @@ func HandleGeminiChatCompletionStream(
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
 					// Handle API error
-					unifaiErr := &schemas.UnifAIError{
+					rakshaErr := &schemas.RakshaError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsUnifAIError: false,
+						IsRakshaError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 				logger.Warn("Failed to process chunk: %v", err)
@@ -583,11 +583,11 @@ func HandleGeminiChatCompletionStream(
 				modelName = geminiResponse.ModelVersion
 			}
 
-			// Convert to UnifAI stream response
-			response, unifaiErr, isLastChunk := geminiResponse.ToUnifAIChatCompletionStream(streamState)
-			if unifaiErr != nil {
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+			// Convert to Raksha stream response
+			response, rakshaErr, isLastChunk := geminiResponse.ToRakshaChatCompletionStream(streamState)
+			if rakshaErr != nil {
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
@@ -600,7 +600,7 @@ func HandleGeminiChatCompletionStream(
 				if response.Usage != nil {
 					*streamUsage = *response.Usage
 				}
-				response.ExtraFields = schemas.UnifAIResponseExtraFields{
+				response.ExtraFields = schemas.RakshaResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				}
@@ -625,13 +625,13 @@ func HandleGeminiChatCompletionStream(
 						providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 					}
 					response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 					break
 				}
 
 				// Process response through post-hooks and send to channel
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
 	}()
@@ -641,8 +641,8 @@ func HandleGeminiChatCompletionStream(
 
 // Responses performs a chat completion request to Gemini's API.
 // It formats the request, sends it to Gemini, and processes the response.
-// Returns a UnifAIResponse containing the completion results or an error if the request fails.
-func (provider *GeminiProvider) Responses(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+// Returns a RakshaResponse containing the completion results or an error if the request fails.
+func (provider *GeminiProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
@@ -653,10 +653,10 @@ func (provider *GeminiProvider) Responses(ctx *schemas.UnifAIContext, key schema
 	bodySize := -1
 	var jsonData []byte
 
-	if isLargePayload, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadMode).(bool); ok && isLargePayload {
-		if reader, readerOk := ctx.Value(schemas.UnifAIContextKeyLargePayloadReader).(io.Reader); readerOk && reader != nil {
+	if isLargePayload, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+		if reader, readerOk := ctx.Value(schemas.RakshaContextKeyLargePayloadReader).(io.Reader); readerOk && reader != nil {
 			bodyReader = reader
-			if contentLength, lenOk := ctx.Value(schemas.UnifAIContextKeyLargePayloadContentLength).(int); lenOk {
+			if contentLength, lenOk := ctx.Value(schemas.RakshaContextKeyLargePayloadContentLength).(int); lenOk {
 				bodySize = contentLength
 			}
 		}
@@ -664,7 +664,7 @@ func (provider *GeminiProvider) Responses(ctx *schemas.UnifAIContext, key schema
 
 	// For normal path (no large payload body reader), convert request to bytes
 	if bodyReader == nil {
-		var err *schemas.UnifAIError
+		var err *schemas.RakshaError
 		jsonData, err = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
@@ -684,24 +684,24 @@ func (provider *GeminiProvider) Responses(ctx *schemas.UnifAIContext, key schema
 	}
 
 	// Check if enterprise large response detection is enabled
-	if responseThreshold, ok := ctx.Value(schemas.UnifAIContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
+	if responseThreshold, ok := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
 		return provider.responsesWithLargeResponseDetection(ctx, key, request, jsonData, responseThreshold, bodyReader, bodySize)
 	}
 
 	// Use struct directly for JSON marshaling
-	geminiResponse, rawResponse, latency, providerResponseHeaders, unifaiErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.UnifAIContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.UnifAIResponsesResponse{
+	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.RakshaResponsesResponse{
 			Model: request.Model,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -709,23 +709,23 @@ func (provider *GeminiProvider) Responses(ctx *schemas.UnifAIContext, key schema
 	}
 
 	// Create final response
-	unifaiResponse := geminiResponse.ToResponsesUnifAIResponsesResponse()
+	rakshaResponse := geminiResponse.ToResponsesRakshaResponsesResponse()
 
 	// Set ExtraFields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // responsesWithLargeResponseDetection makes the upstream request with response body streaming
@@ -733,14 +733,14 @@ func (provider *GeminiProvider) Responses(ctx *schemas.UnifAIContext, key schema
 // the router to stream the body directly to the client without full materialization.
 // If the response is small, it falls through to the normal parse-and-convert path.
 func (provider *GeminiProvider) responsesWithLargeResponseDetection(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
-	request *schemas.UnifAIResponsesRequest,
+	request *schemas.RakshaResponsesRequest,
 	jsonData []byte,
 	responseThreshold int64,
 	bodyReader io.Reader, // Optional: for large payload request streaming (pass nil for normal path)
 	bodySize int, // Required if bodyReader is non-nil
-) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -767,20 +767,20 @@ func (provider *GeminiProvider) responsesWithLargeResponseDetection(
 
 	// Make request
 	streamingClient := providerUtils.BuildLargeResponseClient(provider.client, responseThreshold)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, streamingClient, req, resp)
-	if unifaiErr != nil {
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, streamingClient, req, resp)
+	if rakshaErr != nil {
 		wait()
 		fasthttp.ReleaseResponse(resp)
-		return nil, unifaiErr
+		return nil, rakshaErr
 	}
 
 	// Handle error response — materialize stream body for error parsing
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
-		unifaiErr := parseGeminiError(resp)
+		rakshaErr := parseGeminiError(resp)
 		wait()
 		fasthttp.ReleaseResponse(resp)
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Delegate large response detection + normal buffered path to shared utility
@@ -792,18 +792,18 @@ func (provider *GeminiProvider) responsesWithLargeResponseDetection(
 	}
 	if isLarge {
 		// Build lightweight response with usage from preview for plugin pipeline
-		preview, _ := ctx.Value(schemas.UnifAIContextKeyLargePayloadResponsePreview).(string)
+		preview, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadResponsePreview).(string)
 		usage := extractUsageFromResponsePrefetch([]byte(preview))
-		unifaiResponse := &schemas.UnifAIResponsesResponse{
+		rakshaResponse := &schemas.RakshaResponsesResponse{
 			ID:        schemas.Ptr("resp_" + providerUtils.GetRandomString(50)),
 			CreatedAt: int(time.Now().Unix()),
 			Model:     request.Model,
 			Usage:     usage,
 		}
-		unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
+		rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
 		// resp owned by reader in context — don't release
 		wait()
-		return unifaiResponse, nil
+		return rakshaResponse, nil
 	}
 	wait()
 	fasthttp.ReleaseResponse(resp)
@@ -811,19 +811,19 @@ func (provider *GeminiProvider) responsesWithLargeResponseDetection(
 	// Normal parse-and-convert path
 	var geminiResponse GenerateContentResponse
 	if unmarshalErr := sonic.Unmarshal(responseBody, &geminiResponse); unmarshalErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, unmarshalErr)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, unmarshalErr)
 	}
-	unifaiResponse := geminiResponse.ToResponsesUnifAIResponsesResponse()
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse := geminiResponse.ToResponsesRakshaResponsesResponse()
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&unifaiResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponse interface{}
 		sonic.Unmarshal(responseBody, &rawResponse) //nolint:errcheck
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // extractUsageFromResponsePrefetch extracts usage metadata from the response prefetch buffer.
@@ -847,7 +847,7 @@ func extractUsageFromResponsePrefetch(data []byte) *schemas.ResponsesResponseUsa
 }
 
 // ResponsesStream performs a streaming responses request to the Gemini API.
-func (provider *GeminiProvider) ResponsesStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIResponsesRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	// Check if responses stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
@@ -901,7 +901,7 @@ func (provider *GeminiProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 
 // HandleGeminiResponsesStream handles streaming for Gemini-compatible APIs.
 func HandleGeminiResponsesStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	client *fasthttp.Client,
 	url string,
 	jsonBody []byte,
@@ -912,10 +912,10 @@ func HandleGeminiResponsesStream(
 	providerName schemas.ModelProvider,
 	model string,
 	postHookRunner schemas.PostHookRunner,
-	postResponseConverter func(*schemas.UnifAIResponsesStreamResponse) *schemas.UnifAIResponsesStreamResponse,
+	postResponseConverter func(*schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	resp.StreamBody = true
@@ -944,8 +944,8 @@ func HandleGeminiResponsesStream(
 	if doErr != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(doErr, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -954,13 +954,13 @@ func HandleGeminiResponsesStream(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(doErr, fasthttp.ErrTimeout) || errors.Is(doErr, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors — use parseGeminiError to preserve upstream error details
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -970,13 +970,13 @@ func HandleGeminiResponsesStream(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -993,15 +993,15 @@ func HandleGeminiResponsesStream(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
 		if resp.BodyStream() == nil {
-			unifaiErr := providerUtils.NewUnifAIOperationError(
+			rakshaErr := providerUtils.NewRakshaOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"),
 			)
-			ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendUnifAIError(
+			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendRakshaError(
 				ctx,
 				postHookRunner,
-				providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse),
+				providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse),
 				responseChan,
 				logger,
 				postHookSpanFinalizer,
@@ -1043,8 +1043,8 @@ func HandleGeminiResponsesStream(
 
 		// Running usage handle so a mid-stream cancel/timeout can bill for
 		// tokens already processed. Gemini's usageMetadata is cumulative.
-		streamUsage := &schemas.UnifAILLMUsage{}
-		ctx.SetValue(schemas.UnifAIContextKeyStreamAccumulatedUsage, streamUsage)
+		streamUsage := &schemas.RakshaLLMUsage{}
+		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, streamUsage)
 
 		for {
 			// If context was cancelled/timed out, let defer handle it
@@ -1067,7 +1067,7 @@ func HandleGeminiResponsesStream(
 				if ctx.Err() != nil {
 					return
 				}
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 				logger.Warn("Error reading stream: %v", readErr)
 				providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				return
@@ -1078,16 +1078,16 @@ func HandleGeminiResponsesStream(
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
 					// Handle API error
-					unifaiErr := &schemas.UnifAIError{
+					rakshaErr := &schemas.RakshaError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsUnifAIError: false,
+						IsRakshaError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 				logger.Warn("Failed to process chunk: %v", err)
@@ -1103,17 +1103,17 @@ func HandleGeminiResponsesStream(
 				}
 			}
 
-			// Convert to UnifAI responses stream response
-			responses, unifaiErr := geminiResponse.ToUnifAIResponsesStream(sequenceNumber, streamState)
-			if unifaiErr != nil {
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
+			// Convert to Raksha responses stream response
+			responses, rakshaErr := geminiResponse.ToRakshaResponsesStream(sequenceNumber, streamState)
+			if rakshaErr != nil {
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
 			for i, response := range responses {
 				if response != nil {
-					response.ExtraFields = schemas.UnifAIResponseExtraFields{
+					response.ExtraFields = schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					}
@@ -1145,8 +1145,8 @@ func HandleGeminiResponsesStream(
 							providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 						}
 						response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-						ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 						return
 					}
 
@@ -1156,7 +1156,7 @@ func HandleGeminiResponsesStream(
 					}
 
 					// Process response through post-hooks and send to channel
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 			}
 		}
@@ -1167,7 +1167,7 @@ func HandleGeminiResponsesStream(
 				logger.Warn("FinalizeGeminiResponsesStream returned nil; skipping final response")
 				continue
 			}
-			finalResponse.ExtraFields = schemas.UnifAIResponseExtraFields{
+			finalResponse.ExtraFields = schemas.RakshaResponseExtraFields{
 				ChunkIndex: chunkIndex,
 				Latency:    time.Since(lastChunkTime).Milliseconds(),
 			}
@@ -1189,10 +1189,10 @@ func HandleGeminiResponsesStream(
 			isLast := i == len(finalResponses)-1
 			// Set final latency on the last response (completed event)
 			if isLast {
-				ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 				finalResponse.ExtraFields.Latency = time.Since(startTime).Milliseconds()
 			}
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, finalResponse, nil, nil, nil), responseChan, postHookSpanFinalizer)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, finalResponse, nil, nil, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -1200,7 +1200,7 @@ func HandleGeminiResponsesStream(
 }
 
 // Embedding performs an embedding request to the Gemini API.
-func (provider *GeminiProvider) Embedding(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIEmbeddingRequest) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 	// Check if embedding is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.EmbeddingRequest); err != nil {
 		return nil, err
@@ -1208,7 +1208,7 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 
 	providerName := provider.GetProviderKey()
 
-	// Convert UnifAI request to Gemini batch embedding request format
+	// Convert Raksha request to Gemini batch embedding request format
 	jsonData, err := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
@@ -1245,11 +1245,11 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 
 	// Send the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
-	if unifaiErr != nil {
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	if rakshaErr != nil {
 		wait()
 		fasthttp.ReleaseResponse(resp)
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// When upstream responds before consuming full upload, drain remaining bytes from
 	// ingress reader so proxy hops (e.g., Caddy) don't surface broken-pipe 502s.
@@ -1259,7 +1259,7 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 
 	// Extract provider response headers before status check so error responses also forward them
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1281,9 +1281,9 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 		// Large response detected — return lightweight response with metadata only;
 		// resp owned by LargeResponseReader in context, don't release.
 		wait()
-		return &schemas.UnifAIEmbeddingResponse{
+		return &schemas.RakshaEmbeddingResponse{
 			Model: request.Model,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -1294,37 +1294,37 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 
 	// Parse Gemini's batch embedding response
 	var geminiResponse GeminiEmbeddingResponse
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &geminiResponse, jsonData,
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &geminiResponse, jsonData,
 		providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest),
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	// Convert to UnifAI format
-	unifaiResponse := ToUnifAIEmbeddingResponse(&geminiResponse, request.Model)
-	if unifaiResponse == nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal,
-			fmt.Errorf("failed to convert Gemini embedding response to UnifAI format"))
+	// Convert to Raksha format
+	rakshaResponse := ToRakshaEmbeddingResponse(&geminiResponse, request.Model)
+	if rakshaResponse == nil {
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal,
+			fmt.Errorf("failed to convert Gemini embedding response to Raksha format"))
 	}
 
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // Speech performs a speech synthesis request to the Gemini API.
-func (provider *GeminiProvider) Speech(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAISpeechRequest) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 	// Check if speech is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.SpeechRequest); err != nil {
 		return nil, err
@@ -1342,18 +1342,18 @@ func (provider *GeminiProvider) Speech(ctx *schemas.UnifAIContext, key schemas.K
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, unifaiErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.UnifAIContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.UnifAISpeechResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.RakshaSpeechResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -1361,11 +1361,11 @@ func (provider *GeminiProvider) Speech(ctx *schemas.UnifAIContext, key schemas.K
 	}
 
 	if request.Params != nil {
-		ctx.SetValue(UnifAIContextKeyResponseFormat, request.Params.ResponseFormat)
+		ctx.SetValue(RakshaContextKeyResponseFormat, request.Params.ResponseFormat)
 	}
-	response, convErr := geminiResponse.ToUnifAISpeechResponse(ctx)
+	response, convErr := geminiResponse.ToRakshaSpeechResponse(ctx)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
@@ -1384,31 +1384,31 @@ func (provider *GeminiProvider) Speech(ctx *schemas.UnifAIContext, key schemas.K
 }
 
 // Rerank is not supported by the Gemini provider.
-func (provider *GeminiProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIRerankRequest) (*schemas.UnifAIRerankResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Gemini provider.
-func (provider *GeminiProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIOCRRequest) (*schemas.UnifAIOCRResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream performs a streaming speech synthesis request to the Gemini API.
-func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAISpeechRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	// Check if speech stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.SpeechStreamRequest); err != nil {
 		return nil, err
 	}
 
 	// Prepare request body using speech-specific function
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiSpeechRequest(request)
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -1443,8 +1443,8 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1453,17 +1453,17 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 			}, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1473,13 +1473,13 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1528,7 +1528,7 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
@@ -1543,16 +1543,16 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
 					// Handle API error
-					unifaiErr := &schemas.UnifAIError{
+					rakshaErr := &schemas.RakshaError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsUnifAIError: false,
+						IsRakshaError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				provider.logger.Warn("Failed to process chunk: %v", err)
@@ -1595,11 +1595,11 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 			if len(audioChunk) > 0 {
 				chunkIndex++
 
-				// Create UnifAI speech response for streaming
-				response := &schemas.UnifAISpeechStreamResponse{
+				// Create Raksha speech response for streaming
+				response := &schemas.RakshaSpeechStreamResponse{
 					Type:  schemas.SpeechStreamResponseTypeDelta,
 					Audio: audioChunk,
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1611,13 +1611,13 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 				}
 
 				// Process response through post-hooks and send to channel
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
-		response := &schemas.UnifAISpeechStreamResponse{
+		response := &schemas.RakshaSpeechStreamResponse{
 			Type:  schemas.SpeechStreamResponseTypeDone,
 			Usage: usage,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				ChunkIndex: chunkIndex + 1,
 				Latency:    time.Since(startTime).Milliseconds(),
 			},
@@ -1627,51 +1627,51 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.UnifAIContext, postHoo
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 		}
-		ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
 	}()
 
 	return responseChan, nil
 }
 
 // Transcription performs a speech-to-text request to the Gemini API.
-func (provider *GeminiProvider) Transcription(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITranscriptionRequest) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
 	// Check if transcription is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.TranscriptionRequest); err != nil {
 		return nil, err
 	}
 
 	// Prepare request body using transcription-specific function
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiTranscriptionRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, unifaiErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.UnifAIContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.UnifAITranscriptionResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.RakshaTranscriptionResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	response := geminiResponse.ToUnifAITranscriptionResponse()
+	response := geminiResponse.ToRakshaTranscriptionResponse()
 
 	// Set ExtraFields
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -1689,21 +1689,21 @@ func (provider *GeminiProvider) Transcription(ctx *schemas.UnifAIContext, key sc
 }
 
 // TranscriptionStream performs a streaming speech-to-text request to the Gemini API.
-func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITranscriptionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	// Check if transcription stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.TranscriptionStreamRequest); err != nil {
 		return nil, err
 	}
 
 	// Prepare request body using transcription-specific function
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiTranscriptionRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Create HTTP request for streaming
@@ -1738,8 +1738,8 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1748,17 +1748,17 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 			}, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1768,13 +1768,13 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.UnifAIStreamChunk)
+		responseChan := make(chan *schemas.RakshaStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.UnifAIStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1823,7 +1823,7 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
@@ -1837,16 +1837,16 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 			geminiResponse, err := processGeminiStreamChunk(jsonData)
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
-					unifaiErr := &schemas.UnifAIError{
+					rakshaErr := &schemas.RakshaError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsUnifAIError: false,
+						IsRakshaError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendUnifAIError(ctx, postHookRunner, unifaiErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				provider.logger.Warn("Failed to process chunk: %v", err)
@@ -1883,11 +1883,11 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 			if deltaText != "" {
 				chunkIndex++
 
-				// Create UnifAI transcription response for streaming
-				response := &schemas.UnifAITranscriptionStreamResponse{
+				// Create Raksha transcription response for streaming
+				response := &schemas.RakshaTranscriptionStreamResponse{
 					Type:  schemas.TranscriptionStreamResponseTypeDelta,
 					Delta: &deltaText, // Delta text for this chunk
-					ExtraFields: schemas.UnifAIResponseExtraFields{
+					ExtraFields: schemas.RakshaResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1899,10 +1899,10 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 				}
 
 				// Process response through post-hooks and send to channel
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
-		response := &schemas.UnifAITranscriptionStreamResponse{
+		response := &schemas.RakshaTranscriptionStreamResponse{
 			Type: schemas.TranscriptionStreamResponseTypeDone,
 			Text: fullTranscriptionText,
 			Usage: &schemas.TranscriptionUsage{
@@ -1911,7 +1911,7 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 				OutputTokens: usage.OutputTokens,
 				TotalTokens:  usage.TotalTokens,
 			},
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				ChunkIndex: chunkIndex + 1,
 				Latency:    time.Since(startTime).Milliseconds(),
 			},
@@ -1921,8 +1921,8 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 		}
-		ctx.SetValue(schemas.UnifAIContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetUnifAIResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 
 	}()
 
@@ -1930,7 +1930,7 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.UnifAIContext, 
 }
 
 // ImageGeneration performs an image generation request to the Gemini API.
-func (provider *GeminiProvider) ImageGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	// Check if image gen is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
@@ -1941,43 +1941,43 @@ func (provider *GeminiProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 		return provider.handleImagenImageGeneration(ctx, key, request)
 	}
 	// Prepare body
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiImageGenerationRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, unifaiErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.UnifAIContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	response, unifaiErr := geminiResponse.ToUnifAIImageGenerationResponse()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response, rakshaErr := geminiResponse.ToRakshaImageGenerationResponse()
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if response == nil {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			"failed to convert Gemini image generation response",
-			fmt.Errorf("ToUnifAIImageGenerationResponse returned nil response"),
+			fmt.Errorf("ToRakshaImageGenerationResponse returned nil response"),
 		)
 	}
 
@@ -1997,16 +1997,16 @@ func (provider *GeminiProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 }
 
 // handleImagenImageGeneration handles Imagen model requests using Vertex AI endpoint with API key auth
-func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	// Prepare Imagen request body
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToImagenImageGenerationRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	baseURL := provider.networkConfig.BaseURL + providerUtils.GetPathFromContext(ctx, "/models/"+request.Model+":predict")
@@ -2035,10 +2035,10 @@ func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.UnifAIC
 
 	// Send the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -2054,20 +2054,20 @@ func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.UnifAIC
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
 	}
 
 	imagenResponse := GeminiImagenResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
-	// Convert to UnifAI format
-	response := imagenResponse.ToUnifAIImageGenerationResponse()
+	// Convert to Raksha format
+	response := imagenResponse.ToRakshaImageGenerationResponse()
 	response.ExtraFields.Latency = latency.Milliseconds()
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
@@ -2082,26 +2082,26 @@ func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.UnifAIC
 }
 
 // ImageGenerationStream is not supported by the Gemini provider.
-func (provider *GeminiProvider) ImageGenerationStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit handles image edit requests. For Imagen models, uses the Imagen edit API; otherwise uses Gemini generateContent.
-func (provider *GeminiProvider) ImageEdit(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageEditRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
 
 	// Handle Imagen models using :predict endpoint
 	if schemas.IsImagenModel(request.Model) {
-		jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+		jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
 				return ToImagenImageEditRequest(request), nil
 			})
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
 		baseURL := provider.networkConfig.BaseURL + providerUtils.GetPathFromContext(ctx, "/models/"+request.Model+":predict")
@@ -2126,10 +2126,10 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 		}
 
 		activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 		defer wait()
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
 		if resp.StatusCode() != fasthttp.StatusOK {
@@ -2143,20 +2143,20 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 		}
 		if isLargeResp {
 			imagenRespOwned = false
-			return &schemas.UnifAIImageGenerationResponse{
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+			return &schemas.RakshaImageGenerationResponse{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					Latency: latency.Milliseconds(),
 				},
 			}, nil
 		}
 
 		imagenResponse := GeminiImagenResponse{}
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
-		response := imagenResponse.ToUnifAIImageGenerationResponse()
+		response := imagenResponse.ToRakshaImageGenerationResponse()
 		response.ExtraFields.Latency = latency.Milliseconds()
 
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
@@ -2170,43 +2170,43 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 	}
 
 	// Prepare body for non-Imagen models
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiImageEditRequest(request), nil
 		})
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, unifaiErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.UnifAIContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	response, unifaiErr := geminiResponse.ToUnifAIImageGenerationResponse()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	response, rakshaErr := geminiResponse.ToRakshaImageGenerationResponse()
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if response == nil {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			"failed to convert Gemini image edit response",
-			fmt.Errorf("ToUnifAIImageGenerationResponse returned nil response"),
+			fmt.Errorf("ToRakshaImageGenerationResponse returned nil response"),
 		)
 	}
 
@@ -2226,33 +2226,33 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 }
 
 // ImageEditStream is not supported by the Gemini provider.
-func (provider *GeminiProvider) ImageEditStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageEditRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the Gemini provider.
-func (provider *GeminiProvider) ImageVariation(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageVariationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration creates a video generation operation using Gemini's Veo models.
 // Uses the POST /models/{model}:predictLongRunning endpoint.
-func (provider *GeminiProvider) VideoGeneration(ctx *schemas.UnifAIContext, key schemas.Key, unifaiReq *schemas.UnifAIVideoGenerationRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.VideoGenerationRequest); err != nil {
 		return nil, err
 	}
 
-	model := unifaiReq.Model
+	model := rakshaReq.Model
 
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
-		unifaiReq,
+		rakshaReq,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
-			return ToGeminiVideoGenerationRequest(unifaiReq)
+			return ToGeminiVideoGenerationRequest(rakshaReq)
 		},
 	)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	jsonData = normalizeRawGenerateContentBody(ctx, jsonData)
@@ -2276,10 +2276,10 @@ func (provider *GeminiProvider) VideoGeneration(ctx *schemas.UnifAIContext, key 
 
 	req.SetBody(jsonData)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -2290,43 +2290,43 @@ func (provider *GeminiProvider) VideoGeneration(ctx *schemas.UnifAIContext, key 
 	// use handle provider response
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse response
 	var operation GenerateVideosOperation
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &operation, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &operation, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	// Convert to UnifAI response
-	unifaiResp, unifaiErr := ToUnifAIVideoGenerationResponse(&operation, model)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	// Convert to Raksha response
+	rakshaResp, rakshaErr := ToRakshaVideoGenerationResponse(&operation, model)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	unifaiResp.ID = providerUtils.AddVideoIDProviderSuffix(unifaiResp.ID, provider.GetProviderKey())
+	rakshaResp.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResp.ID, provider.GetProviderKey())
 
-	unifaiResp.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResp.ExtraFields.RawRequest = rawRequest
+		rakshaResp.ExtraFields.RawRequest = rawRequest
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResp.ExtraFields.RawResponse = rawResponse
+		rakshaResp.ExtraFields.RawResponse = rawResponse
 	}
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // VideoRetrieve retrieves the status of a video generation operation.
 // Uses the GET /operations/{operationName} endpoint.
-func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key schemas.Key, unifaiReq *schemas.UnifAIVideoRetrieveRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.VideoRetrieveRequest); err != nil {
 		return nil, err
 	}
 
-	operationID := unifaiReq.ID
+	operationID := rakshaReq.ID
 
 	operationID = providerUtils.StripVideoIDProviderSuffix(operationID, provider.GetProviderKey())
 
@@ -2345,10 +2345,10 @@ func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 		req.Header.Set("x-goog-api-key", key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -2359,52 +2359,52 @@ func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 
 	// Parse response
 	var operation GenerateVideosOperation
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(resp.Body(), &operation, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &operation, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	unifaiResp, unifaiErr := ToUnifAIVideoGenerationResponse(&operation, "")
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rakshaResp, rakshaErr := ToRakshaVideoGenerationResponse(&operation, "")
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
-	unifaiResp.ID = providerUtils.AddVideoIDProviderSuffix(unifaiResp.ID, provider.GetProviderKey())
+	rakshaResp.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResp.ID, provider.GetProviderKey())
 
 	// Add extra fields
-	unifaiResp.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
 
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResp.ExtraFields.RawResponse = rawResponse
+		rakshaResp.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // VideoDownload downloads a video from Gemini.
-func (provider *GeminiProvider) VideoDownload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoDownloadRequest) (*schemas.UnifAIVideoDownloadResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.VideoDownloadRequest); err != nil {
 		return nil, err
 	}
 	if request == nil || request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 	// Retrieve operation first so download behavior follows retrieve status.
-	unifaiVideoRetrieveRequest := &schemas.UnifAIVideoRetrieveRequest{
+	rakshaVideoRetrieveRequest := &schemas.RakshaVideoRetrieveRequest{
 		Provider: request.Provider,
 		ID:       request.ID,
 	}
-	videoResp, unifaiErr := provider.VideoRetrieve(ctx, key, unifaiVideoRetrieveRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	videoResp, rakshaErr := provider.VideoRetrieve(ctx, key, rakshaVideoRetrieveRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if videoResp.Status != schemas.VideoStatusCompleted {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			fmt.Sprintf("video not ready, current status: %s", videoResp.Status),
 			nil,
 		)
 	}
 	if len(videoResp.Videos) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("video URL not available", nil)
+		return nil, providerUtils.NewRakshaOperationError("video URL not available", nil)
 	}
 	var content []byte
 	contentType := "video/mp4"
@@ -2415,7 +2415,7 @@ func (provider *GeminiProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 		startTime := time.Now()
 		decoded, err := base64.StdEncoding.DecodeString(*videoResp.Videos[0].Base64Data)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to decode base64 video data", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to decode base64 video data", err)
 		}
 		content = decoded
 		latency = time.Since(startTime)
@@ -2433,53 +2433,53 @@ func (provider *GeminiProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 		if key.Value.GetValue() != "" {
 			req.Header.Set("x-goog-api-key", key.Value.GetValue())
 		}
-		var unifaiErr *schemas.UnifAIError
+		var rakshaErr *schemas.RakshaError
 		var wait func()
-		latency, unifaiErr, wait = providerUtils.MakeRequestWithContextFollowRedirects(ctx, provider.client, req, resp, 5)
+		latency, rakshaErr, wait = providerUtils.MakeRequestWithContextFollowRedirects(ctx, provider.client, req, resp, 5)
 		defer wait()
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 		if resp.StatusCode() != fasthttp.StatusOK {
 			// log full error
 			provider.logger.Error("failed to download video: " + string(resp.Body()))
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(
 				fmt.Sprintf("failed to download video: HTTP %d", resp.StatusCode()),
 				nil,
 			), latency)
 		}
 		body, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		contentType = string(resp.Header.ContentType())
 		content = append([]byte(nil), body...)
 	} else {
-		return nil, providerUtils.NewUnifAIOperationError("invalid video output type", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid video output type", nil)
 	}
-	unifaiResp := &schemas.UnifAIVideoDownloadResponse{
+	rakshaResp := &schemas.RakshaVideoDownloadResponse{
 		VideoID:     request.ID,
 		Content:     content,
 		ContentType: contentType,
 	}
 
-	unifaiResp.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // VideoDelete is not supported by the Gemini provider.
-func (provider *GeminiProvider) VideoDelete(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoDeleteRequest) (*schemas.UnifAIVideoDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the Gemini provider.
-func (provider *GeminiProvider) VideoList(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoListRequest) (*schemas.UnifAIVideoListResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the Gemini provider.
-func (provider *GeminiProvider) VideoRemix(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoRemixRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
@@ -2488,7 +2488,7 @@ func (provider *GeminiProvider) VideoRemix(_ *schemas.UnifAIContext, _ schemas.K
 // BatchCreate creates a new batch job for Gemini.
 // Uses the asynchronous batchGenerateContent endpoint as per official documentation.
 // Supports both inline requests and file-based input (via InputFileID).
-func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchCreateRequest) (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchCreateRequest); err != nil {
 		return nil, err
 	}
@@ -2503,18 +2503,18 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 	hasInlineRequests := len(request.Requests) > 0
 
 	if len(jsonData) == 0 && !hasFileInput && !hasInlineRequests {
-		return nil, providerUtils.NewUnifAIOperationError("either input_file_id or requests must be provided", nil)
+		return nil, providerUtils.NewRakshaOperationError("either input_file_id or requests must be provided", nil)
 	}
 
 	if hasFileInput && hasInlineRequests {
-		return nil, providerUtils.NewUnifAIOperationError("cannot specify both input_file_id and requests", nil)
+		return nil, providerUtils.NewRakshaOperationError("cannot specify both input_file_id and requests", nil)
 	}
 
 	if len(jsonData) == 0 {
 		// Build the batch request with proper nested structure
 		batchReq := &GeminiBatchCreateRequest{
 			Batch: GeminiBatchConfig{
-				DisplayName: fmt.Sprintf("unifai-batch-%d", time.Now().UnixNano()),
+				DisplayName: fmt.Sprintf("raksha-batch-%d", time.Now().UnixNano()),
 			},
 		}
 
@@ -2529,21 +2529,21 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 				FileName: fileID,
 			}
 		} else {
-			// Inline requests: convert UnifAI requests to Gemini format
+			// Inline requests: convert Raksha requests to Gemini format
 			geminiRequests := make([]GeminiBatchRequestItem, len(request.Requests))
-			for i, unifaiItem := range request.Requests {
-				geminiReq, err := ToGeminiBatchGenerateContentRequest(unifaiItem.Body)
+			for i, rakshaItem := range request.Requests {
+				geminiReq, err := ToGeminiBatchGenerateContentRequest(rakshaItem.Body)
 				if err != nil {
-					return nil, providerUtils.NewUnifAIOperationError("failed to convert batch request to gemini format", err)
+					return nil, providerUtils.NewRakshaOperationError("failed to convert batch request to gemini format", err)
 				}
 
 				geminiRequests[i] = GeminiBatchRequestItem{
 					Request: geminiReq,
 				}
 				// Set metadata with custom_id
-				if unifaiItem.CustomID != "" {
+				if rakshaItem.CustomID != "" {
 					geminiRequests[i].Metadata = &GeminiBatchMetadata{
-						Key: unifaiItem.CustomID,
+						Key: rakshaItem.CustomID,
 					}
 				}
 			}
@@ -2558,7 +2558,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 		var err error
 		jsonData, err = providerUtils.MarshalSorted(batchReq)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderRequestMarshal, err)
+			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
 		}
 	}
 
@@ -2593,10 +2593,10 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Handle error response
@@ -2606,22 +2606,22 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse the batch job response
 	var geminiResp GeminiBatchJobResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
 		provider.logger.Error("gemini batch create unmarshal error: " + err.Error())
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// Check for metadata
 	if geminiResp.Metadata == nil {
-		return nil, providerUtils.NewUnifAIOperationError("gemini batch response missing metadata", nil)
+		return nil, providerUtils.NewRakshaOperationError("gemini batch response missing metadata", nil)
 	}
 	// Check for batch stats
 	if geminiResp.Metadata.BatchStats == nil {
-		return nil, providerUtils.NewUnifAIOperationError("gemini batch response missing batch stats", nil)
+		return nil, providerUtils.NewRakshaOperationError("gemini batch response missing batch stats", nil)
 	}
 	// Calculate request counts based on response
 	totalRequests := geminiResp.Metadata.BatchStats.RequestCount
@@ -2643,7 +2643,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 	}
 
 	// Determine status
-	status := ToUnifAIBatchStatus(geminiResp.Metadata.State)
+	status := ToRakshaBatchStatus(geminiResp.Metadata.State)
 
 	// If state is empty but we have results, it's completed
 	if geminiResp.Metadata.State == "" && len(inlinedResponses) > 0 {
@@ -2652,7 +2652,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 	}
 
 	// Build response
-	result := &schemas.UnifAIBatchCreateResponse{
+	result := &schemas.RakshaBatchCreateResponse{
 		ID:            geminiResp.Metadata.Name,
 		Object:        "batch",
 		Endpoint:      string(request.Endpoint),
@@ -2664,7 +2664,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 			Completed: completedCount,
 			Failed:    failedCount,
 		},
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -2683,7 +2683,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 }
 
 // batchListByKey lists batch jobs for Gemini for a single key.
-func (provider *GeminiProvider) batchListByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *GeminiProvider) batchListByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, time.Duration, *schemas.RakshaError) {
 	// Create HTTP request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2715,10 +2715,10 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 
 	// Handle error response - if listing is not supported, return empty list
@@ -2726,11 +2726,11 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 		// If 404 or method not allowed, batch listing may not be available
 		if resp.StatusCode() == fasthttp.StatusNotFound || resp.StatusCode() == fasthttp.StatusMethodNotAllowed {
 			provider.logger.Debug("gemini batch list not available, returning empty list")
-			return &schemas.UnifAIBatchListResponse{
+			return &schemas.RakshaBatchListResponse{
 				Object:  "list",
-				Data:    []schemas.UnifAIBatchRetrieveResponse{},
+				Data:    []schemas.RakshaBatchRetrieveResponse{},
 				HasMore: false,
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					Latency: latency.Milliseconds(),
 				},
 			}, latency, nil
@@ -2740,25 +2740,25 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiBatchListResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	// Convert to UnifAI format
-	data := make([]schemas.UnifAIBatchRetrieveResponse, 0, len(geminiResp.Operations))
+	// Convert to Raksha format
+	data := make([]schemas.RakshaBatchRetrieveResponse, 0, len(geminiResp.Operations))
 	for _, batch := range geminiResp.Operations {
-		data = append(data, schemas.UnifAIBatchRetrieveResponse{
+		data = append(data, schemas.RakshaBatchRetrieveResponse{
 			// Full name (batches/<id>), matching create/retrieve so the id is stable.
 			ID:            batch.Name,
 			Object:        "batch",
-			Status:        ToUnifAIBatchStatus(batch.Metadata.State),
+			Status:        ToRakshaBatchStatus(batch.Metadata.State),
 			CreatedAt:     parseGeminiTimestamp(batch.Metadata.CreateTime),
 			OperationName: &batch.Name,
-			ExtraFields:   schemas.UnifAIResponseExtraFields{},
+			ExtraFields:   schemas.RakshaResponseExtraFields{},
 		})
 	}
 
@@ -2768,12 +2768,12 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 		nextCursor = &geminiResp.NextPageToken
 	}
 
-	return &schemas.UnifAIBatchListResponse{
+	return &schemas.RakshaBatchListResponse{
 		Object:     "list",
 		Data:       data,
 		HasMore:    hasMore,
 		NextCursor: nextCursor,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, latency, nil
@@ -2783,28 +2783,28 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 // Note: The consumer API may have limited list functionality.
 // BatchList lists batch jobs using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *GeminiProvider) BatchList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchListRequest); err != nil {
 		return nil, err
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for batch list", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch list", nil)
 	}
 
 	// Initialize serial pagination helper (Gemini uses PageToken for pagination)
 	helper, err := providerUtils.NewSerialListHelper(keys, request.PageToken, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIBatchListResponse{
+		return &schemas.RakshaBatchListResponse{
 			Object:  "list",
-			Data:    []schemas.UnifAIBatchRetrieveResponse{},
+			Data:    []schemas.RakshaBatchRetrieveResponse{},
 			HasMore: false,
 		}, nil
 	}
@@ -2818,9 +2818,9 @@ func (provider *GeminiProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 	}
 
 	// Call the single-key helper
-	resp, latency, unifaiErr := provider.batchListByKey(ctx, key, &modifiedRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	resp, latency, rakshaErr := provider.batchListByKey(ctx, key, &modifiedRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Determine native cursor for next page
@@ -2832,11 +2832,11 @@ func (provider *GeminiProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 	// Build cursor for next request
 	nextCursor, hasMore := helper.BuildNextCursor(resp.HasMore, nativeNextCursor)
 
-	result := &schemas.UnifAIBatchListResponse{
+	result := &schemas.RakshaBatchListResponse{
 		Object:  "list",
 		Data:    resp.Data,
 		HasMore: hasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -2848,7 +2848,7 @@ func (provider *GeminiProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 }
 
 // batchRetrieveByKey retrieves a specific batch job for Gemini for a single key.
-func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchRetrieveRequest) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 	// Create HTTP request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2873,10 +2873,10 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.UnifAIContext, k
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -2886,12 +2886,12 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.UnifAIContext, k
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiBatchJobResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	var completedCount, failedCount int
@@ -2905,10 +2905,10 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.UnifAIContext, k
 		geminiResp.Metadata.State == GeminiBatchStateCancelled ||
 		geminiResp.Metadata.State == GeminiBatchStateExpired
 
-	result := &schemas.UnifAIBatchRetrieveResponse{
+	result := &schemas.RakshaBatchRetrieveResponse{
 		ID:            geminiResp.Metadata.Name,
 		Object:        "batch",
-		Status:        ToUnifAIBatchStatus(geminiResp.Metadata.State),
+		Status:        ToRakshaBatchStatus(geminiResp.Metadata.State),
 		CreatedAt:     parseGeminiTimestamp(geminiResp.Metadata.CreateTime),
 		OperationName: &geminiResp.Metadata.Name,
 		Done:          &isDone,
@@ -2919,7 +2919,7 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.UnifAIContext, k
 			Pending:   geminiResp.Metadata.BatchStats.PendingRequestCount,
 			Failed:    failedCount,
 		},
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -2935,21 +2935,21 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.UnifAIContext, k
 }
 
 // BatchRetrieve retrieves a specific batch job for Gemini, trying each key until successful.
-func (provider *GeminiProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchRetrieveRequest) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for batch retrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch retrieve", nil)
 	}
 
 	// Try each key until we find the batch
-	var lastError *schemas.UnifAIError
+	var lastError *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.batchRetrieveByKey(ctx, key, request)
 		if err == nil {
@@ -2963,7 +2963,7 @@ func (provider *GeminiProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys [
 }
 
 // batchCancelByKey cancels a batch job for Gemini for a single key.
-func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	// Create HTTP request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2989,10 +2989,10 @@ func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle response
@@ -3007,12 +3007,12 @@ func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key
 	}
 
 	now := time.Now().Unix()
-	return &schemas.UnifAIBatchCancelResponse{
+	return &schemas.RakshaBatchCancelResponse{
 		ID:           request.BatchID,
 		Object:       "batch",
 		Status:       schemas.BatchStatusCancelling,
 		CancellingAt: &now,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
@@ -3020,21 +3020,21 @@ func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key
 
 // BatchCancel cancels a batch job for Gemini, trying each key until successful.
 // Note: Cancellation support depends on the API version and batch state.
-func (provider *GeminiProvider) BatchCancel(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchCancelRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for batch cancel", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch cancel", nil)
 	}
 
 	// Try each key until cancellation succeeds
-	var lastError *schemas.UnifAIError
+	var lastError *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.batchCancelByKey(ctx, key, request)
 		if err == nil {
@@ -3051,7 +3051,7 @@ func (provider *GeminiProvider) BatchCancel(ctx *schemas.UnifAIContext, keys []s
 // batchDeleteByKey deletes a batch job for Gemini for a single key.
 // batches.delete indicates the client is no longer interested in the operation result.
 // It does not cancel the operation. If the server doesn't support this method, it returns UNIMPLEMENTED.
-func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -3073,21 +3073,21 @@ func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.UnifAIContext, key
 		req.Header.Set("x-goog-api-key", key.Value.GetValue())
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK && resp.StatusCode() != fasthttp.StatusNoContent {
 		return nil, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
 	}
 
-	return &schemas.UnifAIBatchDeleteResponse{
+	return &schemas.RakshaBatchDeleteResponse{
 		ID:     request.BatchID,
 		Object: "batch",
 		Status: schemas.BatchStatusDeleted,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
@@ -3096,20 +3096,20 @@ func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.UnifAIContext, key
 // BatchDelete deletes a batch job for Gemini, trying each key until successful.
 // This indicates the client is no longer interested in the operation result.
 // It does not cancel the operation. If the server doesn't support this method, it returns UNIMPLEMENTED.
-func (provider *GeminiProvider) BatchDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchDeleteRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for batch delete", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch delete", nil)
 	}
 
-	var lastError *schemas.UnifAIError
+	var lastError *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.batchDeleteByKey(ctx, key, request)
 		if err == nil {
@@ -3142,14 +3142,14 @@ func processGeminiStreamChunk(jsonData []byte) (*GenerateContentResponse, error)
 	return &geminiResponse, nil
 }
 
-func shouldSkipInlineDataForStreamingContext(ctx *schemas.UnifAIContext) bool {
+func shouldSkipInlineDataForStreamingContext(ctx *schemas.RakshaContext) bool {
 	if ctx == nil {
 		return false
 	}
-	if isLargePayload, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+	if isLargePayload, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
 		return true
 	}
-	if responseThreshold, ok := ctx.Value(schemas.UnifAIContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
+	if responseThreshold, ok := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
 		return true
 	}
 	return false
@@ -3253,7 +3253,7 @@ func readNextSSEDataLine(reader *bufio.Reader, skipInlineData bool) ([]byte, err
 }
 
 // batchResultsByKey retrieves batch results for Gemini for a single key.
-func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	// We need to get the full batch response with results, so make the API call directly
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3279,10 +3279,10 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.UnifAIContext, ke
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -3292,17 +3292,17 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.UnifAIContext, ke
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiBatchJobResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	// Check if batch is still processing
 	if geminiResp.Metadata.State == GeminiBatchStatePending || geminiResp.Metadata.State == GeminiBatchStateRunning {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			fmt.Sprintf("batch %s is still processing (state: %s), results not yet available", request.BatchID, geminiResp.Metadata.State),
 			nil,
 		)
@@ -3316,9 +3316,9 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.UnifAIContext, ke
 	if outputFile != "" {
 		// File-based results: download and parse the results file
 		provider.logger.Debug("gemini batch results in file: " + outputFile)
-		fileResults, fileParseErrors, unifaiErr := provider.downloadBatchResultsFile(ctx, key, outputFile)
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		fileResults, fileParseErrors, rakshaErr := provider.downloadBatchResultsFile(ctx, key, outputFile)
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 		results = fileResults
 		parseErrors = fileParseErrors
@@ -3343,10 +3343,10 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.UnifAIContext, ke
 		}}
 	}
 
-	batchResultsResp := &schemas.UnifAIBatchResultsResponse{
+	batchResultsResp := &schemas.RakshaBatchResultsResponse{
 		BatchID: request.BatchID,
 		Results: results,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -3362,21 +3362,21 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.UnifAIContext, ke
 // Results are extracted from the batch response's inline responses
 // (response.inlinedResponses) for inline batches, or downloaded from the responses
 // file (response.responsesFile) for file-based batches.
-func (provider *GeminiProvider) BatchResults(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchResultsRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for batch results", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch results", nil)
 	}
 
 	// Try each key until we get results
-	var lastError *schemas.UnifAIError
+	var lastError *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.batchResultsByKey(ctx, key, request)
 		if err == nil {
@@ -3391,13 +3391,13 @@ func (provider *GeminiProvider) BatchResults(ctx *schemas.UnifAIContext, keys []
 }
 
 // FileUpload uploads a file to Gemini.
-func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileUploadRequest) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileUploadRequest); err != nil {
 		return nil, err
 	}
 
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("file content is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
 	}
 
 	// Create multipart request
@@ -3407,11 +3407,11 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 	// Add file metadata as JSON
 	metadataField, err := writer.CreateFormField("metadata")
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create metadata field", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create metadata field", err)
 	}
 	metadataJSON, err := providerUtils.SetJSONField([]byte(`{}`), "file.displayName", request.Filename)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to marshal metadata", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to marshal metadata", err)
 	}
 	contentType := ""
 	if request.ContentType != nil {
@@ -3420,11 +3420,11 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 	if contentType != "" {
 		metadataJSON, err = providerUtils.SetJSONField(metadataJSON, "file.mimeType", contentType)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to marshal metadata", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to marshal metadata", err)
 		}
 	}
 	if _, err := metadataField.Write(metadataJSON); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write metadata", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write metadata", err)
 	}
 
 	// Add file content
@@ -3442,14 +3442,14 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 		part, err = writer.CreateFormFile("file", filename)
 	}
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create form file", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write file content", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -3472,10 +3472,10 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -3485,7 +3485,7 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Parse response - wrapped in "file" object
@@ -3493,7 +3493,7 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 		File GeminiFileResponse `json:"file"`
 	}
 	if err := sonic.Unmarshal(body, &responseWrapper); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	geminiResp := responseWrapper.File
@@ -3517,25 +3517,25 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 		}
 	}
 
-	return &schemas.UnifAIFileUploadResponse{
+	return &schemas.RakshaFileUploadResponse{
 		ID:             geminiResp.Name,
 		Object:         "file",
 		Bytes:          sizeBytes,
 		CreatedAt:      createdAt,
 		Filename:       geminiResp.DisplayName,
 		Purpose:        request.Purpose,
-		Status:         ToUnifAIFileStatus(geminiResp.State),
+		Status:         ToRakshaFileStatus(geminiResp.State),
 		StorageBackend: schemas.FileStorageAPI,
 		StorageURI:     geminiResp.URI,
 		ExpiresAt:      expiresAt,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
 // fileListByKey lists files from Gemini for a single key.
-func (provider *GeminiProvider) fileListByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileListRequest) (*schemas.UnifAIFileListResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *GeminiProvider) fileListByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, time.Duration, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3564,10 +3564,10 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.UnifAIContext, key sc
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, latency, unifaiErr
+	if rakshaErr != nil {
+		return nil, latency, rakshaErr
 	}
 
 	// Handle error response
@@ -3577,26 +3577,26 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.UnifAIContext, key sc
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiFileListResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, latency, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	// Convert to UnifAI response
-	unifaiResp := &schemas.UnifAIFileListResponse{
+	// Convert to Raksha response
+	rakshaResp := &schemas.RakshaFileListResponse{
 		Object:  "list",
 		Data:    make([]schemas.FileObject, len(geminiResp.Files)),
 		HasMore: geminiResp.NextPageToken != "",
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 
 	if geminiResp.NextPageToken != "" {
-		unifaiResp.After = &geminiResp.NextPageToken
+		rakshaResp.After = &geminiResp.NextPageToken
 	}
 
 	for i, file := range geminiResp.Files {
@@ -3620,7 +3620,7 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.UnifAIContext, key sc
 			}
 		}
 
-		unifaiResp.Data[i] = schemas.FileObject{
+		rakshaResp.Data[i] = schemas.FileObject{
 			ID:        file.Name,
 			Object:    "file",
 			Bytes:     sizeBytes,
@@ -3628,37 +3628,37 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.UnifAIContext, key sc
 			UpdatedAt: updatedAt,
 			Filename:  file.DisplayName,
 			Purpose:   schemas.FilePurposeVision,
-			Status:    ToUnifAIFileStatus(file.State),
+			Status:    ToRakshaFileStatus(file.State),
 			ExpiresAt: expiresAt,
 		}
 	}
 
-	return unifaiResp, latency, nil
+	return rakshaResp, latency, nil
 }
 
 // FileList lists files from Gemini across all provided keys.
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *GeminiProvider) FileList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileListRequest) (*schemas.UnifAIFileListResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileListRequest); err != nil {
 		return nil, err
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for file list", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for file list", nil)
 	}
 
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIFileListResponse{
+		return &schemas.RakshaFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -3674,9 +3674,9 @@ func (provider *GeminiProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 	}
 
 	// Call the single-key helper
-	resp, latency, unifaiErr := provider.fileListByKey(ctx, key, &modifiedRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	resp, latency, rakshaErr := provider.fileListByKey(ctx, key, &modifiedRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Determine native cursor for next page
@@ -3688,11 +3688,11 @@ func (provider *GeminiProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 	// Build cursor for next request
 	nextCursor, hasMore := helper.BuildNextCursor(resp.HasMore, nativeNextCursor)
 
-	result := &schemas.UnifAIFileListResponse{
+	result := &schemas.RakshaFileListResponse{
 		Object:  "list",
 		Data:    resp.Data,
 		HasMore: hasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -3704,7 +3704,7 @@ func (provider *GeminiProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 }
 
 // fileRetrieveByKey retrieves file metadata from Gemini for a single key.
-func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3727,10 +3727,10 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response
@@ -3740,12 +3740,12 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiFileResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	var sizeBytes int64
@@ -3769,7 +3769,7 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 		}
 	}
 
-	return &schemas.UnifAIFileRetrieveResponse{
+	return &schemas.RakshaFileRetrieveResponse{
 		ID:             geminiResp.Name,
 		Object:         "file",
 		Bytes:          sizeBytes,
@@ -3777,32 +3777,32 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 		UpdatedAt:      updatedAt,
 		Filename:       geminiResp.DisplayName,
 		Purpose:        schemas.FilePurposeVision,
-		Status:         ToUnifAIFileStatus(geminiResp.State),
+		Status:         ToRakshaFileStatus(geminiResp.State),
 		StorageBackend: schemas.FileStorageAPI,
 		StorageURI:     geminiResp.URI,
 		ExpiresAt:      expiresAt,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
 // FileRetrieve retrieves file metadata from Gemini, trying each key until successful.
-func (provider *GeminiProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for file retrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for file retrieve", nil)
 	}
 
 	// Try each key until we find the file
-	var lastError *schemas.UnifAIError
+	var lastError *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.fileRetrieveByKey(ctx, key, request)
 		if err == nil {
@@ -3817,7 +3817,7 @@ func (provider *GeminiProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []
 }
 
 // fileDeleteByKey deletes a file from Gemini for a single key.
-func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3840,10 +3840,10 @@ func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.UnifAIContext, key 
 	}
 
 	// Make request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Handle error response - DELETE returns 200 with empty body on success
@@ -3851,32 +3851,32 @@ func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.UnifAIContext, key 
 		return nil, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
 	}
 
-	return &schemas.UnifAIFileDeleteResponse{
+	return &schemas.RakshaFileDeleteResponse{
 		ID:      request.FileID,
 		Object:  "file",
 		Deleted: true,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
 // FileDelete deletes a file from Gemini, trying each key until successful.
-func (provider *GeminiProvider) FileDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileDeleteRequest); err != nil {
 		return nil, err
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("file_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for file delete", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for file delete", nil)
 	}
 
 	// Try each key until deletion succeeds
-	var lastError *schemas.UnifAIError
+	var lastError *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.fileDeleteByKey(ctx, key, request)
 		if err == nil {
@@ -3893,21 +3893,21 @@ func (provider *GeminiProvider) FileDelete(ctx *schemas.UnifAIContext, keys []sc
 // FileContent downloads file content from Gemini.
 // Note: Gemini Files API doesn't support direct content download.
 // Files are accessed via their URI in API requests.
-func (provider *GeminiProvider) FileContent(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileContentRequest) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileContentRequest); err != nil {
 		return nil, err
 	}
 
 	// Gemini doesn't support direct file content download
 	// Files are referenced by their URI in requests
-	return nil, providerUtils.NewUnifAIOperationError(
+	return nil, providerUtils.NewRakshaOperationError(
 		"Gemini Files API doesn't support direct content download. Use the file URI in your requests instead.",
 		nil,
 	)
 }
 
 // CountTokens performs a token counting request to Gemini's countTokens endpoint.
-func (provider *GeminiProvider) CountTokens(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) CountTokens(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.CountTokensRequest); err != nil {
 		return nil, err
 	}
@@ -3917,25 +3917,25 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 	// This avoids early upstream completion before body upload (which can trigger
 	// proxy broken-pipe 502s when a fronting LB is still forwarding a large body).
 	isLargePayload := false
-	if v, ok := ctx.Value(schemas.UnifAIContextKeyLargePayloadMode).(bool); ok && v {
+	if v, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && v {
 		isLargePayload = true
 	}
 
 	var (
 		jsonData   []byte
-		unifaiErr *schemas.UnifAIError
+		rakshaErr *schemas.RakshaError
 	)
 	if !isLargePayload {
-		// Build JSON body from UnifAI request for normal path.
-		jsonData, unifaiErr = providerUtils.CheckContextAndGetRequestBody(
+		// Build JSON body from Raksha request for normal path.
+		jsonData, rakshaErr = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
 				return ToGeminiResponsesRequest(ctx, request)
 			},
 		)
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
 		jsonData = normalizeRawGenerateContentBody(ctx, jsonData)
@@ -3952,7 +3952,7 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 	defer fasthttp.ReleaseResponse(resp)
 
 	if strings.TrimSpace(request.Model) == "" {
-		return nil, providerUtils.NewUnifAIOperationError("model is required for Gemini count tokens request", fmt.Errorf("missing model"))
+		return nil, providerUtils.NewRakshaOperationError("model is required for Gemini count tokens request", fmt.Errorf("missing model"))
 	}
 
 	// Determine native model name (e.g., parse any provider prefix)
@@ -3971,10 +3971,10 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 		req.SetBody(jsonData)
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// Keep passthrough request mode for countTokens, but fully drain the remaining
 	// client upload before returning. This avoids proxy-layer broken-pipe 502s when
@@ -3990,24 +3990,24 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	responseBody := append([]byte(nil), body...)
 
 	geminiResponse := &GeminiCountTokensResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(
 		responseBody,
 		geminiResponse,
 		jsonData,
 		providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest),
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse),
 	)
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	response := geminiResponse.ToUnifAICountTokensResponse(request.Model)
+	response := geminiResponse.ToRakshaCountTokensResponse(request.Model)
 
 	// Set ExtraFields
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -4024,60 +4024,60 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 }
 
 // Compaction is not supported by the Gemini provider.
-func (provider *GeminiProvider) Compaction(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICompactionRequest) (*schemas.UnifAICompactionResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerCreateRequest) (*schemas.UnifAIContainerCreateResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerListRequest) (*schemas.UnifAIContainerListResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerRetrieveRequest) (*schemas.UnifAIContainerRetrieveResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerDeleteRequest) (*schemas.UnifAIContainerDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerFileCreateRequest) (*schemas.UnifAIContainerFileCreateResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileListRequest) (*schemas.UnifAIContainerFileListResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileRetrieveRequest) (*schemas.UnifAIContainerFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileContent(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileContentRequest) (*schemas.UnifAIContainerFileContentResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileDeleteRequest) (*schemas.UnifAIContainerFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *GeminiProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 func (provider *GeminiProvider) Passthrough(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
-	req *schemas.UnifAIPassthroughRequest,
-) (*schemas.UnifAIPassthroughResponse, *schemas.UnifAIError) {
+	req *schemas.RakshaPassthroughRequest,
+) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.PassthroughRequest); err != nil {
 		return nil, err
 	}
@@ -4108,30 +4108,30 @@ func (provider *GeminiProvider) Passthrough(
 
 	fasthttpReq.SetBody(req.Body)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
 	}
 
-	var passthroughUsage *schemas.UnifAIPassthroughUsage
+	var passthroughUsage *schemas.RakshaPassthroughUsage
 	if resp.StatusCode() >= 200 && resp.StatusCode() < 300 {
 		passthroughUsage = ExtractGeminiPassthroughUsage(req.Path, req.Body, body)
 	}
 
-	unifaiResponse := &schemas.UnifAIPassthroughResponse{
+	rakshaResponse := &schemas.RakshaPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 			PassthroughPath:         req.Path,
@@ -4139,16 +4139,16 @@ func (provider *GeminiProvider) Passthrough(
 		PassthroughUsage: passthroughUsage,
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 func (provider *GeminiProvider) PassthroughStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	req *schemas.UnifAIPassthroughRequest,
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+	req *schemas.RakshaPassthroughRequest,
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.PassthroughStreamRequest); err != nil {
 		return nil, err
 	}
@@ -4189,8 +4189,8 @@ func (provider *GeminiProvider) PassthroughStream(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -4199,18 +4199,18 @@ func (provider *GeminiProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
 
 	bodyStream := resp.BodyStream()
 	if bodyStream == nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			"provider returned an empty stream body",
 			fmt.Errorf("provider returned an empty stream body"),
 		)
@@ -4229,7 +4229,7 @@ func (provider *GeminiProvider) PassthroughStream(
 			UseTerminalDetector: true,
 			Logger:              provider.logger,
 			HasUsage:            HasGeminiPassthroughUsage,
-			Observe: func(event []byte) *schemas.UnifAIPassthroughUsage {
+			Observe: func(event []byte) *schemas.RakshaPassthroughUsage {
 				return ExtractGeminiPassthroughUsage(req.Path, req.Body, event)
 			},
 		},

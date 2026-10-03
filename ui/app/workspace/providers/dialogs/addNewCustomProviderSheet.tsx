@@ -198,7 +198,7 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 											/>
 										</FormControl>
 										<FormDescription>
-											Host only — do not include <code className="text-xs">/v1</code>. UnifAI adds{" "}
+											Host only — do not include <code className="text-xs">/v1</code>. Raksha adds{" "}
 											<code className="text-xs">/v1/models</code>, <code className="text-xs">/v1/chat/completions</code>, etc.
 											Example: <code className="text-xs">https://api.siliconflow.com</code>
 										</FormDescription>

@@ -2,7 +2,7 @@
 
 package starlark
 
-import "github.com/unifai/unifai/core/schemas"
+import "github.com/raksha/raksha/core/schemas"
 
 // noopLogger is a no-op implementation of schemas.Logger used as a fallback
 // when no logger is provided.

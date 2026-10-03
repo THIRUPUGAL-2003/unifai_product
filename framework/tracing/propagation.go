@@ -1,4 +1,4 @@
-// Package tracing provides distributed tracing infrastructure for UnifAI
+// Package tracing provides distributed tracing infrastructure for Raksha
 package tracing
 
 import (

@@ -438,11 +438,11 @@ export interface ListProviderKeysResponse {
 	total: number;
 }
 
-// UnifAIErrorResponse matching Go's schemas.UnifAIError
-export interface UnifAIErrorResponse {
+// RakshaErrorResponse matching Go's schemas.RakshaError
+export interface RakshaErrorResponse {
 	event_id?: string;
 	type?: string;
-	is_unifai_error: boolean;
+	is_raksha_error: boolean;
 	status_code?: number;
 	error: {
 		message: string;
@@ -527,7 +527,7 @@ export interface RestartRequiredConfig {
 	reason?: string;
 }
 
-// UnifAI Config
+// Raksha Config
 export type PluginSpanFilterMode = "include" | "exclude";
 
 export interface PluginSpanFilter {
@@ -535,7 +535,7 @@ export interface PluginSpanFilter {
 	plugins: string[];
 }
 
-export interface UnifAIConfig {
+export interface RakshaConfig {
 	client_config: CoreConfig;
 	framework_config: FrameworkConfig;
 	auth_config?: AuthConfig;
@@ -568,7 +568,7 @@ export interface CompatConfig {
 	should_convert_params: boolean;
 }
 
-// Core UnifAI configuration types
+// Core Raksha configuration types
 export interface CoreConfig {
 	drop_excess_requests: boolean;
 	initial_pool_size: number;

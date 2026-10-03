@@ -1,10 +1,10 @@
 package vertex
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-func (resp *VertexCountTokensResponse) ToUnifAICountTokensResponse(model string) *schemas.UnifAICountTokensResponse {
+func (resp *VertexCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -17,7 +17,7 @@ func (resp *VertexCountTokensResponse) ToUnifAICountTokensResponse(model string)
 		inputDetails.CachedReadTokens = int(resp.CachedContentTokenCount)
 	}
 
-	return &schemas.UnifAICountTokensResponse{
+	return &schemas.RakshaCountTokensResponse{
 		Model:              model,
 		Object:             "response.input_tokens",
 		InputTokens:        inputTokens,

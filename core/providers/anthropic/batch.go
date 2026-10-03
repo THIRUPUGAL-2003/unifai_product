@@ -3,7 +3,7 @@ package anthropic
 import (
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // Anthropic Batch API Types
@@ -90,8 +90,8 @@ type AnthropicBatchError struct {
 	Message string `json:"message"`
 }
 
-// ToUnifAIBatchStatus converts Anthropic processing_status to UnifAI status.
-func ToUnifAIBatchStatus(status string) schemas.BatchStatus {
+// ToRakshaBatchStatus converts Anthropic processing_status to Raksha status.
+func ToRakshaBatchStatus(status string) schemas.BatchStatus {
 	switch status {
 	case "in_progress":
 		return schemas.BatchStatusInProgress
@@ -116,8 +116,8 @@ func parseAnthropicTimestamp(timestamp string) int64 {
 	return t.Unix()
 }
 
-// ToUnifAIObjectType converts Anthropic type to UnifAI object type.
-func ToUnifAIObjectType(anthropicType string) string {
+// ToRakshaObjectType converts Anthropic type to Raksha object type.
+func ToRakshaObjectType(anthropicType string) string {
 	switch anthropicType {
 	case "message_batch":
 		return "batch"
@@ -126,18 +126,18 @@ func ToUnifAIObjectType(anthropicType string) string {
 	}
 }
 
-// ToUnifAIBatchCreateResponse converts Anthropic batch response to UnifAI batch create response.
-func (r *AnthropicBatchResponse) ToUnifAIBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIBatchCreateResponse {
+// ToRakshaBatchCreateResponse converts Anthropic batch response to Raksha batch create response.
+func (r *AnthropicBatchResponse) ToRakshaBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchCreateResponse {
 	expiresAt := parseAnthropicTimestamp(r.ExpiresAt)
-	resp := &schemas.UnifAIBatchCreateResponse{
+	resp := &schemas.RakshaBatchCreateResponse{
 		ID:               r.ID,
-		Object:           ToUnifAIObjectType(r.Type),
-		Status:           ToUnifAIBatchStatus(r.ProcessingStatus),
+		Object:           ToRakshaObjectType(r.Type),
+		Status:           ToRakshaBatchStatus(r.ProcessingStatus),
 		ProcessingStatus: &r.ProcessingStatus,
 		ResultsURL:       r.ResultsURL,
 		CreatedAt:        parseAnthropicTimestamp(r.CreatedAt),
 		ExpiresAt:        &expiresAt,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -165,16 +165,16 @@ func (r *AnthropicBatchResponse) ToUnifAIBatchCreateResponse(latency time.Durati
 	return resp
 }
 
-// ToUnifAIBatchRetrieveResponse converts Anthropic batch response to UnifAI batch retrieve response.
-func (r *AnthropicBatchResponse) ToUnifAIBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIBatchRetrieveResponse {
-	resp := &schemas.UnifAIBatchRetrieveResponse{
+// ToRakshaBatchRetrieveResponse converts Anthropic batch response to Raksha batch retrieve response.
+func (r *AnthropicBatchResponse) ToRakshaBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchRetrieveResponse {
+	resp := &schemas.RakshaBatchRetrieveResponse{
 		ID:               r.ID,
-		Object:           ToUnifAIObjectType(r.Type),
-		Status:           ToUnifAIBatchStatus(r.ProcessingStatus),
+		Object:           ToRakshaObjectType(r.Type),
+		Status:           ToRakshaBatchStatus(r.ProcessingStatus),
 		ProcessingStatus: &r.ProcessingStatus,
 		ResultsURL:       r.ResultsURL,
 		CreatedAt:        parseAnthropicTimestamp(r.CreatedAt),
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -222,8 +222,8 @@ func (r *AnthropicBatchResponse) ToUnifAIBatchRetrieveResponse(latency time.Dura
 	return resp
 }
 
-// ToAnthropicBatchCreateResponse converts a UnifAI batch create response to Anthropic format.
-func ToAnthropicBatchCreateResponse(resp *schemas.UnifAIBatchCreateResponse) *AnthropicBatchResponse {
+// ToAnthropicBatchCreateResponse converts a Raksha batch create response to Anthropic format.
+func ToAnthropicBatchCreateResponse(resp *schemas.RakshaBatchCreateResponse) *AnthropicBatchResponse {
 	result := &AnthropicBatchResponse{
 		ID:               resp.ID,
 		Type:             "message_batch",
@@ -250,8 +250,8 @@ func ToAnthropicBatchCreateResponse(resp *schemas.UnifAIBatchCreateResponse) *An
 	return result
 }
 
-// ToAnthropicBatchListResponse converts a UnifAI batch list response to Anthropic format.
-func ToAnthropicBatchListResponse(resp *schemas.UnifAIBatchListResponse) *AnthropicBatchListResponse {
+// ToAnthropicBatchListResponse converts a Raksha batch list response to Anthropic format.
+func ToAnthropicBatchListResponse(resp *schemas.RakshaBatchListResponse) *AnthropicBatchListResponse {
 	result := &AnthropicBatchListResponse{
 		Data:    make([]AnthropicBatchResponse, len(resp.Data)),
 		HasMore: resp.HasMore,
@@ -266,8 +266,8 @@ func ToAnthropicBatchListResponse(resp *schemas.UnifAIBatchListResponse) *Anthro
 	return result
 }
 
-// ToAnthropicBatchRetrieveResponse converts a UnifAI batch retrieve response to Anthropic format.
-func ToAnthropicBatchRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse) *AnthropicBatchResponse {
+// ToAnthropicBatchRetrieveResponse converts a Raksha batch retrieve response to Anthropic format.
+func ToAnthropicBatchRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *AnthropicBatchResponse {
 	result := &AnthropicBatchResponse{
 		ID:               resp.ID,
 		Type:             "message_batch",
@@ -308,8 +308,8 @@ func ToAnthropicBatchRetrieveResponse(resp *schemas.UnifAIBatchRetrieveResponse)
 	return result
 }
 
-// ToAnthropicBatchCancelResponse converts a UnifAI batch cancel response to Anthropic format.
-func ToAnthropicBatchCancelResponse(resp *schemas.UnifAIBatchCancelResponse) *AnthropicBatchResponse {
+// ToAnthropicBatchCancelResponse converts a Raksha batch cancel response to Anthropic format.
+func ToAnthropicBatchCancelResponse(resp *schemas.RakshaBatchCancelResponse) *AnthropicBatchResponse {
 	result := &AnthropicBatchResponse{
 		ID:               resp.ID,
 		Type:             "message_batch",
@@ -334,7 +334,7 @@ func ToAnthropicBatchCancelResponse(resp *schemas.UnifAIBatchCancelResponse) *An
 	return result
 }
 
-// toAnthropicProcessingStatus converts UnifAI batch status to Anthropic processing_status.
+// toAnthropicProcessingStatus converts Raksha batch status to Anthropic processing_status.
 func toAnthropicProcessingStatus(status schemas.BatchStatus) string {
 	switch status {
 	case schemas.BatchStatusInProgress:

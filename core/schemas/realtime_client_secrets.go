@@ -8,7 +8,7 @@ import (
 
 // ParseRealtimeClientSecretBody parses a realtime client-secret request body
 // into a mutable raw JSON map while preserving unknown fields.
-func ParseRealtimeClientSecretBody(raw json.RawMessage) (map[string]json.RawMessage, *UnifAIError) {
+func ParseRealtimeClientSecretBody(raw json.RawMessage) (map[string]json.RawMessage, *RakshaError) {
 	var root map[string]json.RawMessage
 	if err := Unmarshal(raw, &root); err != nil {
 		return nil, NewRealtimeClientSecretBodyError(400, "invalid_request_error", "invalid JSON body", err)
@@ -18,7 +18,7 @@ func ParseRealtimeClientSecretBody(raw json.RawMessage) (map[string]json.RawMess
 
 // ExtractRealtimeClientSecretModel extracts the model from either session.model
 // or the legacy top-level model field.
-func ExtractRealtimeClientSecretModel(root map[string]json.RawMessage) (string, *UnifAIError) {
+func ExtractRealtimeClientSecretModel(root map[string]json.RawMessage) (string, *RakshaError) {
 	if sessionJSON, ok := root["session"]; ok && len(sessionJSON) > 0 && !bytes.Equal(sessionJSON, []byte("null")) {
 		var session map[string]json.RawMessage
 		if err := Unmarshal(sessionJSON, &session); err != nil {
@@ -50,16 +50,16 @@ func ExtractRealtimeClientSecretModel(root map[string]json.RawMessage) (string, 
 
 // NewRealtimeClientSecretBodyError builds a standard invalid-request style error
 // for HTTP realtime client-secret request parsing/validation.
-func NewRealtimeClientSecretBodyError(status int, errorType, message string, err error) *UnifAIError {
-	return &UnifAIError{
-		IsUnifAIError: false,
+func NewRealtimeClientSecretBodyError(status int, errorType, message string, err error) *RakshaError {
+	return &RakshaError{
+		IsRakshaError: false,
 		StatusCode:     Ptr(status),
 		Error: &ErrorField{
 			Type:    Ptr(errorType),
 			Message: message,
 			Error:   err,
 		},
-		ExtraFields: UnifAIErrorExtraFields{
+		ExtraFields: RakshaErrorExtraFields{
 			RequestType: RealtimeRequest,
 		},
 	}

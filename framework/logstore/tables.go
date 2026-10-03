@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore/tables"
 
 	"gorm.io/gorm"
 )
@@ -168,7 +168,7 @@ type Log struct {
 	ResponsesOutput         string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.ResponsesMessage
 	EmbeddingOutput         string    `gorm:"type:text" json:"-"` // JSON serialized [][]float32
 	RerankOutput            string    `gorm:"type:text" json:"-"` // JSON serialized []schemas.RerankResult
-	OCROutput               string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAIOCRResponse
+	OCROutput               string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaOCRResponse
 	Params                  string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.ModelParameters
 	Tools                   string    `gorm:"type:text" json:"-"` // JSON serialized []schemas.Tool
 	ToolCalls               string    `gorm:"type:text" json:"-"` // JSON serialized []schemas.ToolCall (For backward compatibility, tool calls are now in the content)
@@ -179,22 +179,22 @@ type Log struct {
 	ImageEditInput          string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.ImageEditInput
 	ImageVariationInput     string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.ImageVariationInput
 	VideoGenerationInput    string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.VideoGenerationInput
-	SpeechOutput            string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAISpeech
-	TranscriptionOutput     string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAITranscribe
-	ImageGenerationOutput   string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAIImageGenerationResponse
+	SpeechOutput            string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaSpeech
+	TranscriptionOutput     string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaTranscribe
+	ImageGenerationOutput   string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaImageGenerationResponse
 	ListModelsOutput        string    `gorm:"type:text" json:"-"` // JSON serialized []schemas.Model
-	VideoGenerationOutput   string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAIVideoGenerationResponse
-	VideoRetrieveOutput     string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAIVideoRetrieveResponse
-	VideoDownloadOutput     string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAIVideoDownloadResponse
-	VideoListOutput         string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAIVideoListResponse
-	VideoDeleteOutput       string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAIVideoDeleteResponse
-	CacheDebug              string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.UnifAICacheDebug
+	VideoGenerationOutput   string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaVideoGenerationResponse
+	VideoRetrieveOutput     string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaVideoRetrieveResponse
+	VideoDownloadOutput     string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaVideoDownloadResponse
+	VideoListOutput         string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaVideoListResponse
+	VideoDeleteOutput       string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaVideoDeleteResponse
+	CacheDebug              string    `gorm:"type:text" json:"-"` // JSON serialized *schemas.RakshaCacheDebug
 	Latency                 *float64  `gorm:"index:idx_logs_latency" json:"latency,omitempty"`
 	TokenUsage              string    `gorm:"type:text" json:"-"`                                                                         // JSON serialized *schemas.LLMUsage
 	Cost                    *float64  `gorm:"index" json:"cost,omitempty"`                                                                // Cost in dollars (total cost of the request - includes cache lookup cost)
 	Status                  string    `gorm:"type:varchar(50);index;index:idx_logs_ts_provider_status,priority:3;not null" json:"status"` // "processing", "success", or "error"
 	StopReason              *string   `gorm:"type:varchar(50);index:idx_logs_stop_reason" json:"stop_reason,omitempty"`                   // Why the model stopped: "stop", "length", "content_filter", "tool_calls", etc.
-	ErrorDetails            string    `gorm:"type:text" json:"-"`                                                                         // JSON serialized *schemas.UnifAIError
+	ErrorDetails            string    `gorm:"type:text" json:"-"`                                                                         // JSON serialized *schemas.RakshaError
 	Stream                  bool      `gorm:"default:false" json:"stream"`                                                                // true if this was a streaming response
 	ContentSummary          string    `gorm:"type:text" json:"content_summary,omitempty"`                                                 // Last user message preview; UI log-list display fallback when payload fields are offloaded to object storage
 	RawRequest              string    `gorm:"type:text" json:"raw_request"`                                                               // Populated when `send-back-raw-request` is on
@@ -230,30 +230,30 @@ type Log struct {
 	ResponsesOutputParsed       []schemas.ResponsesMessage              `gorm:"-" json:"responses_output,omitempty"`
 	EmbeddingOutputParsed       []schemas.EmbeddingData                 `gorm:"-" json:"embedding_output,omitempty"`
 	RerankOutputParsed          []schemas.RerankResult                  `gorm:"-" json:"rerank_output,omitempty"`
-	OCROutputParsed             *schemas.UnifAIOCRResponse             `gorm:"-" json:"ocr_output,omitempty"`
+	OCROutputParsed             *schemas.RakshaOCRResponse             `gorm:"-" json:"ocr_output,omitempty"`
 	ParamsParsed                interface{}                             `gorm:"-" json:"params,omitempty"`
 	ToolsParsed                 []schemas.ChatTool                      `gorm:"-" json:"tools,omitempty"`
 	ToolCallsParsed             []schemas.ChatAssistantMessageToolCall  `gorm:"-" json:"tool_calls,omitempty"` // For backward compatibility, tool calls are now in the content
-	TokenUsageParsed            *schemas.UnifAILLMUsage                `gorm:"-" json:"token_usage,omitempty"`
-	ErrorDetailsParsed          *schemas.UnifAIError                   `gorm:"-" json:"error_details,omitempty"`
+	TokenUsageParsed            *schemas.RakshaLLMUsage                `gorm:"-" json:"token_usage,omitempty"`
+	ErrorDetailsParsed          *schemas.RakshaError                   `gorm:"-" json:"error_details,omitempty"`
 	SpeechInputParsed           *schemas.SpeechInput                    `gorm:"-" json:"speech_input,omitempty"`
 	TranscriptionInputParsed    *schemas.TranscriptionInput             `gorm:"-" json:"transcription_input,omitempty"`
 	OCRInputParsed              *schemas.OCRDocument                    `gorm:"-" json:"ocr_input,omitempty"`
 	ImageGenerationInputParsed  *schemas.ImageGenerationInput           `gorm:"-" json:"image_generation_input,omitempty"`
 	ImageEditInputParsed        *schemas.ImageEditInput                 `gorm:"-" json:"image_edit_input,omitempty"`
 	ImageVariationInputParsed   *schemas.ImageVariationInput            `gorm:"-" json:"image_variation_input,omitempty"`
-	SpeechOutputParsed          *schemas.UnifAISpeechResponse          `gorm:"-" json:"speech_output,omitempty"`
-	TranscriptionOutputParsed   *schemas.UnifAITranscriptionResponse   `gorm:"-" json:"transcription_output,omitempty"`
-	ImageGenerationOutputParsed *schemas.UnifAIImageGenerationResponse `gorm:"-" json:"image_generation_output,omitempty"`
-	CacheDebugParsed            *schemas.UnifAICacheDebug              `gorm:"-" json:"cache_debug,omitempty"`
+	SpeechOutputParsed          *schemas.RakshaSpeechResponse          `gorm:"-" json:"speech_output,omitempty"`
+	TranscriptionOutputParsed   *schemas.RakshaTranscriptionResponse   `gorm:"-" json:"transcription_output,omitempty"`
+	ImageGenerationOutputParsed *schemas.RakshaImageGenerationResponse `gorm:"-" json:"image_generation_output,omitempty"`
+	CacheDebugParsed            *schemas.RakshaCacheDebug              `gorm:"-" json:"cache_debug,omitempty"`
 	ListModelsOutputParsed      []schemas.Model                         `gorm:"-" json:"list_models_output,omitempty"`
 	MetadataParsed              map[string]interface{}                  `gorm:"-" json:"metadata,omitempty"`
 	VideoGenerationInputParsed  *schemas.VideoGenerationInput           `gorm:"-" json:"video_generation_input,omitempty"`
-	VideoGenerationOutputParsed *schemas.UnifAIVideoGenerationResponse `gorm:"-" json:"video_generation_output,omitempty"`
-	VideoRetrieveOutputParsed   *schemas.UnifAIVideoGenerationResponse `gorm:"-" json:"video_retrieve_output,omitempty"`
-	VideoDownloadOutputParsed   *schemas.UnifAIVideoDownloadResponse   `gorm:"-" json:"video_download_output,omitempty"`
-	VideoListOutputParsed       *schemas.UnifAIVideoListResponse       `gorm:"-" json:"video_list_output,omitempty"`
-	VideoDeleteOutputParsed     *schemas.UnifAIVideoDeleteResponse     `gorm:"-" json:"video_delete_output,omitempty"`
+	VideoGenerationOutputParsed *schemas.RakshaVideoGenerationResponse `gorm:"-" json:"video_generation_output,omitempty"`
+	VideoRetrieveOutputParsed   *schemas.RakshaVideoGenerationResponse `gorm:"-" json:"video_retrieve_output,omitempty"`
+	VideoDownloadOutputParsed   *schemas.RakshaVideoDownloadResponse   `gorm:"-" json:"video_download_output,omitempty"`
+	VideoListOutputParsed       *schemas.RakshaVideoListResponse       `gorm:"-" json:"video_list_output,omitempty"`
+	VideoDeleteOutputParsed     *schemas.RakshaVideoDeleteResponse     `gorm:"-" json:"video_delete_output,omitempty"`
 	AttemptTrailParsed          []schemas.KeyAttemptRecord              `gorm:"-" json:"attempt_trail,omitempty"`
 	BudgetIDsParsed             []string                                `gorm:"-" json:"budget_ids,omitempty"`
 	RateLimitIDsParsed          []string                                `gorm:"-" json:"rate_limit_ids,omitempty"`
@@ -921,7 +921,7 @@ func (l *Log) DeserializeFields() error {
 	// is denormalized; richer details (e.g. completion_tokens_details) live solely in the
 	// offloaded payload and are restored on detail reads that hydrate from object storage.
 	if l.TokenUsage == "" && l.TokenUsageParsed == nil && (l.PromptTokens != 0 || l.CompletionTokens != 0 || l.TotalTokens != 0) {
-		usage := &schemas.UnifAILLMUsage{
+		usage := &schemas.RakshaLLMUsage{
 			PromptTokens:     l.PromptTokens,
 			CompletionTokens: l.CompletionTokens,
 			TotalTokens:      l.TotalTokens,
@@ -954,7 +954,7 @@ type MCPToolLog struct {
 	BusinessUnitID *string   `gorm:"type:varchar(255);index:idx_mcp_logs_business_unit_id" json:"business_unit_id"`
 	Arguments      string    `gorm:"type:text" json:"-"`                                                // JSON serialized tool arguments
 	Result         string    `gorm:"type:text" json:"-"`                                                // JSON serialized tool result
-	ErrorDetails   string    `gorm:"type:text" json:"-"`                                                // JSON serialized *schemas.UnifAIError
+	ErrorDetails   string    `gorm:"type:text" json:"-"`                                                // JSON serialized *schemas.RakshaError
 	Latency        *float64  `gorm:"index:idx_mcp_logs_latency" json:"latency,omitempty"`               // Execution time in milliseconds
 	Cost           *float64  `gorm:"index:idx_mcp_logs_cost" json:"cost,omitempty"`                     // Cost in dollars (per execution cost)
 	Status         string    `gorm:"type:varchar(50);index:idx_mcp_logs_status;not null" json:"status"` // "processing", "success", or "error"
@@ -965,7 +965,7 @@ type MCPToolLog struct {
 	// Virtual fields for JSON output - populated when needed
 	ArgumentsParsed    interface{}             `gorm:"-" json:"arguments,omitempty"`
 	ResultParsed       interface{}             `gorm:"-" json:"result,omitempty"`
-	ErrorDetailsParsed *schemas.UnifAIError   `gorm:"-" json:"error_details,omitempty"`
+	ErrorDetailsParsed *schemas.RakshaError   `gorm:"-" json:"error_details,omitempty"`
 	MetadataParsed     map[string]interface{}  `gorm:"-" json:"metadata,omitempty"`
 	VirtualKey         *tables.TableVirtualKey `gorm:"-" json:"virtual_key,omitempty"`
 }
@@ -1096,52 +1096,52 @@ func (j *AsyncJob) ToResponse() *schemas.AsyncJobResponse {
 	if j.Response != "" {
 		switch j.RequestType {
 		case schemas.ResponsesRequest, schemas.ResponsesStreamRequest:
-			var result schemas.UnifAIResponsesResponse
+			var result schemas.RakshaResponsesResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.ChatCompletionRequest, schemas.ChatCompletionStreamRequest:
-			var result schemas.UnifAIChatResponse
+			var result schemas.RakshaChatResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.TextCompletionRequest, schemas.TextCompletionStreamRequest:
-			var result schemas.UnifAITextCompletionResponse
+			var result schemas.RakshaTextCompletionResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.EmbeddingRequest:
-			var result schemas.UnifAIEmbeddingResponse
+			var result schemas.RakshaEmbeddingResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.SpeechRequest, schemas.SpeechStreamRequest:
-			var result schemas.UnifAISpeechResponse
+			var result schemas.RakshaSpeechResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.TranscriptionRequest, schemas.TranscriptionStreamRequest:
-			var result schemas.UnifAITranscriptionResponse
+			var result schemas.RakshaTranscriptionResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest:
-			var result schemas.UnifAIImageGenerationResponse
+			var result schemas.RakshaImageGenerationResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.ImageEditRequest, schemas.ImageEditStreamRequest:
-			var result schemas.UnifAIImageGenerationResponse
+			var result schemas.RakshaImageGenerationResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.ImageVariationRequest:
-			var result schemas.UnifAIImageGenerationResponse
+			var result schemas.RakshaImageGenerationResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
 		case schemas.CountTokensRequest:
-			var result schemas.UnifAICountTokensResponse
+			var result schemas.RakshaCountTokensResponse
 			if err := sonic.Unmarshal([]byte(j.Response), &result); err == nil {
 				resp.Result = &result
 			}
@@ -1161,9 +1161,9 @@ func (j *AsyncJob) ToResponse() *schemas.AsyncJobResponse {
 	}
 
 	if j.Error != "" {
-		var unifaiErr schemas.UnifAIError
-		if err := sonic.Unmarshal([]byte(j.Error), &unifaiErr); err == nil {
-			resp.Error = &unifaiErr
+		var rakshaErr schemas.RakshaError
+		if err := sonic.Unmarshal([]byte(j.Error), &rakshaErr); err == nil {
+			resp.Error = &rakshaErr
 		}
 	}
 

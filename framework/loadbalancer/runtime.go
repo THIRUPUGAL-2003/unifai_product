@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore"
 )
 
 // Config is the adaptive load balancer workspace setting.

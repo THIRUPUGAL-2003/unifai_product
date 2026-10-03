@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	openai "github.com/unifai/unifai/core/providers/openai"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	openai "github.com/raksha/raksha/core/providers/openai"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // isMantleModel reports whether a model should be routed via the Bedrock Mantle
@@ -22,7 +22,7 @@ import (
 // Deprecated: in-provider Bedrock Mantle routing is retained for backwards compatibility.
 // New configurations should use the "bedrock_mantle" provider, which owns the Bedrock Mantle
 // surface (Claude native-Anthropic, OpenAI-compatible, and Gemma).
-func isMantleModel(ctx *schemas.UnifAIContext, model string) bool {
+func isMantleModel(ctx *schemas.RakshaContext, model string) bool {
 	return schemas.IsOpenAIModelFamily(ctx, model) || strings.Contains(model, "gemma-4")
 }
 
@@ -46,13 +46,13 @@ func mantleOpenAIURL(region, model, path string) string {
 // are added to the canonical request before signing so the signature covers them (AWS requires
 // every x-amz-* header on the wire to be signed, otherwise verification fails).
 func SignMantleV4Headers(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	jsonData []byte,
 	requestURL, accept string,
 	key schemas.Key,
 	region string,
 	extraHeaders map[string]string,
-) (map[string]string, *schemas.UnifAIError) {
+) (map[string]string, *schemas.RakshaError) {
 	method := http.MethodPost
 	if jsonData == nil {
 		method = http.MethodGet
@@ -64,7 +64,7 @@ func SignMantleV4Headers(
 
 	req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create signing request", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create signing request", err)
 	}
 	req.Header.Set("Accept", accept)
 	for k, v := range extraHeaders {
@@ -87,8 +87,8 @@ func SignMantleV4Headers(
 			RoleSessionName: key.BedrockMantleKeyConfig.RoleSessionName,
 		}
 	}
-	if unifaiErr := signAWSRequest(ctx, req, keyCfg, region, bedrockMantleSigningService); unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr := signAWSRequest(ctx, req, keyCfg, region, bedrockMantleSigningService); rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	// Return the headers exactly as signed: signAWSRequest defaults an empty Accept/Content-Type
 	// to "application/json" and includes them in SignedHeaders, so the caller must send those same
@@ -109,10 +109,10 @@ func SignMantleV4Headers(
 // mantleChatCompletions handles non-streaming chat completions for mantle models (gpt-*
 // and Gemma 4) via the Bedrock Mantle OpenAI-compatible endpoint.
 func (provider *BedrockProvider) mantleChatCompletions(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
-	request *schemas.UnifAIChatRequest,
-) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+	request *schemas.RakshaChatRequest,
+) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	region := resolveBedrockRegion(ctx, key, request.Model)
 	url := mantleOpenAIURL(region, schemas.ResolveCanonicalModel(ctx, request.Model), "chat/completions")
 
@@ -120,7 +120,7 @@ func (provider *BedrockProvider) mantleChatCompletions(
 	// Bearer (key has a value): no signer; auth flows through the Authorization header.
 	var signer providerUtils.BodySigner
 	if key.Value.GetValue() == "" {
-		signer = func(body []byte) (map[string]string, *schemas.UnifAIError) {
+		signer = func(body []byte) (map[string]string, *schemas.RakshaError) {
 			return SignMantleV4Headers(ctx, body, url, "application/json", key, region, provider.networkConfig.ExtraHeaders)
 		}
 	}
@@ -145,12 +145,12 @@ func (provider *BedrockProvider) mantleChatCompletions(
 // mantleChatCompletionsStream handles streaming chat completions for mantle models (gpt-*
 // and Gemma 4) via the Bedrock Mantle OpenAI-compatible endpoint.
 func (provider *BedrockProvider) mantleChatCompletionsStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	request *schemas.UnifAIChatRequest,
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+	request *schemas.RakshaChatRequest,
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	region := resolveBedrockRegion(ctx, key, request.Model)
 	url := mantleOpenAIURL(region, schemas.ResolveCanonicalModel(ctx, request.Model), "chat/completions")
 
@@ -158,7 +158,7 @@ func (provider *BedrockProvider) mantleChatCompletionsStream(
 	// Bearer (key has a value): no signer; auth flows through the Authorization header.
 	var signer providerUtils.BodySigner
 	if key.Value.GetValue() == "" {
-		signer = func(body []byte) (map[string]string, *schemas.UnifAIError) {
+		signer = func(body []byte) (map[string]string, *schemas.RakshaError) {
 			return SignMantleV4Headers(ctx, body, url, "text/event-stream", key, region, provider.networkConfig.ExtraHeaders)
 		}
 	}
@@ -184,10 +184,10 @@ func (provider *BedrockProvider) mantleChatCompletionsStream(
 // mantleResponses handles non-streaming Responses API requests for mantle models (gpt-*
 // and Gemma 4) via the Bedrock Mantle OpenAI-compatible endpoint.
 func (provider *BedrockProvider) mantleResponses(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
-	request *schemas.UnifAIResponsesRequest,
-) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+	request *schemas.RakshaResponsesRequest,
+) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	region := resolveBedrockRegion(ctx, key, request.Model)
 	url := mantleOpenAIURL(region, schemas.ResolveCanonicalModel(ctx, request.Model), "responses")
 
@@ -195,7 +195,7 @@ func (provider *BedrockProvider) mantleResponses(
 	// Bearer (key has a value): no signer; auth flows through the Authorization header.
 	var signer providerUtils.BodySigner
 	if key.Value.GetValue() == "" {
-		signer = func(body []byte) (map[string]string, *schemas.UnifAIError) {
+		signer = func(body []byte) (map[string]string, *schemas.RakshaError) {
 			return SignMantleV4Headers(ctx, body, url, "application/json", key, region, provider.networkConfig.ExtraHeaders)
 		}
 	}
@@ -220,12 +220,12 @@ func (provider *BedrockProvider) mantleResponses(
 // mantleResponsesStream handles streaming Responses API requests for mantle models (gpt-*
 // and Gemma 4) via the Bedrock Mantle OpenAI-compatible endpoint.
 func (provider *BedrockProvider) mantleResponsesStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	request *schemas.UnifAIResponsesRequest,
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+	request *schemas.RakshaResponsesRequest,
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	region := resolveBedrockRegion(ctx, key, request.Model)
 	url := mantleOpenAIURL(region, schemas.ResolveCanonicalModel(ctx, request.Model), "responses")
 
@@ -233,7 +233,7 @@ func (provider *BedrockProvider) mantleResponsesStream(
 	// Bearer (key has a value): no signer; auth flows through the Authorization header.
 	var signer providerUtils.BodySigner
 	if key.Value.GetValue() == "" {
-		signer = func(body []byte) (map[string]string, *schemas.UnifAIError) {
+		signer = func(body []byte) (map[string]string, *schemas.RakshaError) {
 			return SignMantleV4Headers(ctx, body, url, "text/event-stream", key, region, provider.networkConfig.ExtraHeaders)
 		}
 	}

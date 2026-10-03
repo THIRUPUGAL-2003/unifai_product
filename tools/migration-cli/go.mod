@@ -1,4 +1,4 @@
-module github.com/unifai/unifai/scripts/unifai-migration-cli
+module github.com/raksha/raksha/scripts/raksha-migration-cli
 
 go 1.26.4
 

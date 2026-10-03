@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // BasicRerankExpectations validates common rerank invariants for provider tests.
-func BasicRerankExpectations(t *testing.T, rerankResponse *schemas.UnifAIRerankResponse, documents []schemas.RerankDocument) {
+func BasicRerankExpectations(t *testing.T, rerankResponse *schemas.RakshaRerankResponse, documents []schemas.RerankDocument) {
 	t.Helper()
 
 	if rerankResponse == nil {
@@ -57,7 +57,7 @@ func BasicRerankExpectations(t *testing.T, rerankResponse *schemas.UnifAIRerankR
 }
 
 // RunRerankTest executes the rerank test scenario
-func RunRerankTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunRerankTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Rerank {
 		t.Logf("Rerank not supported for provider %s", testConfig.Provider)
 		return
@@ -81,22 +81,22 @@ func RunRerankTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, tes
 			{Text: "France is a country in Western Europe."},
 		}
 
-		request := &schemas.UnifAIRerankRequest{
+		request := &schemas.RakshaRerankRequest{
 			Provider:  testConfig.Provider,
 			Model:     testConfig.RerankModel,
 			Query:     query,
 			Documents: documents,
 			Params: &schemas.RerankParameters{
-				ReturnDocuments: unifai.Ptr(true),
+				ReturnDocuments: raksha.Ptr(true),
 			},
 			Fallbacks: testConfig.RerankFallbacks,
 		}
 
-		bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-		rerankResponse, unifaiErr := client.RerankRequest(bfCtx, request)
+		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		rerankResponse, rakshaErr := client.RerankRequest(bfCtx, request)
 
-		if unifaiErr != nil {
-			t.Fatalf("❌ Rerank request failed: %v", GetErrorMessage(unifaiErr))
+		if rakshaErr != nil {
+			t.Fatalf("❌ Rerank request failed: %v", GetErrorMessage(rakshaErr))
 		}
 
 		if rerankResponse == nil {

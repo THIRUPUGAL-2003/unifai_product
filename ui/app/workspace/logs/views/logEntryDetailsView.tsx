@@ -39,7 +39,7 @@ export default function LogEntryDetailsView(props: Props) {
 						"text-end": props.align === "right",
 					})}
 				>
-					<div className="text-unifai-gray-300 flex-1 text-sm break-all">
+					<div className="text-raksha-gray-300 flex-1 text-sm break-all">
 						{typeof props.value === "boolean" ? String(props.value) : props.value}
 					</div>
 				</div>

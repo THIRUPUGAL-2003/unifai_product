@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // =============================================================================
@@ -351,7 +351,7 @@ func filterAvailableProviders(providers []ProviderConfig, t *testing.T) []Provid
 
 // OpenAIJudge evaluates responses using OpenAI
 type OpenAIJudge struct {
-	client     *unifai.UnifAI
+	client     *raksha.Raksha
 	judgeModel string
 	logger     *testing.T
 }
@@ -379,7 +379,7 @@ type EvaluationResult struct {
 }
 
 // NewOpenAIJudge creates a new judge instance
-func NewOpenAIJudge(client *unifai.UnifAI, judgeModel string, t *testing.T) *OpenAIJudge {
+func NewOpenAIJudge(client *raksha.Raksha, judgeModel string, t *testing.T) *OpenAIJudge {
 	return &OpenAIJudge{
 		client:     client,
 		judgeModel: judgeModel,
@@ -388,7 +388,7 @@ func NewOpenAIJudge(client *unifai.UnifAI, judgeModel string, t *testing.T) *Ope
 }
 
 // EvaluateResponse judges an LLM response
-func (judge *OpenAIJudge) EvaluateResponse(ctx *schemas.UnifAIContext, evaluation EvaluationRequest) (*EvaluationResult, error) {
+func (judge *OpenAIJudge) EvaluateResponse(ctx *schemas.RakshaContext, evaluation EvaluationRequest) (*EvaluationResult, error) {
 	prompt := fmt.Sprintf(`You are an expert AI system evaluator. Evaluate this LLM response.
 
 SCENARIO: %s
@@ -425,15 +425,15 @@ Respond with JSON:
 		evaluation.Criteria.MustContainKeywords, evaluation.Criteria.MustNotContainWords,
 		evaluation.Criteria.ExpectedToolCalls, evaluation.Criteria.QualityThreshold)
 
-	request := &schemas.UnifAIChatRequest{
+	request := &schemas.RakshaChatRequest{
 		Provider: schemas.OpenAI,
 		Model:    judge.judgeModel,
 		Input: []schemas.ChatMessage{
 			CreateBasicChatMessage(prompt),
 		},
 		Params: &schemas.ChatParameters{
-			MaxCompletionTokens: unifai.Ptr(600),
-			Temperature:         unifai.Ptr(0.1),
+			MaxCompletionTokens: raksha.Ptr(600),
+			Temperature:         raksha.Ptr(0.1),
 		},
 	}
 
@@ -498,7 +498,7 @@ func parseJudgeResponse(content string, result *EvaluationResult) error {
 
 // OpenAIConversationDriver generates followup messages
 type OpenAIConversationDriver struct {
-	client      *unifai.UnifAI
+	client      *raksha.Raksha
 	driverModel string
 	logger      *testing.T
 }
@@ -522,7 +522,7 @@ type GeneratedFollowup struct {
 }
 
 // NewOpenAIConversationDriver creates a new conversation driver
-func NewOpenAIConversationDriver(client *unifai.UnifAI, driverModel string, t *testing.T) *OpenAIConversationDriver {
+func NewOpenAIConversationDriver(client *raksha.Raksha, driverModel string, t *testing.T) *OpenAIConversationDriver {
 	return &OpenAIConversationDriver{
 		client:      client,
 		driverModel: driverModel,
@@ -531,7 +531,7 @@ func NewOpenAIConversationDriver(client *unifai.UnifAI, driverModel string, t *t
 }
 
 // GenerateNextMessage creates a natural followup message
-func (driver *OpenAIConversationDriver) GenerateNextMessage(ctx *schemas.UnifAIContext, request NextMessageRequest) (*GeneratedFollowup, error) {
+func (driver *OpenAIConversationDriver) GenerateNextMessage(ctx *schemas.RakshaContext, request NextMessageRequest) (*GeneratedFollowup, error) {
 	conversationHistory := driver.formatConversationHistory(request.ConversationHistory)
 
 	prompt := fmt.Sprintf(`Generate the next realistic user message for a %s scenario.
@@ -561,15 +561,15 @@ JSON response:
 		request.CurrentStepNumber+1, request.NextStep.ExpectedAction, request.NextStep.RequiredModality,
 		conversationHistory, request.NextStep.RequiredModality)
 
-	llmRequest := &schemas.UnifAIChatRequest{
+	llmRequest := &schemas.RakshaChatRequest{
 		Provider: schemas.OpenAI,
 		Model:    driver.driverModel,
 		Input: []schemas.ChatMessage{
 			CreateBasicChatMessage(prompt),
 		},
 		Params: &schemas.ChatParameters{
-			MaxCompletionTokens: unifai.Ptr(300),
-			Temperature:         unifai.Ptr(0.7),
+			MaxCompletionTokens: raksha.Ptr(300),
+			Temperature:         raksha.Ptr(0.7),
 		},
 	}
 
@@ -645,7 +645,7 @@ func (driver *OpenAIConversationDriver) generateFallbackMessage(request NextMess
 // =============================================================================
 
 // RunCrossProviderScenarioTest executes a complete scenario
-func RunCrossProviderScenarioTest(t *testing.T, client *unifai.UnifAI, ctx *schemas.UnifAIContext, config CrossProviderTestConfig, scenario CrossProviderScenario, useResponsesAPI bool) {
+func RunCrossProviderScenarioTest(t *testing.T, client *raksha.Raksha, ctx *schemas.RakshaContext, config CrossProviderTestConfig, scenario CrossProviderScenario, useResponsesAPI bool) {
 	apiType := "Chat Completions"
 	if useResponsesAPI {
 		apiType = "Responses API"
@@ -777,7 +777,7 @@ func RunCrossProviderScenarioTest(t *testing.T, client *unifai.UnifAI, ctx *sche
 // =============================================================================
 
 // RunCrossProviderConsistencyTest tests same prompt across providers
-func RunCrossProviderConsistencyTest(t *testing.T, client *unifai.UnifAI, ctx *schemas.UnifAIContext, config CrossProviderTestConfig, useResponsesAPI bool) {
+func RunCrossProviderConsistencyTest(t *testing.T, client *raksha.Raksha, ctx *schemas.RakshaContext, config CrossProviderTestConfig, useResponsesAPI bool) {
 	apiType := "Chat Completions"
 	if useResponsesAPI {
 		apiType = "Responses API"
@@ -801,15 +801,15 @@ func RunCrossProviderConsistencyTest(t *testing.T, client *unifai.UnifAI, ctx *s
 
 		if useResponsesAPI {
 			// Use Responses API
-			responsesReq := &schemas.UnifAIResponsesRequest{
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: provider.Provider,
 				Model:    provider.ChatModel,
 				Input: []schemas.ResponsesMessage{
 					CreateBasicResponsesMessage(testPrompt),
 				},
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(200),
-					Temperature:     unifai.Ptr(0.3),
+					MaxOutputTokens: raksha.Ptr(200),
+					Temperature:     raksha.Ptr(0.3),
 				},
 			}
 			responsesResponse, err := client.ResponsesRequest(ctx, responsesReq)
@@ -820,15 +820,15 @@ func RunCrossProviderConsistencyTest(t *testing.T, client *unifai.UnifAI, ctx *s
 			content = GetResponsesContent(responsesResponse)
 		} else {
 			// Use Chat Completions API
-			chatReq := &schemas.UnifAIChatRequest{
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: provider.Provider,
 				Model:    provider.ChatModel,
 				Input: []schemas.ChatMessage{
 					CreateBasicChatMessage(testPrompt),
 				},
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(200),
-					Temperature:         unifai.Ptr(0.3),
+					MaxCompletionTokens: raksha.Ptr(200),
+					Temperature:         raksha.Ptr(0.3),
 				},
 			}
 			chatResponse, err := client.ChatCompletionRequest(ctx, chatReq)
@@ -871,8 +871,8 @@ type ConsistencyResult struct {
 // HELPER FUNCTIONS
 // =============================================================================
 
-func executeStepWithProvider(t *testing.T, client *unifai.UnifAI, ctx *schemas.UnifAIContext,
-	provider ProviderConfig, history []schemas.ChatMessage, step ScenarioStep, useResponsesAPI bool) (*schemas.UnifAIResponse, *schemas.UnifAIError) {
+func executeStepWithProvider(t *testing.T, client *raksha.Raksha, ctx *schemas.RakshaContext,
+	provider ProviderConfig, history []schemas.ChatMessage, step ScenarioStep, useResponsesAPI bool) (*schemas.RakshaResponse, *schemas.RakshaError) {
 
 	// Prepare request parameters
 	var tools []schemas.ChatTool
@@ -891,13 +891,13 @@ func executeStepWithProvider(t *testing.T, client *unifai.UnifAI, ctx *schemas.U
 			responsesMessages = append(responsesMessages, convertedMessages...)
 		}
 
-		request := &schemas.UnifAIResponsesRequest{
+		request := &schemas.RakshaResponsesRequest{
 			Provider: provider.Provider,
 			Model:    getModelForModality(provider, step.RequiredModality),
 			Input:    responsesMessages,
 			Params: &schemas.ResponsesParameters{
-				MaxOutputTokens: unifai.Ptr(300),
-				Temperature:     unifai.Ptr(0.7),
+				MaxOutputTokens: raksha.Ptr(300),
+				Temperature:     raksha.Ptr(0.7),
 			},
 		}
 
@@ -914,16 +914,16 @@ func executeStepWithProvider(t *testing.T, client *unifai.UnifAI, ctx *schemas.U
 		if err != nil {
 			return nil, err
 		}
-		return &schemas.UnifAIResponse{ResponsesResponse: responsesResponse}, nil
+		return &schemas.RakshaResponse{ResponsesResponse: responsesResponse}, nil
 	} else {
 		// Use Chat Completions API
-		request := &schemas.UnifAIChatRequest{
+		request := &schemas.RakshaChatRequest{
 			Provider: provider.Provider,
 			Model:    getModelForModality(provider, step.RequiredModality),
 			Input:    history,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: unifai.Ptr(300),
-				Temperature:         unifai.Ptr(0.7),
+				MaxCompletionTokens: raksha.Ptr(300),
+				Temperature:         raksha.Ptr(0.7),
 			},
 		}
 
@@ -935,7 +935,7 @@ func executeStepWithProvider(t *testing.T, client *unifai.UnifAI, ctx *schemas.U
 		if err != nil {
 			return nil, err
 		}
-		return &schemas.UnifAIResponse{ChatResponse: chatResponse}, nil
+		return &schemas.RakshaResponse{ChatResponse: chatResponse}, nil
 	}
 }
 

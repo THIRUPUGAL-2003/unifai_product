@@ -3,18 +3,18 @@ package nebius
 import (
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 // parseNebiusImageError parses Nebius error responses
-func parseNebiusImageError(resp *fasthttp.Response) *schemas.UnifAIError {
+func parseNebiusImageError(resp *fasthttp.Response) *schemas.RakshaError {
 	var nebiusErr NebiusError
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &nebiusErr)
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &nebiusErr)
 
-	if unifaiErr.Error == nil {
-		unifaiErr.Error = &schemas.ErrorField{}
+	if rakshaErr.Error == nil {
+		rakshaErr.Error = &schemas.ErrorField{}
 	}
 
 	// Extract error message
@@ -57,8 +57,8 @@ func parseNebiusImageError(resp *fasthttp.Response) *schemas.UnifAIError {
 
 	// Use the extracted message if available
 	if message != "" {
-		unifaiErr.Error.Message = message
+		rakshaErr.Error.Message = message
 	}
 
-	return unifaiErr
+	return rakshaErr
 }

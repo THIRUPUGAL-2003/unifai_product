@@ -3,8 +3,8 @@ package vertex
 import (
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // VertexRankRequest represents the Discovery Engine rank API request.
@@ -55,7 +55,7 @@ type vertexRerankOptions struct {
 	UserLabels                    map[string]string
 }
 
-// ToUnifAIListModelsResponse converts a Vertex AI list models response to UnifAI's format.
+// ToRakshaListModelsResponse converts a Vertex AI list models response to Raksha's format.
 // It processes both custom models (from the API response) and non-custom models (from deployments and allowedModels).
 //
 // Custom models are those with digit-only deployment values, extracted from the API response.
@@ -70,12 +70,12 @@ type vertexRerankOptions struct {
 // - If allowedModels is empty, all models are allowed
 // - If allowedModels is non-empty, only models/deployments with keys in allowedModels are included
 // - Deployments map is used to match model IDs to aliases and filter accordingly
-func (response *VertexListModelsResponse) ToUnifAIListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.UnifAIListModelsResponse {
+func (response *VertexListModelsResponse) ToRakshaListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIListModelsResponse{
+	rakshaResponse := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.Models)),
 	}
 
@@ -88,7 +88,7 @@ func (response *VertexListModelsResponse) ToUnifAIListModelsResponse(allowedMode
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return unifaiResponse
+		return rakshaResponse
 	}
 
 	included := make(map[string]bool)
@@ -124,28 +124,28 @@ func (response *VertexListModelsResponse) ToUnifAIListModelsResponse(allowedMode
 				if result.AliasValue != "" {
 					modelEntry.Alias = schemas.Ptr(result.AliasValue)
 				}
-				unifaiResponse.Data = append(unifaiResponse.Data, modelEntry)
+				rakshaResponse.Data = append(rakshaResponse.Data, modelEntry)
 				included[resolvedKey] = true
 			}
 		}
 	}
 
-	unifaiResponse.Data = append(unifaiResponse.Data,
+	rakshaResponse.Data = append(rakshaResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	unifaiResponse.NextPageToken = response.NextPageToken
+	rakshaResponse.NextPageToken = response.NextPageToken
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
-// ToUnifAIListModelsResponse converts a Vertex AI publisher models response to UnifAI's format.
+// ToRakshaListModelsResponse converts a Vertex AI publisher models response to Raksha's format.
 // This is for foundation models from the Model Garden (publishers.models.list endpoint).
-func (response *VertexListPublisherModelsResponse) ToUnifAIListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.UnifAIListModelsResponse {
+func (response *VertexListPublisherModelsResponse) ToRakshaListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIListModelsResponse{
+	rakshaResponse := &schemas.RakshaListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.PublisherModels)),
 	}
 
@@ -158,7 +158,7 @@ func (response *VertexListPublisherModelsResponse) ToUnifAIListModelsResponse(al
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return unifaiResponse
+		return rakshaResponse
 	}
 
 	included := make(map[string]bool)
@@ -183,15 +183,15 @@ func (response *VertexListPublisherModelsResponse) ToUnifAIListModelsResponse(al
 			if result.AliasValue != "" {
 				modelEntry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			unifaiResponse.Data = append(unifaiResponse.Data, modelEntry)
+			rakshaResponse.Data = append(rakshaResponse.Data, modelEntry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	unifaiResponse.Data = append(unifaiResponse.Data,
+	rakshaResponse.Data = append(rakshaResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	unifaiResponse.NextPageToken = response.NextPageToken
+	rakshaResponse.NextPageToken = response.NextPageToken
 
-	return unifaiResponse
+	return rakshaResponse
 }

@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"strings"
 
-	openaiProvider "github.com/unifai/unifai/core/providers/openai"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	openaiProvider "github.com/raksha/raksha/core/providers/openai"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -38,7 +38,7 @@ func (provider *AzureProvider) RealtimeWebSocketURL(key schemas.Key, model strin
 		endpoint, url.QueryEscape(model))
 }
 
-func (provider *AzureProvider) RealtimeHeaders(ctx *schemas.UnifAIContext, key schemas.Key) (map[string]string, *schemas.UnifAIError) {
+func (provider *AzureProvider) RealtimeHeaders(ctx *schemas.RakshaContext, key schemas.Key) (map[string]string, *schemas.RakshaError) {
 	value := key.Value.GetValue()
 
 	// Ephemeral tokens from /client_secrets use Bearer auth.
@@ -67,12 +67,12 @@ func (provider *AzureProvider) SupportsRealtimeWebRTC() bool {
 }
 
 func (provider *AzureProvider) ExchangeRealtimeWebRTCSDP(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
 	model string,
 	sdp string,
 	session json.RawMessage,
-) (string, *schemas.UnifAIError) {
+) (string, *schemas.RakshaError) {
 	endpoint := strings.TrimRight(key.AzureKeyConfig.Endpoint.GetValue(), "/")
 
 	upstreamURL := fmt.Sprintf("%s/openai/v1/realtime?model=%s",
@@ -121,10 +121,10 @@ func (provider *AzureProvider) ExchangeRealtimeWebRTCSDP(
 	}
 	req.SetBody(bodyBuf.Bytes())
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return "", unifaiErr
+	if rakshaErr != nil {
+		return "", rakshaErr
 	}
 
 	answerBody := resp.Body()
@@ -139,19 +139,19 @@ func (provider *AzureProvider) ExchangeRealtimeWebRTCSDP(
 // Event conversion — delegates to OpenAI (same wire protocol)
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) ToUnifAIRealtimeEvent(providerEvent json.RawMessage) (*schemas.UnifAIRealtimeEvent, error) {
-	return openAIEventHelper.ToUnifAIRealtimeEvent(providerEvent)
+func (provider *AzureProvider) ToRakshaRealtimeEvent(providerEvent json.RawMessage) (*schemas.RakshaRealtimeEvent, error) {
+	return openAIEventHelper.ToRakshaRealtimeEvent(providerEvent)
 }
 
-func (provider *AzureProvider) ToProviderRealtimeEvent(unifaiEvent *schemas.UnifAIRealtimeEvent) (json.RawMessage, error) {
-	return openAIEventHelper.ToProviderRealtimeEvent(unifaiEvent)
+func (provider *AzureProvider) ToProviderRealtimeEvent(rakshaEvent *schemas.RakshaRealtimeEvent) (json.RawMessage, error) {
+	return openAIEventHelper.ToProviderRealtimeEvent(rakshaEvent)
 }
 
 // ---------------------------------------------------------------------------
 // Turn lifecycle — delegates to OpenAI
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) ShouldStartRealtimeTurn(event *schemas.UnifAIRealtimeEvent) bool {
+func (provider *AzureProvider) ShouldStartRealtimeTurn(event *schemas.RakshaRealtimeEvent) bool {
 	return openAIEventHelper.ShouldStartRealtimeTurn(event)
 }
 
@@ -159,7 +159,7 @@ func (provider *AzureProvider) RealtimeTurnFinalEvent() schemas.RealtimeEventTyp
 	return openAIEventHelper.RealtimeTurnFinalEvent()
 }
 
-func (provider *AzureProvider) ShouldForwardRealtimeEvent(event *schemas.UnifAIRealtimeEvent) bool {
+func (provider *AzureProvider) ShouldForwardRealtimeEvent(event *schemas.RakshaRealtimeEvent) bool {
 	return true
 }
 
@@ -179,7 +179,7 @@ func (provider *AzureProvider) RealtimeWebSocketSubprotocol() string {
 // RealtimeUsageExtractor — delegates to OpenAI
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) ExtractRealtimeTurnUsage(terminalEventRaw []byte) *schemas.UnifAILLMUsage {
+func (provider *AzureProvider) ExtractRealtimeTurnUsage(terminalEventRaw []byte) *schemas.RakshaLLMUsage {
 	return openAIEventHelper.ExtractRealtimeTurnUsage(terminalEventRaw)
 }
 
@@ -192,30 +192,30 @@ func (provider *AzureProvider) ExtractRealtimeTurnOutput(terminalEventRaw []byte
 // ---------------------------------------------------------------------------
 
 func (provider *AzureProvider) CreateRealtimeClientSecret(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
 	endpointType schemas.RealtimeSessionEndpointType,
 	rawRequest json.RawMessage,
-) (*schemas.UnifAIPassthroughResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
 	// Azure does not support the legacy /sessions endpoint.
 	if endpointType == schemas.RealtimeSessionEndpointSessions {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: true,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: true,
 			StatusCode:     schemas.Ptr(fasthttp.StatusBadRequest),
 			Error: &schemas.ErrorField{
 				Type:    schemas.Ptr("invalid_request_error"),
 				Message: "Azure does not support the legacy /sessions endpoint; use /v1/realtime/client_secrets instead",
 			},
-			ExtraFields: schemas.UnifAIErrorExtraFields{
+			ExtraFields: schemas.RakshaErrorExtraFields{
 				RequestType: schemas.RealtimeRequest,
 				Provider:    provider.GetProviderKey(),
 			},
 		}
 	}
 
-	normalizedBody, _, unifaiErr := openaiProvider.NormalizeRealtimeClientSecretRequest(rawRequest, schemas.Azure, endpointType)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	normalizedBody, _, rakshaErr := openaiProvider.NormalizeRealtimeClientSecretRequest(rawRequest, schemas.Azure, endpointType)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	endpoint := strings.TrimRight(key.AzureKeyConfig.Endpoint.GetValue(), "/")
@@ -242,14 +242,14 @@ func (provider *AzureProvider) CreateRealtimeClientSecret(
 	}
 	req.SetBody(normalizedBody)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	headers := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
 
 	if resp.StatusCode() < fasthttp.StatusOK || resp.StatusCode() >= fasthttp.StatusMultipleChoices {
 		return nil, providerUtils.SetErrorLatency(provider.parseRealtimeClientSecretError(ctx, resp), latency)
@@ -257,14 +257,14 @@ func (provider *AzureProvider) CreateRealtimeClientSecret(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
 	}
 
-	out := &schemas.UnifAIPassthroughResponse{
+	out := &schemas.RakshaPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 		},
@@ -280,7 +280,7 @@ func (provider *AzureProvider) CreateRealtimeClientSecret(
 // Helpers
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) realtimeWebRTCUpstreamError(ctx *schemas.UnifAIContext, statusCode int, body []byte) *schemas.UnifAIError {
+func (provider *AzureProvider) realtimeWebRTCUpstreamError(ctx *schemas.RakshaContext, statusCode int, body []byte) *schemas.RakshaError {
 	message := fmt.Sprintf("upstream realtime handshake failed for %s", provider.GetProviderKey())
 	var parsed struct {
 		Error struct {
@@ -291,47 +291,47 @@ func (provider *AzureProvider) realtimeWebRTCUpstreamError(ctx *schemas.UnifAICo
 		message = parsed.Error.Message
 	}
 
-	unifaiErr := &schemas.UnifAIError{
-		IsUnifAIError: false,
+	rakshaErr := &schemas.RakshaError{
+		IsRakshaError: false,
 		StatusCode:     schemas.Ptr(statusCode),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr("upstream_error"),
 			Message: message,
 		},
-		ExtraFields: schemas.UnifAIErrorExtraFields{
+		ExtraFields: schemas.RakshaErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    provider.GetProviderKey(),
 		},
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiErr.ExtraFields.RawResponse = map[string]any{
+		rakshaErr.ExtraFields.RawResponse = map[string]any{
 			"status": statusCode,
 			"body":   string(body),
 		}
 	}
-	return unifaiErr
+	return rakshaErr
 }
 
-func newAzureRealtimeError(status int, errorType, message string, err error) *schemas.UnifAIError {
-	unifaiErr := &schemas.UnifAIError{
-		IsUnifAIError: true,
+func newAzureRealtimeError(status int, errorType, message string, err error) *schemas.RakshaError {
+	rakshaErr := &schemas.RakshaError{
+		IsRakshaError: true,
 		StatusCode:     schemas.Ptr(status),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr(errorType),
 			Message: message,
 		},
-		ExtraFields: schemas.UnifAIErrorExtraFields{
+		ExtraFields: schemas.RakshaErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    schemas.Azure,
 		},
 	}
 	if err != nil {
-		unifaiErr.Error.Error = err
+		rakshaErr.Error.Error = err
 	}
-	return unifaiErr
+	return rakshaErr
 }
 
-func (provider *AzureProvider) parseRealtimeClientSecretError(ctx *schemas.UnifAIContext, resp *fasthttp.Response) *schemas.UnifAIError {
+func (provider *AzureProvider) parseRealtimeClientSecretError(ctx *schemas.RakshaContext, resp *fasthttp.Response) *schemas.RakshaError {
 	body, _ := providerUtils.CheckAndDecodeBody(resp)
 	var parsed struct {
 		Error struct {
@@ -343,23 +343,23 @@ func (provider *AzureProvider) parseRealtimeClientSecretError(ctx *schemas.UnifA
 	if json.Unmarshal(body, &parsed) == nil && parsed.Error.Message != "" {
 		msg = parsed.Error.Message
 	}
-	unifaiErr := &schemas.UnifAIError{
-		IsUnifAIError: false,
+	rakshaErr := &schemas.RakshaError{
+		IsRakshaError: false,
 		StatusCode:     schemas.Ptr(resp.StatusCode()),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr("upstream_error"),
 			Message: msg,
 		},
-		ExtraFields: schemas.UnifAIErrorExtraFields{
+		ExtraFields: schemas.RakshaErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    provider.GetProviderKey(),
 		},
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiErr.ExtraFields.RawResponse = map[string]any{
+		rakshaErr.ExtraFields.RawResponse = map[string]any{
 			"status": resp.StatusCode(),
 			"body":   string(body),
 		}
 	}
-	return unifaiErr
+	return rakshaErr
 }

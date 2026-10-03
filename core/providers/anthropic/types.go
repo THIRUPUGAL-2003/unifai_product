@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/tidwall/sjson"
 )
 
@@ -272,7 +272,7 @@ type AnthropicTextRequest struct {
 	Stream            *bool    `json:"stream,omitempty"`
 	StopSequences     []string `json:"stop_sequences,omitempty"`
 
-	// UnifAI specific field (only parsed when converting from Provider -> UnifAI request)
+	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"`
 }
@@ -400,7 +400,7 @@ type AnthropicMessageRequest struct {
 	// Extra params for advanced use cases
 	ExtraParams map[string]interface{} `json:"-"`
 
-	// UnifAI specific field (only parsed when converting from Provider -> UnifAI request)
+	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
 	Fallbacks []string `json:"fallbacks,omitempty"`
 
 	// Internal field to track whether to strip scope from cache control blocks (for Vertex + prompt caching scope)
@@ -1789,9 +1789,9 @@ type AnthropicFileDeleteResponse struct {
 	Type string `json:"type"`
 }
 
-// ToUnifAIFileUploadResponse converts an Anthropic file response to UnifAI file upload response.
-func (r *AnthropicFileResponse) ToUnifAIFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIFileUploadResponse {
-	resp := &schemas.UnifAIFileUploadResponse{
+// ToRakshaFileUploadResponse converts an Anthropic file response to Raksha file upload response.
+func (r *AnthropicFileResponse) ToRakshaFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileUploadResponse {
+	resp := &schemas.RakshaFileUploadResponse{
 		ID:             r.ID,
 		Object:         r.Type,
 		Bytes:          r.SizeBytes,
@@ -1800,7 +1800,7 @@ func (r *AnthropicFileResponse) ToUnifAIFileUploadResponse(latency time.Duration
 		Purpose:        schemas.FilePurposeBatch, // We hardcode as purpose is not supported by Anthropic
 		Status:         schemas.FileStatusProcessed,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -1816,9 +1816,9 @@ func (r *AnthropicFileResponse) ToUnifAIFileUploadResponse(latency time.Duration
 	return resp
 }
 
-// ToUnifAIFileRetrieveResponse converts an Anthropic file response to UnifAI file retrieve response.
-func (r *AnthropicFileResponse) ToUnifAIFileRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIFileRetrieveResponse {
-	resp := &schemas.UnifAIFileRetrieveResponse{
+// ToRakshaFileRetrieveResponse converts an Anthropic file response to Raksha file retrieve response.
+func (r *AnthropicFileResponse) ToRakshaFileRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileRetrieveResponse {
+	resp := &schemas.RakshaFileRetrieveResponse{
 		ID:             r.ID,
 		Object:         r.Type,
 		Bytes:          r.SizeBytes,
@@ -1827,7 +1827,7 @@ func (r *AnthropicFileResponse) ToUnifAIFileRetrieveResponse(latency time.Durati
 		Purpose:        schemas.FilePurposeBatch,
 		Status:         schemas.FileStatusProcessed,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}

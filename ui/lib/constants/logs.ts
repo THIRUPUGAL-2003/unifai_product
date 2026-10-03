@@ -100,7 +100,7 @@ export type ProviderName = (typeof KnownProvidersNames)[number];
 
 export const ProviderNames: readonly ProviderName[] = KnownProvidersNames;
 
-// Built-in providers whose UnifAI implementation supports embedding requests.
+// Built-in providers whose Raksha implementation supports embedding requests.
 // Custom providers must instead be checked via custom_provider_config.allowed_requests.embedding.
 export const EmbeddingSupportedProviders: readonly ProviderName[] = [
 	"azure",

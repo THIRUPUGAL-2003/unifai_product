@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -165,7 +165,7 @@ func (g *GCSObjectStore) DeleteBatch(ctx context.Context, keys []string) error {
 // because HybridLogStore strips DB payloads before async upload — a read-only
 // principal would pass a read-based ping but silently fail all Put calls.
 func (g *GCSObjectStore) Ping(ctx context.Context) error {
-	key := fmt.Sprintf("__unifai_ping__/%d", time.Now().UnixNano())
+	key := fmt.Sprintf("__raksha_ping__/%d", time.Now().UnixNano())
 	obj := g.client.Bucket(g.bucket).Object(key)
 
 	if err := obj.NewWriter(ctx).Close(); err != nil {

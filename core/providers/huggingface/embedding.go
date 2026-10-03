@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToHuggingFaceEmbeddingRequest converts a UnifAI embedding request to HuggingFace format
-func ToHuggingFaceEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) (*HuggingFaceEmbeddingRequest, error) {
-	if unifaiReq == nil {
+// ToHuggingFaceEmbeddingRequest converts a Raksha embedding request to HuggingFace format
+func ToHuggingFaceEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*HuggingFaceEmbeddingRequest, error) {
+	if rakshaReq == nil {
 		return nil, nil
 	}
 
-	inferenceProvider, modelName, nameErr := splitIntoModelProvider(unifaiReq.Model)
+	inferenceProvider, modelName, nameErr := splitIntoModelProvider(rakshaReq.Model)
 	if nameErr != nil {
 		return nil, nameErr
 	}
@@ -29,13 +29,13 @@ func ToHuggingFaceEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) (*
 	}
 
 	// Convert input
-	if unifaiReq.Input != nil {
+	if rakshaReq.Input != nil {
 		var input InputsCustomType
-		if unifaiReq.Input.Text != nil {
-			input = InputsCustomType{Text: unifaiReq.Input.Text}
+		if rakshaReq.Input.Text != nil {
+			input = InputsCustomType{Text: rakshaReq.Input.Text}
 
-		} else if unifaiReq.Input.Texts != nil {
-			input = InputsCustomType{Texts: unifaiReq.Input.Texts}
+		} else if rakshaReq.Input.Texts != nil {
+			input = InputsCustomType{Texts: rakshaReq.Input.Texts}
 		}
 		if inferenceProvider == hfInference {
 			hfReq.Inputs = &input
@@ -45,8 +45,8 @@ func ToHuggingFaceEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) (*
 	}
 
 	// Map parameters
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		// Map standard parameters
 		if params.EncodingFormat != nil {
@@ -82,9 +82,9 @@ func ToHuggingFaceEmbeddingRequest(unifaiReq *schemas.UnifAIEmbeddingRequest) (*
 	return hfReq, nil
 }
 
-// UnmarshalHuggingFaceEmbeddingResponse unmarshals HuggingFace API response directly into UnifAIEmbeddingResponse
+// UnmarshalHuggingFaceEmbeddingResponse unmarshals HuggingFace API response directly into RakshaEmbeddingResponse
 // Handles multiple formats: standard object, 2D array, or 1D array
-func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.UnifAIEmbeddingResponse, error) {
+func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.RakshaEmbeddingResponse, error) {
 	if data == nil {
 		return nil, fmt.Errorf("response data is nil")
 	}
@@ -93,29 +93,29 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 	type tempResponse struct {
 		Data  []schemas.EmbeddingData  `json:"data,omitempty"`
 		Model *string                  `json:"model,omitempty"`
-		Usage *schemas.UnifAILLMUsage `json:"usage,omitempty"`
+		Usage *schemas.RakshaLLMUsage `json:"usage,omitempty"`
 	}
 	var obj tempResponse
 	if err := sonic.Unmarshal(data, &obj); err == nil {
 		if obj.Data != nil || obj.Model != nil || obj.Usage != nil {
-			unifaiResponse := &schemas.UnifAIEmbeddingResponse{
+			rakshaResponse := &schemas.RakshaEmbeddingResponse{
 				Data:   obj.Data,
 				Model:  model,
 				Object: "list",
 			}
 			if obj.Model != nil {
-				unifaiResponse.Model = *obj.Model
+				rakshaResponse.Model = *obj.Model
 			}
 			if obj.Usage != nil {
-				unifaiResponse.Usage = obj.Usage
+				rakshaResponse.Usage = obj.Usage
 			} else {
-				unifaiResponse.Usage = &schemas.UnifAILLMUsage{
+				rakshaResponse.Usage = &schemas.RakshaLLMUsage{
 					PromptTokens:     0,
 					CompletionTokens: 0,
 					TotalTokens:      0,
 				}
 			}
-			return unifaiResponse, nil
+			return rakshaResponse, nil
 		}
 	}
 
@@ -130,11 +130,11 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 				Object:    "embedding",
 			}
 		}
-		return &schemas.UnifAIEmbeddingResponse{
+		return &schemas.RakshaEmbeddingResponse{
 			Data:   embeddings,
 			Model:  model,
 			Object: "list",
-			Usage: &schemas.UnifAILLMUsage{
+			Usage: &schemas.RakshaLLMUsage{
 				PromptTokens:     0,
 				CompletionTokens: 0,
 				TotalTokens:      0,
@@ -145,7 +145,7 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 	// Try 1D array: [num, ...]
 	var arr1D []float64
 	if err := sonic.Unmarshal(data, &arr1D); err == nil {
-		return &schemas.UnifAIEmbeddingResponse{
+		return &schemas.RakshaEmbeddingResponse{
 			Data: []schemas.EmbeddingData{{
 				Embedding: schemas.EmbeddingStruct{EmbeddingArray: append([]float64(nil), arr1D...)},
 				Index:     0,
@@ -153,7 +153,7 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 			}},
 			Model:  model,
 			Object: "list",
-			Usage: &schemas.UnifAILLMUsage{
+			Usage: &schemas.RakshaLLMUsage{
 				PromptTokens:     0,
 				CompletionTokens: 0,
 				TotalTokens:      0,

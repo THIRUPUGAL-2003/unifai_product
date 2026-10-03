@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/objectstore"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/objectstore"
 )
 
 // LogStoreType represents the type of log store.

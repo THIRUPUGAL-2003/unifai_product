@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // getRequestID extracts a unique identifier for the request to maintain state
-func (p *JsonParserPlugin) getRequestID(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse) string {
+func (p *JsonParserPlugin) getRequestID(ctx *schemas.RakshaContext, result *schemas.RakshaResponse) string {
 
 	// Try to get from chat result
 	if result != nil && result.ChatResponse != nil && result.ChatResponse.ID != "" {
@@ -25,7 +25,7 @@ func (p *JsonParserPlugin) getRequestID(ctx *schemas.UnifAIContext, result *sche
 
 	// Try to get from context if not available in result
 	if ctx != nil {
-		if requestID, ok := ctx.Value(schemas.UnifAIContextKeyRequestID).(string); ok && requestID != "" {
+		if requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); ok && requestID != "" {
 			return requestID
 		}
 	}
@@ -34,7 +34,7 @@ func (p *JsonParserPlugin) getRequestID(ctx *schemas.UnifAIContext, result *sche
 }
 
 // shouldRun determines if the plugin should process the request based on usage type
-func (p *JsonParserPlugin) shouldRun(ctx *schemas.UnifAIContext, requestType schemas.RequestType) bool {
+func (p *JsonParserPlugin) shouldRun(ctx *schemas.RakshaContext, requestType schemas.RequestType) bool {
 	// Run only for streaming requests
 	if requestType != schemas.ChatCompletionStreamRequest && requestType != schemas.ResponsesStreamRequest {
 		return false
@@ -216,18 +216,18 @@ func (p *JsonParserPlugin) isValidJSON(s string) bool {
 
 // DEEP COPY METHODS
 
-// deepCopyUnifAIResponse creates a deep copy of UnifAIResponse to avoid modifying the original
-func (p *JsonParserPlugin) deepCopyUnifAIResponse(original *schemas.UnifAIResponse) *schemas.UnifAIResponse {
+// deepCopyRakshaResponse creates a deep copy of RakshaResponse to avoid modifying the original
+func (p *JsonParserPlugin) deepCopyRakshaResponse(original *schemas.RakshaResponse) *schemas.RakshaResponse {
 	if original == nil {
 		return nil
 	}
 
-	// Create a new UnifAIResponse
-	result := &schemas.UnifAIResponse{}
+	// Create a new RakshaResponse
+	result := &schemas.RakshaResponse{}
 
 	// Copy ChatResponse if it exists (this is what we're interested in for the JSON parser)
 	if original.ChatResponse != nil {
-		result.ChatResponse = p.deepCopyUnifAIChatResponse(original.ChatResponse)
+		result.ChatResponse = p.deepCopyRakshaChatResponse(original.ChatResponse)
 	}
 
 	// Deep copy ResponsesStreamResponse since we modify its Delta field
@@ -247,12 +247,12 @@ func (p *JsonParserPlugin) deepCopyUnifAIResponse(original *schemas.UnifAIRespon
 	return result
 }
 
-// deepCopyResponsesStreamResponse returns a shallow copy of UnifAIResponsesStreamResponse.
+// deepCopyResponsesStreamResponse returns a shallow copy of RakshaResponsesStreamResponse.
 // Delta is the only field this plugin reassigns, and it is a top-level pointer slot, so a
 // struct value copy is sufficient — writing result.Delta = &x does not affect original.Delta.
 // Pointer fields such as Response, Item, and Part share the same underlying data as the
 // original; do not mutate them through this copy.
-func (p *JsonParserPlugin) deepCopyResponsesStreamResponse(original *schemas.UnifAIResponsesStreamResponse) *schemas.UnifAIResponsesStreamResponse {
+func (p *JsonParserPlugin) deepCopyResponsesStreamResponse(original *schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse {
 	if original == nil {
 		return nil
 	}
@@ -260,13 +260,13 @@ func (p *JsonParserPlugin) deepCopyResponsesStreamResponse(original *schemas.Uni
 	return &result
 }
 
-// deepCopyUnifAIChatResponse creates a deep copy of UnifAIChatResponse
-func (p *JsonParserPlugin) deepCopyUnifAIChatResponse(original *schemas.UnifAIChatResponse) *schemas.UnifAIChatResponse {
+// deepCopyRakshaChatResponse creates a deep copy of RakshaChatResponse
+func (p *JsonParserPlugin) deepCopyRakshaChatResponse(original *schemas.RakshaChatResponse) *schemas.RakshaChatResponse {
 	if original == nil {
 		return nil
 	}
 
-	result := &schemas.UnifAIChatResponse{
+	result := &schemas.RakshaChatResponse{
 		ID:                original.ID,
 		Created:           original.Created,
 		Model:             original.Model,
@@ -279,18 +279,18 @@ func (p *JsonParserPlugin) deepCopyUnifAIChatResponse(original *schemas.UnifAICh
 
 	// Deep copy Choices slice
 	if original.Choices != nil {
-		result.Choices = make([]schemas.UnifAIResponseChoice, len(original.Choices))
+		result.Choices = make([]schemas.RakshaResponseChoice, len(original.Choices))
 		for i, choice := range original.Choices {
-			result.Choices[i] = p.deepCopyUnifAIResponseChoice(choice)
+			result.Choices[i] = p.deepCopyRakshaResponseChoice(choice)
 		}
 	}
 
 	return result
 }
 
-// deepCopyUnifAIResponseChoice creates a deep copy of UnifAIResponseChoice
-func (p *JsonParserPlugin) deepCopyUnifAIResponseChoice(original schemas.UnifAIResponseChoice) schemas.UnifAIResponseChoice {
-	result := schemas.UnifAIResponseChoice{
+// deepCopyRakshaResponseChoice creates a deep copy of RakshaResponseChoice
+func (p *JsonParserPlugin) deepCopyRakshaResponseChoice(original schemas.RakshaResponseChoice) schemas.RakshaResponseChoice {
+	result := schemas.RakshaResponseChoice{
 		Index:        original.Index,
 		FinishReason: original.FinishReason,
 		LogProbs:     original.LogProbs,

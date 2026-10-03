@@ -55,7 +55,7 @@ function getStoredLanguage(): string {
 	if (typeof window === "undefined") return "en";
 	try {
 		// 1. Check localStorage
-		const local = localStorage.getItem("unifai_language");
+		const local = localStorage.getItem("raksha_language");
 		if (local) return local;
 
 		// 2. Check googtrans cookie
@@ -312,7 +312,7 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 		try {
 			suppressGoogleTranslateBanner();
 			if (targetCode === "en") {
-				localStorage.removeItem("unifai_language");
+				localStorage.removeItem("raksha_language");
 				clearGoogleTransCookie();
 				applyComboLanguage("en");
 				suppressGoogleTranslateBanner();
@@ -323,7 +323,7 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 				return;
 			}
 
-			localStorage.setItem("unifai_language", targetCode);
+			localStorage.setItem("raksha_language", targetCode);
 			setGoogleTransCookie(targetCode);
 
 			// Try to apply immediately or poll for combo
@@ -509,7 +509,7 @@ export function LanguageSelector({ compact = false, className }: LanguageSelecto
 						<Sparkles className="h-3 w-3 text-amber-500" />
 						Instant translation across all pages
 					</span>
-					<span>Powered by UnifAI</span>
+					<span>Powered by Raksha</span>
 				</div>
 			</PopoverContent>
 		</Popover>

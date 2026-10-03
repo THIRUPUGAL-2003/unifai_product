@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	unifai "github.com/unifai/unifai/core"
+	raksha "github.com/raksha/raksha/core"
 	"gorm.io/gorm"
 )
 
@@ -63,7 +63,7 @@ func (r *TableRoutingRule) BeforeSave(tx *gorm.DB) error {
 		if err != nil {
 			return err
 		}
-		r.Fallbacks = unifai.Ptr(string(data))
+		r.Fallbacks = raksha.Ptr(string(data))
 	} else {
 		r.Fallbacks = nil
 	}
@@ -72,7 +72,7 @@ func (r *TableRoutingRule) BeforeSave(tx *gorm.DB) error {
 		if err != nil {
 			return err
 		}
-		r.Query = unifai.Ptr(string(data))
+		r.Query = raksha.Ptr(string(data))
 	} else {
 		r.Query = nil
 	}

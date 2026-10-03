@@ -6,35 +6,35 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-func ToRunwayVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequest) (*RunwayVideoGenerationRequest, error) {
+func ToRunwayVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*RunwayVideoGenerationRequest, error) {
 	// three types of video generation requests in runway api
 	// 1. image to video
 	// 2. text to video
 	// 3. video to video
-	if unifaiReq.Input == nil {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
 	request := &RunwayVideoGenerationRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 		Ratio: schemas.Ptr("1280:720"),
 	}
 
-	if isRunwayVeoModel(unifaiReq.Model) {
+	if isRunwayVeoModel(rakshaReq.Model) {
 		request.Duration = schemas.Ptr(4)
-	} else if isRunwayGenModel(unifaiReq.Model) {
+	} else if isRunwayGenModel(rakshaReq.Model) {
 		request.Duration = schemas.Ptr(2)
 	}
 
-	if unifaiReq.Input.Prompt != "" {
-		request.PromptText = &unifaiReq.Input.Prompt
+	if rakshaReq.Input.Prompt != "" {
+		request.PromptText = &rakshaReq.Input.Prompt
 	}
-	if unifaiReq.Input.InputReference != nil {
-		sanitizedURL, err := schemas.SanitizeImageURL(*unifaiReq.Input.InputReference)
+	if rakshaReq.Input.InputReference != nil {
+		sanitizedURL, err := schemas.SanitizeImageURL(*rakshaReq.Input.InputReference)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
@@ -43,43 +43,43 @@ func ToRunwayVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 		}
 	}
 
-	if unifaiReq.Params != nil {
-		if unifaiReq.Params.Seconds != nil {
-			seconds, err := strconv.Atoi(*unifaiReq.Params.Seconds)
+	if rakshaReq.Params != nil {
+		if rakshaReq.Params.Seconds != nil {
+			seconds, err := strconv.Atoi(*rakshaReq.Params.Seconds)
 			if err != nil {
 				return nil, fmt.Errorf("invalid seconds value: %w", err)
 			}
 			request.Duration = &seconds
 		}
 
-		if unifaiReq.Params.Size != "" {
+		if rakshaReq.Params.Size != "" {
 			// convert 1280x720 to 1280:720
-			request.Ratio = schemas.Ptr(strings.Replace(unifaiReq.Params.Size, "x", ":", 1))
+			request.Ratio = schemas.Ptr(strings.Replace(rakshaReq.Params.Size, "x", ":", 1))
 		}
 
-		if isRunwayVeoModel(unifaiReq.Model) {
-			if unifaiReq.Params.Audio != nil {
-				request.Audio = unifaiReq.Params.Audio
+		if isRunwayVeoModel(rakshaReq.Model) {
+			if rakshaReq.Params.Audio != nil {
+				request.Audio = rakshaReq.Params.Audio
 			}
 		}
 
-		if isRunwayGenModel(unifaiReq.Model) {
-			if unifaiReq.Params.Seed != nil {
-				request.Seed = unifaiReq.Params.Seed
+		if isRunwayGenModel(rakshaReq.Model) {
+			if rakshaReq.Params.Seed != nil {
+				request.Seed = rakshaReq.Params.Seed
 			}
 		}
 
-		if unifaiReq.Params.VideoURI != nil {
-			if !supportsVideoToVideo(unifaiReq.Model) {
-				return nil, fmt.Errorf("video_uri is not supported for model %s", unifaiReq.Model)
+		if rakshaReq.Params.VideoURI != nil {
+			if !supportsVideoToVideo(rakshaReq.Model) {
+				return nil, fmt.Errorf("video_uri is not supported for model %s", rakshaReq.Model)
 			}
-			request.VideoURI = unifaiReq.Params.VideoURI
+			request.VideoURI = rakshaReq.Params.VideoURI
 		}
 
-		if unifaiReq.Params.ExtraParams != nil {
-			request.ExtraParams = unifaiReq.Params.ExtraParams
+		if rakshaReq.Params.ExtraParams != nil {
+			request.ExtraParams = rakshaReq.Params.ExtraParams
 			// Handle references for video-to-video generation
-			if refsVal := unifaiReq.Params.ExtraParams["references"]; refsVal != nil {
+			if refsVal := rakshaReq.Params.ExtraParams["references"]; refsVal != nil {
 				if refs, ok := refsVal.([]Reference); ok && refs != nil {
 					request.References = refs
 					delete(request.ExtraParams, "references")
@@ -90,7 +90,7 @@ func ToRunwayVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 			}
 
 			// Handle reference images for video generation
-			if refImagesVal := unifaiReq.Params.ExtraParams["reference_images"]; refImagesVal != nil {
+			if refImagesVal := rakshaReq.Params.ExtraParams["reference_images"]; refImagesVal != nil {
 				if refImages, ok := refImagesVal.([]ReferenceImage); ok && refImages != nil {
 					delete(request.ExtraParams, "reference_images")
 					request.ReferenceImages = refImages
@@ -101,8 +101,8 @@ func ToRunwayVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 			}
 
 			// add content moderation
-			if isRunwayVeoModel(unifaiReq.Model) {
-				if cmVal := unifaiReq.Params.ExtraParams["content_moderation"]; cmVal != nil {
+			if isRunwayVeoModel(rakshaReq.Model) {
+				if cmVal := rakshaReq.Params.ExtraParams["content_moderation"]; cmVal != nil {
 					if cm, ok := cmVal.(*ContentModeration); ok && cm != nil {
 						delete(request.ExtraParams, "content_moderation")
 						request.ContentModeration = cm
@@ -118,19 +118,19 @@ func ToRunwayVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequ
 	return request, nil
 }
 
-// ToUnifAIVideoGenerationResponse converts Runway task details to UnifAI video generation response format.
-func ToUnifAIVideoGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+// ToRakshaVideoGenerationResponse converts Runway task details to Raksha video generation response format.
+func ToRakshaVideoGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	if taskDetails == nil {
-		return nil, providerUtils.NewUnifAIOperationError("task details is nil", nil)
+		return nil, providerUtils.NewRakshaOperationError("task details is nil", nil)
 	}
 
-	response := &schemas.UnifAIVideoGenerationResponse{
+	response := &schemas.RakshaVideoGenerationResponse{
 		ID:        taskDetails.ID,
 		Object:    "video",
 		CreatedAt: time.Now().Unix(),
 	}
 
-	// Map Runway task status to UnifAI video status
+	// Map Runway task status to Raksha video status
 	switch taskDetails.Status {
 	case RunwayTaskStatusPending, RunwayTaskStatusThrottled:
 		response.Status = schemas.VideoStatusQueued

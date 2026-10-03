@@ -23,8 +23,8 @@ ui/out/
 *.pyc
 
 # Local server binaries (the image builds its own)
-/unifai_server.exe
-transports/unifai-http/*.exe
+/raksha_server.exe
+transports/raksha-http/*.exe
 
 # Guard build intermediates (only release/ files are copied into the image)
 apps/browser-guard/build/

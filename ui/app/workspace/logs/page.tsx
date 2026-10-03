@@ -505,7 +505,7 @@ export default function LogsPage() {
 	} = useColumnConfig({
 		columnIds,
 		paramName: "cols",
-		storageKey: "unifai.logs.cols",
+		storageKey: "raksha.logs.cols",
 		defaultHidden: DEFAULT_HIDDEN_COLUMNS,
 		fixedColumns: hasDeleteAccess ? { right: ["actions"] } : undefined,
 	});

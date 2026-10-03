@@ -89,7 +89,7 @@ function ExternalCacheTokenMeterChartImpl({ data }: ExternalCacheTokenMeterChart
 											<Info className="h-3 w-3" />
 										</button>
 									</TooltipTrigger>
-									<TooltipContent side="top">This reflects provider-level caching, not UnifAI semantic cache hits.</TooltipContent>
+									<TooltipContent side="top">This reflects provider-level caching, not Raksha semantic cache hits.</TooltipContent>
 								</Tooltip>
 							</div>
 						</div>

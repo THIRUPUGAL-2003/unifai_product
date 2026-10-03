@@ -1,4 +1,4 @@
-UnifAI AI Domain Coverage Report
+Raksha AI Domain Coverage Report
 Generated: 2026-09-30 22:49:30.323723
 ==========================================================================================
 
@@ -35,126 +35,126 @@ Summary: PASS=0 PARTIAL=0 NOT_ADDED=25 FAIL=0
 Detailed Notes:
 
 [NOT_ADDED] chat.openai.com (ChatGPT)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] chatgpt.com (ChatGPT)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] claude.ai (Claude)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] gemini.google.com (Gemini)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] deepseek.com (DeepSeek)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] copilot.microsoft.com (Copilot)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] www.perplexity.ai (Perplexity)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] grok.com (Grok)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] poe.com (Poe)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] you.com (You.com)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] character.ai (Character.AI)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] pi.ai (Pi AI)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] app.jasper.ai (Jasper)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] chat.mistral.ai (Mistral)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] huggingface.co (HuggingFace)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] cohere.com (Cohere)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] phind.com (Phind)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] bing.com (Bing)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] github.com (GitHub Copilot)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] customai.company.com (Custom AI (OpenAI-compatible))
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] mybot.internal (Custom AI (simple prompt))
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] corp-ai.example.com (Custom AI (input field))
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] writesonic.com (Writesonic)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] kagi.com (Kagi)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES
 
 [NOT_ADDED] inflection.ai (Inflection)
-  Not in Target Websites (add it in UnifAI dashboard)
+  Not in Target Websites (add it in Raksha dashboard)
   Prompt capture: YES
   File upload detection: YES

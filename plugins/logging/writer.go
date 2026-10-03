@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/logstore"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/logstore"
 )
 
 const (
@@ -400,8 +400,8 @@ func buildStaleMCPToolLogEntry(pending *logstore.MCPToolLog) *logstore.MCPToolLo
 	entry.Result = ""
 	entry.ResultParsed = nil
 	entry.ErrorDetails = ""
-	entry.ErrorDetailsParsed = &schemas.UnifAIError{
-		IsUnifAIError: true,
+	entry.ErrorDetailsParsed = &schemas.RakshaError{
+		IsRakshaError: true,
 		Error: &schemas.ErrorField{
 			Message: "MCP tool execution did not complete before pending log TTL",
 		},

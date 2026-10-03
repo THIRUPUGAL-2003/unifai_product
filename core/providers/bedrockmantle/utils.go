@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
 // awsRegionRegex matches valid AWS region identifiers (e.g. "us-east-1", "eu-north-1", "us-gov-east-1").
@@ -44,7 +44,7 @@ func parseBedrockRegionAndModel(model string) (region, bareModel string) {
 // BedrockMantleKeyConfig.Region > defaultMantleRegion. The model-string prefix
 // stays highest since it's the most explicit signal — when an admin types a
 // region into their model ID they expect that to win.
-func (provider *BedrockMantleProvider) resolveRegion(ctx *schemas.UnifAIContext, key schemas.Key, model string) string {
+func (provider *BedrockMantleProvider) resolveRegion(ctx *schemas.RakshaContext, key schemas.Key, model string) string {
 	if region, _ := parseBedrockRegionAndModel(model); region != "" {
 		return region
 	}

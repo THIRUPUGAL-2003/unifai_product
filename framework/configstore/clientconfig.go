@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore/tables"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore/tables"
 )
 
 type EnvKeyType string
@@ -65,11 +65,11 @@ func (c *CompatConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ClientConfig represents the core configuration for UnifAI HTTP transport and the UnifAI Client.
+// ClientConfig represents the core configuration for Raksha HTTP transport and the Raksha Client.
 // It includes settings for excess request handling, Prometheus metrics, and initial pool size.
 type ClientConfig struct {
 	DropExcessRequests                    bool                             `json:"drop_excess_requests"`                       // Drop excess requests if the provider queue is full
-	InitialPoolSize                       int                              `json:"initial_pool_size"`                          // The initial pool size for the unifai client
+	InitialPoolSize                       int                              `json:"initial_pool_size"`                          // The initial pool size for the raksha client
 	PrometheusLabels                      []string                         `json:"prometheus_labels"`                          // The labels to be used for prometheus metrics
 	EnableLogging                         *bool                            `json:"enable_logging"`                             // Enable logging of requests and responses
 	DisableContentLogging                 bool                             `json:"disable_content_logging"`                    // Disable logging of content
@@ -98,7 +98,7 @@ type ClientConfig struct {
 	WhitelistedRoutes                     []string                         `json:"whitelisted_routes,omitempty"`         // Routes that bypass auth middleware
 	HideDeletedVirtualKeysInFilters       bool                             `json:"hide_deleted_virtual_keys_in_filters"` // Hide deleted virtual keys from logs/MCP filter data
 	RoutingChainMaxDepth                  int                              `json:"routing_chain_max_depth"`              // Maximum depth for routing rule chain evaluation (default: 10)
-	MCPExternalClientURL                  *schemas.SecretVar               `json:"mcp_external_client_url,omitempty"`    // Public base URL used as redirect_uri when UnifAI acts as an OAuth client to upstream MCP servers. Supports env var syntax ("env.MY_VAR")
+	MCPExternalClientURL                  *schemas.SecretVar               `json:"mcp_external_client_url,omitempty"`    // Public base URL used as redirect_uri when Raksha acts as an OAuth client to upstream MCP servers. Supports env var syntax ("env.MY_VAR")
 	MCPServerAuthMode                     tables.MCPServerAuthMode         `json:"mcp_server_auth_mode,omitempty"`       // How /mcp authenticates inbound clients: headers (default), both, or oauth.
 	OAuth2ServerConfig                    *tables.OAuth2ServerConfig       `json:"oauth2_server_config,omitempty"`       // OAuth2 AS-specific settings (IssuerURL, token TTLs). Only relevant when MCPServerAuthMode is both or oauth.
 	ConfigHash                            string                           `json:"-"`                                    // Config hash for reconciliation (not serialized)
@@ -442,8 +442,8 @@ type ProviderConfig struct {
 	NetworkConfig            *schemas.NetworkConfig            `json:"network_config,omitempty"`              // Network-related settings
 	ConcurrencyAndBufferSize *schemas.ConcurrencyAndBufferSize `json:"concurrency_and_buffer_size,omitempty"` // Concurrency settings
 	ProxyConfig              *schemas.ProxyConfig              `json:"proxy_config,omitempty"`                // Proxy configuration
-	SendBackRawRequest       bool                              `json:"send_back_raw_request"`                 // Include raw request in UnifAIResponse
-	SendBackRawResponse      bool                              `json:"send_back_raw_response"`                // Include raw response in UnifAIResponse
+	SendBackRawRequest       bool                              `json:"send_back_raw_request"`                 // Include raw request in RakshaResponse
+	SendBackRawResponse      bool                              `json:"send_back_raw_response"`                // Include raw response in RakshaResponse
 	StoreRawRequestResponse  bool                              `json:"store_raw_request_response"`            // Capture raw request/response for internal logging only; strip from API responses returned to clients
 	CustomProviderConfig     *schemas.CustomProviderConfig     `json:"custom_provider_config,omitempty"`      // Custom provider configuration
 	OpenAIConfig             *schemas.OpenAIConfig             `json:"openai_config,omitempty"`               // OpenAI-specific configuration
@@ -507,7 +507,7 @@ func (p *ProviderConfig) Redacted() *ProviderConfig {
 		if key.UseForBatchAPI != nil {
 			redactedConfig.Keys[i].UseForBatchAPI = key.UseForBatchAPI
 		} else {
-			redactedConfig.Keys[i].UseForBatchAPI = unifai.Ptr(false)
+			redactedConfig.Keys[i].UseForBatchAPI = raksha.Ptr(false)
 		}
 
 		// Add model discovery status and error
@@ -1563,7 +1563,7 @@ func GenerateFrameworkConfigHash(pricingURL *string, modelParametersURL *string,
 	return hex.EncodeToString(h[:]), nil
 }
 
-// AuthConfig represents configured auth config for UnifAI dashboard
+// AuthConfig represents configured auth config for Raksha dashboard
 type AuthConfig struct {
 	AdminUserName *schemas.SecretVar `json:"admin_username"`
 	AdminPassword *schemas.SecretVar `json:"admin_password"`

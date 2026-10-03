@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 PROXY_DIR = Path(__file__).resolve().parents[1]
-PARTS_DIR = PROXY_DIR / "unifai_proxy_parts"
+PARTS_DIR = PROXY_DIR / "raksha_proxy_parts"
 
 
 def _load_proxy_parts():
@@ -118,7 +118,7 @@ class UploadNameAndRuleTests(unittest.TestCase):
             self.assertTrue(fake(n), n)
             self.assertFalse(real(n), n)
         # Chat/product labels must NEVER become Prompt Log filenames.
-        for n in ("UnifAI", "Greeting", "New chat", "UnifAI Manual Overview"):
+        for n in ("Raksha", "Greeting", "New chat", "Raksha Manual Overview"):
             self.assertFalse(real(n), n)
         # ChatGPT page scripts must never become the Prompt Log filename.
         for n in ("analytics.js", "gtag.js", "chunk.js", "vendor.js", "hot-update.js"):
@@ -130,17 +130,17 @@ class UploadNameAndRuleTests(unittest.TestCase):
             "meeting-notes.m4a",
             "Screenshot 2024-09-21 at 2.33.00 AM.png",
             "IMG_4032.jpg",
-            "UnifAI Product (1)",
+            "Raksha Product (1)",
             "01-User-Manual(2).pdf",
         ):
             self.assertTrue(real(n), n)
             self.assertFalse(fake(n), n)
 
     def test_pdf_product_title_is_not_used_as_filename(self) -> None:
-        # Minimal PDF with /Title (UnifAI) — brand title must not become the log label.
+        # Minimal PDF with /Title (Raksha) — brand title must not become the log label.
         pdf = (
             b"%PDF-1.4\n"
-            b"1 0 obj<< /Title (UnifAI) >>endobj\n"
+            b"1 0 obj<< /Title (Raksha) >>endobj\n"
             b"trailer<< /Root 1 0 R >>\n"
             b"%%EOF\n"
         )
@@ -159,11 +159,11 @@ class UploadNameAndRuleTests(unittest.TestCase):
             entries.extend(lst)
         self.assertTrue(entries)
         name = (entries[-1].get("file_name") or "").lower()
-        self.assertNotEqual(name, "unifai")
-        self.assertNotEqual(name, "unifai.pdf")
+        self.assertNotEqual(name, "raksha")
+        self.assertNotEqual(name, "raksha.pdf")
         self.assertIn(name, {"document.pdf", "attachment"})
 
-    def test_chatgpt_send_ignores_chat_title_unifai(self) -> None:
+    def test_chatgpt_send_ignores_chat_title_raksha(self) -> None:
         domain = "chatgpt.com"
         fid = "file-docManual01"
         real_name = "01-User-Manual(2).pdf"
@@ -175,7 +175,7 @@ class UploadNameAndRuleTests(unittest.TestCase):
         NS["remember_file_create_handshake"](
             handshake, domain, handshake.encode(), "/backend-api/files",
         )
-        pdf = b"%PDF-1.4\n1 0 obj<< /Title (UnifAI) >>endobj\n%%EOF\n" + (b"\x00" * 300)
+        pdf = b"%PDF-1.4\n1 0 obj<< /Title (Raksha) >>endobj\n%%EOF\n" + (b"\x00" * 300)
         NS["cache_upload_file"](
             domain,
             file_name="",
@@ -186,7 +186,7 @@ class UploadNameAndRuleTests(unittest.TestCase):
         )
         send = json.dumps({
             "conversation_id": "conv-1",
-            "title": "UnifAI Manual Overview",
+            "title": "Raksha Manual Overview",
             "action": "next",
             "messages": [{
                 "author": {"role": "user"},
@@ -194,7 +194,7 @@ class UploadNameAndRuleTests(unittest.TestCase):
                 "metadata": {
                     "attachments": [{
                         "id": fid,
-                        "name": "UnifAI",
+                        "name": "Raksha",
                         "file_name": real_name,
                         "mimeType": "application/pdf",
                     }],
@@ -212,14 +212,14 @@ class UploadNameAndRuleTests(unittest.TestCase):
         self.assertEqual(label, real_name)
         names = NS["extract_all_attachment_filenames_from_send"](send)
         self.assertIn(real_name, names)
-        self.assertNotIn("UnifAI", names)
+        self.assertNotIn("Raksha", names)
 
     def test_chatgpt_pdf_does_not_take_analytics_js_name(self) -> None:
         """Live bug: ChatGPT wire leaked analytics.js onto a PDF Prompt Log."""
         domain = "chatgpt.com"
         real_name = "04-Feature-Buttons.pdf"
         pdf = (
-            b"%PDF-1.4\n1 0 obj<< /Title (UnifAI) >>endobj\n"
+            b"%PDF-1.4\n1 0 obj<< /Title (Raksha) >>endobj\n"
             b"2 0 obj<< /Length 20 >>stream\nFEATURE-BTN\nendstream\nendobj\n"
             b"trailer<< /Root 1 0 R >>\n%%EOF\n"
         ) + (b"\x00" * 200)
@@ -493,7 +493,7 @@ class UploadNameAndRuleTests(unittest.TestCase):
             )
             # Distinct PDF bodies (unique stream before %%EOF) — mirrors real multi-upload.
             body = (
-                f"%PDF-1.4\n1 0 obj<< /Title (UnifAI) /Subject ({real_name}) >>endobj\n"
+                f"%PDF-1.4\n1 0 obj<< /Title (Raksha) /Subject ({real_name}) >>endobj\n"
                 f"2 0 obj<< /Length 20 >>stream\n{fid}-CONTENT\nendstream\nendobj\n"
                 f"trailer<< /Root 1 0 R >>\n%%EOF\n"
             ).encode("utf-8")
@@ -507,14 +507,14 @@ class UploadNameAndRuleTests(unittest.TestCase):
             )
         send = json.dumps({
             "conversation_id": "conv-multi",
-            "title": "UnifAI Manual Overview",
+            "title": "Raksha Manual Overview",
             "action": "next",
             "messages": [{
                 "author": {"role": "user"},
                 "content": {"content_type": "text", "parts": ["hiiiiiii"]},
                 "metadata": {
                     "attachments": [
-                        {"id": fid, "name": "UnifAI", "file_name": real_name}
+                        {"id": fid, "name": "Raksha", "file_name": real_name}
                         for fid, real_name in files
                     ],
                 },
@@ -527,14 +527,14 @@ class UploadNameAndRuleTests(unittest.TestCase):
         for _, real_name in files:
             self.assertIn(real_name, names)
         for n in names:
-            self.assertNotEqual(n.lower(), "unifai")
-            self.assertNotEqual(n.lower(), "unifai.pdf")
+            self.assertNotEqual(n.lower(), "raksha")
+            self.assertNotEqual(n.lower(), "raksha.pdf")
             self.assertNotEqual(n.lower(), "screenshot")
         label0 = NS["_display_label_for_upload"](
             cached[0]["file_name"], cached[0]["raw_bytes"], "application/pdf",
         )
         self.assertTrue(label0.endswith(".pdf"))
-        self.assertNotIn(label0.lower(), {"unifai", "unifai.pdf", "screenshot"})
+        self.assertNotIn(label0.lower(), {"raksha", "raksha.pdf", "screenshot"})
 
     def test_multi_file_predicts_all_even_if_only_one_id_key_cached(self) -> None:
         """Regression: finding 1 file by id must still predict siblings from the queue."""
@@ -554,7 +554,7 @@ class UploadNameAndRuleTests(unittest.TestCase):
                 handshake, domain, handshake.encode(), "/backend-api/files",
             )
             body = (
-                f"%PDF-1.4\n1 0 obj<< /Title (UnifAI) >>endobj\n"
+                f"%PDF-1.4\n1 0 obj<< /Title (Raksha) >>endobj\n"
                 f"2 0 obj<< /Length 24 >>stream\n{real_name}-BODY\nendstream\nendobj\n"
                 f"trailer<< /Root 1 0 R >>\n%%EOF\n"
             ).encode("utf-8") + (b"\x00" * 80)

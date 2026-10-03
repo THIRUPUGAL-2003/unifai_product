@@ -13,7 +13,7 @@ export default function BigQueryConnectorView({ onDelete, isDeleting }: BigQuery
 			description="Stream inference logs into a BigQuery dataset."
 			fields={[
 				{ key: "project_id", label: "Project ID" },
-				{ key: "dataset", label: "Dataset", placeholder: "unifai" },
+				{ key: "dataset", label: "Dataset", placeholder: "raksha" },
 				{ key: "table", label: "Table", placeholder: "llm_logs" },
 				{ key: "credentials_json", label: "Service account JSON", type: "password" },
 			]}

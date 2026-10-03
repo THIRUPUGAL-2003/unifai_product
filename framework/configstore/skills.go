@@ -16,9 +16,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/objectstore"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/objectstore"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

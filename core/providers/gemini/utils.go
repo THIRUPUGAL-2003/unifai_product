@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"github.com/valyala/fasthttp"
@@ -355,50 +355,50 @@ func (r *GeminiGenerationRequest) convertGenerationConfigToResponsesParameters()
 	return params
 }
 
-// mapGeminiServiceTierToUnifAI converts a Gemini ServiceTier to an OpenAI-compatible UnifAIServiceTier.
-func mapGeminiServiceTierToUnifAI(tier ServiceTier) schemas.UnifAIServiceTier {
+// mapGeminiServiceTierToRaksha converts a Gemini ServiceTier to an OpenAI-compatible RakshaServiceTier.
+func mapGeminiServiceTierToRaksha(tier ServiceTier) schemas.RakshaServiceTier {
 	switch tier {
 	case ServiceTierStandard:
-		return schemas.UnifAIServiceTierDefault
+		return schemas.RakshaServiceTierDefault
 	case ServiceTierFlex:
-		return schemas.UnifAIServiceTierFlex
+		return schemas.RakshaServiceTierFlex
 	case ServiceTierPriority:
-		return schemas.UnifAIServiceTierPriority
+		return schemas.RakshaServiceTierPriority
 	default:
-		return schemas.UnifAIServiceTierAuto
+		return schemas.RakshaServiceTierAuto
 	}
 }
 
-// mapGeminiTrafficTypeToUnifAI converts a Vertex AI usageMetadata.trafficType to a UnifAIServiceTier.
+// mapGeminiTrafficTypeToRaksha converts a Vertex AI usageMetadata.trafficType to a RakshaServiceTier.
 // Returns nil for empty or unrecognised values.
-func mapGeminiTrafficTypeToUnifAI(trafficType TrafficType) *schemas.UnifAIServiceTier {
-	var tier schemas.UnifAIServiceTier
+func mapGeminiTrafficTypeToRaksha(trafficType TrafficType) *schemas.RakshaServiceTier {
+	var tier schemas.RakshaServiceTier
 	switch trafficType {
 	case TrafficTypeOnDemand:
-		tier = schemas.UnifAIServiceTierDefault
+		tier = schemas.RakshaServiceTierDefault
 	case TrafficTypeOnDemandPriority:
-		tier = schemas.UnifAIServiceTierPriority
+		tier = schemas.RakshaServiceTierPriority
 	case TrafficTypeOnDemandFlex:
-		tier = schemas.UnifAIServiceTierFlex
+		tier = schemas.RakshaServiceTierFlex
 	case TrafficTypeProvisionedThroughput:
-		tier = schemas.UnifAIServiceTierProvisioned
+		tier = schemas.RakshaServiceTierProvisioned
 	default:
 		return nil
 	}
 	return &tier
 }
 
-// mapUnifAIServiceTierToVertexTrafficType converts a UnifAIServiceTier to a Vertex AI trafficType string.
+// mapRakshaServiceTierToVertexTrafficType converts a RakshaServiceTier to a Vertex AI trafficType string.
 // Returns "" for auto (unresolved) since the actual traffic type cannot be determined.
-func mapUnifAIServiceTierToVertexTrafficType(tier schemas.UnifAIServiceTier) TrafficType {
+func mapRakshaServiceTierToVertexTrafficType(tier schemas.RakshaServiceTier) TrafficType {
 	switch tier {
-	case schemas.UnifAIServiceTierDefault:
+	case schemas.RakshaServiceTierDefault:
 		return TrafficTypeOnDemand
-	case schemas.UnifAIServiceTierPriority:
+	case schemas.RakshaServiceTierPriority:
 		return TrafficTypeOnDemandPriority
-	case schemas.UnifAIServiceTierFlex:
+	case schemas.RakshaServiceTierFlex:
 		return TrafficTypeOnDemandFlex
-	case schemas.UnifAIServiceTierProvisioned:
+	case schemas.RakshaServiceTierProvisioned:
 		return TrafficTypeProvisionedThroughput
 	default:
 		return ""
@@ -689,8 +689,8 @@ func convertFileDataToBytes(fileData string) ([]byte, string) {
 }
 
 var (
-	// Maps Gemini finish reasons to UnifAI format
-	geminiFinishReasonToUnifAI = map[FinishReason]string{
+	// Maps Gemini finish reasons to Raksha format
+	geminiFinishReasonToRaksha = map[FinishReason]string{
 		FinishReasonStop:                    "stop",
 		FinishReasonMaxTokens:               "length",
 		FinishReasonSafety:                  "content_filter",
@@ -712,8 +712,8 @@ var (
 		FinishReasonMalformedResponse:       "stop",
 	}
 
-	// Maps UnifAI canonical finish reasons back to the most representative Gemini finish reason
-	unifaiToGeminiFinishReason = map[string]FinishReason{
+	// Maps Raksha canonical finish reasons back to the most representative Gemini finish reason
+	rakshaToGeminiFinishReason = map[string]FinishReason{
 		"stop":           FinishReasonStop,
 		"length":         FinishReasonMaxTokens,
 		"content_filter": FinishReasonSafety,
@@ -721,29 +721,29 @@ var (
 	}
 )
 
-// ConvertGeminiFinishReasonToUnifAI converts Gemini finish reasons to UnifAI format
-func ConvertGeminiFinishReasonToUnifAI(providerReason FinishReason) string {
-	if unifaiReason, ok := geminiFinishReasonToUnifAI[providerReason]; ok {
-		return unifaiReason
+// ConvertGeminiFinishReasonToRaksha converts Gemini finish reasons to Raksha format
+func ConvertGeminiFinishReasonToRaksha(providerReason FinishReason) string {
+	if rakshaReason, ok := geminiFinishReasonToRaksha[providerReason]; ok {
+		return rakshaReason
 	}
 	return string(providerReason)
 }
 
-// ConvertUnifAIFinishReasonToGemini converts UnifAI canonical finish reasons back to Gemini format.
-func ConvertUnifAIFinishReasonToGemini(unifaiReason string) FinishReason {
-	if geminiReason, ok := unifaiToGeminiFinishReason[unifaiReason]; ok {
+// ConvertRakshaFinishReasonToGemini converts Raksha canonical finish reasons back to Gemini format.
+func ConvertRakshaFinishReasonToGemini(rakshaReason string) FinishReason {
+	if geminiReason, ok := rakshaToGeminiFinishReason[rakshaReason]; ok {
 		return geminiReason
 	}
 	return FinishReasonStop
 }
 
-// ConvertGeminiUsageMetadataToChatUsage converts Gemini usage metadata to UnifAI chat LLM usage
-func ConvertGeminiUsageMetadataToChatUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.UnifAILLMUsage {
+// ConvertGeminiUsageMetadataToChatUsage converts Gemini usage metadata to Raksha chat LLM usage
+func ConvertGeminiUsageMetadataToChatUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.RakshaLLMUsage {
 	if metadata == nil {
 		return nil
 	}
 
-	usage := &schemas.UnifAILLMUsage{
+	usage := &schemas.RakshaLLMUsage{
 		PromptTokens:     int(metadata.PromptTokenCount),
 		CompletionTokens: int(metadata.CandidatesTokenCount),
 		TotalTokens:      int(metadata.TotalTokenCount),
@@ -801,7 +801,7 @@ func ConvertGeminiUsageMetadataToChatUsage(metadata *GenerateContentResponseUsag
 	return usage
 }
 
-// convertGeminiUsageMetadataToSpeechUsage converts Gemini usage metadata to UnifAI speech usage
+// convertGeminiUsageMetadataToSpeechUsage converts Gemini usage metadata to Raksha speech usage
 func convertGeminiUsageMetadataToSpeechUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.SpeechUsage {
 	if metadata == nil {
 		return nil
@@ -830,8 +830,8 @@ func convertGeminiUsageMetadataToSpeechUsage(metadata *GenerateContentResponseUs
 	return usage
 }
 
-// convertUnifAISpeechUsageToGeminiUsageMetadata converts UnifAI speech usage to Gemini usage metadata
-func convertUnifAISpeechUsageToGeminiUsageMetadata(usage *schemas.SpeechUsage) *GenerateContentResponseUsageMetadata {
+// convertRakshaSpeechUsageToGeminiUsageMetadata converts Raksha speech usage to Gemini usage metadata
+func convertRakshaSpeechUsageToGeminiUsageMetadata(usage *schemas.SpeechUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -861,7 +861,7 @@ func convertUnifAISpeechUsageToGeminiUsageMetadata(usage *schemas.SpeechUsage) *
 	return metadata
 }
 
-// convertGeminiUsageMetadataToTranscriptionUsage converts Gemini usage metadata to UnifAI transcription usage
+// convertGeminiUsageMetadataToTranscriptionUsage converts Gemini usage metadata to Raksha transcription usage
 func convertGeminiUsageMetadataToTranscriptionUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.TranscriptionUsage {
 	if metadata == nil {
 		return nil
@@ -891,8 +891,8 @@ func convertGeminiUsageMetadataToTranscriptionUsage(metadata *GenerateContentRes
 	return usage
 }
 
-// convertUnifAITranscriptionUsageToGeminiUsageMetadata converts UnifAI transcription usage to Gemini usage metadata
-func convertUnifAITranscriptionUsageToGeminiUsageMetadata(usage *schemas.TranscriptionUsage) *GenerateContentResponseUsageMetadata {
+// convertRakshaTranscriptionUsageToGeminiUsageMetadata converts Raksha transcription usage to Gemini usage metadata
+func convertRakshaTranscriptionUsageToGeminiUsageMetadata(usage *schemas.TranscriptionUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -928,7 +928,7 @@ func convertUnifAITranscriptionUsageToGeminiUsageMetadata(usage *schemas.Transcr
 	return metadata
 }
 
-// convertGeminiUsageMetadataToImageUsage converts Gemini usage metadata to UnifAI image usage
+// convertGeminiUsageMetadataToImageUsage converts Gemini usage metadata to Raksha image usage
 func convertGeminiUsageMetadataToImageUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.ImageUsage {
 	if metadata == nil {
 		return nil
@@ -971,8 +971,8 @@ func convertGeminiUsageMetadataToImageUsage(metadata *GenerateContentResponseUsa
 	return usage
 }
 
-// convertUnifAIImageUsageToGeminiUsageMetadata converts UnifAI image usage to Gemini usage metadata
-func convertUnifAIImageUsageToGeminiUsageMetadata(usage *schemas.ImageUsage) *GenerateContentResponseUsageMetadata {
+// convertRakshaImageUsageToGeminiUsageMetadata converts Raksha image usage to Gemini usage metadata
+func convertRakshaImageUsageToGeminiUsageMetadata(usage *schemas.ImageUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -1018,7 +1018,7 @@ func convertUnifAIImageUsageToGeminiUsageMetadata(usage *schemas.ImageUsage) *Ge
 	return metadata
 }
 
-// ConvertGeminiUsageMetadataToResponsesUsage converts Gemini usage metadata to UnifAI responses usage
+// ConvertGeminiUsageMetadataToResponsesUsage converts Gemini usage metadata to Raksha responses usage
 func ConvertGeminiUsageMetadataToResponsesUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.ResponsesResponseUsage {
 	if metadata == nil {
 		return nil
@@ -1074,7 +1074,7 @@ func ConvertGeminiUsageMetadataToResponsesUsage(metadata *GenerateContentRespons
 	return usage
 }
 
-func ConvertUnifAIResponsesUsageToGeminiUsageMetadata(usage *schemas.ResponsesResponseUsage) *GenerateContentResponseUsageMetadata {
+func ConvertRakshaResponsesUsageToGeminiUsageMetadata(usage *schemas.ResponsesResponseUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -1135,7 +1135,7 @@ func ConvertUnifAIResponsesUsageToGeminiUsageMetadata(usage *schemas.ResponsesRe
 	return metadata
 }
 
-// convertParamsToGenerationConfig converts UnifAI parameters to Gemini GenerationConfig
+// convertParamsToGenerationConfig converts Raksha parameters to Gemini GenerationConfig
 func convertParamsToGenerationConfig(params *schemas.ChatParameters, responseModalities []string, model string) (GenerationConfig, error) {
 	config := GenerationConfig{}
 
@@ -1291,25 +1291,25 @@ func convertParamsToGenerationConfig(params *schemas.ChatParameters, responseMod
 	return config, nil
 }
 
-// mapUnifAIServiceTierToGemini converts a UnifAIServiceTier to a Gemini ServiceTier.
-func mapUnifAIServiceTierToGemini(tier schemas.UnifAIServiceTier) ServiceTier {
+// mapRakshaServiceTierToGemini converts a RakshaServiceTier to a Gemini ServiceTier.
+func mapRakshaServiceTierToGemini(tier schemas.RakshaServiceTier) ServiceTier {
 	switch tier {
-	case schemas.UnifAIServiceTierDefault:
+	case schemas.RakshaServiceTierDefault:
 		return ServiceTierStandard
-	case schemas.UnifAIServiceTierFlex:
+	case schemas.RakshaServiceTierFlex:
 		return ServiceTierFlex
-	case schemas.UnifAIServiceTierPriority:
+	case schemas.RakshaServiceTierPriority:
 		return ServiceTierPriority
 	default:
 		return ServiceTierUnspecified
 	}
 }
 
-// convertUnifAIToolsToGemini converts UnifAI tools to Gemini format
-func convertUnifAIToolsToGemini(unifaiTools []schemas.ChatTool) ([]Tool, error) {
+// convertRakshaToolsToGemini converts Raksha tools to Gemini format
+func convertRakshaToolsToGemini(rakshaTools []schemas.ChatTool) ([]Tool, error) {
 	geminiTool := Tool{}
 
-	for _, tool := range unifaiTools {
+	for _, tool := range rakshaTools {
 		if tool.Type == "" {
 			continue
 		}
@@ -1337,7 +1337,7 @@ func convertUnifAIToolsToGemini(unifaiTools []schemas.ChatTool) ([]Tool, error) 
 	return []Tool{}, nil
 }
 
-// convertFunctionParametersToSchema converts UnifAI function parameters to Gemini Schema
+// convertFunctionParametersToSchema converts Raksha function parameters to Gemini Schema
 func convertFunctionParametersToSchema(params schemas.ToolFunctionParameters) *Schema {
 	schema := &Schema{
 		Type: Type(params.Type),
@@ -1732,7 +1732,7 @@ func toFloat64(v interface{}) (float64, bool) {
 	}
 }
 
-// convertToolChoiceToToolConfig converts UnifAI tool choice to Gemini tool config
+// convertToolChoiceToToolConfig converts Raksha tool choice to Gemini tool config
 func convertToolChoiceToToolConfig(toolChoice *schemas.ChatToolChoice) *ToolConfig {
 	if toolChoice == nil || (toolChoice.ChatToolChoiceStr == nil && toolChoice.ChatToolChoiceStruct == nil) {
 		return nil
@@ -1809,8 +1809,8 @@ func addSpeechConfigToGenerationConfig(config *GenerationConfig, voiceConfig *sc
 	config.SpeechConfig = &speechConfig
 }
 
-// convertUnifAIMessagesToGemini converts UnifAI messages to Gemini format
-func convertUnifAIMessagesToGemini(messages []schemas.ChatMessage, allowedImageURLSchemes ...string) ([]Content, *Content, error) {
+// convertRakshaMessagesToGemini converts Raksha messages to Gemini format
+func convertRakshaMessagesToGemini(messages []schemas.ChatMessage, allowedImageURLSchemes ...string) ([]Content, *Content, error) {
 	if len(allowedImageURLSchemes) == 0 {
 		allowedImageURLSchemes = defaultGeminiImageURLSchemes
 	}
@@ -2134,7 +2134,7 @@ func convertUnifAIMessagesToGemini(messages []schemas.ChatMessage, allowedImageU
 						lookupID := fmt.Sprintf("tool_call_%s", baseCallID)
 						for _, reasoningDetail := range message.ChatAssistantMessage.ReasoningDetails {
 							if reasoningDetail.ID != nil && *reasoningDetail.ID == lookupID &&
-								reasoningDetail.Type == schemas.UnifAIReasoningDetailsTypeEncrypted &&
+								reasoningDetail.Type == schemas.RakshaReasoningDetailsTypeEncrypted &&
 								reasoningDetail.Signature != nil {
 								// Decode the base64 string to raw bytes
 								decoded, err := base64.StdEncoding.DecodeString(*reasoningDetail.Signature)
@@ -2789,10 +2789,10 @@ func downloadImageFromURL(ctx context.Context, imageURL string) (string, error) 
 	req.SetRequestURI(imageURL)
 	req.Header.SetMethod(http.MethodGet)
 
-	_, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, &client, req, resp)
+	_, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, &client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return "", fmt.Errorf("failed to download image: %v", unifaiErr)
+	if rakshaErr != nil {
+		return "", fmt.Errorf("failed to download image: %v", rakshaErr)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2820,8 +2820,8 @@ func tokenToBytes(token string) []int {
 	return result
 }
 
-// ConvertGeminiLogprobsResultToUnifAI converts a Gemini LogprobsResult to UnifAI UnifAILogProbs
-func ConvertGeminiLogprobsResultToUnifAI(result *LogprobsResult) *schemas.UnifAILogProbs {
+// ConvertGeminiLogprobsResultToRaksha converts a Gemini LogprobsResult to Raksha RakshaLogProbs
+func ConvertGeminiLogprobsResultToRaksha(result *LogprobsResult) *schemas.RakshaLogProbs {
 	if result == nil || len(result.ChosenCandidates) == 0 {
 		return nil
 	}
@@ -2843,5 +2843,5 @@ func ConvertGeminiLogprobsResultToUnifAI(result *LogprobsResult) *schemas.UnifAI
 			}
 		}
 	}
-	return &schemas.UnifAILogProbs{Content: content}
+	return &schemas.RakshaLogProbs{Content: content}
 }

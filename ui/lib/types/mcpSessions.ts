@@ -1,5 +1,5 @@
 // Types for the MCP Auth Sessions tab + auth landing flow.
-// Mirrors the wire shapes in transports/unifai-http/handlers/mcp_sessions.go.
+// Mirrors the wire shapes in transports/raksha-http/handlers/mcp_sessions.go.
 
 export type AuthMode = "user" | "vk" | "session";
 
@@ -104,7 +104,7 @@ export interface MCPSessionsQueryParams {
 export interface MCPSessionReauthResponse {
 	// authorize_url is the URL the caller should redirect to. For OAuth rows
 	// it's the upstream authorize endpoint; for header credential rows it's
-	// the unifai auth-landing page that serves the submission form.
+	// the raksha auth-landing page that serves the submission form.
 	authorize_url: string;
 	// submit_url is set on header re-auth and matches authorize_url; kept
 	// for callers that want to be explicit about the underlying surface.

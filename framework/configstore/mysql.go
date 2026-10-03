@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/mysqlconn"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/mysqlconn"
 	"gorm.io/gorm"
 )
 

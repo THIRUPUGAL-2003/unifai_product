@@ -5,7 +5,7 @@ import { getSupportedTimezones } from "../timezones";
 
 export { getSupportedTimezones };
 
-const STORAGE_KEY = "unifai.timezone";
+const STORAGE_KEY = "raksha.timezone";
 
 /** Returns the browser's local IANA timezone (e.g. "America/New_York"). */
 function getLocalTimezone(): string {

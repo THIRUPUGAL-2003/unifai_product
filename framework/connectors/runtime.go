@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore"
 )
 
 // TestResult reports whether a connector can reach its destination.

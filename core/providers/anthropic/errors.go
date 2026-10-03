@@ -3,25 +3,25 @@ package anthropic
 import (
 	"fmt"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-// ToAnthropicChatCompletionError converts a UnifAIError to AnthropicMessageError
-func ToAnthropicChatCompletionError(unifaiErr *schemas.UnifAIError) *AnthropicMessageError {
-	if unifaiErr == nil {
+// ToAnthropicChatCompletionError converts a RakshaError to AnthropicMessageError
+func ToAnthropicChatCompletionError(rakshaErr *schemas.RakshaError) *AnthropicMessageError {
+	if rakshaErr == nil {
 		return nil
 	}
 
 	// Safely extract type and message from nested error
 	errorType := "api_error"
 	message := ""
-	if unifaiErr.Error != nil {
-		if unifaiErr.Error.Type != nil && *unifaiErr.Error.Type != "" {
-			errorType = *unifaiErr.Error.Type
+	if rakshaErr.Error != nil {
+		if rakshaErr.Error.Type != nil && *rakshaErr.Error.Type != "" {
+			errorType = *rakshaErr.Error.Type
 		}
-		message = unifaiErr.Error.Message
+		message = rakshaErr.Error.Message
 	}
 
 	// Handle nested error fields with nil checks
@@ -36,13 +36,13 @@ func ToAnthropicChatCompletionError(unifaiErr *schemas.UnifAIError) *AnthropicMe
 	}
 }
 
-// ToAnthropicResponsesStreamError converts a UnifAIError to Anthropic responses streaming error in SSE format
-func ToAnthropicResponsesStreamError(unifaiErr *schemas.UnifAIError) string {
-	if unifaiErr == nil {
+// ToAnthropicResponsesStreamError converts a RakshaError to Anthropic responses streaming error in SSE format
+func ToAnthropicResponsesStreamError(rakshaErr *schemas.RakshaError) string {
+	if rakshaErr == nil {
 		return ""
 	}
 
-	anthropicErr := ToAnthropicChatCompletionError(unifaiErr)
+	anthropicErr := ToAnthropicChatCompletionError(rakshaErr)
 
 	// Marshal to JSON
 	jsonData, err := providerUtils.MarshalSorted(anthropicErr)
@@ -54,15 +54,15 @@ func ToAnthropicResponsesStreamError(unifaiErr *schemas.UnifAIError) string {
 	return fmt.Sprintf("event: error\ndata: %s\n\n", jsonData)
 }
 
-func parseAnthropicError(resp *fasthttp.Response) *schemas.UnifAIError {
+func parseAnthropicError(resp *fasthttp.Response) *schemas.RakshaError {
 	var errorResp AnthropicError
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 	if errorResp.Error != nil {
-		if unifaiErr.Error == nil {
-			unifaiErr.Error = &schemas.ErrorField{}
+		if rakshaErr.Error == nil {
+			rakshaErr.Error = &schemas.ErrorField{}
 		}
-		unifaiErr.Error.Type = &errorResp.Error.Type
-		unifaiErr.Error.Message = errorResp.Error.Message
+		rakshaErr.Error.Type = &errorResp.Error.Type
+		rakshaErr.Error.Message = errorResp.Error.Message
 	}
-	return unifaiErr
+	return rakshaErr
 }

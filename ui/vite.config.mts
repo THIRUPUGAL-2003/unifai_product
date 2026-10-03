@@ -13,11 +13,11 @@ export default defineConfig(({ mode }) => {
 	const rootDir = path.resolve(__dirname, "..");
 	const env = loadEnv(mode, rootDir, "");
 
-	const backendPort = env.APP_PORT || env.UNIFAI_PORT || process.env.APP_PORT || process.env.UNIFAI_PORT || "8001";
-	const backendTarget = env.UNIFAI_BACKEND_URL || process.env.UNIFAI_BACKEND_URL || `http://localhost:${backendPort}`;
+	const backendPort = env.APP_PORT || env.RAKSHA_PORT || process.env.APP_PORT || process.env.RAKSHA_PORT || "8001";
+	const backendTarget = env.RAKSHA_BACKEND_URL || process.env.RAKSHA_BACKEND_URL || `http://localhost:${backendPort}`;
 	const uiPort = Number(env.UI_PORT || process.env.UI_PORT || 3000);
-	const companyName = env.UNIFAI_COMPANY_NAME || process.env.UNIFAI_COMPANY_NAME || "YesPanchi Group of Companies";
-	const companyLogo = env.UNIFAI_COMPANY_LOGO || process.env.UNIFAI_COMPANY_LOGO || "/logo.png";
+	const companyName = env.RAKSHA_COMPANY_NAME || process.env.RAKSHA_COMPANY_NAME || "YesPanchi Group of Companies";
+	const companyLogo = env.RAKSHA_COMPANY_LOGO || process.env.RAKSHA_COMPANY_LOGO || "/logo.png";
 
 	return {
 		plugins: [
@@ -55,13 +55,13 @@ export default defineConfig(({ mode }) => {
 	},
 	define: {
 		"process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"),
-		"process.env.UNIFAI_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : "false"),
-		"process.env.UNIFAI_DISABLE_PROFILER": JSON.stringify(process.env.UNIFAI_DISABLE_PROFILER ?? ""),
-		"process.env.UNIFAI_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(process.env.ENTERPRISE_TRIAL_EXPIRY ?? ""),
-		"process.env.UNIFAI_COMPANY_NAME": JSON.stringify(companyName),
-		"process.env.UNIFAI_COMPANY_LOGO": JSON.stringify(companyLogo),
-		"process.env.UNIFAI_PORT": JSON.stringify(backendPort),
-		"process.env.UNIFAI_BACKEND_URL": JSON.stringify(backendTarget),
+		"process.env.RAKSHA_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : "false"),
+		"process.env.RAKSHA_DISABLE_PROFILER": JSON.stringify(process.env.RAKSHA_DISABLE_PROFILER ?? ""),
+		"process.env.RAKSHA_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(process.env.ENTERPRISE_TRIAL_EXPIRY ?? ""),
+		"process.env.RAKSHA_COMPANY_NAME": JSON.stringify(companyName),
+		"process.env.RAKSHA_COMPANY_LOGO": JSON.stringify(companyLogo),
+		"process.env.RAKSHA_PORT": JSON.stringify(backendPort),
+		"process.env.RAKSHA_BACKEND_URL": JSON.stringify(backendTarget),
 	},
 	server: {
 		port: uiPort,

@@ -16,11 +16,11 @@ from pathlib import Path
 
 AGENT_DIR = Path(__file__).resolve().parents[1]
 PROXY_DIR = AGENT_DIR.parent / "proxy"
-_TMP = tempfile.mkdtemp(prefix="unifai-bundle-test-")
+_TMP = tempfile.mkdtemp(prefix="raksha-bundle-test-")
 os.environ["LOCALAPPDATA"] = _TMP
 os.environ["HOME"] = _TMP
-os.environ.pop("UNIFAI_GUARD_CODE_DIR", None)
-os.environ.pop("UNIFAI_GUARD_CODE_SHA", None)
+os.environ.pop("RAKSHA_GUARD_CODE_DIR", None)
+os.environ.pop("RAKSHA_GUARD_CODE_SHA", None)
 sys.path.insert(0, str(AGENT_DIR))
 
 import agent_proxy_bundle as pb  # noqa: E402
@@ -29,9 +29,9 @@ import guard_bootstrap as gb  # noqa: E402
 
 def source_files(mutate=None) -> dict[str, bytes]:
     files = {"browser_ai_proxy.py": (PROXY_DIR / "browser_ai_proxy.py").read_bytes()}
-    for p in sorted((PROXY_DIR / "unifai_proxy_parts").iterdir()):
+    for p in sorted((PROXY_DIR / "raksha_proxy_parts").iterdir()):
         if p.suffix == ".py" or p.name == "MANIFEST.txt":
-            files[f"unifai_proxy_parts/{p.name}"] = p.read_bytes()
+            files[f"raksha_proxy_parts/{p.name}"] = p.read_bytes()
     for p in sorted(AGENT_DIR.glob("*.py")):
         if p.name != "guard_bootstrap.py":
             files[f"agent/{p.name}"] = p.read_bytes()
@@ -75,14 +75,14 @@ def stage(files: dict[str, bytes], version: str) -> str:
 
 def reset_store() -> None:
     shutil.rmtree(gb.bundle_root(), ignore_errors=True)
-    os.environ.pop("UNIFAI_GUARD_CODE_DIR", None)
-    os.environ.pop("UNIFAI_GUARD_CODE_SHA", None)
+    os.environ.pop("RAKSHA_GUARD_CODE_DIR", None)
+    os.environ.pop("RAKSHA_GUARD_CODE_SHA", None)
 
 
 class ApplyBundleTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_store()
-        pb.UNIFAI_BACKEND_URL = "https://unifai.example.com"
+        pb.RAKSHA_BACKEND_URL = "https://raksha.example.com"
         pb._failed_at.clear()
         self.restarts: list[str] = []
         self.served = b""
@@ -103,7 +103,7 @@ class ApplyBundleTests(unittest.TestCase):
         self.assertEqual(len(self.restarts), 1)
         code_dir, sha = gb.verified_code_dir(pb.AGENT_VERSION)
         self.assertEqual(sha, info["sha256"])
-        self.assertTrue(os.path.isfile(os.path.join(code_dir, "agent", "unifai_agent.py")))
+        self.assertTrue(os.path.isfile(os.path.join(code_dir, "agent", "raksha_agent.py")))
         self.assertFalse(pb.apply_bundle(info, self._restart), "same bundle must not re-apply")
 
     def test_agent_code_that_crashes_on_import_is_rejected(self) -> None:
@@ -119,7 +119,7 @@ class ApplyBundleTests(unittest.TestCase):
 
     def test_proxy_code_that_crashes_on_load_is_rejected(self) -> None:
         def break_proxy(files):
-            files["unifai_proxy_parts/responses_addon.py"] += b"\nraise RuntimeError('proxy boom')\n"
+            files["raksha_proxy_parts/responses_addon.py"] += b"\nraise RuntimeError('proxy boom')\n"
 
         self.served = zipped(source_files(break_proxy))
         self.assertFalse(pb.apply_bundle(info_for(self.served), self._restart))
@@ -130,25 +130,25 @@ class ApplyBundleTests(unittest.TestCase):
         self.assertFalse(pb.apply_bundle(info_for(self.served, ["0.0.1"]), self._restart))
 
     def test_plain_http_backend_never_downloads_code(self) -> None:
-        pb.UNIFAI_BACKEND_URL = "http://10.0.0.5:8080"
+        pb.RAKSHA_BACKEND_URL = "http://10.0.0.5:8080"
         self.served = zipped(source_files())
         self.assertFalse(pb.apply_bundle(info_for(self.served), self._restart))
 
     def test_validate_rejects_unexpected_or_broken_files(self) -> None:
-        ok = {"browser_ai_proxy.py": b"x = 1\n", "unifai_proxy_parts/a.py": b"a = 1\n"}
+        ok = {"browser_ai_proxy.py": b"x = 1\n", "raksha_proxy_parts/a.py": b"a = 1\n"}
         pb.validate_bundle(zipped(ok))
-        pb.validate_bundle(zipped({**ok, "agent/unifai_agent.py": b"def main(): pass\n"}))
+        pb.validate_bundle(zipped({**ok, "agent/raksha_agent.py": b"def main(): pass\n"}))
         for bad in (
             {**ok, "../evil.py": b"x"},
-            {**ok, "unifai_proxy_parts/../../evil.py": b"x"},
+            {**ok, "raksha_proxy_parts/../../evil.py": b"x"},
             {**ok, "agent/../evil.py": b"x"},
             {**ok, "agent/sub/x.py": b"x"},
-            {**ok, "agent/unifai_agent.py": b"x", "agent/guard_bootstrap.py": b"x"},
+            {**ok, "agent/raksha_agent.py": b"x", "agent/guard_bootstrap.py": b"x"},
             {**ok, "agent/agent_http.py": b"x = 1\n"},
             {**ok, "agent_config.py": b"x"},
-            {**ok, "unifai_proxy_parts/a.py": b"def (:\n"},
-            {**ok, "unifai_proxy_parts/MANIFEST.txt": b"a.py\nmissing.py\n"},
-            {"unifai_proxy_parts/a.py": b"a = 1\n"},
+            {**ok, "raksha_proxy_parts/a.py": b"def (:\n"},
+            {**ok, "raksha_proxy_parts/MANIFEST.txt": b"a.py\nmissing.py\n"},
+            {"raksha_proxy_parts/a.py": b"a = 1\n"},
         ):
             with self.assertRaises(Exception):
                 pb.validate_bundle(zipped(bad))
@@ -175,8 +175,8 @@ class BootstrapTests(unittest.TestCase):
         sha = stage(source_files(), self.version)
         for _ in range(gb.MAX_BOOT_ATTEMPTS):
             self.assertTrue(gb._count_boot(sha))
-        os.environ["UNIFAI_GUARD_CODE_DIR"] = "x"
-        os.environ["UNIFAI_GUARD_CODE_SHA"] = sha
+        os.environ["RAKSHA_GUARD_CODE_DIR"] = "x"
+        os.environ["RAKSHA_GUARD_CODE_SHA"] = sha
         pb.confirm_bundle_healthy()
         self.assertTrue(gb._count_boot(sha), "healthy confirmation resets the counter")
         for _ in range(gb.MAX_BOOT_ATTEMPTS - 1):
@@ -187,15 +187,15 @@ class BootstrapTests(unittest.TestCase):
     def test_finder_serves_bundle_modules_and_can_be_removed(self) -> None:
         code = Path(tempfile.mkdtemp(dir=_TMP))
         (code / "agent").mkdir()
-        (code / "agent" / "unifai_fake_mod.py").write_text("WHERE = 'bundle'\n")
+        (code / "agent" / "raksha_fake_mod.py").write_text("WHERE = 'bundle'\n")
         finder = gb.install_code_dir(str(code), "f" * 64)
-        import unifai_fake_mod  # noqa: F401
+        import raksha_fake_mod  # noqa: F401
 
-        self.assertEqual(sys.modules["unifai_fake_mod"].WHERE, "bundle")
+        self.assertEqual(sys.modules["raksha_fake_mod"].WHERE, "bundle")
         self.assertEqual(pb.running_bundle_sha(), "f" * 64)
         self.assertTrue(pb.active_addon("BUILTIN") == "BUILTIN", "no proxy entry in this fake bundle")
         gb.uninstall_code_dir(finder)
-        self.assertNotIn("unifai_fake_mod", sys.modules)
+        self.assertNotIn("raksha_fake_mod", sys.modules)
         self.assertEqual(pb.running_bundle_sha(), "")
 
     def _run_bootstrap(self, *args: str) -> subprocess.CompletedProcess:
@@ -208,10 +208,10 @@ class BootstrapTests(unittest.TestCase):
         marker = os.path.join(_TMP, "ran_bundle.txt")
 
         def instrument(files):
-            files["agent/unifai_agent.py"] += (
+            files["agent/raksha_agent.py"] += (
                 "\n_orig_main = main\n"
                 "def main():\n"
-                f"    open({marker!r}, 'w').write(os.environ.get('UNIFAI_GUARD_CODE_SHA', ''))\n"
+                f"    open({marker!r}, 'w').write(os.environ.get('RAKSHA_GUARD_CODE_SHA', ''))\n"
                 "    return _orig_main()\n"
             ).encode()
 

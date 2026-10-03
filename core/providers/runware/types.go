@@ -48,7 +48,7 @@ type RunwareInferenceRequest struct {
 	FrameImages     []RunwareFrameImage `json:"frameImages,omitempty"` // image-to-video
 	ReferenceImages []string            `json:"referenceImages,omitempty"`
 
-	// ExtraParams carries provider-native fields with no UnifAI equivalent
+	// ExtraParams carries provider-native fields with no Raksha equivalent
 	// (CFGScale, scheduler, strength, maskMargin, outpaint, fps, lora, ...). Merged into
 	// the request body by the transport layer when passthrough is enabled.
 	ExtraParams map[string]interface{} `json:"-"`

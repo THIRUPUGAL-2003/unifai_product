@@ -5,29 +5,29 @@ import (
 	"unicode/utf8"
 )
 
-type UnifAISpeechRequest struct {
+type RakshaSpeechRequest struct {
 	Provider       ModelProvider     `json:"provider"`
 	Model          string            `json:"model"`
 	Input          *SpeechInput      `json:"input,omitempty"`
 	Params         *SpeechParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback        `json:"fallbacks,omitempty"`
-	RawRequestBody []byte            `json:"-"` // set unifai-use-raw-request-body to true in ctx to use the raw request body. UnifAI will directly send this to the downstream provider.
+	RawRequestBody []byte            `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
 }
 
-func (r *UnifAISpeechRequest) GetRawRequestBody() []byte {
+func (r *RakshaSpeechRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-type UnifAISpeechResponse struct {
+type RakshaSpeechResponse struct {
 	Audio               []byte                     `json:"audio"`
 	Usage               *SpeechUsage               `json:"usage"`
 	Alignment           *SpeechAlignment           `json:"alignment,omitempty"`            // Character-level timing information
 	NormalizedAlignment *SpeechAlignment           `json:"normalized_alignment,omitempty"` // Character-level timing information for normalized text
 	AudioBase64         *string                    `json:"audio_base64,omitempty"`         // Base64-encoded audio (when timestamps are requested)
-	ExtraFields         UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields         RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-func (r *UnifAISpeechResponse) BackfillParams(request *UnifAISpeechRequest) {
+func (r *RakshaSpeechResponse) BackfillParams(request *RakshaSpeechRequest) {
 	if r == nil || request == nil || request.Input == nil {
 		return
 	}
@@ -139,14 +139,14 @@ const (
 	SpeechStreamResponseTypeDone  SpeechStreamResponseType = "speech.audio.done"
 )
 
-type UnifAISpeechStreamResponse struct {
+type RakshaSpeechStreamResponse struct {
 	Type        SpeechStreamResponseType   `json:"type"`
 	Audio       []byte                     `json:"audio"`
 	Usage       *SpeechUsage               `json:"usage"`
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-func (r *UnifAISpeechStreamResponse) BackfillParams(request *UnifAISpeechRequest) {
+func (r *RakshaSpeechStreamResponse) BackfillParams(request *RakshaSpeechRequest) {
 	if r == nil || request == nil || request.Input == nil {
 		return
 	}

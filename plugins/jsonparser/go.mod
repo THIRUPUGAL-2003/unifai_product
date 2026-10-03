@@ -1,8 +1,8 @@
-module github.com/unifai/unifai/plugins/jsonparser
+module github.com/raksha/raksha/plugins/jsonparser
 
 go 1.26.4
 
-require github.com/unifai/unifai/core v1.6.2
+require github.com/raksha/raksha/core v1.6.2
 
 require (
 	cloud.google.com/go v0.123.0 // indirect

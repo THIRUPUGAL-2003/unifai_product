@@ -6,10 +6,10 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// UnifAIHTTPMiddleware is a middleware function for the UnifAI HTTP transport.
+// RakshaHTTPMiddleware is a middleware function for the Raksha HTTP transport.
 // It follows the standard pattern: receives the next handler and returns a new handler.
 // Used internally for CORS, Auth, Tracing middleware. Plugins use HTTPTransportIntercept instead.
-type UnifAIHTTPMiddleware func(next fasthttp.RequestHandler) fasthttp.RequestHandler
+type RakshaHTTPMiddleware func(next fasthttp.RequestHandler) fasthttp.RequestHandler
 
 // EventBroadcaster is a generic callback for broadcasting typed events to connected clients (e.g., via WebSocket).
 // Any plugin or subsystem can use this to push real-time updates to the frontend.
@@ -19,24 +19,24 @@ type EventBroadcaster func(eventType string, data interface{})
 // LLMPluginShortCircuit represents a plugin's decision to short-circuit the normal flow.
 // It can contain either a response (success short-circuit), a stream (streaming short-circuit), or an error (error short-circuit).
 type LLMPluginShortCircuit struct {
-	Response *UnifAIResponse    // If set, short-circuit with this response (skips provider call)
-	Stream   chan *UnifAIStreamChunk // If set, short-circuit with this stream (skips provider call)
-	Error    *UnifAIError       // If set, short-circuit with this error (can set AllowFallbacks field)
+	Response *RakshaResponse    // If set, short-circuit with this response (skips provider call)
+	Stream   chan *RakshaStreamChunk // If set, short-circuit with this stream (skips provider call)
+	Error    *RakshaError       // If set, short-circuit with this error (can set AllowFallbacks field)
 }
 
 // MCPPluginShortCircuit represents a plugin's decision to short-circuit the normal flow.
 // It can contain either a response (success short-circuit), or an error (error short-circuit).
 type MCPPluginShortCircuit struct {
-	Response *UnifAIMCPResponse // If set, short-circuit with this response (skips MCP call)
-	Error    *UnifAIError       // If set, short-circuit with this error (can set AllowFallbacks field)
+	Response *RakshaMCPResponse // If set, short-circuit with this response (skips MCP call)
+	Error    *RakshaError       // If set, short-circuit with this error (can set AllowFallbacks field)
 }
 
 // MCPConnectionShortCircuit is the typed short-circuit for MCPConnectionPlugin.
 // It carries a typed Connect response (instead of the generic envelope) so plugin
-// authors don't have to wrap responses in UnifAIMCPResponse.
+// authors don't have to wrap responses in RakshaMCPResponse.
 type MCPConnectionShortCircuit struct {
-	Response *UnifAIMCPConnectResponse // If set, short-circuit with this synthetic Connect outcome
-	Error    *UnifAIError              // If set, short-circuit with this error
+	Response *RakshaMCPConnectResponse // If set, short-circuit with this synthetic Connect outcome
+	Error    *RakshaError              // If set, short-circuit with this error
 }
 
 // PluginShortCircuit is the legacy name for LLMPluginShortCircuit (v1.3.x compatibility).

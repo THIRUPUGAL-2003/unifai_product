@@ -1,5 +1,5 @@
 #!/bin/sh
-# Connect UnifAI (raksha_tech) container → Ollama. Values come from .env (no hardcoded hosts).
+# Connect Raksha (raksha_tech) container → Ollama. Values come from .env (no hardcoded hosts).
 # Required: OLLAMA_URL (or BROWSER_AI_OLLAMA_URL), CONTAINER_NAME
 if [ -f .env ]; then
   set -a
@@ -12,7 +12,7 @@ elif [ -f "$(dirname "$0")/../../.env" ]; then
 fi
 
 OLLAMA_URL="${BROWSER_AI_OLLAMA_URL:-${OLLAMA_URL:?set OLLAMA_URL (or BROWSER_AI_OLLAMA_URL) in .env}}"
-UNIFAI_CONTAINER="${CONTAINER_NAME:?set CONTAINER_NAME in .env}"
+RAKSHA_CONTAINER="${CONTAINER_NAME:?set CONTAINER_NAME in .env}"
 NETWORK="${DOCKER_NETWORK:-1panel-network}"
 
 echo "=== 1) Ollama health ==="
@@ -22,18 +22,18 @@ curl -sf "${OLLAMA_URL}/api/tags" >/dev/null && echo "OK: ${OLLAMA_URL}" || {
 }
 
 echo ""
-echo "=== 2) Attach ${UNIFAI_CONTAINER} to ${NETWORK} (optional) ==="
+echo "=== 2) Attach ${RAKSHA_CONTAINER} to ${NETWORK} (optional) ==="
 if docker network inspect "${NETWORK}" >/dev/null 2>&1; then
-  docker network connect "${NETWORK}" "${UNIFAI_CONTAINER}" 2>/dev/null || echo "Already on ${NETWORK}"
+  docker network connect "${NETWORK}" "${RAKSHA_CONTAINER}" 2>/dev/null || echo "Already on ${NETWORK}"
 else
   echo "WARN: network ${NETWORK} not found (set DOCKER_NETWORK if needed)"
 fi
 
 echo ""
-echo "=== 3) Test from UnifAI container ==="
-if docker exec "${UNIFAI_CONTAINER}" wget -qO- "${OLLAMA_URL}/api/tags" | head -c 120; then
+echo "=== 3) Test from Raksha container ==="
+if docker exec "${RAKSHA_CONTAINER}" wget -qO- "${OLLAMA_URL}/api/tags" | head -c 120; then
   echo ""
-  echo "OK: ${UNIFAI_CONTAINER} → ${OLLAMA_URL}"
+  echo "OK: ${RAKSHA_CONTAINER} → ${OLLAMA_URL}"
 else
   echo "FAIL: container cannot reach ${OLLAMA_URL}"
   echo "Set BROWSER_AI_OLLAMA_URL / OLLAMA_URL to a URL reachable from the container"
@@ -41,6 +41,6 @@ else
 fi
 
 echo ""
-echo "Add to UnifAI compose / .env:"
+echo "Add to Raksha compose / .env:"
 echo "  OLLAMA_URL=${OLLAMA_URL}"
 echo "  BROWSER_AI_OLLAMA_URL=${OLLAMA_URL}"

@@ -6,13 +6,13 @@ import (
 )
 
 // LiteLLMOrganization mirrors LiteLLM_OrganizationTableWithMembers from
-// GET /organization/list. Only the fields relevant to a UnifAI customer are
+// GET /organization/list. Only the fields relevant to a Raksha customer are
 // decoded; everything else (teams, members, keys, models, spend, metadata) is
 // intentionally ignored — those are migrated as their own entities.
 type LiteLLMOrganization struct {
 	OrganizationID    string         `json:"organization_id"`
 	OrganizationAlias string         `json:"organization_alias"`
-	Models            []string       `json:"models"` // allowed model names (UnifAI gates these on the VK)
+	Models            []string       `json:"models"` // allowed model names (Raksha gates these on the VK)
 	Budget            *LiteLLMBudget `json:"litellm_budget_table"`
 }
 

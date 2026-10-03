@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-UnifAI Browser AI Live Proxy Interceptor & DLP Guardrail Addon for mitmproxy.
+Raksha Browser AI Live Proxy Interceptor & DLP Guardrail Addon for mitmproxy.
 
 This file is the mitmproxy entrypoint (`-s browser_ai_proxy.py`).
-Implementation is split across `unifai_proxy_parts/*.py` and loaded into ONE
+Implementation is split across `raksha_proxy_parts/*.py` and loaded into ONE
 shared module namespace (same behavior as the former monolith — no import cycles).
 
 Parts (load order in MANIFEST.txt):
@@ -23,7 +23,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PARTS_DIR_NAME = "unifai_proxy_parts"
+_PARTS_DIR_NAME = "raksha_proxy_parts"
 
 
 def _parts_dir() -> Path:

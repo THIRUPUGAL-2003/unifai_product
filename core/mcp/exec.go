@@ -7,40 +7,40 @@ import (
 	"sync"
 
 	"github.com/mark3labs/mcp-go/client"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // ============================================================================
 // MCP REQUEST POOL
 // ============================================================================
 //
-// Pool for UnifAIMCPRequest objects. Owned by the mcp package because these
-// requests are only used inside this package — the UnifAI public API just
+// Pool for RakshaMCPRequest objects. Owned by the mcp package because these
+// requests are only used inside this package — the Raksha public API just
 // delegates to MCPManager's Execute* methods.
 
 var mcpRequestPool = sync.Pool{
 	New: func() any {
-		return &schemas.UnifAIMCPRequest{}
+		return &schemas.RakshaMCPRequest{}
 	},
 }
 
-// resetMCPRequest zeroes a UnifAIMCPRequest for reuse. Must be kept in sync with
+// resetMCPRequest zeroes a RakshaMCPRequest for reuse. Must be kept in sync with
 // the fields defined on the request struct.
-func resetMCPRequest(req *schemas.UnifAIMCPRequest) {
+func resetMCPRequest(req *schemas.RakshaMCPRequest) {
 	req.RequestType = ""
 	req.ClientName = ""
-	req.UnifAIMCPPingRequest = nil
-	req.UnifAIMCPListToolsRequest = nil
-	req.UnifAIMCPExecuteToolRequest = nil
+	req.RakshaMCPPingRequest = nil
+	req.RakshaMCPListToolsRequest = nil
+	req.RakshaMCPExecuteToolRequest = nil
 	req.ChatAssistantMessageToolCall = nil
 	req.ResponsesToolMessage = nil
 }
 
-func getMCPRequest() *schemas.UnifAIMCPRequest {
-	return mcpRequestPool.Get().(*schemas.UnifAIMCPRequest)
+func getMCPRequest() *schemas.RakshaMCPRequest {
+	return mcpRequestPool.Get().(*schemas.RakshaMCPRequest)
 }
 
-func releaseMCPRequest(req *schemas.UnifAIMCPRequest) {
+func releaseMCPRequest(req *schemas.RakshaMCPRequest) {
 	resetMCPRequest(req)
 	mcpRequestPool.Put(req)
 }
@@ -52,23 +52,23 @@ func releaseMCPRequest(req *schemas.UnifAIMCPRequest) {
 // executeToolWithHooks runs an MCP tool call through the plugin gate. It is the
 // execute-tool counterpart to the connect/ping/list_tools gates. Mirrors the
 // short-circuit + PostHook semantics of all other gates by delegating to
-// runWithPluginPipeline, then adds two execute-specific touches on the returned UnifAIError:
+// runWithPluginPipeline, then adds two execute-specific touches on the returned RakshaError:
 //
 //   - stamps ExtraFields.RequestType from the caller-provided RequestType
 //   - preserves MCPUserOAuthRequiredError so agent-mode detection still works
 //
-// requestType is the unifai-side RequestType (ChatCompletionRequest / ResponsesRequest)
+// requestType is the raksha-side RequestType (ChatCompletionRequest / ResponsesRequest)
 // that error metadata should carry — it isn't the same as request.RequestType.
 func (m *MCPManager) executeToolWithHooks(
-	ctx *schemas.UnifAIContext,
-	request *schemas.UnifAIMCPRequest,
+	ctx *schemas.RakshaContext,
+	request *schemas.RakshaMCPRequest,
 	requestType schemas.RequestType,
-) (*schemas.UnifAIMCPResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaMCPResponse, *schemas.RakshaError) {
 	if request == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "request cannot be nil"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: requestType},
+			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: requestType},
 		}
 	}
 
@@ -90,16 +90,16 @@ func (m *MCPManager) executeToolWithHooks(
 	// never invoked.
 	state, conn, release, prepErr := m.prepareToolExecution(ctx, request)
 	if prepErr != nil {
-		unifaiErr := &schemas.UnifAIError{
-			IsUnifAIError: false,
+		rakshaErr := &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: prepErr.Error()},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: requestType, MCPRequestType: request.RequestType},
+			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: requestType, MCPRequestType: request.RequestType},
 		}
 		var authRequiredErr *schemas.MCPAuthRequiredError
 		if errors.As(prepErr, &authRequiredErr) {
-			unifaiErr.ExtraFields.MCPAuthRequired = authRequiredErr
+			rakshaErr.ExtraFields.MCPAuthRequired = authRequiredErr
 		}
-		return nil, unifaiErr
+		return nil, rakshaErr
 	}
 	defer release()
 
@@ -112,7 +112,7 @@ func (m *MCPManager) executeToolWithHooks(
 		toolNameMapping = state.ToolNameMapping
 	}
 
-	resp, unifaiErr := m.RunWithPluginPipeline(ctx, request, func(preReq *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPResponse, error) {
+	resp, rakshaErr := m.RunWithPluginPipeline(ctx, request, func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
 		result, opErr := m.toolsManager.ExecuteTool(ctx, preReq, conn, executionConfig, toolNameMapping)
 		if opErr != nil {
 			return nil, opErr
@@ -123,9 +123,9 @@ func (m *MCPManager) executeToolWithHooks(
 		return result, nil
 	})
 
-	if unifaiErr != nil {
-		unifaiErr.ExtraFields.RequestType = requestType
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		rakshaErr.ExtraFields.RequestType = requestType
+		return nil, rakshaErr
 	}
 	return resp, nil
 }
@@ -140,8 +140,8 @@ func (m *MCPManager) executeToolWithHooks(
 //
 // Errors here mean the call should NOT run — neither the envelope plugin
 // gate nor the wire op. Typed errors (e.g. *MCPUserOAuthRequiredError)
-// propagate so the caller can stamp UnifAIError.ExtraFields.
-func (m *MCPManager) prepareToolExecution(ctx *schemas.UnifAIContext, request *schemas.UnifAIMCPRequest) (*schemas.MCPClientState, *client.Client, func(), error) {
+// propagate so the caller can stamp RakshaError.ExtraFields.
+func (m *MCPManager) prepareToolExecution(ctx *schemas.RakshaContext, request *schemas.RakshaMCPRequest) (*schemas.MCPClientState, *client.Client, func(), error) {
 	toolName := request.GetToolName()
 	if toolName == "" {
 		return nil, nil, nil, fmt.Errorf("tool call missing function name")
@@ -190,10 +190,10 @@ func (m *MCPManager) prepareToolExecution(ctx *schemas.UnifAIContext, request *s
 }
 
 // executeToolForAgent is the agent-mode-facing helper. The agent loop expects a
-// plain (response, error) signature and doesn't need rich UnifAIError fields,
+// plain (response, error) signature and doesn't need rich RakshaError fields,
 // so we collapse them. MCPUserOAuthRequiredError is returned directly when present
 // so agent mode can detect it via errors.As.
-func (m *MCPManager) executeToolForAgent(ctx *schemas.UnifAIContext, request *schemas.UnifAIMCPRequest) (*schemas.UnifAIMCPResponse, error) {
+func (m *MCPManager) executeToolForAgent(ctx *schemas.RakshaContext, request *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("context cannot be nil")
 	}
@@ -201,7 +201,7 @@ func (m *MCPManager) executeToolForAgent(ctx *schemas.UnifAIContext, request *sc
 		return nil, fmt.Errorf("request cannot be nil")
 	}
 
-	// Derive unifai RequestType from the MCP request type (only execute-tool variants
+	// Derive raksha RequestType from the MCP request type (only execute-tool variants
 	// are valid in the agent loop).
 	var requestType schemas.RequestType
 	switch request.RequestType {
@@ -213,13 +213,13 @@ func (m *MCPManager) executeToolForAgent(ctx *schemas.UnifAIContext, request *sc
 		return nil, fmt.Errorf("unsupported MCP request type for agent: %s", request.RequestType)
 	}
 
-	resp, unifaiErr := m.executeToolWithHooks(ctx, request, requestType)
-	if unifaiErr != nil {
+	resp, rakshaErr := m.executeToolWithHooks(ctx, request, requestType)
+	if rakshaErr != nil {
 		// Surface the typed OAuth error so agent mode can react to it.
-		if unifaiErr.ExtraFields.MCPAuthRequired != nil {
-			return nil, unifaiErr.ExtraFields.MCPAuthRequired
+		if rakshaErr.ExtraFields.MCPAuthRequired != nil {
+			return nil, rakshaErr.ExtraFields.MCPAuthRequired
 		}
-		return nil, fmt.Errorf("tool execution failed: %s", unifaiErr.GetErrorString())
+		return nil, fmt.Errorf("tool execution failed: %s", rakshaErr.GetErrorString())
 	}
 	return resp, nil
 }
@@ -230,13 +230,13 @@ func (m *MCPManager) executeToolForAgent(ctx *schemas.UnifAIContext, request *sc
 
 // ExecuteChatTool executes an MCP tool call and returns the result as a chat message.
 // This is the canonical entry point for manual MCP tool execution in Chat format.
-// UnifAI.ExecuteChatMCPTool delegates here.
-func (m *MCPManager) ExecuteChatTool(ctx *schemas.UnifAIContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.UnifAIError) {
+// Raksha.ExecuteChatMCPTool delegates here.
+func (m *MCPManager) ExecuteChatTool(ctx *schemas.RakshaContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.RakshaError) {
 	if toolCall == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "toolCall cannot be nil"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
+			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
 		}
 	}
 
@@ -245,28 +245,28 @@ func (m *MCPManager) ExecuteChatTool(ctx *schemas.UnifAIContext, toolCall *schem
 	mcpRequest.ChatAssistantMessageToolCall = toolCall
 	defer releaseMCPRequest(mcpRequest)
 
-	result, unifaiErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ChatCompletionRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	result, rakshaErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ChatCompletionRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if result == nil || result.ChatMessage == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "MCP tool execution returned nil chat message"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
+			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
 		}
 	}
 	return result.ChatMessage, nil
 }
 
 // ExecuteResponsesTool executes an MCP tool call and returns the result as a responses
-// message. UnifAI.ExecuteResponsesMCPTool delegates here.
-func (m *MCPManager) ExecuteResponsesTool(ctx *schemas.UnifAIContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.UnifAIError) {
+// message. Raksha.ExecuteResponsesMCPTool delegates here.
+func (m *MCPManager) ExecuteResponsesTool(ctx *schemas.RakshaContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.RakshaError) {
 	if toolCall == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "toolCall cannot be nil"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: schemas.ResponsesRequest},
+			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ResponsesRequest},
 		}
 	}
 
@@ -275,15 +275,15 @@ func (m *MCPManager) ExecuteResponsesTool(ctx *schemas.UnifAIContext, toolCall *
 	mcpRequest.ResponsesToolMessage = toolCall
 	defer releaseMCPRequest(mcpRequest)
 
-	result, unifaiErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ResponsesRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	result, rakshaErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ResponsesRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if result == nil || result.ResponsesMessage == nil {
-		return nil, &schemas.UnifAIError{
-			IsUnifAIError: false,
+		return nil, &schemas.RakshaError{
+			IsRakshaError: false,
 			Error:          &schemas.ErrorField{Message: "MCP tool execution returned nil responses message"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: schemas.ResponsesRequest},
+			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ResponsesRequest},
 		}
 	}
 	return result.ResponsesMessage, nil

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunImageBase64Test executes the image base64 test scenario using dual API testing framework
-func RunImageBase64Test(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageBase64Test(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageBase64 {
 		t.Logf("Image base64 not supported for provider %s", testConfig.Provider)
 		return
@@ -65,28 +65,28 @@ func RunImageBase64Test(t *testing.T, client *unifai.UnifAI, ctx context.Context
 		}...) // Base64 processing failure indicators
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.UnifAIChatRequest{
+		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.RakshaChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: unifai.Ptr(500),
+					MaxCompletionTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
-			bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.UnifAIResponsesRequest{
+		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.RakshaResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: unifai.Ptr(500),
+					MaxOutputTokens: raksha.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -118,12 +118,12 @@ func RunImageBase64Test(t *testing.T, client *unifai.UnifAI, ctx context.Context
 		}
 
 		// Additional validation for base64 lion image processing using universal content extraction
-		validateChatBase64ImageProcessing := func(response *schemas.UnifAIChatResponse, apiName string) {
+		validateChatBase64ImageProcessing := func(response *schemas.RakshaChatResponse, apiName string) {
 			content := GetChatContent(response)
 			validateBase64ImageContent(t, content, apiName)
 		}
 
-		validateResponsesBase64ImageProcessing := func(response *schemas.UnifAIResponsesResponse, apiName string) {
+		validateResponsesBase64ImageProcessing := func(response *schemas.RakshaResponsesResponse, apiName string) {
 			content := GetResponsesContent(response)
 			validateBase64ImageContent(t, content, apiName)
 		}

@@ -1,11 +1,11 @@
 import * as React from "react";
 import { Streamdown, type StreamdownProps, type CodeHighlighterPlugin } from "streamdown";
-import { code as unifaiCode } from "@/lib/markdown/codePlugin";
+import { code as rakshaCode } from "@/lib/markdown/codePlugin";
 import "streamdown/styles.css";
 
 // Our custom plugin only declares the languages we ship; cast widens the
 // signature to match streamdown's BundledLanguage-typed interface.
-const code = unifaiCode as unknown as CodeHighlighterPlugin;
+const code = rakshaCode as unknown as CodeHighlighterPlugin;
 
 import { cn } from "@/components/ui/utils";
 

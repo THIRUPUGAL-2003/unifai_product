@@ -3,20 +3,20 @@ package bedrock
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 const estimatedBytesPerToken = 4
 
-// ToUnifAICountTokensResponse converts a Bedrock count tokens response to UnifAI format
-func (resp *BedrockCountTokensResponse) ToUnifAICountTokensResponse(model string) *schemas.UnifAICountTokensResponse {
+// ToRakshaCountTokensResponse converts a Bedrock count tokens response to Raksha format
+func (resp *BedrockCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
 
 	totalTokens := resp.InputTokens
 
-	return &schemas.UnifAICountTokensResponse{
+	return &schemas.RakshaCountTokensResponse{
 		Model:       model,
 		InputTokens: resp.InputTokens,
 		TotalTokens: &totalTokens,
@@ -24,8 +24,8 @@ func (resp *BedrockCountTokensResponse) ToUnifAICountTokensResponse(model string
 	}
 }
 
-// ToBedrockCountTokensResponse converts a UnifAI count tokens response to Bedrock native format
-func ToBedrockCountTokensResponse(resp *schemas.UnifAICountTokensResponse) *BedrockCountTokensResponse {
+// ToBedrockCountTokensResponse converts a Raksha count tokens response to Bedrock native format
+func ToBedrockCountTokensResponse(resp *schemas.RakshaCountTokensResponse) *BedrockCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -35,9 +35,9 @@ func ToBedrockCountTokensResponse(resp *schemas.UnifAICountTokensResponse) *Bedr
 	}
 }
 
-// isCountTokensUnsupported checks whether a UnifAIError indicates that the
+// isCountTokensUnsupported checks whether a RakshaError indicates that the
 // Bedrock model does not support the count-tokens operation.
-func isCountTokensUnsupported(err *schemas.UnifAIError) bool {
+func isCountTokensUnsupported(err *schemas.RakshaError) bool {
 	if err == nil || err.Error == nil {
 		return false
 	}

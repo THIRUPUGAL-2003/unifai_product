@@ -116,7 +116,7 @@ func VisibilityFilterProviderFromContext(ctx context.Context) VisibilityFilterPr
 	if ctx == nil {
 		return nil
 	}
-	if v := ctx.Value(UnifAIContextKeyVisibilityFilterProvider); v != nil {
+	if v := ctx.Value(RakshaContextKeyVisibilityFilterProvider); v != nil {
 		if p, ok := v.(VisibilityFilterProvider); ok {
 			return p
 		}

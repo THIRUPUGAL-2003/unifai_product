@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the UnifAI system.
+// Package schemas defines the core schemas and types used by the Raksha system.
 package schemas
 
 import (
@@ -124,8 +124,8 @@ func (bl BlackList) Validate() error {
 // Key represents an API key and its associated configuration for a provider.
 // It contains the key value, supported models, and a weight for load balancing.
 type Key struct {
-	ID                     string                  `json:"id"`                                  // The unique identifier for the key (used by unifai to identify the key)
-	Name                   string                  `json:"name"`                                // The name of the key (used by users to identify the key, not used by unifai)
+	ID                     string                  `json:"id"`                                  // The unique identifier for the key (used by raksha to identify the key)
+	Name                   string                  `json:"name"`                                // The name of the key (used by users to identify the key, not used by raksha)
 	Value                  SecretVar               `json:"value"`                               // The actual API key value
 	Models                 WhiteList               `json:"models"`                              // List of models this key can access
 	BlacklistedModels      BlackList               `json:"blacklisted_models"`                  // List of models this key cannot access
@@ -213,7 +213,7 @@ type AliasConfig struct {
 	ModelID     string       `json:"model_id"`               // wire model identifier sent to the provider
 	ModelName   *string      `json:"model_name,omitempty"`   // canonical model name used for pricing, logging, and 2nd-tier family routing
 	ModelFamily *ModelFamily `json:"model_family,omitempty"` // 1st-tier family routing enum
-	Description string       `json:"description,omitempty"`  // description of the alias for users to understand its purpose (not used by unifai)
+	Description string       `json:"description,omitempty"`  // description of the alias for users to understand its purpose (not used by raksha)
 	Region      *SecretVar   `json:"region,omitempty"`
 
 	*AzureAliasCfg
@@ -326,7 +326,7 @@ func (ka KeyAliases) Resolve(model string) string {
 	return model
 }
 
-// ResolvedAlias is what core stashes in UnifAIContext after key-level alias
+// ResolvedAlias is what core stashes in RakshaContext after key-level alias
 // resolution. Key is the user-facing model name the client sent (LHS of the
 // alias map). Config is the matched AliasConfig.
 //
@@ -343,13 +343,13 @@ type ResolvedAlias struct {
 // GetResolvedAlias returns the ResolvedAlias that core stashed in ctx after
 // key-level alias resolution, or nil if no alias matched or ctx is nil.
 //
-// This is set by unifai.go alongside req.SetModel(resolved). Plugins must
+// This is set by raksha.go alongside req.SetModel(resolved). Plugins must
 // not write to this key directly.
-func GetResolvedAlias(ctx *UnifAIContext) *ResolvedAlias {
+func GetResolvedAlias(ctx *RakshaContext) *ResolvedAlias {
 	if ctx == nil {
 		return nil
 	}
-	v := ctx.Value(UnifAIContextKeyResolvedAlias)
+	v := ctx.Value(RakshaContextKeyResolvedAlias)
 	if v == nil {
 		return nil
 	}
@@ -364,7 +364,7 @@ func GetResolvedAlias(ctx *UnifAIContext) *ResolvedAlias {
 // pre-refactor behavior.
 //
 // Returns an empty ModelFamily if nothing matches.
-func ResolveFamily(ctx *UnifAIContext, fallbackModel string) ModelFamily {
+func ResolveFamily(ctx *RakshaContext, fallbackModel string) ModelFamily {
 	ra := GetResolvedAlias(ctx)
 	var candidates []string
 	if ra != nil && ra.Config != nil {
@@ -423,7 +423,7 @@ func ResolveFamily(ctx *UnifAIContext, fallbackModel string) ModelFamily {
 //
 // When no alias is resolved in ctx, fallbackModel (typically request.Model) is
 // returned unchanged, preserving pre-refactor behavior.
-func ResolveCanonicalModel(ctx *UnifAIContext, fallbackModel string) string {
+func ResolveCanonicalModel(ctx *RakshaContext, fallbackModel string) string {
 	if ra := GetResolvedAlias(ctx); ra != nil && ra.Config != nil {
 		if ra.Config.ModelName != nil && *ra.Config.ModelName != "" {
 			return *ra.Config.ModelName
@@ -441,72 +441,72 @@ func ResolveCanonicalModel(ctx *UnifAIContext, fallbackModel string) string {
 // non-Anthropic (request shape, response parsing, anthropic-version header,
 // URL path construction). model is passed as the substring-match fallback
 // used when no alias is resolved in ctx — typically request.Model.
-func IsAnthropicModelFamily(ctx *UnifAIContext, model string) bool {
+func IsAnthropicModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyAnthropic
 }
 
-func IsOpenAIModelFamily(ctx *UnifAIContext, model string) bool {
+func IsOpenAIModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyOpenAI
 }
 
 // IsMistralModelFamily reports whether the current attempt resolves to the
 // Mistral model family. See IsAnthropicModelFamily for usage notes.
-func IsMistralModelFamily(ctx *UnifAIContext, model string) bool {
+func IsMistralModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyMistral
 }
 
 // IsLlamaModelFamily reports whether the current attempt resolves to the
 // Llama model family. Used by Bedrock to gate tool_choice handling — AWS
 // Bedrock Converse rejects toolConfig.toolChoice.tool on Meta Llama variants.
-func IsLlamaModelFamily(ctx *UnifAIContext, model string) bool {
+func IsLlamaModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyLlama
 }
 
 // IsNovaModelFamily reports whether the current attempt resolves to the
 // Amazon Nova model family. Used by Bedrock to gate cache-point insertion
 // and tool shaping that differs from Anthropic.
-func IsNovaModelFamily(ctx *UnifAIContext, model string) bool {
+func IsNovaModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyNova
 }
 
 // IsCohereModelFamily reports whether the current attempt resolves to the
 // Cohere model family. Used by Bedrock to pick the Cohere request/response
 // shape for embeddings (vs. the Titan envelope).
-func IsCohereModelFamily(ctx *UnifAIContext, model string) bool {
+func IsCohereModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyCohere
 }
 
 // IsTitanModelFamily reports whether the current attempt resolves to the
 // Amazon Titan model family. Used by Bedrock to pick the Titan embedding
 // request/response envelope.
-func IsTitanModelFamily(ctx *UnifAIContext, model string) bool {
+func IsTitanModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyTitan
 }
 
 // IsGeminiModelFamily reports whether the current attempt resolves to the
 // Google Gemini model family. Used by Vertex to pick Gemini-shaped request
 // transforms and the publishers/google URL prefix.
-func IsGeminiModelFamily(ctx *UnifAIContext, model string) bool {
+func IsGeminiModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyGemini
 }
 
 // IsGemmaModelFamily reports whether the current attempt resolves to the
 // Gemma model family. Vertex routes Gemma via the publishers/google path
 // alongside Gemini.
-func IsGemmaModelFamily(ctx *UnifAIContext, model string) bool {
+func IsGemmaModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyGemma
 }
 
 // IsImagenModelFamily reports whether the current attempt resolves to the
 // Imagen model family. Used by Vertex for the :predict endpoint and Imagen-
 // specific request shaping.
-func IsImagenModelFamily(ctx *UnifAIContext, model string) bool {
+func IsImagenModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyImagen
 }
 
 // IsVeoModelFamily reports whether the current attempt resolves to the Veo
 // model family. Used by Vertex for video-generation request shaping.
-func IsVeoModelFamily(ctx *UnifAIContext, model string) bool {
+func IsVeoModelFamily(ctx *RakshaContext, model string) bool {
 	return ResolveFamily(ctx, model) == ModelFamilyVeo
 }
 
@@ -522,7 +522,7 @@ func IsVeoModelFamily(ctx *UnifAIContext, model string) bool {
 // ResolvedKeyAlias.ModelFamily reflects the family explicitly configured on
 // the alias (nil when the admin didn't set one) — not the substring-resolved
 // family used for routing.
-func BuildRoutingInfo(ctx *UnifAIContext, attemptProvider ModelProvider, attemptModel string, attemptKey Key) RoutingInfo {
+func BuildRoutingInfo(ctx *RakshaContext, attemptProvider ModelProvider, attemptModel string, attemptKey Key) RoutingInfo {
 	info := RoutingInfo{
 		Provider: attemptProvider,
 		Model:    attemptModel,
@@ -720,7 +720,7 @@ type Account interface {
 
 	// GetKeysForProvider returns the API keys configured for a specific provider.
 	// The keys include their values, supported models, and weights for load balancing.
-	// The context can carry data from any source that sets values before the UnifAI request,
+	// The context can carry data from any source that sets values before the Raksha request,
 	// including but not limited to plugin pre-hooks, application logic, or any in app middleware sharing the context.
 	// This enables dynamic key selection based on any context values present during the request.
 	GetKeysForProvider(ctx context.Context, providerKey ModelProvider) ([]Key, error)

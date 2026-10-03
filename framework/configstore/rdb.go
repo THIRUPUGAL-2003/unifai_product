@@ -17,14 +17,14 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	unifai "github.com/unifai/unifai/core"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/encrypt"
-	"github.com/unifai/unifai/framework/logstore"
-	"github.com/unifai/unifai/framework/queryscope"
-	"github.com/unifai/unifai/framework/vectorstore"
+	raksha "github.com/raksha/raksha/core"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/raksha/raksha/framework/logstore"
+	"github.com/raksha/raksha/framework/queryscope"
+	"github.com/raksha/raksha/framework/vectorstore"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -5634,11 +5634,11 @@ func (s *RDBConfigStore) GetGovernanceConfig(ctx context.Context) (*GovernanceCo
 		for _, entry := range governanceConfigs {
 			switch entry.Key {
 			case tables.ConfigAdminUsernameKey:
-				username = unifai.Ptr(entry.Value)
+				username = raksha.Ptr(entry.Value)
 			case tables.ConfigAdminPasswordKey:
-				password = unifai.Ptr(entry.Value)
+				password = raksha.Ptr(entry.Value)
 			case tables.ConfigAdminEmailKey:
-				email = unifai.Ptr(entry.Value)
+				email = raksha.Ptr(entry.Value)
 			case tables.ConfigIsAuthEnabledKey:
 				isEnabled = entry.Value == "true"
 			case tables.ConfigComplexityAnalyzerConfigKey:

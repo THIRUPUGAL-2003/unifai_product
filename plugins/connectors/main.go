@@ -4,8 +4,8 @@ package connectors
 import (
 	"context"
 
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/connectors"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/connectors"
 )
 
 const PluginName = "connectors"

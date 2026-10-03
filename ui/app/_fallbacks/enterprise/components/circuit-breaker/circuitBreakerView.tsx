@@ -433,7 +433,7 @@ export default function CircuitBreakerView() {
 							)}
 
 							<p className="text-muted-foreground text-xs">
-								UnifAI watches this header on the primary provider response. When it matches, traffic fails over to the fallback until cooldown
+								Raksha watches this header on the primary provider response. When it matches, traffic fails over to the fallback until cooldown
 								expires.
 							</p>
 						</div>

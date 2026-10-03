@@ -96,8 +96,8 @@ export default function MCPClientSheet({
 
 	const [pendingNavDirection, setPendingNavDirection] = useState<"prev" | "next" | null>(null);
 
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const globalToolSyncInterval = unifaiConfig?.client_config?.mcp_tool_sync_interval ?? 10;
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const globalToolSyncInterval = rakshaConfig?.client_config?.mcp_tool_sync_interval ?? 10;
 	const { toast } = useToast();
 	const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
@@ -1152,7 +1152,7 @@ export default function MCPClientSheet({
 																		</TooltipTrigger>
 																		<TooltipContent className="max-w-xs">
 																			<p>
-																				Applies only when UnifAI runs the LLM loop in Agent Mode. In MCP Gateway mode, the connected client
+																				Applies only when Raksha runs the LLM loop in Agent Mode. In MCP Gateway mode, the connected client
 																				(Claude Desktop, Cursor, etc.) controls tool approval and this setting is ignored. Click to learn
 																				more.
 																			</p>

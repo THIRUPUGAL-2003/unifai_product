@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	codemcp "github.com/unifai/unifai/core/mcp"
-	"github.com/unifai/unifai/core/schemas"
+	codemcp "github.com/raksha/raksha/core/mcp"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // createGetToolDocsTool creates the getToolDocs tool definition for code mode.

@@ -1,13 +1,13 @@
 // Package compat provides LiteLLM-compatible request normalization for the
-// UnifAI gateway. It drops unsupported model params first, then rewrites
+// Raksha gateway. It drops unsupported model params first, then rewrites
 // requests to a compatible endpoint type when the target model does not support
 // the caller's original request type.
 package compat
 
 import (
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
 )
 
 const PluginName = "compat"
@@ -75,39 +75,39 @@ func (p *CompatPlugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *CompatPlugin) HTTPTransportPreHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *CompatPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *CompatPlugin) HTTPTransportPostHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *CompatPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged.
-func (p *CompatPlugin) HTTPTransportStreamChunkHook(ctx *schemas.UnifAIContext, req *schemas.HTTPRequest, chunk *schemas.UnifAIStreamChunk) (*schemas.UnifAIStreamChunk, error) {
+func (p *CompatPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *CompatPlugin) PreRequestHook(_ *schemas.UnifAIContext, _ *schemas.UnifAIRequest) error {
+func (p *CompatPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
 	return nil
 }
 
 // PreLLMHook intercepts requests and applies LiteLLM-compatible request normalization.
-func (p *CompatPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) (*schemas.UnifAIRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *CompatPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
 	if ctx == nil || req == nil {
 		return req, nil, nil
 	}
 
-	convertTextToChatOverride, convertTextToChatOverrideEnabled := ctx.Value(schemas.UnifAIContextKeyCompatConvertTextToChat).(bool)
-	convertChatToResponsesOverride, convertChatToResponsesOverrideEnabled := ctx.Value(schemas.UnifAIContextKeyCompatConvertChatToResponses).(bool)
-	shouldDropParamsOverride, shouldDropParamsOverrideEnabled := ctx.Value(schemas.UnifAIContextKeyCompatShouldDropParams).(bool)
-	shouldConvertParamsOverride, shouldConvertParamsOverrideEnabled := ctx.Value(schemas.UnifAIContextKeyCompatShouldConvertParams).(bool)
+	convertTextToChatOverride, convertTextToChatOverrideEnabled := ctx.Value(schemas.RakshaContextKeyCompatConvertTextToChat).(bool)
+	convertChatToResponsesOverride, convertChatToResponsesOverrideEnabled := ctx.Value(schemas.RakshaContextKeyCompatConvertChatToResponses).(bool)
+	shouldDropParamsOverride, shouldDropParamsOverrideEnabled := ctx.Value(schemas.RakshaContextKeyCompatShouldDropParams).(bool)
+	shouldConvertParamsOverride, shouldConvertParamsOverrideEnabled := ctx.Value(schemas.RakshaContextKeyCompatShouldConvertParams).(bool)
 
 	modifiedReq := req
 	if (shouldDropParamsOverrideEnabled && shouldDropParamsOverride) || (shouldConvertParamsOverrideEnabled && shouldConvertParamsOverride) || p.config.ShouldConvertParams || p.config.ShouldDropParams {
-		modifiedReq = cloneUnifAIReq(req)
+		modifiedReq = cloneRakshaReq(req)
 	}
 	p.droppedParams = nil
 
@@ -146,20 +146,20 @@ func (p *CompatPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifA
 }
 
 // PostLLMHook converts provider responses back to the caller-facing shape
-func (p *CompatPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError, error) {
+func (p *CompatPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
 	if ctx == nil {
-		return result, unifaiErr, nil
+		return result, rakshaErr, nil
 	}
 
-	if changeType, ok := ctx.Value(schemas.UnifAIContextKeyChangeRequestType).(schemas.RequestType); ok {
+	if changeType, ok := ctx.Value(schemas.RakshaContextKeyChangeRequestType).(schemas.RequestType); ok {
 		if result != nil {
 			extraFields := result.GetExtraFields()
 			if extraFields != nil {
 				extraFields.ConvertedRequestType = changeType
 			}
 		}
-		if unifaiErr != nil {
-			unifaiErr.ExtraFields.ConvertedRequestType = changeType
+		if rakshaErr != nil {
+			rakshaErr.ExtraFields.ConvertedRequestType = changeType
 		}
 	}
 
@@ -169,7 +169,7 @@ func (p *CompatPlugin) PostLLMHook(ctx *schemas.UnifAIContext, result *schemas.U
 		}
 	}
 
-	return result, unifaiErr, nil
+	return result, rakshaErr, nil
 }
 
 // Cleanup performs plugin cleanup.
@@ -178,7 +178,7 @@ func (p *CompatPlugin) Cleanup() error {
 }
 
 // markForConversion checks if the model supports the current request type; if not, mark for conversion
-func (p *CompatPlugin) markForConversion(ctx *schemas.UnifAIContext, provider schemas.ModelProvider, model string, currentType schemas.RequestType, targetType schemas.RequestType) {
+func (p *CompatPlugin) markForConversion(ctx *schemas.RakshaContext, provider schemas.ModelProvider, model string, currentType schemas.RequestType, targetType schemas.RequestType) {
 	shouldConvert := false
 	if p.modelCatalog != nil {
 		if !p.modelCatalog.IsRequestTypeSupported(model, provider, currentType) && p.modelCatalog.IsRequestTypeSupported(model, provider, targetType) {
@@ -189,6 +189,6 @@ func (p *CompatPlugin) markForConversion(ctx *schemas.UnifAIContext, provider sc
 	}
 
 	if shouldConvert {
-		ctx.SetValue(schemas.UnifAIContextKeyChangeRequestType, targetType)
+		ctx.SetValue(schemas.RakshaContextKeyChangeRequestType, targetType)
 	}
 }

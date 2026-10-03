@@ -46,10 +46,10 @@ plugins/*/dist/
 test-reports/
 
 # Compiled UI assets (built by `npm run build` — not source files)
-transports/unifai-http/ui/assets/
-transports/unifai-http/ui/*.js
-transports/unifai-http/ui/*.css
-transports/unifai-http/ui/*.html
+transports/raksha-http/ui/assets/
+transports/raksha-http/ui/*.js
+transports/raksha-http/ui/*.css
+transports/raksha-http/ui/*.html
 
 # Python & Browser Guard builds
 __pycache__/
@@ -66,7 +66,7 @@ apps/browser-guard/dist/
 apps/browser-guard/installer/staging/
 apps/browser-guard/installer/staging-*/
 # Large packaged binaries (keep unpackaged app directory ignored)
-apps/browser-guard/release/UnifAI_Guard.app/
+apps/browser-guard/release/Raksha_Guard.app/
 apps/browser-guard/installer/pkg-root/
 
 # Allow Browser Guard release binaries (tracked via Git LFS)

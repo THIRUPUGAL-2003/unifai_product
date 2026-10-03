@@ -1,12 +1,12 @@
-// Package unifai provides the core implementation of the UnifAI system.
-package unifai
+// Package raksha provides the core implementation of the Raksha system.
+package raksha
 
 import (
 	"os"
 	"sync"
 	"time"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -16,13 +16,13 @@ var zerologOnce sync.Once
 // DefaultLogger implements the Logger interface with stdout/stderr printing.
 // It provides a simple logging implementation that writes to standard output
 // and error streams with formatted timestamps and log levels.
-// It is used as the default logger if no logger is provided in the UnifAIConfig.
+// It is used as the default logger if no logger is provided in the RakshaConfig.
 type DefaultLogger struct {
 	stderrLogger zerolog.Logger
 	stdoutLogger zerolog.Logger
 }
 
-// toZerologLevel converts a UnifAI log level to a Zerolog level.
+// toZerologLevel converts a Raksha log level to a Zerolog level.
 func toZerologLevel(l schemas.LogLevel) zerolog.Level {
 	switch l {
 	case schemas.LogLevelDebug:

@@ -5,71 +5,71 @@ import (
 	"strconv"
 	"strings"
 
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-// ToNebiusImageGenerationRequest converts a unifai image generation request to nebius format.
-func (provider *NebiusProvider) ToNebiusImageGenerationRequest(unifaiReq *schemas.UnifAIImageGenerationRequest) (*NebiusImageGenerationRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request is nil or input is nil")
+// ToNebiusImageGenerationRequest converts a raksha image generation request to nebius format.
+func (provider *NebiusProvider) ToNebiusImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (*NebiusImageGenerationRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request is nil or input is nil")
 	}
 
 	req := &NebiusImageGenerationRequest{
-		Model:  &unifaiReq.Model,
-		Prompt: &unifaiReq.Input.Prompt,
+		Model:  &rakshaReq.Model,
+		Prompt: &rakshaReq.Input.Prompt,
 	}
 
-	if unifaiReq.Params != nil {
+	if rakshaReq.Params != nil {
 
-		if unifaiReq.Params.ResponseFormat != nil {
-			req.ResponseFormat = unifaiReq.Params.ResponseFormat
+		if rakshaReq.Params.ResponseFormat != nil {
+			req.ResponseFormat = rakshaReq.Params.ResponseFormat
 		}
 
-		if unifaiReq.Params.Size != nil && strings.TrimSpace(strings.ToLower(*unifaiReq.Params.Size)) != "auto" {
-			size := strings.Split(strings.TrimSpace(strings.ToLower(*unifaiReq.Params.Size)), "x")
+		if rakshaReq.Params.Size != nil && strings.TrimSpace(strings.ToLower(*rakshaReq.Params.Size)) != "auto" {
+			size := strings.Split(strings.TrimSpace(strings.ToLower(*rakshaReq.Params.Size)), "x")
 			if len(size) != 2 {
-				return nil, fmt.Errorf("invalid size format: expected 'WIDTHxHEIGHT', got %q", *unifaiReq.Params.Size)
+				return nil, fmt.Errorf("invalid size format: expected 'WIDTHxHEIGHT', got %q", *rakshaReq.Params.Size)
 			}
 
 			width, err := strconv.Atoi(size[0])
 			if err != nil {
-				return nil, fmt.Errorf("invalid width in size %q: %w", *unifaiReq.Params.Size, err)
+				return nil, fmt.Errorf("invalid width in size %q: %w", *rakshaReq.Params.Size, err)
 			}
 
 			height, err := strconv.Atoi(size[1])
 			if err != nil {
-				return nil, fmt.Errorf("invalid height in size %q: %w", *unifaiReq.Params.Size, err)
+				return nil, fmt.Errorf("invalid height in size %q: %w", *rakshaReq.Params.Size, err)
 			}
 
 			req.Width = &width
 			req.Height = &height
 		}
-		if unifaiReq.Params.OutputFormat != nil {
-			req.ResponseExtension = unifaiReq.Params.OutputFormat
+		if rakshaReq.Params.OutputFormat != nil {
+			req.ResponseExtension = rakshaReq.Params.OutputFormat
 		}
 		if req.ResponseExtension != nil && strings.ToLower(*req.ResponseExtension) == "jpeg" {
 			req.ResponseExtension = schemas.Ptr("jpg")
 		}
-		if unifaiReq.Params.Seed != nil {
-			req.Seed = unifaiReq.Params.Seed
+		if rakshaReq.Params.Seed != nil {
+			req.Seed = rakshaReq.Params.Seed
 		}
-		if unifaiReq.Params.NegativePrompt != nil {
-			req.NegativePrompt = unifaiReq.Params.NegativePrompt
+		if rakshaReq.Params.NegativePrompt != nil {
+			req.NegativePrompt = rakshaReq.Params.NegativePrompt
 		}
-		if unifaiReq.Params.NumInferenceSteps != nil {
-			req.NumInferenceSteps = unifaiReq.Params.NumInferenceSteps
+		if rakshaReq.Params.NumInferenceSteps != nil {
+			req.NumInferenceSteps = rakshaReq.Params.NumInferenceSteps
 		}
 		// Handle extra params
-		if unifaiReq.Params.ExtraParams != nil {
-			req.ExtraParams = unifaiReq.Params.ExtraParams
+		if rakshaReq.Params.ExtraParams != nil {
+			req.ExtraParams = rakshaReq.Params.ExtraParams
 			// Map guidance_scale
-			if v, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["guidance_scale"]); ok {
+			if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
 				delete(req.ExtraParams, "guidance_scale")
 				req.GuidanceScale = v
 			}
 
 			// Map loras in array format [{"url": "...", "scale": ...}]
-			if lorasValue, exists := unifaiReq.Params.ExtraParams["loras"]; exists && lorasValue != nil {
+			if lorasValue, exists := rakshaReq.Params.ExtraParams["loras"]; exists && lorasValue != nil {
 				delete(req.ExtraParams, "loras")
 				// Check if lorasValue is an array of maps
 				if lorasArray, ok := lorasValue.([]interface{}); ok {
@@ -89,8 +89,8 @@ func (provider *NebiusProvider) ToNebiusImageGenerationRequest(unifaiReq *schema
 	return req, nil
 }
 
-// ToUnifAIImageResponse converts a nebius image generation response to unifai format.
-func ToUnifAIImageResponse(nebiusResponse *NebiusImageGenerationResponse) *schemas.UnifAIImageGenerationResponse {
+// ToRakshaImageResponse converts a nebius image generation response to raksha format.
+func ToRakshaImageResponse(nebiusResponse *NebiusImageGenerationResponse) *schemas.RakshaImageGenerationResponse {
 	if nebiusResponse == nil {
 		return nil
 	}
@@ -104,7 +104,7 @@ func ToUnifAIImageResponse(nebiusResponse *NebiusImageGenerationResponse) *schem
 			Index:         i,
 		}
 	}
-	return &schemas.UnifAIImageGenerationResponse{
+	return &schemas.RakshaImageGenerationResponse{
 		ID:   nebiusResponse.Id,
 		Data: data,
 	}

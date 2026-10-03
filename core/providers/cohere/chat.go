@@ -4,20 +4,20 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/unifai/unifai/core/providers/anthropic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/anthropic"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToCohereChatCompletionRequest converts a UnifAI request to Cohere v2 format
-func ToCohereChatCompletionRequest(unifaiReq *schemas.UnifAIChatRequest) (*CohereChatRequest, error) {
-	if unifaiReq == nil || unifaiReq.Input == nil {
-		return nil, fmt.Errorf("unifai request is nil")
+// ToCohereChatCompletionRequest converts a Raksha request to Cohere v2 format
+func ToCohereChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*CohereChatRequest, error) {
+	if rakshaReq == nil || rakshaReq.Input == nil {
+		return nil, fmt.Errorf("raksha request is nil")
 	}
 
-	messages := unifaiReq.Input
+	messages := rakshaReq.Input
 	cohereReq := &CohereChatRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
 
 	// Convert messages to Cohere v2 format
@@ -110,35 +110,35 @@ func ToCohereChatCompletionRequest(unifaiReq *schemas.UnifAIChatRequest) (*Coher
 	cohereReq.Messages = cohereMessages
 
 	// Convert parameters
-	if unifaiReq.Params != nil {
-		cohereReq.MaxTokens = unifaiReq.Params.MaxCompletionTokens
-		cohereReq.Temperature = unifaiReq.Params.Temperature
-		cohereReq.P = unifaiReq.Params.TopP
-		cohereReq.StopSequences = unifaiReq.Params.Stop
-		cohereReq.FrequencyPenalty = unifaiReq.Params.FrequencyPenalty
-		cohereReq.PresencePenalty = unifaiReq.Params.PresencePenalty
+	if rakshaReq.Params != nil {
+		cohereReq.MaxTokens = rakshaReq.Params.MaxCompletionTokens
+		cohereReq.Temperature = rakshaReq.Params.Temperature
+		cohereReq.P = rakshaReq.Params.TopP
+		cohereReq.StopSequences = rakshaReq.Params.Stop
+		cohereReq.FrequencyPenalty = rakshaReq.Params.FrequencyPenalty
+		cohereReq.PresencePenalty = rakshaReq.Params.PresencePenalty
 
 		// Convert reasoning
-		if unifaiReq.Params.Reasoning != nil {
-			if unifaiReq.Params.Reasoning.MaxTokens != nil {
+		if rakshaReq.Params.Reasoning != nil {
+			if rakshaReq.Params.Reasoning.MaxTokens != nil {
 				thinking := &CohereThinking{
 					Type: ThinkingTypeEnabled,
 				}
-				if *unifaiReq.Params.Reasoning.MaxTokens == -1 {
+				if *rakshaReq.Params.Reasoning.MaxTokens == -1 {
 					// cohere does not support dynamic reasoning budget like gemini
 					// setting it to minimum reasoning budget
 					thinking.TokenBudget = schemas.Ptr(anthropic.MinimumReasoningMaxTokens)
 				} else {
-					thinking.TokenBudget = unifaiReq.Params.Reasoning.MaxTokens
+					thinking.TokenBudget = rakshaReq.Params.Reasoning.MaxTokens
 				}
 				cohereReq.Thinking = thinking
-			} else if unifaiReq.Params.Reasoning.Effort != nil {
-				if *unifaiReq.Params.Reasoning.Effort != "none" {
-					maxCompletionTokens := providerUtils.GetMaxOutputTokensOrDefault(unifaiReq.Model, DefaultCompletionMaxTokens)
-					if unifaiReq.Params.MaxCompletionTokens != nil {
-						maxCompletionTokens = *unifaiReq.Params.MaxCompletionTokens
+			} else if rakshaReq.Params.Reasoning.Effort != nil {
+				if *rakshaReq.Params.Reasoning.Effort != "none" {
+					maxCompletionTokens := providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, DefaultCompletionMaxTokens)
+					if rakshaReq.Params.MaxCompletionTokens != nil {
+						maxCompletionTokens = *rakshaReq.Params.MaxCompletionTokens
 					}
-					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*unifaiReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, maxCompletionTokens)
+					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*rakshaReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, maxCompletionTokens)
 					if err != nil {
 						return nil, err
 					}
@@ -155,15 +155,15 @@ func ToCohereChatCompletionRequest(unifaiReq *schemas.UnifAIChatRequest) (*Coher
 		}
 
 		// Convert response format
-		if unifaiReq.Params.ResponseFormat != nil {
-			cohereReq.ResponseFormat = convertResponseFormatToCohere(unifaiReq.Params.ResponseFormat)
+		if rakshaReq.Params.ResponseFormat != nil {
+			cohereReq.ResponseFormat = convertResponseFormatToCohere(rakshaReq.Params.ResponseFormat)
 		}
 
 		// Convert extra params
-		if unifaiReq.Params.ExtraParams != nil {
+		if rakshaReq.Params.ExtraParams != nil {
 			// Handle thinking parameter
-			cohereReq.ExtraParams = unifaiReq.Params.ExtraParams
-			if thinkingParam, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "thinking"); ok {
+			cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
+			if thinkingParam, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "thinking"); ok {
 				if thinkingMap, ok := thinkingParam.(map[string]interface{}); ok {
 					thinking := &CohereThinking{}
 					if typeStr, ok := schemas.SafeExtractString(thinkingMap["type"]); ok {
@@ -180,26 +180,26 @@ func ToCohereChatCompletionRequest(unifaiReq *schemas.UnifAIChatRequest) (*Coher
 			}
 
 			// Handle other Cohere-specific extra params
-			if safetyMode, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["safety_mode"]); ok {
+			if safetyMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["safety_mode"]); ok {
 				delete(cohereReq.ExtraParams, "safety_mode")
 				cohereReq.SafetyMode = safetyMode
 			}
 
-			if logProbs, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["log_probs"]); ok {
+			if logProbs, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["log_probs"]); ok {
 				delete(cohereReq.ExtraParams, "log_probs")
 				cohereReq.LogProbs = logProbs
 			}
 
-			if strictToolChoice, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["strict_tool_choice"]); ok {
+			if strictToolChoice, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["strict_tool_choice"]); ok {
 				delete(cohereReq.ExtraParams, "strict_tool_choice")
 				cohereReq.StrictToolChoice = strictToolChoice
 			}
 		}
 
 		// Convert tools to Cohere-specific format (without "strict" field)
-		if unifaiReq.Params.Tools != nil {
-			cohereTools := make([]CohereChatRequestTool, len(unifaiReq.Params.Tools))
-			for i, tool := range unifaiReq.Params.Tools {
+		if rakshaReq.Params.Tools != nil {
+			cohereTools := make([]CohereChatRequestTool, len(rakshaReq.Params.Tools))
+			for i, tool := range rakshaReq.Params.Tools {
 				cohereTools[i] = CohereChatRequestTool{
 					Type: string(tool.Type),
 				}
@@ -216,8 +216,8 @@ func ToCohereChatCompletionRequest(unifaiReq *schemas.UnifAIChatRequest) (*Coher
 		}
 
 		// Convert tool choice
-		if unifaiReq.Params.ToolChoice != nil {
-			toolChoice := unifaiReq.Params.ToolChoice
+		if rakshaReq.Params.ToolChoice != nil {
+			toolChoice := rakshaReq.Params.ToolChoice
 
 			if toolChoice.ChatToolChoiceStr != nil {
 				switch schemas.ChatToolChoiceType(*toolChoice.ChatToolChoiceStr) {
@@ -244,71 +244,71 @@ func ToCohereChatCompletionRequest(unifaiReq *schemas.UnifAIChatRequest) (*Coher
 	return cohereReq, nil
 }
 
-// ToUnifAIChatRequest converts a Cohere v2 chat request to UnifAI format
-func (req *CohereChatRequest) ToUnifAIChatRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIChatRequest {
+// ToRakshaChatRequest converts a Cohere v2 chat request to Raksha format
+func (req *CohereChatRequest) ToRakshaChatRequest(ctx *schemas.RakshaContext) *schemas.RakshaChatRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	unifaiReq := &schemas.UnifAIChatRequest{
+	rakshaReq := &schemas.RakshaChatRequest{
 		Provider: provider,
 		Model:    model,
 		Params:   &schemas.ChatParameters{},
 	}
 	// Convert messages
 	if req.Messages != nil {
-		unifaiMessages := make([]schemas.ChatMessage, len(req.Messages))
+		rakshaMessages := make([]schemas.ChatMessage, len(req.Messages))
 		for i, message := range req.Messages {
-			unifaiMessages[i] = *message.ToUnifAIChatMessage()
+			rakshaMessages[i] = *message.ToRakshaChatMessage()
 		}
-		unifaiReq.Input = unifaiMessages
+		rakshaReq.Input = rakshaMessages
 	}
 	// Convert parameters
 	if req.MaxTokens != nil {
-		unifaiReq.Params.MaxCompletionTokens = req.MaxTokens
+		rakshaReq.Params.MaxCompletionTokens = req.MaxTokens
 	}
 	if req.Temperature != nil {
-		unifaiReq.Params.Temperature = req.Temperature
+		rakshaReq.Params.Temperature = req.Temperature
 	}
 	if req.P != nil {
-		unifaiReq.Params.TopP = req.P
+		rakshaReq.Params.TopP = req.P
 	}
 	if req.StopSequences != nil {
-		unifaiReq.Params.Stop = req.StopSequences
+		rakshaReq.Params.Stop = req.StopSequences
 	}
 	if req.FrequencyPenalty != nil {
-		unifaiReq.Params.FrequencyPenalty = req.FrequencyPenalty
+		rakshaReq.Params.FrequencyPenalty = req.FrequencyPenalty
 	}
 	if req.PresencePenalty != nil {
-		unifaiReq.Params.PresencePenalty = req.PresencePenalty
+		rakshaReq.Params.PresencePenalty = req.PresencePenalty
 	}
 
 	// Convert reasoning
 	if req.Thinking != nil {
 		if req.Thinking.Type == ThinkingTypeDisabled {
-			unifaiReq.Params.Reasoning = &schemas.ChatReasoning{
+			rakshaReq.Params.Reasoning = &schemas.ChatReasoning{
 				Effort: schemas.Ptr("none"),
 			}
 		} else {
-			unifaiReq.Params.Reasoning = &schemas.ChatReasoning{
+			rakshaReq.Params.Reasoning = &schemas.ChatReasoning{
 				Effort: schemas.Ptr("auto"),
 			}
 			if req.Thinking.TokenBudget != nil {
-				unifaiReq.Params.Reasoning.MaxTokens = req.Thinking.TokenBudget
+				rakshaReq.Params.Reasoning.MaxTokens = req.Thinking.TokenBudget
 			}
 		}
 	}
 	if req.ResponseFormat != nil {
-		unifaiReq.Params.ResponseFormat = convertCohereResponseFormatToUnifAI(req.ResponseFormat)
+		rakshaReq.Params.ResponseFormat = convertCohereResponseFormatToRaksha(req.ResponseFormat)
 	}
 
 	// Convert tools
 	if req.Tools != nil {
-		unifaiTools := make([]schemas.ChatTool, len(req.Tools))
+		rakshaTools := make([]schemas.ChatTool, len(req.Tools))
 		for i, tool := range req.Tools {
-			unifaiTools[i] = schemas.ChatTool{
+			rakshaTools[i] = schemas.ChatTool{
 				Type: schemas.ChatToolTypeFunction,
 				Function: &schemas.ChatToolFunction{
 					Name:        tool.Function.Name,
@@ -317,22 +317,22 @@ func (req *CohereChatRequest) ToUnifAIChatRequest(ctx *schemas.UnifAIContext) *s
 				},
 			}
 		}
-		unifaiReq.Params.Tools = unifaiTools
+		rakshaReq.Params.Tools = rakshaTools
 	}
 
 	// Convert tool choice
 	if req.ToolChoice != nil {
 		switch *req.ToolChoice {
 		case ToolChoiceNone:
-			unifaiReq.Params.ToolChoice = &schemas.ChatToolChoice{
+			rakshaReq.Params.ToolChoice = &schemas.ChatToolChoice{
 				ChatToolChoiceStr: schemas.Ptr(string(schemas.ChatToolChoiceTypeNone)),
 			}
 		case ToolChoiceRequired:
-			unifaiReq.Params.ToolChoice = &schemas.ChatToolChoice{
+			rakshaReq.Params.ToolChoice = &schemas.ChatToolChoice{
 				ChatToolChoiceStr: schemas.Ptr(string(schemas.ChatToolChoiceTypeRequired)),
 			}
 		case ToolChoiceAuto:
-			unifaiReq.Params.ToolChoice = &schemas.ChatToolChoice{
+			rakshaReq.Params.ToolChoice = &schemas.ChatToolChoice{
 				ChatToolChoiceStr: schemas.Ptr(string(schemas.ChatToolChoiceTypeAny)),
 			}
 		}
@@ -359,47 +359,47 @@ func (req *CohereChatRequest) ToUnifAIChatRequest(ctx *schemas.UnifAIContext) *s
 		extraParams["thinking"] = thinkingMap
 	}
 	if len(extraParams) > 0 {
-		unifaiReq.Params.ExtraParams = extraParams
+		rakshaReq.Params.ExtraParams = extraParams
 	}
 
-	return unifaiReq
+	return rakshaReq
 }
 
-// ToUnifAIChatResponse converts a Cohere v2 response to UnifAI format
-func (response *CohereChatResponse) ToUnifAIChatResponse(model string) *schemas.UnifAIChatResponse {
+// ToRakshaChatResponse converts a Cohere v2 response to Raksha format
+func (response *CohereChatResponse) ToRakshaChatResponse(model string) *schemas.RakshaChatResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIChatResponse{
+	rakshaResponse := &schemas.RakshaChatResponse{
 		ID:     response.ID,
 		Model:  model,
 		Object: "chat.completion",
-		Choices: []schemas.UnifAIResponseChoice{
+		Choices: []schemas.RakshaResponseChoice{
 			{
 				Index:                       0,
 				ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{},
 			},
 		},
 		Created:     int(time.Now().Unix()),
-		ExtraFields: schemas.UnifAIResponseExtraFields{},
+		ExtraFields: schemas.RakshaResponseExtraFields{},
 	}
 
 	// Convert messages
 	if response.Message != nil {
-		unifaiMessage := response.Message.ToUnifAIChatMessage()
-		unifaiResponse.Choices[0].ChatNonStreamResponseChoice.Message = unifaiMessage
+		rakshaMessage := response.Message.ToRakshaChatMessage()
+		rakshaResponse.Choices[0].ChatNonStreamResponseChoice.Message = rakshaMessage
 	}
 
 	// Convert finish reason
 	if response.FinishReason != nil {
-		finishReason := ConvertCohereFinishReasonToUnifAI(*response.FinishReason)
-		unifaiResponse.Choices[0].FinishReason = schemas.Ptr(finishReason)
+		finishReason := ConvertCohereFinishReasonToRaksha(*response.FinishReason)
+		rakshaResponse.Choices[0].FinishReason = schemas.Ptr(finishReason)
 	}
 
 	// Convert usage information
 	if response.Usage != nil {
-		usage := &schemas.UnifAILLMUsage{}
+		usage := &schemas.RakshaLLMUsage{}
 
 		if response.Usage.Tokens != nil {
 			if response.Usage.Tokens.InputTokens != nil {
@@ -416,20 +416,20 @@ func (response *CohereChatResponse) ToUnifAIChatResponse(model string) *schemas.
 			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		}
 
-		unifaiResponse.Usage = usage
+		rakshaResponse.Usage = usage
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
-func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIChatResponse, *schemas.UnifAIError, bool) {
+func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaChatResponse, *schemas.RakshaError, bool) {
 	switch chunk.Type {
 	case StreamEventMessageStart:
 		if chunk.Delta != nil && chunk.Delta.Message != nil && chunk.Delta.Message.Role != nil {
 			// Create streaming response for this delta
-			streamResponse := &schemas.UnifAIChatResponse{
+			streamResponse := &schemas.RakshaChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.UnifAIResponseChoice{
+				Choices: []schemas.RakshaResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -451,9 +451,9 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 			chunk.Delta.Message.Content.CohereStreamContentObject != nil {
 			if chunk.Delta.Message.Content.CohereStreamContentObject.Text != nil {
 				// Try to cast content to CohereStreamContent
-				streamResponse := &schemas.UnifAIChatResponse{
+				streamResponse := &schemas.RakshaChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.UnifAIResponseChoice{
+					Choices: []schemas.RakshaResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -468,9 +468,9 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 				return streamResponse, nil, false
 			} else if chunk.Delta.Message.Content.CohereStreamContentObject.Thinking != nil {
 				thinkingText := *chunk.Delta.Message.Content.CohereStreamContentObject.Thinking
-				streamResponse := &schemas.UnifAIChatResponse{
+				streamResponse := &schemas.RakshaChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.UnifAIResponseChoice{
+					Choices: []schemas.RakshaResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -479,7 +479,7 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 									ReasoningDetails: []schemas.ChatReasoningDetails{
 										{
 											Index: 0,
-											Type:  schemas.UnifAIReasoningDetailsTypeText,
+											Type:  schemas.RakshaReasoningDetailsTypeText,
 											Text:  schemas.Ptr(thinkingText),
 										},
 									},
@@ -495,9 +495,9 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 
 	case StreamEventToolPlanDelta:
 		if chunk.Delta != nil && chunk.Delta.Message != nil && chunk.Delta.Message.ToolPlan != nil {
-			streamResponse := &schemas.UnifAIChatResponse{
+			streamResponse := &schemas.RakshaChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.UnifAIResponseChoice{
+				Choices: []schemas.RakshaResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -537,9 +537,9 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 				toolCall.Function.Arguments = cohereToolCall.Function.Arguments
 			}
 
-			streamResponse := &schemas.UnifAIChatResponse{
+			streamResponse := &schemas.RakshaChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.UnifAIResponseChoice{
+				Choices: []schemas.RakshaResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -563,10 +563,10 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 	case StreamEventMessageEnd:
 		if chunk.Delta != nil {
 			var finishReason string
-			usage := &schemas.UnifAILLMUsage{}
+			usage := &schemas.RakshaLLMUsage{}
 			// Set finish reason
 			if chunk.Delta.FinishReason != nil {
-				finishReason = ConvertCohereFinishReasonToUnifAI(*chunk.Delta.FinishReason)
+				finishReason = ConvertCohereFinishReasonToRaksha(*chunk.Delta.FinishReason)
 			}
 
 			// Set usage information
@@ -582,9 +582,9 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 				}
 			}
 
-			streamResponse := &schemas.UnifAIChatResponse{
+			streamResponse := &schemas.RakshaChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.UnifAIResponseChoice{
+				Choices: []schemas.RakshaResponseChoice{
 					{
 						Index:        0,
 						FinishReason: &finishReason,
@@ -604,7 +604,7 @@ func (chunk *CohereStreamEvent) ToUnifAIChatCompletionStream() (*schemas.UnifAIC
 	return nil, nil, false
 }
 
-func (cm *CohereMessage) ToUnifAIChatMessage() *schemas.ChatMessage {
+func (cm *CohereMessage) ToRakshaChatMessage() *schemas.ChatMessage {
 	if cm == nil {
 		return nil
 	}
@@ -643,7 +643,7 @@ func (cm *CohereMessage) ToUnifAIChatMessage() *schemas.ChatMessage {
 				} else if block.Type == CohereContentBlockTypeThinking && block.Thinking != nil {
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index: len(reasoningDetails),
-						Type:  schemas.UnifAIReasoningDetailsTypeText,
+						Type:  schemas.RakshaReasoningDetailsTypeText,
 						Text:  block.Thinking,
 					})
 					if len(reasoningText) > 0 {
@@ -689,7 +689,7 @@ func (cm *CohereMessage) ToUnifAIChatMessage() *schemas.ChatMessage {
 			// Arguments is a string, not a pointer, so it's safe to access directly
 			functionArguments = toolCall.Function.Arguments
 
-			unifaiToolCall := schemas.ChatAssistantMessageToolCall{
+			rakshaToolCall := schemas.ChatAssistantMessageToolCall{
 				Index: uint16(len(toolCalls)),
 				ID:    toolCall.ID,
 				Function: schemas.ChatAssistantMessageToolCallFunction{
@@ -697,7 +697,7 @@ func (cm *CohereMessage) ToUnifAIChatMessage() *schemas.ChatMessage {
 					Arguments: functionArguments,
 				},
 			}
-			toolCalls = append(toolCalls, unifaiToolCall)
+			toolCalls = append(toolCalls, rakshaToolCall)
 		}
 	}
 
@@ -717,16 +717,16 @@ func (cm *CohereMessage) ToUnifAIChatMessage() *schemas.ChatMessage {
 		assistantMessage.Reasoning = schemas.Ptr(reasoningText)
 	}
 
-	unifaiMessage := &schemas.ChatMessage{
+	rakshaMessage := &schemas.ChatMessage{
 		Role:                 schemas.ChatMessageRole(cm.Role),
 		Content:              messageContent,
 		ChatAssistantMessage: assistantMessage,
 	}
 
 	if cm.Role == "tool" {
-		unifaiMessage.ChatToolMessage = &schemas.ChatToolMessage{
+		rakshaMessage.ChatToolMessage = &schemas.ChatToolMessage{
 			ToolCallID: cm.ToolCallID,
 		}
 	}
-	return unifaiMessage
+	return rakshaMessage
 }

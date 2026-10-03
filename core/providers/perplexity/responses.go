@@ -3,7 +3,7 @@ package perplexity
 import (
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // isPerplexityResponsesSupported reports whether the model should use /v1/responses vs /chat/completions.
@@ -14,134 +14,134 @@ func isPerplexityResponsesSupported(model string) bool {
 	return !strings.HasPrefix(strings.TrimPrefix(model, "perplexity/"), "sonar-")
 }
 
-// ToPerplexityResponsesRequest converts a UnifAIResponsesRequest to PerplexityChatRequest
-func ToPerplexityResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) *PerplexityChatRequest {
-	if unifaiReq == nil {
+// ToPerplexityResponsesRequest converts a RakshaResponsesRequest to PerplexityChatRequest
+func ToPerplexityResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) *PerplexityChatRequest {
+	if rakshaReq == nil {
 		return nil
 	}
 
 	perplexityReq := &PerplexityChatRequest{
-		Model: unifaiReq.Model,
+		Model: rakshaReq.Model,
 	}
 
 	// Map basic parameters
-	if unifaiReq.Params != nil {
+	if rakshaReq.Params != nil {
 		// Core parameters
-		perplexityReq.MaxTokens = unifaiReq.Params.MaxOutputTokens
-		perplexityReq.Temperature = unifaiReq.Params.Temperature
-		perplexityReq.TopP = unifaiReq.Params.TopP
+		perplexityReq.MaxTokens = rakshaReq.Params.MaxOutputTokens
+		perplexityReq.Temperature = rakshaReq.Params.Temperature
+		perplexityReq.TopP = rakshaReq.Params.TopP
 
 		// Handle reasoning effort mapping
-		if unifaiReq.Params.Reasoning != nil && unifaiReq.Params.Reasoning.Effort != nil {
-			if *unifaiReq.Params.Reasoning.Effort == "minimal" {
+		if rakshaReq.Params.Reasoning != nil && rakshaReq.Params.Reasoning.Effort != nil {
+			if *rakshaReq.Params.Reasoning.Effort == "minimal" {
 				perplexityReq.ReasoningEffort = schemas.Ptr("low")
 			} else {
-				perplexityReq.ReasoningEffort = schemas.Ptr(*unifaiReq.Params.Reasoning.Effort)
+				perplexityReq.ReasoningEffort = schemas.Ptr(*rakshaReq.Params.Reasoning.Effort)
 			}
 		}
 
 		// Handle extra parameters for Perplexity-specific fields
-		if unifaiReq.Params.ExtraParams != nil {
+		if rakshaReq.Params.ExtraParams != nil {
 			// Search-related parameters
-			if searchMode, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["search_mode"]); ok {
+			if searchMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_mode"]); ok {
 				perplexityReq.SearchMode = searchMode
 			}
 
-			if languagePreference, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["language_preference"]); ok {
+			if languagePreference, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["language_preference"]); ok {
 				perplexityReq.LanguagePreference = languagePreference
 			}
 
-			if searchDomainFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["search_domain_filter"]); ok {
+			if searchDomainFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["search_domain_filter"]); ok {
 				perplexityReq.SearchDomainFilter = searchDomainFilter
 			}
 
-			if returnImages, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["return_images"]); ok {
+			if returnImages, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["return_images"]); ok {
 				perplexityReq.ReturnImages = returnImages
 			}
 
-			if returnRelatedQuestions, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["return_related_questions"]); ok {
+			if returnRelatedQuestions, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["return_related_questions"]); ok {
 				perplexityReq.ReturnRelatedQuestions = returnRelatedQuestions
 			}
 
-			if searchRecencyFilter, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["search_recency_filter"]); ok {
+			if searchRecencyFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_recency_filter"]); ok {
 				perplexityReq.SearchRecencyFilter = searchRecencyFilter
 			}
 
-			if searchAfterDateFilter, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["search_after_date_filter"]); ok {
+			if searchAfterDateFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_after_date_filter"]); ok {
 				perplexityReq.SearchAfterDateFilter = searchAfterDateFilter
 			}
 
-			if searchBeforeDateFilter, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["search_before_date_filter"]); ok {
+			if searchBeforeDateFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_before_date_filter"]); ok {
 				perplexityReq.SearchBeforeDateFilter = searchBeforeDateFilter
 			}
 
-			if lastUpdatedAfterFilter, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["last_updated_after_filter"]); ok {
+			if lastUpdatedAfterFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["last_updated_after_filter"]); ok {
 				perplexityReq.LastUpdatedAfterFilter = lastUpdatedAfterFilter
 			}
 
-			if lastUpdatedBeforeFilter, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["last_updated_before_filter"]); ok {
+			if lastUpdatedBeforeFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["last_updated_before_filter"]); ok {
 				perplexityReq.LastUpdatedBeforeFilter = lastUpdatedBeforeFilter
 			}
 
-			if topK, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["top_k"]); ok {
+			if topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"]); ok {
 				perplexityReq.TopK = topK
 			}
 
-			if stream, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["stream"]); ok {
+			if stream, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["stream"]); ok {
 				perplexityReq.Stream = stream
 			}
 
-			if disableSearch, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["disable_search"]); ok {
+			if disableSearch, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["disable_search"]); ok {
 				perplexityReq.DisableSearch = disableSearch
 			}
 
-			if enableSearchClassifier, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["enable_search_classifier"]); ok {
+			if enableSearchClassifier, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_search_classifier"]); ok {
 				perplexityReq.EnableSearchClassifier = enableSearchClassifier
 			}
 
-			if presencePenalty, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["presence_penalty"]); ok {
+			if presencePenalty, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["presence_penalty"]); ok {
 				perplexityReq.PresencePenalty = presencePenalty
 			}
 
-			if frequencyPenalty, ok := schemas.SafeExtractFloat64Pointer(unifaiReq.Params.ExtraParams["frequency_penalty"]); ok {
+			if frequencyPenalty, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["frequency_penalty"]); ok {
 				perplexityReq.FrequencyPenalty = frequencyPenalty
 			}
 
-			if responseFormat, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "response_format"); ok {
+			if responseFormat, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "response_format"); ok {
 				perplexityReq.ResponseFormat = &responseFormat
 			}
 
 			// Perplexity-specific request fields
-			if numSearchResults, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["num_search_results"]); ok {
+			if numSearchResults, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["num_search_results"]); ok {
 				perplexityReq.NumSearchResults = numSearchResults
 			}
 
-			if numImages, ok := schemas.SafeExtractIntPointer(unifaiReq.Params.ExtraParams["num_images"]); ok {
+			if numImages, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["num_images"]); ok {
 				perplexityReq.NumImages = numImages
 			}
 
-			if searchLanguageFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["search_language_filter"]); ok {
+			if searchLanguageFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["search_language_filter"]); ok {
 				perplexityReq.SearchLanguageFilter = searchLanguageFilter
 			}
 
-			if imageFormatFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["image_format_filter"]); ok {
+			if imageFormatFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["image_format_filter"]); ok {
 				perplexityReq.ImageFormatFilter = imageFormatFilter
 			}
 
-			if imageDomainFilter, ok := schemas.SafeExtractStringSlice(unifaiReq.Params.ExtraParams["image_domain_filter"]); ok {
+			if imageDomainFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["image_domain_filter"]); ok {
 				perplexityReq.ImageDomainFilter = imageDomainFilter
 			}
 
-			if safeSearch, ok := schemas.SafeExtractBoolPointer(unifaiReq.Params.ExtraParams["safe_search"]); ok {
+			if safeSearch, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["safe_search"]); ok {
 				perplexityReq.SafeSearch = safeSearch
 			}
 
-			if streamMode, ok := schemas.SafeExtractStringPointer(unifaiReq.Params.ExtraParams["stream_mode"]); ok {
+			if streamMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["stream_mode"]); ok {
 				perplexityReq.StreamMode = streamMode
 			}
 
 			// Handle web_search_options
-			if webSearchOptionsParam, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "web_search_options"); ok {
+			if webSearchOptionsParam, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "web_search_options"); ok {
 				if webSearchOptionsSlice, ok := webSearchOptionsParam.([]interface{}); ok {
 					var webSearchOptions []WebSearchOption
 					for _, optionInterface := range webSearchOptionsSlice {
@@ -193,7 +193,7 @@ func ToPerplexityResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) *Pe
 			}
 
 			// Handle media_response
-			if mediaResponseParam, ok := schemas.SafeExtractFromMap(unifaiReq.Params.ExtraParams, "media_response"); ok {
+			if mediaResponseParam, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "media_response"); ok {
 				if mediaResponseMap, ok := mediaResponseParam.(map[string]interface{}); ok {
 					mediaResponse := &MediaResponse{}
 
@@ -219,8 +219,8 @@ func ToPerplexityResponsesRequest(unifaiReq *schemas.UnifAIResponsesRequest) *Pe
 	}
 
 	// Process ResponsesInput (which contains the Responses messages)
-	if unifaiReq.Input != nil {
-		perplexityReq.Messages = schemas.ToChatMessages(unifaiReq.Input)
+	if rakshaReq.Input != nil {
+		perplexityReq.Messages = schemas.ToChatMessages(rakshaReq.Input)
 	}
 
 	return perplexityReq

@@ -1,4 +1,4 @@
-// Package tracing provides distributed tracing infrastructure for UnifAI
+// Package tracing provides distributed tracing infrastructure for Raksha
 package tracing
 
 import (
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // DeferredSpanInfo stores information about a deferred span for streaming requests
@@ -18,7 +18,7 @@ type DeferredSpanInfo struct {
 	RequestID           string                   // Request ID for accumulator lookup
 	FirstChunkTime      time.Time                // Timestamp of first chunk (for TTFT calculation)
 	ChunkCount          int                      // Count of received streaming chunks (for AttrTotalChunks)
-	AccumulatedResponse *schemas.UnifAIResponse // Full accumulated response from streaming chunks
+	AccumulatedResponse *schemas.RakshaResponse // Full accumulated response from streaming chunks
 	mu                  sync.Mutex               // Mutex for thread-safe chunk accumulation
 }
 
@@ -184,9 +184,9 @@ func (s *TraceStore) ClearDeferredSpan(traceID string) {
 
 // AppendStreamingChunk tracks TTFT and chunk count for the deferred span.
 // Chunks are no longer stored — the new streaming.Accumulator handles full content
-// accumulation for plugins (logging, maxim). This eliminates storing 1M+ UnifAIResponse
+// accumulation for plugins (logging, maxim). This eliminates storing 1M+ RakshaResponse
 // objects in the old accumulator at high concurrency.
-func (s *TraceStore) AppendStreamingChunk(traceID string, chunk *schemas.UnifAIResponse) {
+func (s *TraceStore) AppendStreamingChunk(traceID string, chunk *schemas.RakshaResponse) {
 	if chunk == nil {
 		return
 	}
@@ -223,10 +223,10 @@ func (s *TraceStore) GetAccumulatedData(traceID string) (ttftNs int64, chunkCoun
 	return ttftNs, info.ChunkCount
 }
 
-// SetAccumulatedResponse stores the accumulated UnifAIResponse on the deferred span info.
+// SetAccumulatedResponse stores the accumulated RakshaResponse on the deferred span info.
 // Called during the final ProcessStreamingChunk to make the full response
 // available for span attribute population in completeDeferredSpan.
-func (s *TraceStore) SetAccumulatedResponse(traceID string, resp *schemas.UnifAIResponse) {
+func (s *TraceStore) SetAccumulatedResponse(traceID string, resp *schemas.RakshaResponse) {
 	info := s.GetDeferredSpan(traceID)
 	if info == nil {
 		return
@@ -239,9 +239,9 @@ func (s *TraceStore) SetAccumulatedResponse(traceID string, resp *schemas.UnifAI
 	info.AccumulatedResponse = resp
 }
 
-// GetAccumulatedResponse returns the accumulated UnifAIResponse for a deferred span.
+// GetAccumulatedResponse returns the accumulated RakshaResponse for a deferred span.
 // Returns nil if no accumulated response has been stored.
-func (s *TraceStore) GetAccumulatedResponse(traceID string) *schemas.UnifAIResponse {
+func (s *TraceStore) GetAccumulatedResponse(traceID string) *schemas.RakshaResponse {
 	info := s.GetDeferredSpan(traceID)
 	if info == nil {
 		return nil

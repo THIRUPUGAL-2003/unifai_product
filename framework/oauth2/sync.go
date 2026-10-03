@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // TokenRefreshWorker manages automatic token refresh for expiring OAuth tokens
@@ -23,7 +23,7 @@ type TokenRefreshWorker struct {
 // NewTokenRefreshWorker creates a new token refresh worker
 func NewTokenRefreshWorker(provider *OAuth2Provider, logger schemas.Logger) *TokenRefreshWorker {
 	if logger == nil {
-		logger = unifai.NewNoOpLogger()
+		logger = raksha.NewNoOpLogger()
 	}
 	if provider.configStore == nil {
 		logger.Warn("config store is nil, skipping token refresh worker")
@@ -160,7 +160,7 @@ type PerUserOAuthSweepWorker struct {
 // orphanRetention <= 0 disables the orphan-token sweep.
 func NewPerUserOAuthSweepWorker(provider *OAuth2Provider, orphanRetention time.Duration, logger schemas.Logger) *PerUserOAuthSweepWorker {
 	if logger == nil {
-		logger = unifai.NewNoOpLogger()
+		logger = raksha.NewNoOpLogger()
 	}
 	if provider == nil || provider.configStore == nil {
 		logger.Warn("per-user OAuth sweep worker not started: provider or config store is nil")

@@ -19,7 +19,7 @@ from pathlib import Path
 from mitmproxy.test import tflow, tutils
 
 PROXY_DIR = Path(__file__).resolve().parents[1]
-PARTS_DIR = PROXY_DIR / "unifai_proxy_parts"
+PARTS_DIR = PROXY_DIR / "raksha_proxy_parts"
 PARTS = [
     "config_caches_rules.py",
     "helpers_prompts.py",

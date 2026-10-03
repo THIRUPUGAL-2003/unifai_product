@@ -10,41 +10,41 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// UnifAIChatRequest is the request struct for chat completion requests
-type UnifAIChatRequest struct {
+// RakshaChatRequest is the request struct for chat completion requests
+type RakshaChatRequest struct {
 	Provider       ModelProvider   `json:"provider"`
 	Model          string          `json:"model"`
 	Input          []ChatMessage   `json:"input,omitempty"`
 	Params         *ChatParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback      `json:"fallbacks,omitempty"`
-	RawRequestBody []byte          `json:"-"` // set unifai-use-raw-request-body to true in ctx to use the raw request body. UnifAI will directly send this to the downstream provider.
+	RawRequestBody []byte          `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
 }
 
 // GetRawRequestBody returns the raw request body
-func (cr *UnifAIChatRequest) GetRawRequestBody() []byte {
+func (cr *RakshaChatRequest) GetRawRequestBody() []byte {
 	return cr.RawRequestBody
 }
 
-func (cr *UnifAIChatRequest) GetExtraParams() map[string]interface{} {
+func (cr *RakshaChatRequest) GetExtraParams() map[string]interface{} {
 	if cr.Params == nil {
 		return make(map[string]interface{}, 0)
 	}
 	return cr.Params.ExtraParams
 }
 
-// UnifAIChatResponse represents the complete result from a chat completion request.
-type UnifAIChatResponse struct {
+// RakshaChatResponse represents the complete result from a chat completion request.
+type RakshaChatResponse struct {
 	ID                string                     `json:"id"`
-	Choices           []UnifAIResponseChoice    `json:"choices"`
+	Choices           []RakshaResponseChoice    `json:"choices"`
 	Created           int                        `json:"created"` // The Unix timestamp (in seconds).
 	Model             string                     `json:"model"`
 	Object            string                     `json:"object"` // "chat.completion" or "chat.completion.chunk"
-	ServiceTier       *UnifAIServiceTier        `json:"service_tier,omitempty"`
+	ServiceTier       *RakshaServiceTier        `json:"service_tier,omitempty"`
 	Speed             *string                    `json:"speed,omitempty"` // "fast" | "standard" — speed actually served (Anthropic fast mode); drives fast-mode billing
 	Diagnostics       *CacheDiagnostics          `json:"diagnostics,omitempty"` // Anthropic cache diagnostics (cache-diagnosis-2026-04-07); first prompt-cache prefix divergence point
 	SystemFingerprint string                     `json:"system_fingerprint"`
-	Usage             *UnifAILLMUsage           `json:"usage"`
-	ExtraFields       UnifAIResponseExtraFields `json:"extra_fields"`
+	Usage             *RakshaLLMUsage           `json:"usage"`
+	ExtraFields       RakshaResponseExtraFields `json:"extra_fields"`
 	ExtraParams       map[string]interface{}     `json:"-"`
 
 	// Perplexity-specific fields
@@ -54,7 +54,7 @@ type UnifAIChatResponse struct {
 }
 
 // BackfillParams populates response fields from the request that are needed
-func (cr *UnifAIChatResponse) BackfillParams(request *UnifAIChatRequest) {
+func (cr *RakshaChatResponse) BackfillParams(request *RakshaChatRequest) {
 	if cr == nil || request == nil {
 		return
 	}
@@ -69,20 +69,20 @@ func (cr *UnifAIChatResponse) BackfillParams(request *UnifAIChatRequest) {
 	}
 }
 
-// ToTextCompletionResponse converts a UnifAIChatResponse to a UnifAITextCompletionResponse
-func (cr *UnifAIChatResponse) ToTextCompletionResponse() *UnifAITextCompletionResponse {
+// ToTextCompletionResponse converts a RakshaChatResponse to a RakshaTextCompletionResponse
+func (cr *RakshaChatResponse) ToTextCompletionResponse() *RakshaTextCompletionResponse {
 	if cr == nil {
 		return nil
 	}
 
 	if len(cr.Choices) == 0 {
-		return &UnifAITextCompletionResponse{
+		return &RakshaTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
 			Usage:             cr.Usage,
-			ExtraFields: UnifAIResponseExtraFields{
+			ExtraFields: RakshaResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -100,12 +100,12 @@ func (cr *UnifAIChatResponse) ToTextCompletionResponse() *UnifAITextCompletionRe
 
 	// Handle streaming response choice
 	if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
-		return &UnifAITextCompletionResponse{
+		return &RakshaTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []UnifAIResponseChoice{
+			Choices: []RakshaResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -116,7 +116,7 @@ func (cr *UnifAIChatResponse) ToTextCompletionResponse() *UnifAITextCompletionRe
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: UnifAIResponseExtraFields{
+			ExtraFields: RakshaResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -137,12 +137,12 @@ func (cr *UnifAIChatResponse) ToTextCompletionResponse() *UnifAITextCompletionRe
 		if msg != nil && msg.Content != nil && msg.Content.ContentStr != nil {
 			textContent = msg.Content.ContentStr
 		}
-		return &UnifAITextCompletionResponse{
+		return &RakshaTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []UnifAIResponseChoice{
+			Choices: []RakshaResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -153,7 +153,7 @@ func (cr *UnifAIChatResponse) ToTextCompletionResponse() *UnifAITextCompletionRe
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: UnifAIResponseExtraFields{
+			ExtraFields: RakshaResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -168,13 +168,13 @@ func (cr *UnifAIChatResponse) ToTextCompletionResponse() *UnifAITextCompletionRe
 	}
 
 	// Fallback case - return basic response structure
-	return &UnifAITextCompletionResponse{
+	return &RakshaTextCompletionResponse{
 		ID:                cr.ID,
 		Model:             cr.Model,
 		Object:            "text_completion",
 		SystemFingerprint: cr.SystemFingerprint,
 		Usage:             cr.Usage,
-		ExtraFields: UnifAIResponseExtraFields{
+		ExtraFields: RakshaResponseExtraFields{
 			RequestType:             TextCompletionRequest,
 			ChunkIndex:              cr.ExtraFields.ChunkIndex,
 			Provider:                cr.ExtraFields.Provider,
@@ -207,7 +207,7 @@ type ChatParameters struct {
 	ResponseFormat       *interface{}          `json:"response_format,omitempty"`        // Format for the response
 	SafetyIdentifier     *string               `json:"safety_identifier,omitempty"`      // Safety identifier
 	Seed                 *int                  `json:"seed,omitempty"`
-	ServiceTier          *UnifAIServiceTier   `json:"service_tier,omitempty"`
+	ServiceTier          *RakshaServiceTier   `json:"service_tier,omitempty"`
 	StreamOptions        *ChatStreamOptions    `json:"stream_options,omitempty"`
 	Stop                 []string              `json:"stop,omitempty"`
 	Store                *bool                 `json:"store,omitempty"`
@@ -334,7 +334,7 @@ type ChatWebSearchOptionsUserLocationApproximate struct {
 // ChatStreamOptions represents the stream options for a chat completion.
 type ChatStreamOptions struct {
 	IncludeObfuscation *bool `json:"include_obfuscation,omitempty"`
-	IncludeUsage       *bool `json:"include_usage,omitempty"` // UnifAI marks this as true by default
+	IncludeUsage       *bool `json:"include_usage,omitempty"` // Raksha marks this as true by default
 }
 
 // ChatToolType represents the type of tool.
@@ -379,7 +379,7 @@ type ChatTool struct {
 	Function     *ChatToolFunction   `json:"function,omitempty"`      // Function definition (shape 1)
 	Custom       *ChatToolCustom     `json:"custom,omitempty"`        // Custom tool definition (shape 2)
 	CacheControl *CacheControl       `json:"cache_control,omitempty"` // Cache control for the tool
-	Annotations  *MCPToolAnnotations `json:"-"`                       // MCP tool annotations (UnifAI-internal, never forwarded to providers)
+	Annotations  *MCPToolAnnotations `json:"-"`                       // MCP tool annotations (Raksha-internal, never forwarded to providers)
 
 	// Anthropic-native tool flags promoted to the neutral layer. All optional;
 	// ignored by providers that don't support them. Gating per ProviderFeatures
@@ -1129,7 +1129,7 @@ type ChatContentBlock struct {
 }
 
 // UnmarshalJSON normalizes Anthropic-style document content blocks
-// (`{"type":"document","source":{...}}`) into unifai's canonical file shape
+// (`{"type":"document","source":{...}}`) into raksha's canonical file shape
 // (`{"type":"file","file":{file_data|file_url, file_type}}`) before the default
 // unmarshal runs. This lets every code path - native /v1/chat/completions, drop-in
 // routes, programmatic JSON callers - reuse the existing ChatContentBlockTypeFile
@@ -1401,7 +1401,7 @@ func (cm *ChatAssistantMessage) UnmarshalJSON(data []byte) error {
 	// Copy decoded data back into the original type
 	*cm = ChatAssistantMessage(aux.Alias)
 
-	// Map xAI's reasoning_content to UnifAI's Reasoning field
+	// Map xAI's reasoning_content to Raksha's Reasoning field
 	// This allows both OpenAI's "reasoning" and xAI's "reasoning_content" to work
 	if aux.ReasoningContent != nil && cm.Reasoning == nil {
 		cm.Reasoning = aux.ReasoningContent
@@ -1414,7 +1414,7 @@ func (cm *ChatAssistantMessage) UnmarshalJSON(data []byte) error {
 		cm.ReasoningDetails = []ChatReasoningDetails{
 			{
 				Index: 0,
-				Type:  UnifAIReasoningDetailsTypeText,
+				Type:  RakshaReasoningDetailsTypeText,
 				Text:  &text,
 			},
 		}
@@ -1466,64 +1466,64 @@ type ChatAudioMessageAudio struct {
 	Transcript string `json:"transcript"`
 }
 
-// UnifAIResponseChoice represents a choice in the completion result.
+// RakshaResponseChoice represents a choice in the completion result.
 // This struct can represent either a streaming or non-streaming response choice.
 // IMPORTANT: Only one of TextCompletionResponseChoice, NonStreamResponseChoice or StreamResponseChoice
 // should be non-nil at a time.
-type UnifAIResponseChoice struct {
+type RakshaResponseChoice struct {
 	Index        int              `json:"index"`
 	FinishReason *string          `json:"finish_reason,omitempty"`
-	LogProbs     *UnifAILogProbs `json:"logprobs,omitempty"`
+	LogProbs     *RakshaLogProbs `json:"logprobs,omitempty"`
 
 	*TextCompletionResponseChoice
 	*ChatNonStreamResponseChoice
 	*ChatStreamResponseChoice
 }
 
-// UnifAIFinishReason represents the reason why the model stopped generating.
-type UnifAIFinishReason string
+// RakshaFinishReason represents the reason why the model stopped generating.
+type RakshaFinishReason string
 
-// UnifAIFinishReason values
+// RakshaFinishReason values
 const (
-	UnifAIFinishReasonStop      UnifAIFinishReason = "stop"
-	UnifAIFinishReasonLength    UnifAIFinishReason = "length"
-	UnifAIFinishReasonToolCalls UnifAIFinishReason = "tool_calls"
+	RakshaFinishReasonStop      RakshaFinishReason = "stop"
+	RakshaFinishReasonLength    RakshaFinishReason = "length"
+	RakshaFinishReasonToolCalls RakshaFinishReason = "tool_calls"
 )
 
-// UnifAIServiceTier represents the service tier for a request/response.
-type UnifAIServiceTier string
+// RakshaServiceTier represents the service tier for a request/response.
+type RakshaServiceTier string
 
-// UnifAIServiceTier values
+// RakshaServiceTier values
 const (
-	UnifAIServiceTierAuto        UnifAIServiceTier = "auto"
-	UnifAIServiceTierDefault     UnifAIServiceTier = "default"
-	UnifAIServiceTierFlex        UnifAIServiceTier = "flex"
-	UnifAIServiceTierPriority    UnifAIServiceTier = "priority"
-	UnifAIServiceTierProvisioned UnifAIServiceTier = "provisioned"
+	RakshaServiceTierAuto        RakshaServiceTier = "auto"
+	RakshaServiceTierDefault     RakshaServiceTier = "default"
+	RakshaServiceTierFlex        RakshaServiceTier = "flex"
+	RakshaServiceTierPriority    RakshaServiceTier = "priority"
+	RakshaServiceTierProvisioned RakshaServiceTier = "provisioned"
 )
 
-type UnifAIReasoningDetailsType string
+type RakshaReasoningDetailsType string
 
 const (
-	UnifAIReasoningDetailsTypeSummary       UnifAIReasoningDetailsType = "reasoning.summary"
-	UnifAIReasoningDetailsTypeEncrypted     UnifAIReasoningDetailsType = "reasoning.encrypted"
-	UnifAIReasoningDetailsTypeText          UnifAIReasoningDetailsType = "reasoning.text"
-	UnifAIReasoningDetailsTypeContentBlocks UnifAIReasoningDetailsType = "reasoning.content_blocks"
+	RakshaReasoningDetailsTypeSummary       RakshaReasoningDetailsType = "reasoning.summary"
+	RakshaReasoningDetailsTypeEncrypted     RakshaReasoningDetailsType = "reasoning.encrypted"
+	RakshaReasoningDetailsTypeText          RakshaReasoningDetailsType = "reasoning.text"
+	RakshaReasoningDetailsTypeContentBlocks RakshaReasoningDetailsType = "reasoning.content_blocks"
 )
 
 // Not in OpenAI's spec, but needed to support inter provider reasoning capabilities.
 type ChatReasoningDetails struct {
 	ID        *string                     `json:"id,omitempty"`
 	Index     int                         `json:"index"`
-	Type      UnifAIReasoningDetailsType `json:"type"`
+	Type      RakshaReasoningDetailsType `json:"type"`
 	Summary   *string                     `json:"summary,omitempty"`
 	Text      *string                     `json:"text,omitempty"`
 	Signature *string                     `json:"signature,omitempty"`
 	Data      *string                     `json:"data,omitempty"` // for encrypted data
 }
 
-// UnifAILogProbs represents the log probabilities for different aspects of a response.
-type UnifAILogProbs struct {
+// RakshaLogProbs represents the log probabilities for different aspects of a response.
+type RakshaLogProbs struct {
 	Content []ContentLogProb `json:"content,omitempty"`
 	Refusal []LogProb        `json:"refusal,omitempty"`
 
@@ -1576,7 +1576,7 @@ func (d *ChatStreamResponseChoiceDelta) UnmarshalJSON(data []byte) error {
 	// Copy decoded data back into the original type
 	*d = ChatStreamResponseChoiceDelta(aux.Alias)
 
-	// Map xAI's reasoning_content to UnifAI's Reasoning field
+	// Map xAI's reasoning_content to Raksha's Reasoning field
 	// This allows both OpenAI's "reasoning" and xAI's "reasoning_content" to work
 	if aux.ReasoningContent != nil && d.Reasoning == nil {
 		d.Reasoning = aux.ReasoningContent
@@ -1589,7 +1589,7 @@ func (d *ChatStreamResponseChoiceDelta) UnmarshalJSON(data []byte) error {
 		d.ReasoningDetails = []ChatReasoningDetails{
 			{
 				Index: 0,
-				Type:  UnifAIReasoningDetailsTypeText,
+				Type:  RakshaReasoningDetailsTypeText,
 				Text:  &text,
 			},
 		}
@@ -1613,14 +1613,14 @@ type ContentLogProb struct {
 	TopLogProbs []LogProb `json:"top_logprobs"`
 }
 
-// UnifAILLMUsage represents token usage information
-type UnifAILLMUsage struct {
+// RakshaLLMUsage represents token usage information
+type RakshaLLMUsage struct {
 	PromptTokens            int                          `json:"prompt_tokens,omitempty"`
 	PromptTokensDetails     *ChatPromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionTokens        int                          `json:"completion_tokens,omitempty"`
 	CompletionTokensDetails *ChatCompletionTokensDetails `json:"completion_tokens_details,omitempty"`
 	TotalTokens             int                          `json:"total_tokens"`
-	Cost                    *UnifAICost                 `json:"cost,omitempty"` // Only for the providers which support cost calculation
+	Cost                    *RakshaCost                 `json:"cost,omitempty"` // Only for the providers which support cost calculation
 }
 
 type ChatPromptTokensDetails struct {
@@ -1701,7 +1701,7 @@ type ChatCompletionTokensDetails struct {
 	RejectedPredictionTokens int  `json:"rejected_prediction_tokens,omitempty"`
 }
 
-type UnifAICost struct {
+type RakshaCost struct {
 	InputTokensCost     float64 `json:"input_tokens_cost,omitempty"`
 	OutputTokensCost    float64 `json:"output_tokens_cost,omitempty"`
 	ReasoningTokensCost float64 `json:"reasoning_tokens_cost,omitempty"`
@@ -1711,8 +1711,8 @@ type UnifAICost struct {
 	TotalCost           float64 `json:"total_cost,omitempty"`
 }
 
-// UnmarshalJSON implements custom JSON unmarshalling for UnifAICost.
-func (bc *UnifAICost) UnmarshalJSON(data []byte) error {
+// UnmarshalJSON implements custom JSON unmarshalling for RakshaCost.
+func (bc *RakshaCost) UnmarshalJSON(data []byte) error {
 	// First, try to unmarshal as a direct float
 	var costFloat float64
 	if err := Unmarshal(data, &costFloat); err == nil {
@@ -1720,12 +1720,12 @@ func (bc *UnifAICost) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// Try to unmarshal as a full UnifAICost struct
+	// Try to unmarshal as a full RakshaCost struct
 	// Use a type alias to avoid infinite recursion
-	type Alias UnifAICost
+	type Alias RakshaCost
 	var costStruct Alias
 	if err := Unmarshal(data, &costStruct); err == nil {
-		*bc = UnifAICost(costStruct)
+		*bc = RakshaCost(costStruct)
 		return nil
 	}
 

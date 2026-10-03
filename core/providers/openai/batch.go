@@ -3,7 +3,7 @@ package openai
 import (
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // OpenAI Batch API Types
@@ -65,8 +65,8 @@ type OpenAIBatchListResponse struct {
 	HasMore bool                  `json:"has_more"`
 }
 
-// ToUnifAIBatchStatus converts OpenAI status to UnifAI status.
-func ToUnifAIBatchStatus(status string) schemas.BatchStatus {
+// ToRakshaBatchStatus converts OpenAI status to Raksha status.
+func ToRakshaBatchStatus(status string) schemas.BatchStatus {
 	switch status {
 	case "validating":
 		return schemas.BatchStatusValidating
@@ -89,15 +89,15 @@ func ToUnifAIBatchStatus(status string) schemas.BatchStatus {
 	}
 }
 
-// ToUnifAIBatchCreateResponse converts OpenAI batch response to UnifAI batch response.
-func (r *OpenAIBatchResponse) ToUnifAIBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIBatchCreateResponse {
-	resp := &schemas.UnifAIBatchCreateResponse{
+// ToRakshaBatchCreateResponse converts OpenAI batch response to Raksha batch response.
+func (r *OpenAIBatchResponse) ToRakshaBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchCreateResponse {
+	resp := &schemas.RakshaBatchCreateResponse{
 		ID:               r.ID,
 		Object:           r.Object,
 		Endpoint:         r.Endpoint,
 		InputFileID:      r.InputFileID,
 		CompletionWindow: r.CompletionWindow,
-		Status:           ToUnifAIBatchStatus(r.Status),
+		Status:           ToRakshaBatchStatus(r.Status),
 		Metadata:         r.Metadata,
 		CreatedAt:        r.CreatedAt,
 		OutputFileID:     r.OutputFileID,
@@ -105,7 +105,7 @@ func (r *OpenAIBatchResponse) ToUnifAIBatchCreateResponse(latency time.Duration,
 		InputBlob:        r.InputBlob,
 		OutputBlob:       r.OutputBlob,
 		ErrorBlob:        r.ErrorBlob,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -133,15 +133,15 @@ func (r *OpenAIBatchResponse) ToUnifAIBatchCreateResponse(latency time.Duration,
 	return resp
 }
 
-// ToUnifAIBatchRetrieveResponse converts OpenAI batch response to UnifAI batch retrieve response.
-func (r *OpenAIBatchResponse) ToUnifAIBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.UnifAIBatchRetrieveResponse {
-	resp := &schemas.UnifAIBatchRetrieveResponse{
+// ToRakshaBatchRetrieveResponse converts OpenAI batch response to Raksha batch retrieve response.
+func (r *OpenAIBatchResponse) ToRakshaBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchRetrieveResponse {
+	resp := &schemas.RakshaBatchRetrieveResponse{
 		ID:               r.ID,
 		Object:           r.Object,
 		Endpoint:         r.Endpoint,
 		InputFileID:      r.InputFileID,
 		CompletionWindow: r.CompletionWindow,
-		Status:           ToUnifAIBatchStatus(r.Status),
+		Status:           ToRakshaBatchStatus(r.Status),
 		Metadata:         r.Metadata,
 		CreatedAt:        r.CreatedAt,
 		InProgressAt:     r.InProgressAt,
@@ -157,7 +157,7 @@ func (r *OpenAIBatchResponse) ToUnifAIBatchRetrieveResponse(latency time.Duratio
 		InputBlob:        r.InputBlob,
 		OutputBlob:       r.OutputBlob,
 		ErrorBlob:        r.ErrorBlob,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}

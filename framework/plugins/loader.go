@@ -1,6 +1,6 @@
 package plugins
 
-import "github.com/unifai/unifai/core/schemas"
+import "github.com/raksha/raksha/core/schemas"
 
 // PluginLoader is the contract for a plugin loader
 type PluginLoader interface {

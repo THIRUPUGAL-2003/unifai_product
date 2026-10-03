@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/modelcatalog"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/modelcatalog"
 )
 
 // buildCompleteMessageFromTranscriptionStreamChunks builds a complete message from accumulated transcription chunks
-func (a *Accumulator) buildCompleteMessageFromTranscriptionStreamChunks(chunks []*TranscriptionStreamChunk) *schemas.UnifAITranscriptionResponse {
-	completeMessage := &schemas.UnifAITranscriptionResponse{}
+func (a *Accumulator) buildCompleteMessageFromTranscriptionStreamChunks(chunks []*TranscriptionStreamChunk) *schemas.RakshaTranscriptionResponse {
+	completeMessage := &schemas.RakshaTranscriptionResponse{}
 	finalContent := ""
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].ChunkIndex < chunks[j].ChunkIndex
@@ -32,7 +32,7 @@ func (a *Accumulator) buildCompleteMessageFromTranscriptionStreamChunks(chunks [
 }
 
 // processAccumulatedTranscriptionStreamingChunks processes all accumulated transcription chunks in order
-func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID string, unifaiErr *schemas.UnifAIError, isFinalChunk bool) (*AccumulatedData, error) {
+func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID string, rakshaErr *schemas.RakshaError, isFinalChunk bool) (*AccumulatedData, error) {
 	accumulator := a.getOrCreateStreamAccumulator(requestID)
 	// Lock the accumulator
 	accumulator.mu.Lock()
@@ -68,7 +68,7 @@ func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID s
 		return data, nil
 	}
 	data.Status = "success"
-	if unifaiErr != nil {
+	if rakshaErr != nil {
 		data.Status = "error"
 	}
 	if accumulator.StartTimestamp.IsZero() || accumulator.FinalTimestamp.IsZero() {
@@ -78,11 +78,11 @@ func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID s
 	}
 	data.EndTimestamp = accumulator.FinalTimestamp
 	data.TranscriptionOutput = completeMessage
-	data.ErrorDetails = unifaiErr
+	data.ErrorDetails = rakshaErr
 	// Update metadata from the chunk with highest index (contains TokenUsage, Cost, CacheDebug)
 	if lastChunk := accumulator.getLastTranscriptionChunkLocked(); lastChunk != nil {
 		if lastChunk.TokenUsage != nil {
-			data.TokenUsage = &schemas.UnifAILLMUsage{}
+			data.TokenUsage = &schemas.RakshaLLMUsage{}
 			if lastChunk.TokenUsage.InputTokens != nil {
 				data.TokenUsage.PromptTokens = *lastChunk.TokenUsage.InputTokens
 			}
@@ -124,21 +124,21 @@ func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID s
 }
 
 // processTranscriptionStreamingResponse processes a transcription streaming response
-func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
 	// Extract accumulator ID from context
 	requestID, ok := getAccumulatorID(ctx)
 	if !ok || requestID == "" {
 		// Log error but don't fail the request
 		return nil, fmt.Errorf("accumulator-id not found in context or is empty")
 	}
-	_, provider, requestedModel, resolvedModel := unifai.GetResponseFields(result, unifaiErr)
-	isFinalChunk := unifai.IsFinalChunk(ctx)
+	_, provider, requestedModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
+	isFinalChunk := raksha.IsFinalChunk(ctx)
 	// For audio, all the data comes in the final chunk
 	chunk := a.getTranscriptionStreamChunk()
 	chunk.Timestamp = time.Now()
-	chunk.ErrorDetails = unifaiErr
-	if unifaiErr != nil {
-		chunk.FinishReason = unifai.Ptr("error")
+	chunk.ErrorDetails = rakshaErr
+	if rakshaErr != nil {
+		chunk.FinishReason = raksha.Ptr("error")
 	} else if result != nil && result.TranscriptionStreamResponse != nil {
 		// Set delta for all chunks (not just final chunks with usage)
 		// We create a deep copy of the delta to avoid pointing to stack memory
@@ -147,7 +147,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.UnifAIC
 			deltaValue := *result.TranscriptionStreamResponse.Delta
 			deltaCopy = &deltaValue
 		}
-		newDelta := &schemas.UnifAITranscriptionStreamResponse{
+		newDelta := &schemas.RakshaTranscriptionStreamResponse{
 			Type:  result.TranscriptionStreamResponse.Type,
 			Delta: deltaCopy,
 		}
@@ -159,12 +159,12 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.UnifAIC
 		}
 		chunk.ChunkIndex = result.TranscriptionStreamResponse.ExtraFields.ChunkIndex
 		if result.TranscriptionStreamResponse.ExtraFields.RawResponse != nil {
-			chunk.RawResponse = unifai.Ptr(fmt.Sprintf("%v", result.TranscriptionStreamResponse.ExtraFields.RawResponse))
+			chunk.RawResponse = raksha.Ptr(fmt.Sprintf("%v", result.TranscriptionStreamResponse.ExtraFields.RawResponse))
 		}
 		if isFinalChunk {
 			if a.pricingManager != nil {
 				cost := a.pricingManager.CalculateCost(result, modelcatalog.PricingLookupScopesFromContext(ctx, string(result.GetExtraFields().Provider)))
-				chunk.Cost = unifai.Ptr(cost)
+				chunk.Cost = raksha.Ptr(cost)
 			}
 			chunk.SemanticCacheDebug = result.GetExtraFields().CacheDebug
 		}
@@ -184,7 +184,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.UnifAIC
 
 		// Always process and return data on final chunk
 		// Multiple plugins can call this - the processing is idempotent
-		data, processErr := a.processAccumulatedTranscriptionStreamingChunks(requestID, unifaiErr, isFinalChunk)
+		data, processErr := a.processAccumulatedTranscriptionStreamingChunks(requestID, rakshaErr, isFinalChunk)
 		if processErr != nil {
 			a.logger.Error("failed to process accumulated chunks for request %s: %v", requestID, processErr)
 			return nil, processErr
@@ -199,7 +199,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.UnifAIC
 			Provider:       provider,
 			RequestedModel: requestedModel,
 			ResolvedModel:  resolvedModel,
-			RoutingInfo:    unifai.GetResponseRoutingInfo(result, unifaiErr),
+			RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
 			Data:           data,
 			RawRequest:     &rawRequest,
 		}, nil
@@ -212,7 +212,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.UnifAIC
 		Provider:       provider,
 		RequestedModel: requestedModel,
 		ResolvedModel:  resolvedModel,
-		RoutingInfo:    unifai.GetResponseRoutingInfo(result, unifaiErr),
+		RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
 		Data:           nil,
 	}, nil
 }

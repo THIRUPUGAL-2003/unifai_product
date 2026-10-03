@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore"
-	"github.com/unifai/unifai/framework/modelcatalog/datasheet"
-	"github.com/unifai/unifai/framework/modelcatalog/keyconfig"
-	"github.com/unifai/unifai/framework/modelcatalog/live"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore"
+	"github.com/raksha/raksha/framework/modelcatalog/datasheet"
+	"github.com/raksha/raksha/framework/modelcatalog/keyconfig"
+	"github.com/raksha/raksha/framework/modelcatalog/live"
 )
 
 type ModelCatalog struct {

@@ -1,27 +1,27 @@
-UnifAI Guard — Windows Install (turn ON)
+Raksha Guard — Windows Install (turn ON)
 =======================================
 
 Company server: https://unifai.yespanchi.com
 (If IT gave you a different URL, use the config packaged in this ZIP.)
 
-1. Extract UnifAI_Guard_Windows.zip completely (do not run Setup from inside the ZIP).
-2. Run UnifAI_Guard_Setup.exe.
+1. Extract Raksha_Guard_Windows.zip completely (do not run Setup from inside the ZIP).
+2. Run Raksha_Guard_Setup.exe.
 3. Keep "Start automatically at Windows login" checked.
 4. Finish — Guard runs in the background (system tray / no black terminal).
 5. Open monitored AI sites as usual (ChatGPT, etc.).
 6. Certificate warnings → contact IT (CA trust). Status file:
-   %LOCALAPPDATA%\UnifAI\Guard\ca_install_status.txt
+   %LOCALAPPDATA%\Raksha\Guard\ca_install_status.txt
 
 Optional update later
 ---------------------
-Run Update_UnifAI_Guard.ps1 from this package (or IT push via Browser AI Rebuild).
+Run Update_Raksha_Guard.ps1 from this package (or IT push via Browser AI Rebuild).
 
 Logs
 ----
-%LOCALAPPDATA%\UnifAI\Guard\unifai_guard.log
+%LOCALAPPDATA%\Raksha\Guard\raksha_guard.log
 
 Uninstall (turn OFF)
 --------------------
-Windows Settings → Apps → UnifAI Guard → Uninstall
-(or Start Menu → UnifAI Guard → Uninstall).
+Windows Settings → Apps → Raksha Guard → Uninstall
+(or Start Menu → Raksha Guard → Uninstall).
 Enter the company uninstall key from IT (Browser AI → Setup).

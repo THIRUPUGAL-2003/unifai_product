@@ -24,11 +24,11 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	"github.com/unifai/unifai/core/providers/anthropic"
-	"github.com/unifai/unifai/core/providers/gemini"
-	"github.com/unifai/unifai/core/providers/openai"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/providers/anthropic"
+	"github.com/raksha/raksha/core/providers/gemini"
+	"github.com/raksha/raksha/core/providers/openai"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 	"github.com/tidwall/gjson"
 )
 
@@ -96,8 +96,8 @@ type VertexProvider struct {
 	client              *fasthttp.Client      // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient     *fasthttp.Client      // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig       schemas.NetworkConfig // Network configuration including extra headers
-	sendBackRawRequest  bool                  // Whether to include raw request in UnifAIResponse
-	sendBackRawResponse bool                  // Whether to include raw response in UnifAIResponse
+	sendBackRawRequest  bool                  // Whether to include raw request in RakshaResponse
+	sendBackRawResponse bool                  // Whether to include raw response in RakshaResponse
 }
 
 // NewVertexProvider creates a new Vertex provider instance.
@@ -208,7 +208,7 @@ func (provider *VertexProvider) GetProviderKey() schemas.ModelProvider {
 // The logic is:
 // 1. If deployments or allowedModels are configured, return those (no API call needed)
 // 2. Otherwise, fetch from the publishers.models.list API endpoint (Model Garden)
-func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 	region := resolveVertexRegion(ctx, key)
 	if region == "" {
 		return nil, providerUtils.NewConfigurationError("region is not set in key config")
@@ -218,7 +218,7 @@ func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 	allowedModels := key.Models
 
 	if !request.Unfiltered && (allowedModels.IsEmpty() && len(deployments) == 0 || key.BlacklistedModels.IsBlockAll()) {
-		return &schemas.UnifAIListModelsResponse{Data: make([]schemas.Model, 0)}, nil
+		return &schemas.RakshaListModelsResponse{Data: make([]schemas.Model, 0)}, nil
 	}
 
 	// If deployments or allowedModels are configured, return those directly without API call
@@ -239,11 +239,11 @@ func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 	// Getting oauth2 token
 	tokenSource, err := getAuthTokenSource(key)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("error creating auth token source (api key auth not supported for list models)", err)
+		return nil, providerUtils.NewRakshaOperationError("error creating auth token source (api key auth not supported for list models)", err)
 	}
 	token, err := tokenSource.Token()
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("error getting token (api key auth not supported for list models)", err)
+		return nil, providerUtils.NewRakshaOperationError("error getting token (api key auth not supported for list models)", err)
 	}
 
 	// Iterate over all supported Vertex publishers to include Google, Anthropic, and Mistral models
@@ -269,8 +269,8 @@ func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 			providerUtils.SetExtraHeaders(ctx, req, provider.networkConfig.ExtraHeaders, nil)
 			req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 
-			latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-			if unifaiErr != nil {
+			latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+			if rakshaErr != nil {
 				wait()
 				respBody := append([]byte(nil), resp.Body()...)
 				fasthttp.ReleaseRequest(req)
@@ -279,9 +279,9 @@ func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 				if publisher != "google" {
 					break
 				}
-				return nil, providerUtils.EnrichError(ctx, unifaiErr, nil, respBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
+				return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, respBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
 			}
-			ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+			ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 			// Handle error response
 			if resp.StatusCode() != fasthttp.StatusOK {
@@ -307,20 +307,20 @@ func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 
 				var errorResp VertexError
 				if err := sonic.Unmarshal(respBody, &errorResp); err != nil {
-					return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err), nil, respBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), nil, respBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 				}
 				return nil, providerUtils.EnrichError(ctx, providerUtils.NewProviderAPIError(errorResp.Error.Message, nil, statusCode, nil, nil), nil, respBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 			}
 
 			// Parse Vertex's publisher models response
 			var vertexResponse VertexListPublisherModelsResponse
-			rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(resp.Body(), &vertexResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-			if unifaiErr != nil {
+			rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &vertexResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+			if rakshaErr != nil {
 				respBody := append([]byte(nil), resp.Body()...)
 				wait()
 				fasthttp.ReleaseRequest(req)
 				fasthttp.ReleaseResponse(resp)
-				return nil, providerUtils.EnrichError(ctx, unifaiErr, nil, respBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
+				return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, respBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
 			}
 			if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 				rawRequests = append(rawRequests, rawRequest)
@@ -349,7 +349,7 @@ func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 		PublisherModels: allPublisherModels,
 	}
 
-	response := aggregatedResponse.ToUnifAIListModelsResponse(key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	response := aggregatedResponse.ToRakshaListModelsResponse(key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 		response.ExtraFields.RawRequest = rawRequests
@@ -364,15 +364,15 @@ func (provider *VertexProvider) listModelsByKey(ctx *schemas.UnifAIContext, key 
 
 // ListModels performs a list models request to Vertex's API.
 // Requests are made concurrently for improved performance.
-func (provider *VertexProvider) ListModels(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIListModelsRequest) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
-	finalResponse, unifaiErr := providerUtils.HandleMultipleListModelsRequests(
+func (provider *VertexProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+	finalResponse, rakshaErr := providerUtils.HandleMultipleListModelsRequests(
 		ctx,
 		keys,
 		request,
 		provider.listModelsByKey,
 	)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	return finalResponse, nil
@@ -380,14 +380,14 @@ func (provider *VertexProvider) ListModels(ctx *schemas.UnifAIContext, keys []sc
 
 // TextCompletion is not supported by the Vertex provider.
 // Returns an error indicating that text completion is not available.
-func (provider *VertexProvider) TextCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITextCompletionRequest) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
 // TextCompletionStream performs a streaming text completion request to Vertex's API.
 // It formats the request, sends it to Vertex, and processes the response.
-// Returns a channel of UnifAIStreamChunk objects or an error if the request fails.
-func (provider *VertexProvider) TextCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITextCompletionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
+func (provider *VertexProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
@@ -398,13 +398,13 @@ func (provider *VertexProvider) TextCompletionStream(ctx *schemas.UnifAIContext,
 // request in place; safe to call when no such blocks are present. The ctx is
 // propagated to each fetch so request cancellation/deadlines abort in-flight
 // downloads.
-func inlineRemoteURLSources(ctx context.Context, request *schemas.UnifAIChatRequest) error {
+func inlineRemoteURLSources(ctx context.Context, request *schemas.RakshaChatRequest) error {
 	if request == nil || request.Input == nil {
 		return nil
 	}
 	// When the caller is bypassing the converter via a pre-built raw body,
 	// the request struct isn't what gets sent — skip the fetch.
-	if useRawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && useRawBody {
+	if useRawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && useRawBody {
 		return nil
 	}
 	for mi := range request.Input {
@@ -456,11 +456,11 @@ func inlineRemoteURLSources(ctx context.Context, request *schemas.UnifAIChatRequ
 // inlineDocumentURLsResponses is the Responses-API analogue of inlineDocumentURLs.
 // File blocks live on ResponsesMessageContentBlock.ResponsesInputMessageContentBlockFile
 // rather than the chat ContentBlock.File, so this walks the responses-shape input.
-func inlineDocumentURLsResponses(ctx *schemas.UnifAIContext, request *schemas.UnifAIResponsesRequest) error {
+func inlineDocumentURLsResponses(ctx *schemas.RakshaContext, request *schemas.RakshaResponsesRequest) error {
 	if request == nil || request.Input == nil {
 		return nil
 	}
-	if useRawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && useRawBody {
+	if useRawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && useRawBody {
 		return nil
 	}
 	for mi := range request.Input {
@@ -512,17 +512,17 @@ func inlineDocumentURLsResponses(ctx *schemas.UnifAIContext, request *schemas.Un
 
 // ChatCompletion performs a chat completion request to the Vertex API.
 // It supports both text and image content in messages.
-// Returns a UnifAIResponse containing the completion results or an error if the request fails.
-func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+// Returns a RakshaResponse containing the completion results or an error if the request fails.
+func (provider *VertexProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 	var jsonBody []byte
-	var unifaiErr *schemas.UnifAIError
+	var rakshaErr *schemas.RakshaError
 	if schemas.IsAnthropicModelFamily(ctx, request.Model) {
 		// Anthropic-on-Vertex doesn't accept URL-source document or image blocks.
 		// Inline any URL documents/images to base64 before the converter runs.
 		if err := inlineRemoteURLSources(ctx, request); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to inline remote URL sources for vertex/claude", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to inline remote URL sources for vertex/claude", err)
 		}
-		jsonBody, unifaiErr = anthropic.BuildAnthropicChatRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
+		jsonBody, rakshaErr = anthropic.BuildAnthropicChatRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
 			Provider:                  schemas.Vertex,
 			Model:                     request.Model,
 			BetaHeaderOverrides:       provider.networkConfig.BetaHeaderOverrides,
@@ -531,7 +531,7 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 			ShouldSendBackRawResponse: provider.sendBackRawResponse,
 		})
 	} else {
-		jsonBody, unifaiErr = providerUtils.CheckContextAndGetRequestBody(
+		jsonBody, rakshaErr = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -578,11 +578,11 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 			},
 		)
 	}
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if schemas.IsGeminiModelFamily(ctx, request.Model) || schemas.IsAllDigitsASCII(request.Model) || schemas.IsGemmaModelFamily(ctx, request.Model) {
-		if rawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && rawBody {
+		if rawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && rawBody {
 			jsonBody = gemini.NormalizeRawGenerateContentRequestForCompatibility(jsonBody)
 		}
 		jsonBody = stripVertexGeminiUnsupportedFieldsRaw(jsonBody)
@@ -603,7 +603,7 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 		capModel := schemas.ResolveCanonicalModel(ctx, request.Model)
 		remappedBody, remapErr := anthropic.RemapRawToolVersionsForProvider(jsonBody, schemas.Vertex, capModel)
 		if remapErr != nil {
-			return nil, providerUtils.NewUnifAIOperationError(remapErr.Error(), nil)
+			return nil, providerUtils.NewRakshaOperationError(remapErr.Error(), nil)
 		}
 		jsonBody = remappedBody
 
@@ -611,7 +611,7 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 		var stripErr error
 		jsonBody, stripErr = anthropic.StripUnsupportedFieldsFromRawBody(jsonBody, schemas.Vertex, capModel)
 		if stripErr != nil {
-			return nil, providerUtils.NewUnifAIOperationError(stripErr.Error(), nil)
+			return nil, providerUtils.NewRakshaOperationError(stripErr.Error(), nil)
 		}
 	}
 
@@ -676,11 +676,11 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 		// Getting oauth2 token
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -693,15 +693,15 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 
 	// Make the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -718,9 +718,9 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.UnifAIChatResponse{
+		return &schemas.RakshaChatResponse{
 			Model: request.Model,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 			},
@@ -732,15 +732,15 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 		anthropicResponse := anthropic.AcquireAnthropicMessageResponse()
 		defer anthropic.ReleaseAnthropicMessageResponse(anthropicResponse)
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, anthropicResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, anthropicResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
 		// Create final response
-		response := anthropicResponse.ToUnifAIChatResponse(ctx)
+		response := anthropicResponse.ToRakshaChatResponse(ctx)
 
-		response.ExtraFields = schemas.UnifAIResponseExtraFields{
+		response.ExtraFields = schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 		}
@@ -759,12 +759,12 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 	} else if schemas.IsGeminiModelFamily(ctx, request.Model) || schemas.IsAllDigitsASCII(request.Model) || schemas.IsGemmaModelFamily(ctx, request.Model) {
 		geminiResponse := gemini.GenerateContentResponse{}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
-		response := geminiResponse.ToUnifAIChatResponse()
+		response := geminiResponse.ToRakshaChatResponse()
 		response.ExtraFields.Latency = latency.Milliseconds()
 		response.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
@@ -778,12 +778,12 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 
 		return response, nil
 	} else {
-		response := &schemas.UnifAIChatResponse{}
+		response := &schemas.RakshaChatResponse{}
 
 		// Use enhanced response handler with pre-allocated response
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, response, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
 		response.ExtraFields.Latency = latency.Milliseconds()
@@ -805,8 +805,8 @@ func (provider *VertexProvider) ChatCompletion(ctx *schemas.UnifAIContext, key s
 
 // ChatCompletionStream performs a streaming chat completion request to the Vertex API.
 // It supports both OpenAI-style streaming (for non-Claude models) and Anthropic-style streaming (for Claude models).
-// Returns a channel of UnifAIStreamChunk objects for streaming results or an error if the request fails.
-func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIChatRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+// Returns a channel of RakshaStreamChunk objects for streaming results or an error if the request fails.
+func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 	projectID := resolveVertexProjectID(ctx, key)
 	if projectID == "" {
@@ -822,9 +822,9 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 		// Use Anthropic-style streaming for Claude models.
 		// Anthropic-on-Vertex doesn't accept URL-source document or image blocks; inline first.
 		if err := inlineRemoteURLSources(ctx, request); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to inline remote URL sources for vertex/claude", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to inline remote URL sources for vertex/claude", err)
 		}
-		jsonData, unifaiErr := anthropic.BuildAnthropicChatRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
+		jsonData, rakshaErr := anthropic.BuildAnthropicChatRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
 			Provider:                  schemas.Vertex,
 			Model:                     request.Model,
 			IsStreaming:               true,
@@ -833,8 +833,8 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 			ShouldSendBackRawRequest:  provider.sendBackRawRequest,
 			ShouldSendBackRawResponse: provider.sendBackRawResponse,
 		})
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
 		// Remap unsupported tool versions for Vertex streaming (handles raw passthrough bodies)
@@ -843,14 +843,14 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 			var remapErr error
 			jsonData, remapErr = anthropic.RemapRawToolVersionsForProvider(jsonData, schemas.Vertex, capModel)
 			if remapErr != nil {
-				return nil, providerUtils.NewUnifAIOperationError(remapErr.Error(), nil)
+				return nil, providerUtils.NewRakshaOperationError(remapErr.Error(), nil)
 			}
 
 			// Strip unsupported body fields for Vertex — covers both structured and raw passthrough paths.
 			var stripErr error
 			jsonData, stripErr = anthropic.StripUnsupportedFieldsFromRawBody(jsonData, schemas.Vertex, capModel)
 			if stripErr != nil {
-				return nil, providerUtils.NewUnifAIOperationError(stripErr.Error(), nil)
+				return nil, providerUtils.NewRakshaOperationError(stripErr.Error(), nil)
 			}
 		}
 
@@ -866,11 +866,11 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 		// Adding authorization header
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		headers["Authorization"] = "Bearer " + token.AccessToken
 
@@ -895,7 +895,7 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 		)
 	} else if schemas.IsGeminiModelFamily(ctx, request.Model) || schemas.IsAllDigitsASCII(request.Model) || schemas.IsGemmaModelFamily(ctx, request.Model) {
 		// Use Gemini-style streaming for Gemini models
-		jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+		jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -911,8 +911,8 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 				return reqBody, nil
 			},
 		)
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
 		// Auth query is used to pass the API key in the query string
@@ -957,11 +957,11 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 		if authQuery == "" {
 			tokenSource, err := getAuthTokenSource(key)
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+				return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 			}
 			token, err := tokenSource.Token()
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+				return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 			}
 			headers["Authorization"] = "Bearer " + token.AccessToken
 		}
@@ -1006,11 +1006,11 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 			// Getting oauth2 token
 			tokenSource, err := getAuthTokenSource(key)
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+				return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 			}
 			token, err := tokenSource.Token()
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+				return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 			}
 			authHeader = map[string]string{
 				"Authorization": "Bearer " + token.AccessToken,
@@ -1043,14 +1043,14 @@ func (provider *VertexProvider) ChatCompletionStream(ctx *schemas.UnifAIContext,
 }
 
 // Responses performs a responses request to the Vertex API.
-func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 	if schemas.IsAnthropicModelFamily(ctx, request.Model) {
 		// Anthropic-on-Vertex doesn't accept URL-source document blocks.
 		// Inline any URL documents to base64 before the converter runs.
 		if err := inlineDocumentURLsResponses(ctx, request); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to inline document URLs for vertex/claude", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to inline document URLs for vertex/claude", err)
 		}
-		jsonBody, unifaiErr := anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
+		jsonBody, rakshaErr := anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
 			Provider:                  schemas.Vertex,
 			Model:                     request.Model,
 			BetaHeaderOverrides:       provider.networkConfig.BetaHeaderOverrides,
@@ -1059,8 +1059,8 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 			ShouldSendBackRawRequest:  provider.sendBackRawRequest,
 			ShouldSendBackRawResponse: provider.sendBackRawResponse,
 		})
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 		projectID := resolveVertexProjectID(ctx, key)
 		if projectID == "" {
@@ -1099,11 +1099,11 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 		// Getting oauth2 token
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 
@@ -1115,15 +1115,15 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 
 		// Make the request with optional large response streaming
 		activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 		defer wait()
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if usedLargePayloadBody {
 			providerUtils.DrainLargePayloadRemainder(ctx)
 		}
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 		if resp.StatusCode() != fasthttp.StatusOK {
 			providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -1140,8 +1140,8 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 		}
 		if isLargeResp {
 			respOwned = false
-			return &schemas.UnifAIResponsesResponse{
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+			return &schemas.RakshaResponsesResponse{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					Latency:                 latency.Milliseconds(),
 					ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 				},
@@ -1152,15 +1152,15 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 		anthropicResponse := anthropic.AcquireAnthropicMessageResponse()
 		defer anthropic.ReleaseAnthropicMessageResponse(anthropicResponse)
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, anthropicResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, anthropicResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
 		// Create final response
-		response := anthropicResponse.ToUnifAIResponsesResponse(ctx)
+		response := anthropicResponse.ToRakshaResponsesResponse(ctx)
 
-		response.ExtraFields = schemas.UnifAIResponseExtraFields{
+		response.ExtraFields = schemas.RakshaResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		}
 
@@ -1177,7 +1177,7 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 
 		return response, nil
 	} else if schemas.IsGeminiModelFamily(ctx, request.Model) || schemas.IsAllDigitsASCII(request.Model) || schemas.IsGemmaModelFamily(ctx, request.Model) {
-		jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+		jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1193,10 +1193,10 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 				return reqBody, nil
 			},
 		)
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
-		if rawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && rawBody {
+		if rawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && rawBody {
 			jsonBody = gemini.NormalizeRawGenerateContentRequestForCompatibility(jsonBody)
 		}
 		jsonBody = stripVertexGeminiUnsupportedFieldsRaw(jsonBody)
@@ -1254,11 +1254,11 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 			// Getting oauth2 token
 			tokenSource, err := getAuthTokenSource(key)
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+				return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 			}
 			token, err := tokenSource.Token()
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+				return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 			}
 			req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 		}
@@ -1271,15 +1271,15 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 
 		// Make the request with optional large response streaming
 		activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-		latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 		defer wait()
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if usedLargePayloadBody {
 			providerUtils.DrainLargePayloadRemainder(ctx)
 		}
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 		if resp.StatusCode() != fasthttp.StatusOK {
 			providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -1296,8 +1296,8 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 		}
 		if isLargeResp {
 			respOwned = false
-			return &schemas.UnifAIResponsesResponse{
-				ExtraFields: schemas.UnifAIResponseExtraFields{
+			return &schemas.RakshaResponsesResponse{
+				ExtraFields: schemas.RakshaResponseExtraFields{
 					Latency:                 latency.Milliseconds(),
 					ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 				},
@@ -1306,12 +1306,12 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 
 		geminiResponse := &gemini.GenerateContentResponse{}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
-		response := geminiResponse.ToResponsesUnifAIResponsesResponse()
+		response := geminiResponse.ToResponsesRakshaResponsesResponse()
 		response.ExtraFields.Latency = latency.Milliseconds()
 		response.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
@@ -1331,13 +1331,13 @@ func (provider *VertexProvider) Responses(ctx *schemas.UnifAIContext, key schema
 			return nil, err
 		}
 
-		response := chatResponse.ToUnifAIResponsesResponse()
+		response := chatResponse.ToRakshaResponsesResponse()
 		return response, nil
 	}
 }
 
 // ResponsesStream performs a streaming responses request to the Vertex API.
-func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIResponsesRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *VertexProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	if schemas.IsAnthropicModelFamily(ctx, request.Model) {
 		region := resolveVertexRegion(ctx, key)
 		if region == "" {
@@ -1352,9 +1352,9 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 		// Anthropic-on-Vertex doesn't accept URL-source document blocks.
 		// Inline any URL documents to base64 before the converter runs.
 		if err := inlineDocumentURLsResponses(ctx, request); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to inline document URLs for vertex/claude", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to inline document URLs for vertex/claude", err)
 		}
-		jsonBody, unifaiErr := anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
+		jsonBody, rakshaErr := anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
 			Provider:                  schemas.Vertex,
 			Model:                     request.Model,
 			IsStreaming:               true,
@@ -1364,8 +1364,8 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 			ShouldSendBackRawRequest:  provider.sendBackRawRequest,
 			ShouldSendBackRawResponse: provider.sendBackRawResponse,
 		})
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
 		url := getVertexModelAwarePublisherModelURL(region, "v1", projectID, "anthropic", request.Model, ":streamRawPredict")
@@ -1380,11 +1380,11 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 		// Adding authorization header
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		headers["Authorization"] = "Bearer " + token.AccessToken
 
@@ -1419,7 +1419,7 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 		}
 
 		// Use Gemini-style streaming for Gemini models
-		jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+		jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1435,10 +1435,10 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 				return reqBody, nil
 			},
 		)
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
-		if rawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && rawBody {
+		if rawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && rawBody {
 			jsonData = gemini.NormalizeRawGenerateContentRequestForCompatibility(jsonData)
 		}
 		jsonData = stripVertexGeminiUnsupportedFieldsRaw(jsonData)
@@ -1484,11 +1484,11 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 		if authQuery == "" {
 			tokenSource, err := getAuthTokenSource(key)
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+				return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 			}
 			token, err := tokenSource.Token()
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+				return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 			}
 			headers["Authorization"] = "Bearer " + token.AccessToken
 		}
@@ -1511,7 +1511,7 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 			postHookSpanFinalizer,
 		)
 	} else {
-		ctx.SetValue(schemas.UnifAIContextKeyIsResponsesToChatCompletionFallback, true)
+		ctx.SetValue(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback, true)
 		return provider.ChatCompletionStream(
 			ctx,
 			postHookRunner,
@@ -1524,8 +1524,8 @@ func (provider *VertexProvider) ResponsesStream(ctx *schemas.UnifAIContext, post
 
 // Embedding generates embeddings for the given input text(s) using Vertex AI.
 // All Vertex AI embedding models use the same response format regardless of the model type.
-// Returns a UnifAIResponse containing the embedding(s) and any error that occurred.
-func (provider *VertexProvider) Embedding(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIEmbeddingRequest) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+// Returns a RakshaResponse containing the embedding(s) and any error that occurred.
+func (provider *VertexProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 	projectID := resolveVertexProjectID(ctx, key)
 	if projectID == "" {
 		return nil, providerUtils.NewConfigurationError("project ID is not set")
@@ -1536,15 +1536,15 @@ func (provider *VertexProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 		return nil, providerUtils.NewConfigurationError("region is not set in key config")
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToVertexEmbeddingRequest(request), nil
 		},
 	)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// For custom/fine-tuned models, validate projectNumber is set
@@ -1584,11 +1584,11 @@ func (provider *VertexProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 	} else {
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -1602,15 +1602,15 @@ func (provider *VertexProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 
 	// Make the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -1627,7 +1627,7 @@ func (provider *VertexProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 			// Try to parse Vertex's error format
 			var vertexError map[string]interface{}
 			if err := sonic.Unmarshal(errBody, &vertexError); err != nil {
-				return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonBody, errBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+				return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonBody, errBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 			}
 
 			if errorObj, exists := vertexError["error"]; exists {
@@ -1650,8 +1650,8 @@ func (provider *VertexProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.UnifAIEmbeddingResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+		return &schemas.RakshaEmbeddingResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 			},
@@ -1661,35 +1661,35 @@ func (provider *VertexProvider) Embedding(ctx *schemas.UnifAIContext, key schema
 	// Parse Vertex's native embedding response using typed response
 	var vertexResponse VertexEmbeddingResponse
 	if err := sonic.Unmarshal(responseBody, &vertexResponse); err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
 	}
 
 	// Use centralized Vertex converter
-	unifaiResponse := vertexResponse.ToUnifAIEmbeddingResponse()
+	rakshaResponse := vertexResponse.ToRakshaEmbeddingResponse()
 
 	// Set ExtraFields
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponseMap map[string]interface{}
 		if err := sonic.Unmarshal(resp.Body(), &rawResponseMap); err != nil {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError(schemas.ErrProviderRawResponseUnmarshal, err), jsonBody, resp.Body(), provider.sendBackRawRequest, provider.sendBackRawResponse)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderRawResponseUnmarshal, err), jsonBody, resp.Body(), provider.sendBackRawRequest, provider.sendBackRawResponse)
 		}
-		unifaiResponse.ExtraFields.RawResponse = rawResponseMap
+		rakshaResponse.ExtraFields.RawResponse = rawResponseMap
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // Speech is not supported by the Vertex provider.
-func (provider *VertexProvider) Speech(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAISpeechRequest) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, provider.GetProviderKey())
 }
 
 // Rerank performs a rerank request using Vertex Discovery Engine ranking API.
-func (provider *VertexProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIRerankRequest) (*schemas.UnifAIRerankResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
 	projectID := strings.TrimSpace(resolveVertexProjectID(ctx, key))
 	if projectID == "" {
 		return nil, providerUtils.NewConfigurationError("project ID is not set")
@@ -1700,15 +1700,15 @@ func (provider *VertexProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.K
 		return nil, providerUtils.NewConfigurationError(err.Error())
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToVertexRankRequest(request, options)
 		},
 	)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	completeURL := fmt.Sprintf("https://discoveryengine.googleapis.com/v1/%s:rank", options.RankingConfig)
@@ -1732,11 +1732,11 @@ func (provider *VertexProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.K
 
 	tokenSource, err := getAuthTokenSource(key)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+		return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 	}
 	token, err := tokenSource.Token()
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+		return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 
@@ -1747,15 +1747,15 @@ func (provider *VertexProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.K
 
 	// Make the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -1787,9 +1787,9 @@ func (provider *VertexProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.K
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.UnifAIRerankResponse{
+		return &schemas.RakshaRerankResponse{
 			Model: request.Model,
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 			},
@@ -1797,58 +1797,58 @@ func (provider *VertexProvider) Rerank(ctx *schemas.UnifAIContext, key schemas.K
 	}
 
 	vertexResponse := &VertexRankResponse{}
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, vertexResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, vertexResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	returnDocuments := request.Params != nil && request.Params.ReturnDocuments != nil && *request.Params.ReturnDocuments
-	unifaiResponse, err := vertexResponse.ToUnifAIRerankResponse(request.Documents, returnDocuments)
+	rakshaResponse, err := vertexResponse.ToRakshaRerankResponse(request.Documents, returnDocuments)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewUnifAIOperationError("error converting rerank response", err), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error converting rerank response", err), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	unifaiResponse.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResponse.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
+	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResponse.ExtraFields.RawRequest = rawRequest
+		rakshaResponse.ExtraFields.RawRequest = rawRequest
 	}
 
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResponse.ExtraFields.RawResponse = rawResponse
+		rakshaResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 // OCR is not supported by the Vertex provider.
-func (provider *VertexProvider) OCR(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIOCRRequest) (*schemas.UnifAIOCRResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the Vertex provider.
-func (provider *VertexProvider) SpeechStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAISpeechRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *VertexProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
 // Transcription is not supported by the Vertex provider.
-func (provider *VertexProvider) Transcription(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAITranscriptionRequest) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionRequest, provider.GetProviderKey())
 }
 
 // TranscriptionStream is not supported by the Vertex provider.
-func (provider *VertexProvider) TranscriptionStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAITranscriptionRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *VertexProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
-func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	// Validate model type before processing
 	if !schemas.IsGeminiModelFamily(ctx, request.Model) && !schemas.IsAllDigitsASCII(request.Model) && !schemas.IsImagenModelFamily(ctx, request.Model) {
 		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("image generation is only supported for Gemini and Imagen models, got: %s", request.Model))
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1890,8 +1890,8 @@ func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 			return &VertexRawRequestBody{RawBody: rawBody, ExtraParams: extraParams}, nil
 		},
 	)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	projectID := resolveVertexProjectID(ctx, key)
@@ -1955,11 +1955,11 @@ func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 		// Getting oauth2 token
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -1972,15 +1972,15 @@ func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 
 	// Make the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -1997,8 +1997,8 @@ func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 			},
@@ -2008,12 +2008,12 @@ func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 	if schemas.IsGeminiModelFamily(ctx, request.Model) || schemas.IsAllDigitsASCII(request.Model) {
 		geminiResponse := gemini.GenerateContentResponse{}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
-		response, err := geminiResponse.ToUnifAIImageGenerationResponse()
+		response, err := geminiResponse.ToRakshaImageGenerationResponse()
 		if err != nil {
 			return nil, providerUtils.EnrichError(ctx, err, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
@@ -2034,12 +2034,12 @@ func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 		// Handle Imagen responses
 		imagenResponse := gemini.GeminiImagenResponse{}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &imagenResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &imagenResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
-		response := imagenResponse.ToUnifAIImageGenerationResponse()
+		response := imagenResponse.ToRakshaImageGenerationResponse()
 		response.ExtraFields.Latency = latency.Milliseconds()
 		response.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
@@ -2056,19 +2056,19 @@ func (provider *VertexProvider) ImageGeneration(ctx *schemas.UnifAIContext, key 
 }
 
 // ImageGenerationStream is not supported by the Vertex provider.
-func (provider *VertexProvider) ImageGenerationStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageGenerationRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *VertexProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit edits images for the given input text(s) using Vertex AI.
-// Returns a UnifAIResponse containing the images and any error that occurred.
-func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageEditRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+// Returns a RakshaResponse containing the images and any error that occurred.
+func (provider *VertexProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	// Validate model type before processing
 	if !schemas.IsGeminiModelFamily(ctx, request.Model) && !schemas.IsAllDigitsASCII(request.Model) && !schemas.IsImagenModelFamily(ctx, request.Model) {
 		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("image edit is only supported for Gemini and Imagen models, got: %s", request.Model))
 	}
 
-	jsonBody, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -2110,8 +2110,8 @@ func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 			return &VertexRawRequestBody{RawBody: rawBody, ExtraParams: extraParams}, nil
 		},
 	)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	projectID := resolveVertexProjectID(ctx, key)
@@ -2164,11 +2164,11 @@ func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 		// Getting oauth2 token
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -2181,15 +2181,15 @@ func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 
 	// Make the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -2205,8 +2205,8 @@ func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.UnifAIImageGenerationResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+		return &schemas.RakshaImageGenerationResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 			},
@@ -2216,12 +2216,12 @@ func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 	if schemas.IsGeminiModelFamily(ctx, request.Model) || schemas.IsAllDigitsASCII(request.Model) {
 		geminiResponse := gemini.GenerateContentResponse{}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &geminiResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
-		response, err := geminiResponse.ToUnifAIImageGenerationResponse()
+		response, err := geminiResponse.ToRakshaImageGenerationResponse()
 		if err != nil {
 			return nil, providerUtils.EnrichError(ctx, err, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
@@ -2242,12 +2242,12 @@ func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 		// Handle Imagen responses
 		imagenResponse := gemini.GeminiImagenResponse{}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &imagenResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &imagenResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 
-		response := imagenResponse.ToUnifAIImageGenerationResponse()
+		response := imagenResponse.ToRakshaImageGenerationResponse()
 		response.ExtraFields.Latency = latency.Milliseconds()
 		response.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
@@ -2263,36 +2263,36 @@ func (provider *VertexProvider) ImageEdit(ctx *schemas.UnifAIContext, key schema
 }
 
 // ImageEditStream is not supported by the Vertex provider.
-func (provider *VertexProvider) ImageEditStream(ctx *schemas.UnifAIContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.UnifAIImageEditRequest) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+func (provider *VertexProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the Vertex provider.
-func (provider *VertexProvider) ImageVariation(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIImageVariationRequest) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration generates a video using Vertex AI's Gemini models.
 // Only Gemini models support video generation in Vertex AI.
 // Uses the predictLongRunning endpoint for async video generation.
-func (provider *VertexProvider) VideoGeneration(ctx *schemas.UnifAIContext, key schemas.Key, unifaiReq *schemas.UnifAIVideoGenerationRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	providerName := provider.GetProviderKey()
 
 	// Only Gemini models support video generation in Vertex
-	if !schemas.IsVeoModelFamily(ctx, unifaiReq.Model) && !schemas.IsAllDigitsASCII(unifaiReq.Model) {
-		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("video generation is only supported for Veo models in Vertex, got: %s", unifaiReq.Model))
+	if !schemas.IsVeoModelFamily(ctx, rakshaReq.Model) && !schemas.IsAllDigitsASCII(rakshaReq.Model) {
+		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("video generation is only supported for Veo models in Vertex, got: %s", rakshaReq.Model))
 	}
 
-	// Convert UnifAI request to Gemini format (reusing Gemini converters)
-	jsonData, unifaiErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Raksha request to Gemini format (reusing Gemini converters)
+	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
-		unifaiReq,
+		rakshaReq,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
-			return gemini.ToGeminiVideoGenerationRequest(unifaiReq)
+			return gemini.ToGeminiVideoGenerationRequest(rakshaReq)
 		},
 	)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	projectID := resolveVertexProjectID(ctx, key)
@@ -2313,12 +2313,12 @@ func (provider *VertexProvider) VideoGeneration(ctx *schemas.UnifAIContext, key 
 
 	// For custom/fine-tuned models, validate projectNumber is set
 	projectNumber := resolveVertexProjectNumber(ctx, key)
-	if schemas.IsAllDigitsASCII(unifaiReq.Model) && projectNumber == "" {
+	if schemas.IsAllDigitsASCII(rakshaReq.Model) && projectNumber == "" {
 		return nil, providerUtils.NewConfigurationError("project number is not set for fine-tuned models")
 	}
 
 	// Construct the URL for Gemini video generation using predictLongRunning
-	completeURL := getCompleteURLForGeminiEndpoint(unifaiReq.Model, region, projectID, projectNumber, ":predictLongRunning")
+	completeURL := getCompleteURLForGeminiEndpoint(rakshaReq.Model, region, projectID, projectNumber, ":predictLongRunning")
 
 	// Create HTTP request
 	req := fasthttp.AcquireRequest()
@@ -2337,11 +2337,11 @@ func (provider *VertexProvider) VideoGeneration(ctx *schemas.UnifAIContext, key 
 	} else {
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -2349,12 +2349,12 @@ func (provider *VertexProvider) VideoGeneration(ctx *schemas.UnifAIContext, key 
 	req.SetRequestURI(completeURL)
 	req.SetBody(jsonData)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2367,37 +2367,37 @@ func (provider *VertexProvider) VideoGeneration(ctx *schemas.UnifAIContext, key 
 	// Parse response
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var operation gemini.GenerateVideosOperation
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(body, &operation, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &operation, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
-	// Convert to UnifAI response using Gemini converter
-	unifaiResp, unifaiErr := gemini.ToUnifAIVideoGenerationResponse(&operation, unifaiReq.Model)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	// Convert to Raksha response using Gemini converter
+	rakshaResp, rakshaErr := gemini.ToRakshaVideoGenerationResponse(&operation, rakshaReq.Model)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
-	unifaiResp.ID = providerUtils.AddVideoIDProviderSuffix(unifaiResp.ID, providerName)
+	rakshaResp.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResp.ID, providerName)
 
-	unifaiResp.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResp.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
+	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResp.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		unifaiResp.ExtraFields.RawRequest = rawRequest
+		rakshaResp.ExtraFields.RawRequest = rawRequest
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		unifaiResp.ExtraFields.RawResponse = rawResponse
+		rakshaResp.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // VideoRetrieve retrieves the status of a video generation operation.
 // Uses the fetchPredictOperation endpoint for Vertex AI.
-func (provider *VertexProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key schemas.Key, unifaiReq *schemas.UnifAIVideoRetrieveRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 
@@ -2409,16 +2409,16 @@ func (provider *VertexProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 	baseURL := getVertexAPIBaseURL(region, "v1")
 
 	// Construct the URL for fetching the operation status
-	// The operation name (unifaiReq.ID) already contains the full path:
+	// The operation name (rakshaReq.ID) already contains the full path:
 	// projects/PROJECT_ID/locations/REGION/publishers/google/models/MODEL_ID/operations/OPERATION_ID
 	// We need to extract the model path from it to construct the fetchPredictOperation endpoint
 	// Extract: projects/.../models/MODEL_ID from the operation name
-	taskID := providerUtils.StripVideoIDProviderSuffix(unifaiReq.ID, provider.GetProviderKey())
+	taskID := providerUtils.StripVideoIDProviderSuffix(rakshaReq.ID, provider.GetProviderKey())
 	var modelPath string
 	if idx := strings.Index(taskID, "/operations/"); idx != -1 {
 		modelPath = taskID[:idx]
 	} else {
-		return nil, providerUtils.NewUnifAIOperationError("invalid operation ID format", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid operation ID format", nil)
 	}
 
 	// Construct the URL: https://{vertex-api-host}/v1/{modelPath}:fetchPredictOperation
@@ -2433,7 +2433,7 @@ func (provider *VertexProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 	// Create request body with operation name (using sjson to avoid map marshaling)
 	jsonBody, err := providerUtils.SetJSONField([]byte(`{}`), "operationName", taskID)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to marshal request", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to marshal request", err)
 	}
 
 	// Create HTTP request
@@ -2453,11 +2453,11 @@ func (provider *VertexProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 	} else {
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -2465,12 +2465,12 @@ func (provider *VertexProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 	req.SetRequestURI(completeURL)
 	req.SetBody(jsonBody)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2482,49 +2482,49 @@ func (provider *VertexProvider) VideoRetrieve(ctx *schemas.UnifAIContext, key sc
 
 	// Parse response
 	var operation gemini.GenerateVideosOperation
-	_, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(resp.Body(), &operation, jsonBody, sendBackRawRequest, sendBackRawResponse)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &operation, jsonBody, sendBackRawRequest, sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
-	unifaiResp, unifaiErr := gemini.ToUnifAIVideoGenerationResponse(&operation, "")
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	rakshaResp, rakshaErr := gemini.ToRakshaVideoGenerationResponse(&operation, "")
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
-	unifaiResp.ID = providerUtils.AddVideoIDProviderSuffix(unifaiResp.ID, provider.GetProviderKey())
-	unifaiResp.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResp.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
+	rakshaResp.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResp.ID, provider.GetProviderKey())
+	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResp.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
 	if sendBackRawResponse {
-		unifaiResp.ExtraFields.RawResponse = rawResponse
+		rakshaResp.ExtraFields.RawResponse = rawResponse
 	}
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // VideoDownload downloads the generated video content.
 // First retrieves the video status to get the URL, then downloads the content.
 // Handles both regular URLs and data URLs (base64-encoded videos).
-func (provider *VertexProvider) VideoDownload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIVideoDownloadRequest) (*schemas.UnifAIVideoDownloadResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
 	if request == nil || request.ID == "" {
-		return nil, providerUtils.NewUnifAIOperationError("video_id is required", nil)
+		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
 	}
 	// Retrieve operation first to get the video URL
-	unifaiVideoRetrieveRequest := &schemas.UnifAIVideoRetrieveRequest{
+	rakshaVideoRetrieveRequest := &schemas.RakshaVideoRetrieveRequest{
 		Provider: request.Provider,
 		ID:       request.ID,
 	}
-	videoResp, unifaiErr := provider.VideoRetrieve(ctx, key, unifaiVideoRetrieveRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	videoResp, rakshaErr := provider.VideoRetrieve(ctx, key, rakshaVideoRetrieveRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if videoResp.Status != schemas.VideoStatusCompleted {
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			fmt.Sprintf("video not ready, current status: %s", videoResp.Status),
 			nil)
 	}
 	if len(videoResp.Videos) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("video URL not available", nil)
+		return nil, providerUtils.NewRakshaOperationError("video URL not available", nil)
 	}
 	var content []byte
 	var latency time.Duration
@@ -2536,7 +2536,7 @@ func (provider *VertexProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 		startTime := time.Now()
 		decoded, err := base64.StdEncoding.DecodeString(*videoResp.Videos[0].Base64Data)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to decode base64 video data", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to decode base64 video data", err)
 		}
 		content = decoded
 		contentType = videoResp.Videos[0].ContentType
@@ -2566,62 +2566,62 @@ func (provider *VertexProvider) VideoDownload(ctx *schemas.UnifAIContext, key sc
 		} else {
 			tokenSource, err := getAuthTokenSource(key)
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+				return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 			}
 			token, err := tokenSource.Token()
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+				return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 			}
 			req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 		}
-		var unifaiErr *schemas.UnifAIError
+		var rakshaErr *schemas.RakshaError
 		var wait func()
-		latency, unifaiErr, wait = providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, rakshaErr, wait = providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		defer wait()
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
-		ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 		if resp.StatusCode() != fasthttp.StatusOK {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIOperationError(
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(
 				fmt.Sprintf("failed to download video: HTTP %d", resp.StatusCode()),
 				nil), latency)
 		}
 		body, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		contentType = string(resp.Header.ContentType())
 		content = append([]byte(nil), body...)
 		providerResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 	} else {
-		return nil, providerUtils.NewUnifAIOperationError("invalid video output type", nil)
+		return nil, providerUtils.NewRakshaOperationError("invalid video output type", nil)
 	}
 
-	unifaiResp := &schemas.UnifAIVideoDownloadResponse{
+	rakshaResp := &schemas.RakshaVideoDownloadResponse{
 		VideoID:     request.ID,
 		Content:     content,
 		ContentType: contentType,
 	}
 
-	unifaiResp.ExtraFields.Latency = latency.Milliseconds()
-	unifaiResp.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	rakshaResp.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
-	return unifaiResp, nil
+	return rakshaResp, nil
 }
 
 // VideoDelete is not supported by the Vertex provider.
-func (provider *VertexProvider) VideoDelete(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoDeleteRequest) (*schemas.UnifAIVideoDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the Vertex provider.
-func (provider *VertexProvider) VideoList(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoListRequest) (*schemas.UnifAIVideoListResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the Vertex provider.
-func (provider *VertexProvider) VideoRemix(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIVideoRemixRequest) (*schemas.UnifAIVideoGenerationResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
@@ -2698,7 +2698,7 @@ func stripVertexGeminiUnsupportedFieldsRaw(jsonBody []byte) []byte {
 //   - Requests: inline items converted to JSONL and uploaded to GCS via FileUpload.
 //
 // The output destination is taken from the typed output_folder.url (a gs:// prefix).
-func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchCreateRequest) (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
 	baseURL, cfgErr := vertexBatchJobsBaseURL(key)
 	if cfgErr != nil {
 		return nil, cfgErr
@@ -2712,15 +2712,15 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 	outputURI := ""
 	if !hasRawBody {
 		if request.Model == nil || *request.Model == "" {
-			return nil, providerUtils.NewUnifAIOperationError("model is required for Vertex batch API", nil)
+			return nil, providerUtils.NewRakshaOperationError("model is required for Vertex batch API", nil)
 		}
 		hasFileInput := request.InputFileID != ""
 		hasInlineRequests := len(request.Requests) > 0
 		if hasFileInput && hasInlineRequests {
-			return nil, providerUtils.NewUnifAIOperationError("cannot specify both input_file_id and requests", nil)
+			return nil, providerUtils.NewRakshaOperationError("cannot specify both input_file_id and requests", nil)
 		}
 		if !hasFileInput && !hasInlineRequests {
-			return nil, providerUtils.NewUnifAIOperationError("either input_file_id (gs:// JSONL URI) or requests is required for Vertex batch API", nil)
+			return nil, providerUtils.NewRakshaOperationError("either input_file_id (gs:// JSONL URI) or requests is required for Vertex batch API", nil)
 		}
 
 		// Output destination is the typed output_folder.url (a gs:// prefix). Vertex writes
@@ -2729,10 +2729,10 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 			outputURI = strings.TrimSpace(request.OutputFolder.URL)
 		}
 		if outputURI == "" {
-			return nil, providerUtils.NewUnifAIOperationError("output_folder.url (gs:// prefix) is required for Vertex batch API", nil)
+			return nil, providerUtils.NewRakshaOperationError("output_folder.url (gs:// prefix) is required for Vertex batch API", nil)
 		}
 
-		jobName = fmt.Sprintf("unifai-batch-%d", time.Now().Unix())
+		jobName = fmt.Sprintf("raksha-batch-%d", time.Now().Unix())
 		if request.DisplayName != nil && *request.DisplayName != "" {
 			jobName = *request.DisplayName
 		} else if request.Metadata != nil {
@@ -2746,11 +2746,11 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 		if inputFileID == "" {
 			jsonlData, err := vertexConvertRequestsToJSONL(request.Requests)
 			if err != nil {
-				return nil, providerUtils.NewUnifAIOperationError("failed to convert requests to Vertex JSONL", err)
+				return nil, providerUtils.NewRakshaOperationError("failed to convert requests to Vertex JSONL", err)
 			}
 			outBucket, outKey, parseErr := parseGCSURI(outputURI)
 			if parseErr != nil {
-				return nil, providerUtils.NewUnifAIOperationError(parseErr.Error(), nil)
+				return nil, providerUtils.NewRakshaOperationError(parseErr.Error(), nil)
 			}
 			// Place the input alongside the output directory (sibling, not child) so the
 			// generated JSONL does not live inside the directory Vertex writes results to.
@@ -2762,7 +2762,7 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 					inputPrefix = "input"
 				}
 			}
-			uploadResp, uploadErr := provider.FileUpload(ctx, key, &schemas.UnifAIFileUploadRequest{
+			uploadResp, uploadErr := provider.FileUpload(ctx, key, &schemas.RakshaFileUploadRequest{
 				Provider:    schemas.Vertex,
 				File:        jsonlData,
 				Filename:    jobName + "-input.jsonl",
@@ -2792,7 +2792,7 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -2811,10 +2811,10 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2836,14 +2836,14 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 		inputFileID = created.InputConfig.GcsSource.Uris[0]
 	}
 
-	result := &schemas.UnifAIBatchCreateResponse{
+	result := &schemas.RakshaBatchCreateResponse{
 		ID:          created.Name,
 		Object:      "batch",
 		InputFileID: inputFileID,
 		Status:      vertexJobStateToBatchStatus(created.State),
 		CreatedAt:   gcsParseTime(created.CreateTime),
 		Metadata:    request.Metadata,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}
@@ -2863,23 +2863,23 @@ func (provider *VertexProvider) BatchCreate(ctx *schemas.UnifAIContext, key sche
 // at a time. Each Vertex key carries its own project/region, and batch jobs are scoped to
 // that project/region, so the serial helper walks every key (exhausting all of its pages
 // before advancing) to avoid hiding jobs created under any key but the first.
-func (provider *VertexProvider) BatchList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex BatchList", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex BatchList", nil)
 	}
 
 	// The OpenAI-compatible /v1/batches route feeds the cursor back via After.
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted.
-		return &schemas.UnifAIBatchListResponse{
+		return &schemas.RakshaBatchListResponse{
 			Object: "list",
-			Data:   []schemas.UnifAIBatchRetrieveResponse{},
+			Data:   []schemas.RakshaBatchRetrieveResponse{},
 		}, nil
 	}
 
@@ -2891,9 +2891,9 @@ func (provider *VertexProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 		modifiedRequest.PageToken = nil
 	}
 
-	resp, latency, unifaiErr := provider.batchListByKey(ctx, key, &modifiedRequest)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	resp, latency, rakshaErr := provider.batchListByKey(ctx, key, &modifiedRequest)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	nativeNextCursor := ""
@@ -2915,7 +2915,7 @@ func (provider *VertexProvider) BatchList(ctx *schemas.UnifAIContext, keys []sch
 // batchListByKey lists batch prediction jobs for a single Vertex key/project/region.
 // The native Vertex page token (if any) is taken from request.PageToken; the returned
 // NextCursor carries Vertex's nextPageToken verbatim for the caller to re-encode.
-func (provider *VertexProvider) batchListByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchListRequest) (*schemas.UnifAIBatchListResponse, time.Duration, *schemas.UnifAIError) {
+func (provider *VertexProvider) batchListByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, time.Duration, *schemas.RakshaError) {
 	baseURL, cfgErr := vertexBatchJobsBaseURL(key)
 	if cfgErr != nil {
 		return nil, 0, cfgErr
@@ -2936,7 +2936,7 @@ func (provider *VertexProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, 0, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, 0, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -2952,10 +2952,10 @@ func (provider *VertexProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, 0, providerUtils.EnrichError(ctx, unifaiErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, 0, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2972,9 +2972,9 @@ func (provider *VertexProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 		return nil, 0, providerUtils.EnrichError(ctx, parseErr, nil, resp.Body(), provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	data := make([]schemas.UnifAIBatchRetrieveResponse, 0, len(listResp.BatchPredictionJobs))
+	data := make([]schemas.RakshaBatchRetrieveResponse, 0, len(listResp.BatchPredictionJobs))
 	for i := range listResp.BatchPredictionJobs {
-		data = append(data, vertexBatchJobToUnifAI(&listResp.BatchPredictionJobs[i]))
+		data = append(data, vertexBatchJobToRaksha(&listResp.BatchPredictionJobs[i]))
 	}
 
 	var nextCursor *string
@@ -2982,7 +2982,7 @@ func (provider *VertexProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 		nextCursor = &listResp.NextPageToken
 	}
 
-	result := &schemas.UnifAIBatchListResponse{
+	result := &schemas.RakshaBatchListResponse{
 		Object:     "list",
 		Data:       data,
 		HasMore:    listResp.NextPageToken != "",
@@ -2995,24 +2995,24 @@ func (provider *VertexProvider) batchListByKey(ctx *schemas.UnifAIContext, key s
 }
 
 // BatchRetrieve fetches a Vertex AI batch prediction job by ID (bare or full resource name).
-func (provider *VertexProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchRetrieveRequest) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex BatchRetrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex BatchRetrieve", nil)
 	}
 
 	// A job ID is scoped to the project/region of the key that created it, so try each key
 	// until one resolves the job; return the last error only if all keys fail.
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		startTime := time.Now()
-		job, rawResponse, unifaiErr := provider.vertexGetBatchJob(ctx, key, request.BatchID)
-		if unifaiErr != nil {
-			lastErr = unifaiErr
+		job, rawResponse, rakshaErr := provider.vertexGetBatchJob(ctx, key, request.BatchID)
+		if rakshaErr != nil {
+			lastErr = rakshaErr
 			continue
 		}
 
-		result := vertexBatchJobToUnifAI(job)
-		result.ExtraFields = schemas.UnifAIResponseExtraFields{
+		result := vertexBatchJobToRaksha(job)
+		result.ExtraFields = schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		}
 		if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
@@ -3027,7 +3027,7 @@ func (provider *VertexProvider) BatchRetrieve(ctx *schemas.UnifAIContext, keys [
 // vertexGetBatchJob fetches a BatchPredictionJob resource. The returned rawResponse is
 // the raw response payload when raw-response capture is enabled (nil otherwise); it is a
 // GET, so there is no raw request to capture.
-func (provider *VertexProvider) vertexGetBatchJob(ctx *schemas.UnifAIContext, key schemas.Key, batchID string) (*VertexBatchPredictionJob, interface{}, *schemas.UnifAIError) {
+func (provider *VertexProvider) vertexGetBatchJob(ctx *schemas.RakshaContext, key schemas.Key, batchID string) (*VertexBatchPredictionJob, interface{}, *schemas.RakshaError) {
 	jobURL, cfgErr := vertexBatchJobURL(key, batchID)
 	if cfgErr != nil {
 		return nil, nil, cfgErr
@@ -3035,7 +3035,7 @@ func (provider *VertexProvider) vertexGetBatchJob(ctx *schemas.UnifAIContext, ke
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -3048,10 +3048,10 @@ func (provider *VertexProvider) vertexGetBatchJob(ctx *schemas.UnifAIContext, ke
 	providerUtils.SetExtraHeaders(ctx, req, provider.networkConfig.ExtraHeaders, nil)
 	req.Header.Set("Authorization", authHeader)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, nil, providerUtils.EnrichError(ctx, unifaiErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, nil, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3070,26 +3070,26 @@ func (provider *VertexProvider) vertexGetBatchJob(ctx *schemas.UnifAIContext, ke
 }
 
 // BatchCancel cancels a running Vertex AI batch prediction job.
-func (provider *VertexProvider) BatchCancel(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex BatchCancel", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex BatchCancel", nil)
 	}
 
 	// A job ID is scoped to the project/region of the key that created it, so try each key
 	// until the cancel succeeds; return the last error only if all keys fail.
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, unifaiErr := provider.batchCancelByKey(ctx, key, request)
-		if unifaiErr == nil {
+		resp, rakshaErr := provider.batchCancelByKey(ctx, key, request)
+		if rakshaErr == nil {
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
 // batchCancelByKey cancels a batch prediction job using a single Vertex key.
-func (provider *VertexProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchCancelRequest) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) batchCancelByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 	jobURL, cfgErr := vertexBatchJobURL(key, request.BatchID)
 	if cfgErr != nil {
 		return nil, cfgErr
@@ -3097,7 +3097,7 @@ func (provider *VertexProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -3112,10 +3112,10 @@ func (provider *VertexProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key
 	req.Header.Set("Authorization", authHeader)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3125,39 +3125,39 @@ func (provider *VertexProvider) batchCancelByKey(ctx *schemas.UnifAIContext, key
 		return nil, providerUtils.EnrichError(ctx, parseVertexJobAPIError(resp.Body(), resp.StatusCode(), "batch cancel"), nil, resp.Body(), provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	return &schemas.UnifAIBatchCancelResponse{
+	return &schemas.RakshaBatchCancelResponse{
 		// Echo the caller's id so it stays stable across create/retrieve/cancel.
 		ID:           request.BatchID,
 		Object:       "batch",
 		Status:       schemas.BatchStatusCancelling,
 		CancellingAt: schemas.Ptr(startTime.Unix()),
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}, nil
 }
 
 // BatchDelete deletes a finished Vertex AI batch prediction job.
-func (provider *VertexProvider) BatchDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex BatchDelete", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex BatchDelete", nil)
 	}
 
 	// A job ID is scoped to the project/region of the key that created it, so try each key
 	// until the delete succeeds; return the last error only if all keys fail.
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, unifaiErr := provider.batchDeleteByKey(ctx, key, request)
-		if unifaiErr == nil {
+		resp, rakshaErr := provider.batchDeleteByKey(ctx, key, request)
+		if rakshaErr == nil {
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
 // batchDeleteByKey deletes a batch prediction job using a single Vertex key.
-func (provider *VertexProvider) batchDeleteByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchDeleteRequest) (*schemas.UnifAIBatchDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) batchDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
 	jobURL, cfgErr := vertexBatchJobURL(key, request.BatchID)
 	if cfgErr != nil {
 		return nil, cfgErr
@@ -3165,7 +3165,7 @@ func (provider *VertexProvider) batchDeleteByKey(ctx *schemas.UnifAIContext, key
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -3179,10 +3179,10 @@ func (provider *VertexProvider) batchDeleteByKey(ctx *schemas.UnifAIContext, key
 	req.Header.Set("Authorization", authHeader)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3192,57 +3192,57 @@ func (provider *VertexProvider) batchDeleteByKey(ctx *schemas.UnifAIContext, key
 		return nil, providerUtils.EnrichError(ctx, parseVertexJobAPIError(resp.Body(), resp.StatusCode(), "batch delete"), nil, resp.Body(), provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	return &schemas.UnifAIBatchDeleteResponse{
+	return &schemas.RakshaBatchDeleteResponse{
 		// Echo the caller's id so it stays stable across create/retrieve/delete.
 		ID:     request.BatchID,
 		Object: "batch",
 		Status: schemas.BatchStatusDeleted,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}, nil
 }
 
 // BatchResults reads the predictions-*.jsonl files a finished job wrote to its GCS
-// output directory and maps each line to a UnifAI batch result item. The custom_id
+// output directory and maps each line to a Raksha batch result item. The custom_id
 // is recovered from the echoed request labels.
-func (provider *VertexProvider) BatchResults(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex BatchResults", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex BatchResults", nil)
 	}
 
 	// A job ID is scoped to the project/region of the key that created it, so try each key
 	// until one resolves the job and reads its results; return the last error if all fail.
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
-		resp, unifaiErr := provider.batchResultsByKey(ctx, key, request)
-		if unifaiErr == nil {
+		resp, rakshaErr := provider.batchResultsByKey(ctx, key, request)
+		if rakshaErr == nil {
 			return resp, nil
 		}
-		lastErr = unifaiErr
+		lastErr = rakshaErr
 	}
 	return nil, lastErr
 }
 
 // batchResultsByKey reads a finished job's GCS output using a single Vertex key.
-func (provider *VertexProvider) batchResultsByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIBatchResultsRequest) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) batchResultsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 	startTime := time.Now()
-	job, _, unifaiErr := provider.vertexGetBatchJob(ctx, key, request.BatchID)
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	job, _, rakshaErr := provider.vertexGetBatchJob(ctx, key, request.BatchID)
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 	if job.OutputInfo == nil || job.OutputInfo.GcsOutputDirectory == "" {
-		return nil, providerUtils.NewUnifAIOperationError(fmt.Sprintf("batch output is not available yet (job state: %s)", job.State), nil)
+		return nil, providerUtils.NewRakshaOperationError(fmt.Sprintf("batch output is not available yet (job state: %s)", job.State), nil)
 	}
 
 	bucket, dirKey, parseErr := parseGCSURI(job.OutputInfo.GcsOutputDirectory)
 	if parseErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(parseErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(parseErr.Error(), nil)
 	}
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	objects, listErr := provider.gcsListAllObjects(ctx, authHeader, bucket, strings.Trim(dirKey, "/")+"/")
@@ -3288,17 +3288,17 @@ func (provider *VertexProvider) batchResultsByKey(ctx *schemas.UnifAIContext, ke
 		}
 	}
 
-	return &schemas.UnifAIBatchResultsResponse{
+	return &schemas.RakshaBatchResultsResponse{
 		BatchID: request.BatchID,
 		Results: results,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}, nil
 }
 
 // gcsListAllObjects lists every object under a prefix, following pagination.
-func (provider *VertexProvider) gcsListAllObjects(ctx *schemas.UnifAIContext, authHeader, bucket, prefix string) ([]gcsObjectMetadata, *schemas.UnifAIError) {
+func (provider *VertexProvider) gcsListAllObjects(ctx *schemas.RakshaContext, authHeader, bucket, prefix string) ([]gcsObjectMetadata, *schemas.RakshaError) {
 	var objects []gcsObjectMetadata
 	pageToken := ""
 	for {
@@ -3317,12 +3317,12 @@ func (provider *VertexProvider) gcsListAllObjects(ctx *schemas.UnifAIContext, au
 		providerUtils.SetExtraHeaders(ctx, req, provider.networkConfig.ExtraHeaders, nil)
 		req.Header.Set("Authorization", authHeader)
 
-		_, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if unifaiErr != nil {
+		_, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if rakshaErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			return nil, unifaiErr
+			return nil, rakshaErr
 		}
 
 		statusCode := resp.StatusCode()
@@ -3331,7 +3331,7 @@ func (provider *VertexProvider) gcsListAllObjects(ctx *schemas.UnifAIContext, au
 		if statusCode == fasthttp.StatusOK {
 			unmarshalErr = sonic.Unmarshal(resp.Body(), &listResp)
 		}
-		var apiErr *schemas.UnifAIError
+		var apiErr *schemas.RakshaError
 		if statusCode != fasthttp.StatusOK {
 			apiErr = parseGCSAPIError(resp.Body(), statusCode, "list")
 		}
@@ -3343,7 +3343,7 @@ func (provider *VertexProvider) gcsListAllObjects(ctx *schemas.UnifAIContext, au
 			return nil, apiErr
 		}
 		if unmarshalErr != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to parse GCS list response", unmarshalErr)
+			return nil, providerUtils.NewRakshaOperationError("failed to parse GCS list response", unmarshalErr)
 		}
 
 		objects = append(objects, listResp.Items...)
@@ -3355,7 +3355,7 @@ func (provider *VertexProvider) gcsListAllObjects(ctx *schemas.UnifAIContext, au
 }
 
 // gcsDownloadObject downloads the raw bytes of a GCS object.
-func (provider *VertexProvider) gcsDownloadObject(ctx *schemas.UnifAIContext, authHeader, bucket, objectKey string) ([]byte, *schemas.UnifAIError) {
+func (provider *VertexProvider) gcsDownloadObject(ctx *schemas.RakshaContext, authHeader, bucket, objectKey string) ([]byte, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -3366,10 +3366,10 @@ func (provider *VertexProvider) gcsDownloadObject(ctx *schemas.UnifAIContext, au
 	providerUtils.SetExtraHeaders(ctx, req, provider.networkConfig.ExtraHeaders, nil)
 	req.Header.Set("Authorization", authHeader)
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3432,7 +3432,7 @@ func gcsParseSize(s string) int64 {
 }
 
 func gcsMetadataToFileObject(bucket string, obj gcsObjectMetadata) schemas.FileObject {
-	filename := obj.Metadata["unifai_filename"]
+	filename := obj.Metadata["raksha_filename"]
 	if filename == "" {
 		// Fall back to last path segment of the object key.
 		if idx := strings.LastIndexByte(obj.Name, '/'); idx >= 0 {
@@ -3448,7 +3448,7 @@ func gcsMetadataToFileObject(bucket string, obj gcsObjectMetadata) schemas.FileO
 		CreatedAt: gcsParseTime(obj.TimeCreated),
 		UpdatedAt: gcsParseTime(obj.Updated),
 		Filename:  filename,
-		Purpose:   schemas.FilePurpose(obj.Metadata["unifai_purpose"]),
+		Purpose:   schemas.FilePurpose(obj.Metadata["raksha_purpose"]),
 		Status:    schemas.FileStatusProcessed,
 	}
 }
@@ -3466,7 +3466,7 @@ func gcsGetAuthHeader(key schemas.Key) (string, error) {
 	return "Bearer " + tok.AccessToken, nil
 }
 
-func parseGCSAPIError(body []byte, statusCode int, op string) *schemas.UnifAIError {
+func parseGCSAPIError(body []byte, statusCode int, op string) *schemas.RakshaError {
 	var gcsErr gcsErrorBody
 	_ = sonic.Unmarshal(body, &gcsErr)
 	msg := gcsErr.Error.Message
@@ -3481,15 +3481,15 @@ func parseGCSAPIError(body []byte, statusCode int, op string) *schemas.UnifAIErr
 // Two modes based on whether file bytes are provided:
 //   - Direct (request.File non-empty): uploads bytes via GCS multipart upload.
 //   - Resumable (request.File empty): mints a GCS resumable upload session URL.
-//     The client uploads bytes directly to GCS; UnifAI stays out of the data path.
-func (provider *VertexProvider) FileUpload(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileUploadRequest) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+//     The client uploads bytes directly to GCS; Raksha stays out of the data path.
+func (provider *VertexProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	var bucket, prefix string
 	if request.StorageConfig != nil && request.StorageConfig.GCS != nil {
 		bucket = request.StorageConfig.GCS.Bucket
 		prefix = request.StorageConfig.GCS.Prefix
 	}
 	if bucket == "" {
-		return nil, providerUtils.NewUnifAIOperationError("gcs_bucket is required for Vertex FileUpload (provide in storage_config.gcs)", nil)
+		return nil, providerUtils.NewRakshaOperationError("gcs_bucket is required for Vertex FileUpload (provide in storage_config.gcs)", nil)
 	}
 
 	filename := request.Filename
@@ -3507,13 +3507,13 @@ func (provider *VertexProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	gcsMeta := map[string]string{
-		"unifai_filename":     filename,
-		"unifai_purpose":      string(request.Purpose),
-		"unifai_content_type": contentType,
+		"raksha_filename":     filename,
+		"raksha_purpose":      string(request.Purpose),
+		"raksha_content_type": contentType,
 	}
 
 	// GCS object metadata JSON, shared by both upload modes (multipart part 1
@@ -3524,7 +3524,7 @@ func (provider *VertexProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 		"metadata":    gcsMeta,
 	})
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to marshal GCS object metadata", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to marshal GCS object metadata", err)
 	}
 
 	startTime := time.Now()
@@ -3536,14 +3536,14 @@ func (provider *VertexProvider) FileUpload(ctx *schemas.UnifAIContext, key schem
 }
 
 func (provider *VertexProvider) gcsFileUploadDirect(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
 	authHeader, bucket, contentType, gcsURI string,
 	metaJSON []byte,
-	request *schemas.UnifAIFileUploadRequest,
+	request *schemas.RakshaFileUploadRequest,
 	filename string,
 	startTime time.Time,
-) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	// Build GCS multipart/related body: part 1 = JSON object metadata, part 2 = file bytes.
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -3552,23 +3552,23 @@ func (provider *VertexProvider) gcsFileUploadDirect(
 	metaPartHeader.Set("Content-Type", "application/json; charset=UTF-8")
 	metaPart, err := mw.CreatePart(metaPartHeader)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create GCS metadata part", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create GCS metadata part", err)
 	}
 	if _, err := metaPart.Write(metaJSON); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write GCS metadata part", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write GCS metadata part", err)
 	}
 
 	filePartHeader := textproto.MIMEHeader{}
 	filePartHeader.Set("Content-Type", contentType)
 	filePart, err := mw.CreatePart(filePartHeader)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to create GCS file part", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to create GCS file part", err)
 	}
 	if _, err := filePart.Write(request.File); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to write file bytes", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to write file bytes", err)
 	}
 	if err := mw.Close(); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to finalise GCS multipart body", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to finalise GCS multipart body", err)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -3583,10 +3583,10 @@ func (provider *VertexProvider) gcsFileUploadDirect(
 	req.Header.Set("Authorization", authHeader)
 	req.SetBody(buf.Bytes())
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK && resp.StatusCode() != fasthttp.StatusCreated {
@@ -3596,7 +3596,7 @@ func (provider *VertexProvider) gcsFileUploadDirect(
 		return nil, providerUtils.SetErrorLatency(parseGCSAPIError(resp.Body(), resp.StatusCode(), "upload"), latency)
 	}
 
-	return &schemas.UnifAIFileUploadResponse{
+	return &schemas.RakshaFileUploadResponse{
 		ID:             gcsURI,
 		Object:         "file",
 		Bytes:          int64(len(request.File)),
@@ -3606,7 +3606,7 @@ func (provider *VertexProvider) gcsFileUploadDirect(
 		Status:         schemas.FileStatusProcessed,
 		StorageBackend: schemas.FileStorageGCS,
 		StorageURI:     gcsURI,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 time.Since(startTime).Milliseconds(),
 			ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 		},
@@ -3614,14 +3614,14 @@ func (provider *VertexProvider) gcsFileUploadDirect(
 }
 
 func (provider *VertexProvider) gcsFileUploadResumable(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
 	authHeader, bucket, contentType, gcsURI string,
 	metaJSON []byte,
-	request *schemas.UnifAIFileUploadRequest,
+	request *schemas.RakshaFileUploadRequest,
 	filename string,
 	startTime time.Time,
-) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -3657,10 +3657,10 @@ func (provider *VertexProvider) gcsFileUploadResumable(
 		}
 	}
 
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3672,10 +3672,10 @@ func (provider *VertexProvider) gcsFileUploadResumable(
 
 	sessionURL := string(resp.Header.Peek("Location"))
 	if sessionURL == "" {
-		return nil, providerUtils.NewUnifAIOperationError("GCS did not return a Location header for the resumable session", nil)
+		return nil, providerUtils.NewRakshaOperationError("GCS did not return a Location header for the resumable session", nil)
 	}
 
-	return &schemas.UnifAIFileUploadResponse{
+	return &schemas.RakshaFileUploadResponse{
 		ID:             gcsURI,
 		Object:         "file",
 		Bytes:          0,
@@ -3686,7 +3686,7 @@ func (provider *VertexProvider) gcsFileUploadResumable(
 		StorageBackend: schemas.FileStorageGCS,
 		StorageURI:     gcsURI,
 		UploadURL:      &sessionURL,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 time.Since(startTime).Milliseconds(),
 			ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 		},
@@ -3697,9 +3697,9 @@ func (provider *VertexProvider) gcsFileUploadResumable(
 // Bucket must be provided via storage_config.gcs.
 // Pagination is serial across keys: each key's GCS pages are exhausted (via the
 // native pageToken) before moving to the next key.
-func (provider *VertexProvider) FileList(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileListRequest) (*schemas.UnifAIFileListResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex FileList", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex FileList", nil)
 	}
 	var bucket, prefix string
 	if request.StorageConfig != nil && request.StorageConfig.GCS != nil {
@@ -3707,19 +3707,19 @@ func (provider *VertexProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 		prefix = request.StorageConfig.GCS.Prefix
 	}
 	if bucket == "" {
-		return nil, providerUtils.NewUnifAIOperationError("gcs_bucket is required for Vertex FileList (provide in storage_config.gcs)", nil)
+		return nil, providerUtils.NewRakshaOperationError("gcs_bucket is required for Vertex FileList (provide in storage_config.gcs)", nil)
 	}
 
 	// Serial pagination across keys: exhaust one key's pages before moving to the next.
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
 	}
 
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.UnifAIFileListResponse{
+		return &schemas.RakshaFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -3728,7 +3728,7 @@ func (provider *VertexProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	params := url.Values{}
@@ -3755,10 +3755,10 @@ func (provider *VertexProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 	req.Header.Set("Authorization", authHeader)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3770,7 +3770,7 @@ func (provider *VertexProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 
 	var listResp gcsObjectListResponse
 	if err := sonic.Unmarshal(resp.Body(), &listResp); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to parse GCS list response", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to parse GCS list response", err)
 	}
 
 	files := make([]schemas.FileObject, 0, len(listResp.Items))
@@ -3782,11 +3782,11 @@ func (provider *VertexProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 	// then advance to the next key.
 	nextCursor, hasMore := helper.BuildNextCursor(listResp.NextPageToken != "", listResp.NextPageToken)
 
-	result := &schemas.UnifAIFileListResponse{
+	result := &schemas.RakshaFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: hasMore,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}
@@ -3798,12 +3798,12 @@ func (provider *VertexProvider) FileList(ctx *schemas.UnifAIContext, keys []sche
 
 // FileRetrieve fetches GCS object metadata, trying each key until one succeeds.
 // FileID must be a gs:// URI.
-func (provider *VertexProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex FileRetrieve", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex FileRetrieve", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.fileRetrieveByKey(ctx, key, request)
 		if err == nil {
@@ -3816,15 +3816,15 @@ func (provider *VertexProvider) FileRetrieve(ctx *schemas.UnifAIContext, keys []
 }
 
 // fileRetrieveByKey fetches GCS object metadata for a single key.
-func (provider *VertexProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileRetrieveRequest) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) fileRetrieveByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 	bucket, objectKey, parseErr := parseGCSURI(request.FileID)
 	if parseErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(parseErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(parseErr.Error(), nil)
 	}
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -3838,10 +3838,10 @@ func (provider *VertexProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 	req.Header.Set("Authorization", authHeader)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3853,10 +3853,10 @@ func (provider *VertexProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 
 	var obj gcsObjectMetadata
 	if err := sonic.Unmarshal(resp.Body(), &obj); err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to parse GCS object metadata", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to parse GCS object metadata", err)
 	}
 
-	filename := obj.Metadata["unifai_filename"]
+	filename := obj.Metadata["raksha_filename"]
 	if filename == "" {
 		if idx := strings.LastIndexByte(obj.Name, '/'); idx >= 0 {
 			filename = obj.Name[idx+1:]
@@ -3865,18 +3865,18 @@ func (provider *VertexProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 		}
 	}
 
-	return &schemas.UnifAIFileRetrieveResponse{
+	return &schemas.RakshaFileRetrieveResponse{
 		ID:             request.FileID,
 		Object:         "file",
 		Bytes:          gcsParseSize(obj.Size),
 		CreatedAt:      gcsParseTime(obj.TimeCreated),
 		UpdatedAt:      gcsParseTime(obj.Updated),
 		Filename:       filename,
-		Purpose:        schemas.FilePurpose(obj.Metadata["unifai_purpose"]),
+		Purpose:        schemas.FilePurpose(obj.Metadata["raksha_purpose"]),
 		Status:         schemas.FileStatusProcessed,
 		StorageBackend: schemas.FileStorageGCS,
 		StorageURI:     request.FileID,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}, nil
@@ -3885,12 +3885,12 @@ func (provider *VertexProvider) fileRetrieveByKey(ctx *schemas.UnifAIContext, ke
 // FileDelete deletes a GCS object, trying each key until one succeeds.
 // FileID must be a gs:// URI. Deleting a non-existent object is treated as
 // success (idempotent).
-func (provider *VertexProvider) FileDelete(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex FileDelete", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex FileDelete", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.fileDeleteByKey(ctx, key, request)
 		if err == nil {
@@ -3903,15 +3903,15 @@ func (provider *VertexProvider) FileDelete(ctx *schemas.UnifAIContext, keys []sc
 }
 
 // fileDeleteByKey deletes a GCS object for a single key.
-func (provider *VertexProvider) fileDeleteByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileDeleteRequest) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) fileDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 	bucket, objectKey, parseErr := parseGCSURI(request.FileID)
 	if parseErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(parseErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(parseErr.Error(), nil)
 	}
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -3925,10 +3925,10 @@ func (provider *VertexProvider) fileDeleteByKey(ctx *schemas.UnifAIContext, key 
 	req.Header.Set("Authorization", authHeader)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// 204 = deleted; 404 = already gone — both succeed for an idempotent delete.
@@ -3939,11 +3939,11 @@ func (provider *VertexProvider) fileDeleteByKey(ctx *schemas.UnifAIContext, key 
 		return nil, providerUtils.SetErrorLatency(parseGCSAPIError(resp.Body(), resp.StatusCode(), "delete"), latency)
 	}
 
-	return &schemas.UnifAIFileDeleteResponse{
+	return &schemas.RakshaFileDeleteResponse{
 		ID:      request.FileID,
 		Object:  "file",
 		Deleted: true,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}, nil
@@ -3951,12 +3951,12 @@ func (provider *VertexProvider) fileDeleteByKey(ctx *schemas.UnifAIContext, key 
 
 // FileContent downloads the raw bytes of a GCS object, trying each key until one
 // succeeds. FileID must be a gs:// URI.
-func (provider *VertexProvider) FileContent(ctx *schemas.UnifAIContext, keys []schemas.Key, request *schemas.UnifAIFileContentRequest) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 	if len(keys) == 0 {
-		return nil, providerUtils.NewUnifAIOperationError("no keys provided for Vertex FileContent", nil)
+		return nil, providerUtils.NewRakshaOperationError("no keys provided for Vertex FileContent", nil)
 	}
 
-	var lastErr *schemas.UnifAIError
+	var lastErr *schemas.RakshaError
 	for _, key := range keys {
 		resp, err := provider.fileContentByKey(ctx, key, request)
 		if err == nil {
@@ -3969,15 +3969,15 @@ func (provider *VertexProvider) FileContent(ctx *schemas.UnifAIContext, keys []s
 }
 
 // fileContentByKey downloads the raw bytes of a GCS object for a single key.
-func (provider *VertexProvider) fileContentByKey(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIFileContentRequest) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) fileContentByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 	bucket, objectKey, parseErr := parseGCSURI(request.FileID)
 	if parseErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(parseErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(parseErr.Error(), nil)
 	}
 
 	authHeader, authErr := gcsGetAuthHeader(key)
 	if authErr != nil {
-		return nil, providerUtils.NewUnifAIOperationError(authErr.Error(), nil)
+		return nil, providerUtils.NewRakshaOperationError(authErr.Error(), nil)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -3991,10 +3991,10 @@ func (provider *VertexProvider) fileContentByKey(ctx *schemas.UnifAIContext, key
 	req.Header.Set("Authorization", authHeader)
 
 	startTime := time.Now()
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -4013,11 +4013,11 @@ func (provider *VertexProvider) fileContentByKey(ctx *schemas.UnifAIContext, key
 		contentType = "application/octet-stream"
 	}
 
-	return &schemas.UnifAIFileContentResponse{
+	return &schemas.RakshaFileContentResponse{
 		FileID:      request.FileID,
 		Content:     content,
 		ContentType: contentType,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency: time.Since(startTime).Milliseconds(),
 		},
 	}, nil
@@ -4025,19 +4025,19 @@ func (provider *VertexProvider) fileContentByKey(ctx *schemas.UnifAIContext, key
 
 // CountTokens counts the number of tokens in the provided content using Vertex AI's countTokens endpoint.
 // Supports Gemini models with both text and image content.
-func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAIResponsesRequest) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) CountTokens(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 	var (
 		jsonBody   []byte
-		unifaiErr *schemas.UnifAIError
+		rakshaErr *schemas.RakshaError
 	)
 
 	if schemas.IsAnthropicModelFamily(ctx, request.Model) {
 		// Anthropic-on-Vertex doesn't accept URL-source document blocks.
 		// Inline any URL documents to base64 before the converter runs.
 		if err := inlineDocumentURLsResponses(ctx, request); err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("failed to inline document URLs for vertex/claude", err)
+			return nil, providerUtils.NewRakshaOperationError("failed to inline document URLs for vertex/claude", err)
 		}
-		jsonBody, unifaiErr = anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
+		jsonBody, rakshaErr = anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
 			Provider:                  schemas.Vertex,
 			Model:                     request.Model,
 			IsCountTokens:             true,
@@ -4047,22 +4047,22 @@ func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 			ShouldSendBackRawRequest:  provider.sendBackRawRequest,
 			ShouldSendBackRawResponse: provider.sendBackRawResponse,
 		})
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 	} else {
-		jsonBody, unifaiErr = providerUtils.CheckContextAndGetRequestBody(
+		jsonBody, rakshaErr = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
 				return gemini.ToGeminiResponsesRequestWithImageURLSchemes(ctx, request, geminiImageURLSchemes...)
 			},
 		)
-		if unifaiErr != nil {
-			return nil, unifaiErr
+		if rakshaErr != nil {
+			return nil, rakshaErr
 		}
 
-		if rawBody, ok := ctx.Value(schemas.UnifAIContextKeyUseRawRequestBody).(bool); ok && rawBody {
+		if rawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && rawBody {
 			jsonBody = gemini.NormalizeRawGenerateContentRequestForCompatibility(jsonBody)
 		}
 
@@ -4130,11 +4130,11 @@ func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 	} else {
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -4147,15 +4147,15 @@ func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 
 	// Make the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -4171,8 +4171,8 @@ func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.UnifAICountTokensResponse{
-			ExtraFields: schemas.UnifAIResponseExtraFields{
+		return &schemas.RakshaCountTokensResponse{
+			ExtraFields: schemas.RakshaResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 			},
@@ -4182,12 +4182,12 @@ func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 	if schemas.IsAnthropicModelFamily(ctx, request.Model) {
 		anthropicResponse := &anthropic.AnthropicCountTokensResponse{}
 
-		rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, anthropicResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if unifaiErr != nil {
-			return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
+		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, anthropicResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if rakshaErr != nil {
+			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
 		}
 
-		response := anthropicResponse.ToUnifAICountTokensResponse(request.Model)
+		response := anthropicResponse.ToRakshaCountTokensResponse(request.Model)
 		response.ExtraFields.Latency = latency.Milliseconds()
 		response.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
@@ -4204,12 +4204,12 @@ func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 
 	vertexResponse := VertexCountTokensResponse{}
 
-	rawRequest, rawResponse, unifaiErr := providerUtils.HandleProviderResponse(responseBody, &vertexResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if unifaiErr != nil {
-		return nil, providerUtils.EnrichError(ctx, unifaiErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
+	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &vertexResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if rakshaErr != nil {
+		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse)
 	}
 
-	response := vertexResponse.ToUnifAICountTokensResponse(request.Model)
+	response := vertexResponse.ToRakshaCountTokensResponse(request.Model)
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 
@@ -4225,60 +4225,60 @@ func (provider *VertexProvider) CountTokens(ctx *schemas.UnifAIContext, key sche
 }
 
 // Compaction is not supported by the Vertex provider.
-func (provider *VertexProvider) Compaction(ctx *schemas.UnifAIContext, key schemas.Key, request *schemas.UnifAICompactionRequest) (*schemas.UnifAICompactionResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerCreateRequest) (*schemas.UnifAIContainerCreateResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerListRequest) (*schemas.UnifAIContainerListResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerRetrieveRequest) (*schemas.UnifAIContainerRetrieveResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerDeleteRequest) (*schemas.UnifAIContainerDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerFileCreate(_ *schemas.UnifAIContext, _ schemas.Key, _ *schemas.UnifAIContainerFileCreateRequest) (*schemas.UnifAIContainerFileCreateResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerFileList(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileListRequest) (*schemas.UnifAIContainerFileListResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerFileRetrieve(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileRetrieveRequest) (*schemas.UnifAIContainerFileRetrieveResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerFileContent(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileContentRequest) (*schemas.UnifAIContainerFileContentResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Vertex provider.
-func (provider *VertexProvider) ContainerFileDelete(_ *schemas.UnifAIContext, _ []schemas.Key, _ *schemas.UnifAIContainerFileDeleteRequest) (*schemas.UnifAIContainerFileDeleteResponse, *schemas.UnifAIError) {
+func (provider *VertexProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 func (provider *VertexProvider) Passthrough(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	key schemas.Key,
-	req *schemas.UnifAIPassthroughRequest,
-) (*schemas.UnifAIPassthroughResponse, *schemas.UnifAIError) {
+	req *schemas.RakshaPassthroughRequest,
+) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
 	projectID := strings.TrimSpace(resolveVertexProjectID(ctx, key))
 	if projectID == "" {
 		return nil, providerUtils.NewConfigurationError("project ID is not set")
@@ -4342,12 +4342,12 @@ func (provider *VertexProvider) Passthrough(
 		tokenSource, err := getAuthTokenSource(key)
 		if err != nil {
 			removeVertexClient(key.VertexKeyConfig.AuthCredentials.GetValue())
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
 			removeVertexClient(key.VertexKeyConfig.AuthCredentials.GetValue())
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		fasthttpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -4381,10 +4381,10 @@ func (provider *VertexProvider) Passthrough(
 	}
 
 	// Execute request
-	latency, unifaiErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
+	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
 	defer wait()
-	if unifaiErr != nil {
-		return nil, unifaiErr
+	if rakshaErr != nil {
+		return nil, rakshaErr
 	}
 
 	// Remove client from pool for authentication/authorization errors
@@ -4393,23 +4393,23 @@ func (provider *VertexProvider) Passthrough(
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewUnifAIOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
 	}
 
-	var passthroughUsage *schemas.UnifAIPassthroughUsage
+	var passthroughUsage *schemas.RakshaPassthroughUsage
 	if resp.StatusCode() >= 200 && resp.StatusCode() < 300 {
 		passthroughUsage = gemini.ExtractGeminiPassthroughUsage(req.Path, req.Body, body)
 	}
 
-	unifaiResponse := &schemas.UnifAIPassthroughResponse{
+	rakshaResponse := &schemas.RakshaPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.UnifAIResponseExtraFields{
+		ExtraFields: schemas.RakshaResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 			PassthroughPath:         req.Path,
@@ -4418,16 +4418,16 @@ func (provider *VertexProvider) Passthrough(
 		PassthroughUsage: passthroughUsage,
 	}
 
-	return unifaiResponse, nil
+	return rakshaResponse, nil
 }
 
 func (provider *VertexProvider) PassthroughStream(
-	ctx *schemas.UnifAIContext,
+	ctx *schemas.RakshaContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	req *schemas.UnifAIPassthroughRequest,
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
+	req *schemas.RakshaPassthroughRequest,
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
 	projectID := strings.TrimSpace(resolveVertexProjectID(ctx, key))
 	if projectID == "" {
 		return nil, providerUtils.NewConfigurationError("project ID is not set")
@@ -4489,13 +4489,13 @@ func (provider *VertexProvider) PassthroughStream(
 		if err != nil {
 			removeVertexClient(key.VertexKeyConfig.AuthCredentials.GetValue())
 			providerUtils.ReleaseStreamingResponse(ctx, resp)
-			return nil, providerUtils.NewUnifAIOperationError("error creating auth token source", err)
+			return nil, providerUtils.NewRakshaOperationError("error creating auth token source", err)
 		}
 		token, err := tokenSource.Token()
 		if err != nil {
 			removeVertexClient(key.VertexKeyConfig.AuthCredentials.GetValue())
 			providerUtils.ReleaseStreamingResponse(ctx, resp)
-			return nil, providerUtils.NewUnifAIOperationError("error getting token", err)
+			return nil, providerUtils.NewRakshaOperationError("error getting token", err)
 		}
 		fasthttpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
@@ -4528,8 +4528,8 @@ func (provider *VertexProvider) PassthroughStream(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.UnifAIError{
-				IsUnifAIError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
+				IsRakshaError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -4538,13 +4538,13 @@ func (provider *VertexProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAITimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/unifai/unifai/issues/4496.
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewUnifAIUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	if resp.StatusCode() == fasthttp.StatusUnauthorized || resp.StatusCode() == fasthttp.StatusForbidden {
@@ -4552,12 +4552,12 @@ func (provider *VertexProvider) PassthroughStream(
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.UnifAIContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
 
 	bodyStream := resp.BodyStream()
 	if bodyStream == nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
-		return nil, providerUtils.NewUnifAIOperationError(
+		return nil, providerUtils.NewRakshaOperationError(
 			"provider returned an empty stream body",
 			fmt.Errorf("provider returned an empty stream body"))
 	}
@@ -4575,7 +4575,7 @@ func (provider *VertexProvider) PassthroughStream(
 			UseTerminalDetector: true,
 			Logger:              provider.logger,
 			HasUsage:            gemini.HasGeminiPassthroughUsage,
-			Observe: func(event []byte) *schemas.UnifAIPassthroughUsage {
+			Observe: func(event []byte) *schemas.RakshaPassthroughUsage {
 				return gemini.ExtractGeminiPassthroughUsage(req.Path, req.Body, event)
 			},
 		},

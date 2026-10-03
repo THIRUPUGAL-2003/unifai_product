@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // ExtractGeminiPassthroughUsage extracts usage from a completed Gemini/Vertex
@@ -14,12 +14,12 @@ import (
 // (non-streaming) for all billable endpoint types.
 //
 // :generateContent handles all modalities — text, speech, transcription, and non-Imagen
-// image generation. Output modality detection routes to the correct UnifAIPassthroughUsage
+// image generation. Output modality detection routes to the correct RakshaPassthroughUsage
 // shape so the pricing engine uses the appropriate cost function.
 //
 // :predict is Imagen priced per-image. :predictLongRunning is Veo priced per-second.
 // /interactions paths use the Interactions API usage shape.
-func ExtractGeminiPassthroughUsage(path string, reqBody, body []byte) *schemas.UnifAIPassthroughUsage {
+func ExtractGeminiPassthroughUsage(path string, reqBody, body []byte) *schemas.RakshaPassthroughUsage {
 	if idx := strings.IndexByte(path, '?'); idx >= 0 {
 		path = path[:idx]
 	}
@@ -66,7 +66,7 @@ type geminiPassthroughResp struct {
 	UsageMetadata *GenerateContentResponseUsageMetadata `json:"usageMetadata"`
 }
 
-// extractGeminiGenerateContentUsage routes to the correct UnifAIPassthroughUsage shape
+// extractGeminiGenerateContentUsage routes to the correct RakshaPassthroughUsage shape
 // based on output modality from the response's candidatesTokensDetails:
 //
 //   - IMAGE tokens in output → ImageUsage + LLMUsage → ImageGenerationRequest → computeImageCost
@@ -75,7 +75,7 @@ type geminiPassthroughResp struct {
 //
 // Gemini TTS bills by input tokens (not chars), so AUDIO output stays in the ResponsesRequest
 // path where computeTextCost applies the OutputCostPerAudioToken rate differential.
-func extractGeminiGenerateContentUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractGeminiGenerateContentUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -109,9 +109,9 @@ func extractGeminiGenerateContentUsage(body []byte) *schemas.UnifAIPassthroughUs
 				ImageTokens: ru.InputTokensDetails.ImageTokens,
 			}
 		}
-		return &schemas.UnifAIPassthroughUsage{
+		return &schemas.RakshaPassthroughUsage{
 			ImageUsage: imageUsage,
-			LLMUsage: &schemas.UnifAILLMUsage{
+			LLMUsage: &schemas.RakshaLLMUsage{
 				PromptTokens:     ru.InputTokens,
 				CompletionTokens: ru.OutputTokens,
 				TotalTokens:      ru.TotalTokens,
@@ -122,7 +122,7 @@ func extractGeminiGenerateContentUsage(body []byte) *schemas.UnifAIPassthroughUs
 	// TEXT / AUDIO / default → LLMUsage with full modality details for computeTextCost.
 	// For AUDIO output, CompletionTokensDetails.AudioTokens is set so computeTextCost applies
 	// the OutputCostPerAudioToken rate differential: cost = tokens * (audioRate - textRate).
-	usage := &schemas.UnifAILLMUsage{
+	usage := &schemas.RakshaLLMUsage{
 		PromptTokens:     ru.InputTokens,
 		CompletionTokens: ru.OutputTokens,
 		TotalTokens:      ru.TotalTokens,
@@ -142,12 +142,12 @@ func extractGeminiGenerateContentUsage(body []byte) *schemas.UnifAIPassthroughUs
 		}
 	}
 
-	return &schemas.UnifAIPassthroughUsage{LLMUsage: usage}
+	return &schemas.RakshaPassthroughUsage{LLMUsage: usage}
 }
 
 // ---- :embedContent / :batchEmbedContents ----
 
-func extractGeminiEmbeddingUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractGeminiEmbeddingUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	// Embeddings are never streamed, so body is plain JSON.
 	if len(body) == 0 {
 		return nil
@@ -167,8 +167,8 @@ func extractGeminiEmbeddingUsage(body []byte) *schemas.UnifAIPassthroughUsage {
 	if total == 0 {
 		total = prompt
 	}
-	return &schemas.UnifAIPassthroughUsage{
-		LLMUsage: &schemas.UnifAILLMUsage{
+	return &schemas.RakshaPassthroughUsage{
+		LLMUsage: &schemas.RakshaLLMUsage{
 			PromptTokens: prompt,
 			TotalTokens:  total,
 		},
@@ -199,7 +199,7 @@ type geminiInteractionsWrapper struct {
 	} `json:"interaction"`
 }
 
-func extractGeminiInteractionsUsage(body []byte) *schemas.UnifAIPassthroughUsage {
+func extractGeminiInteractionsUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -218,7 +218,7 @@ func extractGeminiInteractionsUsage(body []byte) *schemas.UnifAIPassthroughUsage
 		return nil
 	}
 
-	usage := &schemas.UnifAILLMUsage{
+	usage := &schemas.RakshaLLMUsage{
 		PromptTokens:     u.InputTokens,
 		CompletionTokens: u.OutputTokens + u.ThoughtTokens,
 		TotalTokens:      u.TotalTokens,
@@ -234,10 +234,10 @@ func extractGeminiInteractionsUsage(body []byte) *schemas.UnifAIPassthroughUsage
 		}
 	}
 
-	result := &schemas.UnifAIPassthroughUsage{LLMUsage: usage}
+	result := &schemas.RakshaPassthroughUsage{LLMUsage: usage}
 	// "standard" is the default tier — only forward non-standard values.
 	if tier != nil && *tier != "" && *tier != "standard" {
-		t := schemas.UnifAIServiceTier(*tier)
+		t := schemas.RakshaServiceTier(*tier)
 		result.ServiceTier = &t
 	}
 	return result
@@ -245,7 +245,7 @@ func extractGeminiInteractionsUsage(body []byte) *schemas.UnifAIPassthroughUsage
 
 // ---- :predictLongRunning (Veo video generation) ----
 
-func extractGeminiVeoUsage(reqBody []byte) *schemas.UnifAIPassthroughUsage {
+func extractGeminiVeoUsage(reqBody []byte) *schemas.RakshaPassthroughUsage {
 	// Default matches the native Gemini/Vertex path (schemas.DefaultVideoDuration).
 	secs := 8
 	if d, err := strconv.Atoi(schemas.DefaultVideoDuration); err == nil {
@@ -256,7 +256,7 @@ func extractGeminiVeoUsage(reqBody []byte) *schemas.UnifAIPassthroughUsage {
 			secs = int(d.Int())
 		}
 	}
-	return &schemas.UnifAIPassthroughUsage{VideoSeconds: &secs}
+	return &schemas.RakshaPassthroughUsage{VideoSeconds: &secs}
 }
 
 // ---- :predict dispatch (Vertex/Gemini prediction endpoint) ----
@@ -286,7 +286,7 @@ type geminiPredictResponse struct {
 	} `json:"predictions"`
 }
 
-func extractGeminiPredictUsage(reqBody, body []byte) *schemas.UnifAIPassthroughUsage {
+func extractGeminiPredictUsage(reqBody, body []byte) *schemas.RakshaPassthroughUsage {
 	if len(body) > 0 {
 		var resp geminiPredictResponse
 		if err := sonic.Unmarshal(body, &resp); err == nil {
@@ -303,7 +303,7 @@ func extractGeminiPredictUsage(reqBody, body []byte) *schemas.UnifAIPassthroughU
 // (text or multimodal), else nil. It returns non-nil for any embedding response — even when no
 // token count is present (multimodal) — so an embedding is billed as such rather than misrouted
 // to the Imagen per-image path.
-func (r *geminiPredictResponse) embeddingUsage() *schemas.UnifAIPassthroughUsage {
+func (r *geminiPredictResponse) embeddingUsage() *schemas.RakshaPassthroughUsage {
 	total, isEmbedding := 0, false
 	for i := range r.Predictions {
 		p := r.Predictions[i]
@@ -320,8 +320,8 @@ func (r *geminiPredictResponse) embeddingUsage() *schemas.UnifAIPassthroughUsage
 	if !isEmbedding {
 		return nil
 	}
-	return &schemas.UnifAIPassthroughUsage{
-		LLMUsage: &schemas.UnifAILLMUsage{PromptTokens: total, TotalTokens: total},
+	return &schemas.RakshaPassthroughUsage{
+		LLMUsage: &schemas.RakshaLLMUsage{PromptTokens: total, TotalTokens: total},
 	}
 }
 
@@ -329,8 +329,8 @@ func (r *geminiPredictResponse) embeddingUsage() *schemas.UnifAIPassthroughUsage
 // Imagen is priced per image. Extract count from predictions in the response,
 // with the requested sampleCount from the request body as a fallback.
 
-func extractGeminiImagenUsage(reqBody, body []byte) *schemas.UnifAIPassthroughUsage {
-	u := &schemas.UnifAIPassthroughUsage{
+func extractGeminiImagenUsage(reqBody, body []byte) *schemas.RakshaPassthroughUsage {
+	u := &schemas.RakshaPassthroughUsage{
 		ImageUsage: &schemas.ImageUsage{},
 	}
 

@@ -4,23 +4,23 @@ import (
 	"fmt"
 	"strings"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 // parseHuggingFaceImageError parses HuggingFace error responses
-func parseHuggingFaceImageError(resp *fasthttp.Response) *schemas.UnifAIError {
+func parseHuggingFaceImageError(resp *fasthttp.Response) *schemas.RakshaError {
 	var errorResp HuggingFaceResponseError
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 
 	if strings.TrimSpace(errorResp.Type) != "" {
 		typeCopy := errorResp.Type
-		unifaiErr.Type = &typeCopy
+		rakshaErr.Type = &typeCopy
 	}
 
-	if unifaiErr.Error == nil {
-		unifaiErr.Error = &schemas.ErrorField{}
+	if rakshaErr.Error == nil {
+		rakshaErr.Error = &schemas.ErrorField{}
 	}
 
 	// Handle FastAPI validation errors
@@ -45,13 +45,13 @@ func parseHuggingFaceImageError(resp *fasthttp.Response) *schemas.UnifAIError {
 			errorMessages = append(errorMessages, msg)
 		}
 		if len(errorMessages) > 0 {
-			unifaiErr.Error.Message = strings.Join(errorMessages, "; ")
+			rakshaErr.Error.Message = strings.Join(errorMessages, "; ")
 		}
 	} else if strings.TrimSpace(errorResp.Message) != "" {
-		unifaiErr.Error.Message = errorResp.Message
+		rakshaErr.Error.Message = errorResp.Message
 	} else if strings.TrimSpace(errorResp.Error) != "" {
-		unifaiErr.Error.Message = errorResp.Error
+		rakshaErr.Error.Message = errorResp.Error
 	}
 
-	return unifaiErr
+	return rakshaErr
 }

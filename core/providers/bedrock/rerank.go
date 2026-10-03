@@ -5,18 +5,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToBedrockRerankRequest converts a UnifAI rerank request into Bedrock Agent Runtime format.
-func ToBedrockRerankRequest(unifaiReq *schemas.UnifAIRerankRequest, modelARN string) (*BedrockRerankRequest, error) {
-	if unifaiReq == nil {
-		return nil, fmt.Errorf("unifai rerank request is nil")
+// ToBedrockRerankRequest converts a Raksha rerank request into Bedrock Agent Runtime format.
+func ToBedrockRerankRequest(rakshaReq *schemas.RakshaRerankRequest, modelARN string) (*BedrockRerankRequest, error) {
+	if rakshaReq == nil {
+		return nil, fmt.Errorf("raksha rerank request is nil")
 	}
 	if strings.TrimSpace(modelARN) == "" {
 		return nil, fmt.Errorf("bedrock rerank model ARN is empty")
 	}
-	if len(unifaiReq.Documents) == 0 {
+	if len(rakshaReq.Documents) == 0 {
 		return nil, fmt.Errorf("documents are required for rerank request")
 	}
 
@@ -25,11 +25,11 @@ func ToBedrockRerankRequest(unifaiReq *schemas.UnifAIRerankRequest, modelARN str
 			{
 				Type: bedrockRerankQueryTypeText,
 				TextQuery: BedrockRerankTextRef{
-					Text: unifaiReq.Query,
+					Text: rakshaReq.Query,
 				},
 			},
 		},
-		Sources: make([]BedrockRerankSource, len(unifaiReq.Documents)),
+		Sources: make([]BedrockRerankSource, len(rakshaReq.Documents)),
 		RerankingConfiguration: BedrockRerankingConfiguration{
 			Type: bedrockRerankConfigurationTypeBedrock,
 			BedrockRerankingConfiguration: BedrockRerankingModelConfiguration{
@@ -40,7 +40,7 @@ func ToBedrockRerankRequest(unifaiReq *schemas.UnifAIRerankRequest, modelARN str
 		},
 	}
 
-	for i, doc := range unifaiReq.Documents {
+	for i, doc := range rakshaReq.Documents {
 		bedrockReq.Sources[i] = BedrockRerankSource{
 			Type: bedrockRerankSourceTypeInline,
 			InlineDocumentSource: BedrockRerankInlineSource{
@@ -52,29 +52,29 @@ func ToBedrockRerankRequest(unifaiReq *schemas.UnifAIRerankRequest, modelARN str
 		}
 	}
 
-	if unifaiReq.Params == nil {
+	if rakshaReq.Params == nil {
 		return bedrockReq, nil
 	}
 
-	if unifaiReq.Params.TopN != nil {
-		topN := *unifaiReq.Params.TopN
+	if rakshaReq.Params.TopN != nil {
+		topN := *rakshaReq.Params.TopN
 		if topN < 1 {
 			return nil, fmt.Errorf("top_n must be at least 1")
 		}
-		if topN > len(unifaiReq.Documents) {
-			topN = len(unifaiReq.Documents)
+		if topN > len(rakshaReq.Documents) {
+			topN = len(rakshaReq.Documents)
 		}
 		bedrockReq.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults = schemas.Ptr(topN)
 	}
 
 	additionalFields := make(map[string]interface{})
-	if unifaiReq.Params.MaxTokensPerDoc != nil {
-		additionalFields["max_tokens_per_doc"] = *unifaiReq.Params.MaxTokensPerDoc
+	if rakshaReq.Params.MaxTokensPerDoc != nil {
+		additionalFields["max_tokens_per_doc"] = *rakshaReq.Params.MaxTokensPerDoc
 	}
-	if unifaiReq.Params.Priority != nil {
-		additionalFields["priority"] = *unifaiReq.Params.Priority
+	if rakshaReq.Params.Priority != nil {
+		additionalFields["priority"] = *rakshaReq.Params.Priority
 	}
-	for k, v := range unifaiReq.Params.ExtraParams {
+	for k, v := range rakshaReq.Params.ExtraParams {
 		additionalFields[k] = v
 	}
 	if len(additionalFields) > 0 {
@@ -84,13 +84,13 @@ func ToBedrockRerankRequest(unifaiReq *schemas.UnifAIRerankRequest, modelARN str
 	return bedrockReq, nil
 }
 
-// ToUnifAIRerankResponse converts a Bedrock rerank response into UnifAI format.
-func (response *BedrockRerankResponse) ToUnifAIRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.UnifAIRerankResponse {
+// ToRakshaRerankResponse converts a Bedrock rerank response into Raksha format.
+func (response *BedrockRerankResponse) ToRakshaRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.RakshaRerankResponse {
 	if response == nil {
 		return nil
 	}
 
-	unifaiResponse := &schemas.UnifAIRerankResponse{
+	rakshaResponse := &schemas.RakshaRerankResponse{
 		Results: make([]schemas.RerankResult, 0, len(response.Results)),
 	}
 
@@ -104,30 +104,30 @@ func (response *BedrockRerankResponse) ToUnifAIRerankResponse(documents []schema
 				Text: result.Document.TextDocument.Text,
 			}
 		}
-		unifaiResponse.Results = append(unifaiResponse.Results, rerankResult)
+		rakshaResponse.Results = append(rakshaResponse.Results, rerankResult)
 	}
 
-	sort.SliceStable(unifaiResponse.Results, func(i, j int) bool {
-		if unifaiResponse.Results[i].RelevanceScore == unifaiResponse.Results[j].RelevanceScore {
-			return unifaiResponse.Results[i].Index < unifaiResponse.Results[j].Index
+	sort.SliceStable(rakshaResponse.Results, func(i, j int) bool {
+		if rakshaResponse.Results[i].RelevanceScore == rakshaResponse.Results[j].RelevanceScore {
+			return rakshaResponse.Results[i].Index < rakshaResponse.Results[j].Index
 		}
-		return unifaiResponse.Results[i].RelevanceScore > unifaiResponse.Results[j].RelevanceScore
+		return rakshaResponse.Results[i].RelevanceScore > rakshaResponse.Results[j].RelevanceScore
 	})
 
 	if returnDocuments {
-		for i := range unifaiResponse.Results {
-			resultIndex := unifaiResponse.Results[i].Index
+		for i := range rakshaResponse.Results {
+			resultIndex := rakshaResponse.Results[i].Index
 			if resultIndex >= 0 && resultIndex < len(documents) {
-				unifaiResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
+				rakshaResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
 			}
 		}
 	}
 
-	return unifaiResponse
+	return rakshaResponse
 }
 
-// ToUnifAIRerankRequest converts a Bedrock Agent Runtime rerank request to UnifAI format.
-func (req *BedrockRerankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContext) *schemas.UnifAIRerankRequest {
+// ToRakshaRerankRequest converts a Bedrock Agent Runtime rerank request to Raksha format.
+func (req *BedrockRerankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) *schemas.RakshaRerankRequest {
 	if req == nil {
 		return nil
 	}
@@ -135,7 +135,7 @@ func (req *BedrockRerankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContex
 	modelARN := req.RerankingConfiguration.BedrockRerankingConfiguration.ModelConfiguration.ModelARN
 	provider, model := schemas.ParseModelString(modelARN, "")
 
-	unifaiReq := &schemas.UnifAIRerankRequest{
+	rakshaReq := &schemas.RakshaRerankRequest{
 		Provider: provider,
 		Model:    model,
 		Params:   &schemas.RerankParameters{},
@@ -143,25 +143,25 @@ func (req *BedrockRerankRequest) ToUnifAIRerankRequest(ctx *schemas.UnifAIContex
 
 	// Extract query from the first query entry
 	if len(req.Queries) > 0 {
-		unifaiReq.Query = req.Queries[0].TextQuery.Text
+		rakshaReq.Query = req.Queries[0].TextQuery.Text
 	}
 
 	// Convert sources to documents
 	for _, source := range req.Sources {
-		unifaiReq.Documents = append(unifaiReq.Documents, schemas.RerankDocument{
+		rakshaReq.Documents = append(rakshaReq.Documents, schemas.RerankDocument{
 			Text: source.InlineDocumentSource.TextDocument.Text,
 		})
 	}
 
 	// Extract TopN from NumberOfResults
 	if req.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults != nil {
-		unifaiReq.Params.TopN = req.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults
+		rakshaReq.Params.TopN = req.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults
 	}
 
 	// Pass AdditionalModelRequestFields as ExtraParams
 	if fields := req.RerankingConfiguration.BedrockRerankingConfiguration.ModelConfiguration.AdditionalModelRequestFields; len(fields) > 0 {
-		unifaiReq.Params.ExtraParams = fields
+		rakshaReq.Params.ExtraParams = fields
 	}
 
-	return unifaiReq
+	return rakshaReq
 }

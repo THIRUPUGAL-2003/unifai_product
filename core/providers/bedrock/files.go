@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // escapeS3KeyForURL escapes each segment of an S3 key path individually.
@@ -136,8 +136,8 @@ func parseS3ListResponse(body []byte, resp *S3ListObjectsResponse) error {
 
 // ==================== BEDROCK FILE TYPE CONVERTERS ====================
 
-// ToBedrockFileUploadResponse converts a UnifAI file upload response to Bedrock format.
-func ToBedrockFileUploadResponse(resp *schemas.UnifAIFileUploadResponse) *BedrockFileUploadResponse {
+// ToBedrockFileUploadResponse converts a Raksha file upload response to Bedrock format.
+func ToBedrockFileUploadResponse(resp *schemas.RakshaFileUploadResponse) *BedrockFileUploadResponse {
 	if resp == nil {
 		return nil
 	}
@@ -155,8 +155,8 @@ func ToBedrockFileUploadResponse(resp *schemas.UnifAIFileUploadResponse) *Bedroc
 	}
 }
 
-// ToBedrockFileListResponse converts a UnifAI file list response to Bedrock format.
-func ToBedrockFileListResponse(resp *schemas.UnifAIFileListResponse) *BedrockFileListResponse {
+// ToBedrockFileListResponse converts a Raksha file list response to Bedrock format.
+func ToBedrockFileListResponse(resp *schemas.RakshaFileListResponse) *BedrockFileListResponse {
 	if resp == nil {
 		return nil
 	}
@@ -178,8 +178,8 @@ func ToBedrockFileListResponse(resp *schemas.UnifAIFileListResponse) *BedrockFil
 	}
 }
 
-// ToBedrockFileRetrieveResponse converts a UnifAI file retrieve response to Bedrock format.
-func ToBedrockFileRetrieveResponse(resp *schemas.UnifAIFileRetrieveResponse) *BedrockFileRetrieveResponse {
+// ToBedrockFileRetrieveResponse converts a Raksha file retrieve response to Bedrock format.
+func ToBedrockFileRetrieveResponse(resp *schemas.RakshaFileRetrieveResponse) *BedrockFileRetrieveResponse {
 	if resp == nil {
 		return nil
 	}
@@ -195,8 +195,8 @@ func ToBedrockFileRetrieveResponse(resp *schemas.UnifAIFileRetrieveResponse) *Be
 	}
 }
 
-// ToBedrockFileDeleteResponse converts a UnifAI file delete response to Bedrock format.
-func ToBedrockFileDeleteResponse(resp *schemas.UnifAIFileDeleteResponse) *BedrockFileDeleteResponse {
+// ToBedrockFileDeleteResponse converts a Raksha file delete response to Bedrock format.
+func ToBedrockFileDeleteResponse(resp *schemas.RakshaFileDeleteResponse) *BedrockFileDeleteResponse {
 	if resp == nil {
 		return nil
 	}
@@ -207,8 +207,8 @@ func ToBedrockFileDeleteResponse(resp *schemas.UnifAIFileDeleteResponse) *Bedroc
 	}
 }
 
-// ToBedrockFileContentResponse converts a UnifAI file content response to Bedrock format.
-func ToBedrockFileContentResponse(resp *schemas.UnifAIFileContentResponse) *BedrockFileContentResponse {
+// ToBedrockFileContentResponse converts a Raksha file content response to Bedrock format.
+func ToBedrockFileContentResponse(resp *schemas.RakshaFileContentResponse) *BedrockFileContentResponse {
 	if resp == nil {
 		return nil
 	}
@@ -223,8 +223,8 @@ func ToBedrockFileContentResponse(resp *schemas.UnifAIFileContentResponse) *Bedr
 
 // ==================== S3 API XML FORMATTERS ====================
 
-// ToS3ListObjectsV2XML converts a UnifAI file list response to S3 ListObjectsV2 XML format.
-func ToS3ListObjectsV2XML(resp *schemas.UnifAIFileListResponse, bucket, prefix string, maxKeys int) []byte {
+// ToS3ListObjectsV2XML converts a Raksha file list response to S3 ListObjectsV2 XML format.
+func ToS3ListObjectsV2XML(resp *schemas.RakshaFileListResponse, bucket, prefix string, maxKeys int) []byte {
 	if resp == nil {
 		return []byte(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></ListBucketResult>`)
 	}

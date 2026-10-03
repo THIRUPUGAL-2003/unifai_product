@@ -1,4 +1,4 @@
-package unifai
+package raksha
 
 import (
 	"bytes"
@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unifai/unifai/core/mcp"
-	"github.com/unifai/unifai/core/network"
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/mcp"
+	"github.com/raksha/raksha/core/network"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 const (
@@ -197,16 +197,16 @@ func calculateBackoff(attempt int, config *schemas.ProviderConfig) time.Duration
 }
 
 // validateRequestAfterPreRequestHooks validates the provider and model fields of the given request.
-func validateRequestAfterPreRequestHooks(req *schemas.UnifAIRequest) *schemas.UnifAIError {
+func validateRequestAfterPreRequestHooks(req *schemas.RakshaRequest) *schemas.RakshaError {
 	if req == nil {
-		return newUnifAIErrorFromMsg("unifai request cannot be nil")
+		return newRakshaErrorFromMsg("raksha request cannot be nil")
 	}
 	provider, model, _ := req.GetRequestFields()
 	if provider == "" {
-		return newUnifAIErrorFromMsg(ProviderAutoResolveErrorMessage)
+		return newRakshaErrorFromMsg(ProviderAutoResolveErrorMessage)
 	}
 	if isModelRequired(req.RequestType) && model == "" {
-		return newUnifAIErrorFromMsg(ModelAutoResolveErrorMessage)
+		return newRakshaErrorFromMsg(ModelAutoResolveErrorMessage)
 	}
 	return nil
 }
@@ -281,13 +281,13 @@ func IsRateLimitErrorMessage(errorMessage string) bool {
 }
 
 // routingErrorSummary produces a sanitized, audit-safe one-line summary of a
-// UnifAIError for emission to the per-request routing engine log trail.
+// RakshaError for emission to the per-request routing engine log trail.
 // It deliberately omits the upstream provider message — which can echo back
 // API keys, tokens, or user input — and surfaces only the error type and HTTP
 // status code. Used by the core fallback orchestrator so the routing log
 // records *why* a fallback was triggered without leaking secrets into log
 // storage or the UI.
-func routingErrorSummary(e *schemas.UnifAIError) string {
+func routingErrorSummary(e *schemas.RakshaError) string {
 	if e == nil {
 		return "unknown error"
 	}
@@ -306,11 +306,11 @@ func routingErrorSummary(e *schemas.UnifAIError) string {
 	return strings.Join(parts, " ")
 }
 
-// newUnifAIError wraps a standard error into a UnifAIError with IsUnifAIError set to false.
-// This helper function reduces code duplication when handling non-UnifAI errors.
-func newUnifAIError(err error) *schemas.UnifAIError {
-	return &schemas.UnifAIError{
-		IsUnifAIError: false,
+// newRakshaError wraps a standard error into a RakshaError with IsRakshaError set to false.
+// This helper function reduces code duplication when handling non-Raksha errors.
+func newRakshaError(err error) *schemas.RakshaError {
+	return &schemas.RakshaError{
+		IsRakshaError: false,
 		Error: &schemas.ErrorField{
 			Message: err.Error(),
 			Error:   err,
@@ -318,20 +318,20 @@ func newUnifAIError(err error) *schemas.UnifAIError {
 	}
 }
 
-// newUnifAIErrorFromMsg creates a UnifAIError with a custom message.
+// newRakshaErrorFromMsg creates a RakshaError with a custom message.
 // This helper function is used for static error messages.
-func newUnifAIErrorFromMsg(message string) *schemas.UnifAIError {
-	return &schemas.UnifAIError{
-		IsUnifAIError: false,
+func newRakshaErrorFromMsg(message string) *schemas.RakshaError {
+	return &schemas.RakshaError{
+		IsRakshaError: false,
 		Error: &schemas.ErrorField{
 			Message: message,
 		},
 	}
 }
 
-// newUnifAICtxDoneError creates a UnifAIError from a cancelled/expired context.
+// newRakshaCtxDoneError creates a RakshaError from a cancelled/expired context.
 // It distinguishes DeadlineExceeded (504 RequestTimedOut) from Canceled (499 RequestCancelled).
-func newUnifAICtxDoneError(ctx *schemas.UnifAIContext, stage string) *schemas.UnifAIError {
+func newRakshaCtxDoneError(ctx *schemas.RakshaContext, stage string) *schemas.RakshaError {
 	var statusCode int
 	var errorType string
 	var message string
@@ -346,8 +346,8 @@ func newUnifAICtxDoneError(ctx *schemas.UnifAIContext, stage string) *schemas.Un
 		message = fmt.Sprintf("request cancelled %s: %v", stage, ctx.Err())
 	}
 
-	return &schemas.UnifAIError{
-		IsUnifAIError: true,
+	return &schemas.RakshaError{
+		IsRakshaError: true,
 		StatusCode:     &statusCode,
 		AllowFallbacks: new(false),
 		Error: &schemas.ErrorField{
@@ -358,19 +358,19 @@ func newUnifAICtxDoneError(ctx *schemas.UnifAIContext, stage string) *schemas.Un
 	}
 }
 
-// newUnifAIMessageChan creates a channel that sends a unifai response.
-// It is used to send a unifai response to the client.
-func newUnifAIMessageChan(message *schemas.UnifAIResponse) chan *schemas.UnifAIStreamChunk {
-	ch := make(chan *schemas.UnifAIStreamChunk)
+// newRakshaMessageChan creates a channel that sends a raksha response.
+// It is used to send a raksha response to the client.
+func newRakshaMessageChan(message *schemas.RakshaResponse) chan *schemas.RakshaStreamChunk {
+	ch := make(chan *schemas.RakshaStreamChunk)
 
 	go func() {
 		defer close(ch)
-		ch <- &schemas.UnifAIStreamChunk{
-			UnifAITextCompletionResponse:      message.TextCompletionResponse,
-			UnifAIChatResponse:                message.ChatResponse,
-			UnifAIResponsesStreamResponse:     message.ResponsesStreamResponse,
-			UnifAISpeechStreamResponse:        message.SpeechStreamResponse,
-			UnifAITranscriptionStreamResponse: message.TranscriptionStreamResponse,
+		ch <- &schemas.RakshaStreamChunk{
+			RakshaTextCompletionResponse:      message.TextCompletionResponse,
+			RakshaChatResponse:                message.ChatResponse,
+			RakshaResponsesStreamResponse:     message.ResponsesStreamResponse,
+			RakshaSpeechStreamResponse:        message.SpeechStreamResponse,
+			RakshaTranscriptionStreamResponse: message.TranscriptionStreamResponse,
 		}
 	}()
 
@@ -378,15 +378,15 @@ func newUnifAIMessageChan(message *schemas.UnifAIResponse) chan *schemas.UnifAIS
 }
 
 // clearCtxForFallback clears the ctx values which are not applicable for fallback requests.
-func clearCtxForFallback(ctx *schemas.UnifAIContext) {
-	ctx.ClearValue(schemas.UnifAIContextKeyAPIKeyID)
-	ctx.ClearValue(schemas.UnifAIContextKeyAPIKeyName)
-	ctx.ClearValue(schemas.UnifAIContextKeyGovernanceIncludeOnlyKeys)
-	ctx.ClearValue(schemas.UnifAIContextKeyChangeRequestType)
-	ctx.ClearValue(schemas.UnifAIContextKeyAttemptTrail)
-	ctx.ClearValue(schemas.UnifAIContextKeyStreamEndIndicator)
-	ctx.ClearValue(schemas.UnifAIContextKeyConnectionClosed)
-	ctx.ClearValue(schemas.UnifAIContextKeySupportsAssistantPrefill)
+func clearCtxForFallback(ctx *schemas.RakshaContext) {
+	ctx.ClearValue(schemas.RakshaContextKeyAPIKeyID)
+	ctx.ClearValue(schemas.RakshaContextKeyAPIKeyName)
+	ctx.ClearValue(schemas.RakshaContextKeyGovernanceIncludeOnlyKeys)
+	ctx.ClearValue(schemas.RakshaContextKeyChangeRequestType)
+	ctx.ClearValue(schemas.RakshaContextKeyAttemptTrail)
+	ctx.ClearValue(schemas.RakshaContextKeyStreamEndIndicator)
+	ctx.ClearValue(schemas.RakshaContextKeyConnectionClosed)
+	ctx.ClearValue(schemas.RakshaContextKeySupportsAssistantPrefill)
 }
 
 var supportedBaseProvidersSet = func() map[schemas.ModelProvider]struct{} {
@@ -423,12 +423,12 @@ func IsStreamRequestType(reqType schemas.RequestType) bool {
 	return reqType == schemas.TextCompletionStreamRequest || reqType == schemas.ChatCompletionStreamRequest || reqType == schemas.ResponsesStreamRequest || reqType == schemas.SpeechStreamRequest || reqType == schemas.TranscriptionStreamRequest || reqType == schemas.ImageGenerationStreamRequest || reqType == schemas.ImageEditStreamRequest || reqType == schemas.PassthroughStreamRequest || reqType == schemas.WebSocketResponsesRequest || reqType == schemas.RealtimeRequest
 }
 
-func GetTracerFromContext(ctx *schemas.UnifAIContext) (schemas.Tracer, string, error) {
-	tracer, ok := ctx.Value(schemas.UnifAIContextKeyTracer).(schemas.Tracer)
+func GetTracerFromContext(ctx *schemas.RakshaContext) (schemas.Tracer, string, error) {
+	tracer, ok := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
 	if !ok || tracer == nil {
 		return nil, "", fmt.Errorf("tracer not found in context")
 	}
-	traceID, ok := ctx.Value(schemas.UnifAIContextKeyTraceID).(string)
+	traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
 	if !ok || traceID == "" {
 		return nil, "", fmt.Errorf("traceID not found in context")
 	}
@@ -488,12 +488,12 @@ func isResponsesLifecycleRequestType(reqType schemas.RequestType) bool {
 }
 
 // IsFinalChunk returns true if the given context is a final chunk.
-func IsFinalChunk(ctx *schemas.UnifAIContext) bool {
+func IsFinalChunk(ctx *schemas.RakshaContext) bool {
 	if ctx == nil {
 		return false
 	}
 
-	isStreamEndIndicator := ctx.Value(schemas.UnifAIContextKeyStreamEndIndicator)
+	isStreamEndIndicator := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator)
 	if isStreamEndIndicator == nil {
 		return false
 	}
@@ -506,7 +506,7 @@ func IsFinalChunk(ctx *schemas.UnifAIContext) bool {
 }
 
 // GetResponseFields extracts the request type, provider, original model, and resolved model from the result or error.
-func GetResponseFields(result *schemas.UnifAIResponse, err *schemas.UnifAIError) (requestType schemas.RequestType, provider schemas.ModelProvider, originalModel string, resolvedModel string) {
+func GetResponseFields(result *schemas.RakshaResponse, err *schemas.RakshaError) (requestType schemas.RequestType, provider schemas.ModelProvider, originalModel string, resolvedModel string) {
 	if result != nil {
 		extraFields := result.GetExtraFields()
 		return extraFields.RequestType, extraFields.Provider, extraFields.OriginalModelRequested, extraFields.ResolvedModelUsed
@@ -519,7 +519,7 @@ func GetResponseFields(result *schemas.UnifAIResponse, err *schemas.UnifAIError)
 
 // GetResponseRoutingInfo extracts the RoutingInfo recorded on a completed
 // attempt — from the accumulated response, or the error when the attempt failed.
-func GetResponseRoutingInfo(result *schemas.UnifAIResponse, err *schemas.UnifAIError) schemas.RoutingInfo {
+func GetResponseRoutingInfo(result *schemas.RakshaResponse, err *schemas.RakshaError) schemas.RoutingInfo {
 	if result != nil {
 		return result.GetExtraFields().RoutingInfo
 	}
@@ -544,7 +544,7 @@ func MarshalUnsafe(v any) string {
 }
 
 // // [Deprecated] use err.GetErrorString() instead. Will be removed in a future release.
-func GetErrorMessage(err *schemas.UnifAIError) string {
+func GetErrorMessage(err *schemas.RakshaError) string {
 	return err.GetErrorString()
 }
 
@@ -678,25 +678,25 @@ func isPromptOptionalImageEditType(t *string) bool {
 // responses produced by a type-converted request are converted back to the
 // caller's original type before the post-hook runs.
 func wrapConvertedStreamPostHookRunner(postHookRunner schemas.PostHookRunner, targetType schemas.RequestType) schemas.PostHookRunner {
-	return func(ctx *schemas.UnifAIContext, result *schemas.UnifAIResponse, unifaiErr *schemas.UnifAIError) (*schemas.UnifAIResponse, *schemas.UnifAIError) {
+	return func(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError) {
 		if result != nil {
 			switch targetType {
 			case schemas.ChatCompletionRequest:
 				// text→chat: convert chat stream chunk back to text completion
 				if result.ChatResponse != nil {
-					if converted := result.ChatResponse.ToUnifAITextCompletionResponse(); converted != nil {
-						result = &schemas.UnifAIResponse{TextCompletionResponse: converted}
+					if converted := result.ChatResponse.ToRakshaTextCompletionResponse(); converted != nil {
+						result = &schemas.RakshaResponse{TextCompletionResponse: converted}
 					}
 				}
 			case schemas.ResponsesRequest:
 				// chat→responses: convert responses stream chunk back to chat
 				if result.ResponsesStreamResponse != nil {
-					if converted := result.ResponsesStreamResponse.ToUnifAIChatResponse(); converted != nil {
-						result = &schemas.UnifAIResponse{ChatResponse: converted}
+					if converted := result.ResponsesStreamResponse.ToRakshaChatResponse(); converted != nil {
+						result = &schemas.RakshaResponse{ChatResponse: converted}
 					}
 				}
 			}
 		}
-		return postHookRunner(ctx, result, unifaiErr)
+		return postHookRunner(ctx, result, rakshaErr)
 	}
 }

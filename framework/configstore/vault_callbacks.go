@@ -4,7 +4,7 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	"gorm.io/gorm"
 )
 
@@ -32,9 +32,9 @@ type vaultStoreSelfManaged interface {
 // SecretVar columns inside BeforeSave implement vaultStoreSelfManaged and do their own
 // store at the correct midpoint; the global callback skips them.
 func RegisterVaultCallbacks(db *gorm.DB) {
-	db.Callback().Create().Before("gorm:before_create").Register("unifai:vault_store", vaultStoreCallback)
-	db.Callback().Update().Before("gorm:before_update").Register("unifai:vault_store", vaultStoreCallback)
-	db.Callback().Delete().After("gorm:after_delete").Register("unifai:vault_remove", vaultRemoveCallback)
+	db.Callback().Create().Before("gorm:before_create").Register("raksha:vault_store", vaultStoreCallback)
+	db.Callback().Update().Before("gorm:before_update").Register("raksha:vault_store", vaultStoreCallback)
+	db.Callback().Delete().After("gorm:after_delete").Register("raksha:vault_remove", vaultRemoveCallback)
 }
 
 func vaultStoreCallback(tx *gorm.DB) {

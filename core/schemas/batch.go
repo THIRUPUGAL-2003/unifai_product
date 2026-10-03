@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the UnifAI system.
+// Package schemas defines the core schemas and types used by the Raksha system.
 package schemas
 
 // BatchStatus represents the status of a batch job.
@@ -62,8 +62,8 @@ type BatchError struct {
 	Line    *int   `json:"line,omitempty"`
 }
 
-// UnifAIBatchCreateRequest represents a request to create a batch job.
-type UnifAIBatchCreateRequest struct {
+// RakshaBatchCreateRequest represents a request to create a batch job.
+type RakshaBatchCreateRequest struct {
 	Provider       ModelProvider `json:"provider"`
 	Model          *string       `json:"model,omitempty"` // Model hint for routing (optional for file-based) it may or may not present depending on the provider and usage of integration vs direct API
 	RawRequestBody []byte        `json:"-"`               // Raw request body (not serialized)
@@ -100,12 +100,12 @@ type BatchExpiresAfter struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIBatchCreateRequest) GetRawRequestBody() []byte {
+func (request *RakshaBatchCreateRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIBatchCreateResponse represents the response from creating a batch job.
-type UnifAIBatchCreateResponse struct {
+// RakshaBatchCreateResponse represents the response from creating a batch job.
+type RakshaBatchCreateResponse struct {
 	ID               string             `json:"id"`
 	Object           string             `json:"object,omitempty"`       // "batch" for OpenAI
 	DisplayName      *string            `json:"display_name,omitempty"` // Human-readable job name (e.g. Vertex displayName)
@@ -134,11 +134,11 @@ type UnifAIBatchCreateResponse struct {
 	OutputBlob *string `json:"output_blob,omitempty"`
 	ErrorBlob  *string `json:"error_blob,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIBatchListRequest represents a request to list batch jobs.
-type UnifAIBatchListRequest struct {
+// RakshaBatchListRequest represents a request to list batch jobs.
+type RakshaBatchListRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -155,10 +155,10 @@ type UnifAIBatchListRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// UnifAIBatchListResponse represents the response from listing batch jobs.
-type UnifAIBatchListResponse struct {
+// RakshaBatchListResponse represents the response from listing batch jobs.
+type RakshaBatchListResponse struct {
 	Object  string                         `json:"object,omitempty"` // "list"
-	Data    []UnifAIBatchRetrieveResponse `json:"data"`
+	Data    []RakshaBatchRetrieveResponse `json:"data"`
 	FirstID *string                        `json:"first_id,omitempty"`
 	LastID  *string                        `json:"last_id,omitempty"`
 	HasMore bool                           `json:"has_more,omitempty"`
@@ -166,11 +166,11 @@ type UnifAIBatchListResponse struct {
 	// Anthropic pagination
 	NextCursor *string `json:"next_cursor,omitempty"` // For cursor-based pagination
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIBatchRetrieveRequest represents a request to retrieve a batch job.
-type UnifAIBatchRetrieveRequest struct {
+// RakshaBatchRetrieveRequest represents a request to retrieve a batch job.
+type RakshaBatchRetrieveRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to retrieve
@@ -182,12 +182,12 @@ type UnifAIBatchRetrieveRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIBatchRetrieveRequest) GetRawRequestBody() []byte {
+func (request *RakshaBatchRetrieveRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIBatchRetrieveResponse represents the response from retrieving a batch job.
-type UnifAIBatchRetrieveResponse struct {
+// RakshaBatchRetrieveResponse represents the response from retrieving a batch job.
+type RakshaBatchRetrieveResponse struct {
 	ID               string             `json:"id"`
 	Object           string             `json:"object,omitempty"`
 	DisplayName      *string            `json:"display_name,omitempty"` // Human-readable job name (e.g. Vertex displayName)
@@ -227,11 +227,11 @@ type UnifAIBatchRetrieveResponse struct {
 	OutputBlob *string `json:"output_blob,omitempty"`
 	ErrorBlob  *string `json:"error_blob,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIBatchCancelRequest represents a request to cancel a batch job.
-type UnifAIBatchCancelRequest struct {
+// RakshaBatchCancelRequest represents a request to cancel a batch job.
+type RakshaBatchCancelRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to cancel
@@ -243,12 +243,12 @@ type UnifAIBatchCancelRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIBatchCancelRequest) GetRawRequestBody() []byte {
+func (request *RakshaBatchCancelRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIBatchCancelResponse represents the response from cancelling a batch job.
-type UnifAIBatchCancelResponse struct {
+// RakshaBatchCancelResponse represents the response from cancelling a batch job.
+type RakshaBatchCancelResponse struct {
 	ID            string             `json:"id"`
 	Object        string             `json:"object,omitempty"`
 	Status        BatchStatus        `json:"status"`
@@ -256,11 +256,11 @@ type UnifAIBatchCancelResponse struct {
 	CancellingAt  *int64             `json:"cancelling_at,omitempty"`
 	CancelledAt   *int64             `json:"cancelled_at,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIBatchDeleteRequest represents a request to delete a batch job.
-type UnifAIBatchDeleteRequest struct {
+// RakshaBatchDeleteRequest represents a request to delete a batch job.
+type RakshaBatchDeleteRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to delete
@@ -272,22 +272,22 @@ type UnifAIBatchDeleteRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIBatchDeleteRequest) GetRawRequestBody() []byte {
+func (request *RakshaBatchDeleteRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// UnifAIBatchDeleteResponse represents the response from deleting a batch job.
-type UnifAIBatchDeleteResponse struct {
+// RakshaBatchDeleteResponse represents the response from deleting a batch job.
+type RakshaBatchDeleteResponse struct {
 	ID            string             `json:"id"`
 	Object        string             `json:"object,omitempty"`
 	Status        BatchStatus        `json:"status"`
 	RequestCounts BatchRequestCounts `json:"request_counts,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }
 
-// UnifAIBatchResultsRequest represents a request to retrieve batch results.
-type UnifAIBatchResultsRequest struct {
+// RakshaBatchResultsRequest represents a request to retrieve batch results.
+type RakshaBatchResultsRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to get results for
@@ -302,7 +302,7 @@ type UnifAIBatchResultsRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *UnifAIBatchResultsRequest) GetRawRequestBody() []byte {
+func (request *RakshaBatchResultsRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
@@ -337,8 +337,8 @@ type BatchResultError struct {
 	Message string `json:"message,omitempty"`
 }
 
-// UnifAIBatchResultsResponse represents the response from retrieving batch results.
-type UnifAIBatchResultsResponse struct {
+// RakshaBatchResultsResponse represents the response from retrieving batch results.
+type RakshaBatchResultsResponse struct {
 	BatchID string            `json:"batch_id"`
 	Results []BatchResultItem `json:"results"`
 
@@ -346,5 +346,5 @@ type UnifAIBatchResultsResponse struct {
 	HasMore    bool    `json:"has_more,omitempty"`
 	NextCursor *string `json:"next_cursor,omitempty"`
 
-	ExtraFields UnifAIResponseExtraFields `json:"extra_fields"`
+	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
 }

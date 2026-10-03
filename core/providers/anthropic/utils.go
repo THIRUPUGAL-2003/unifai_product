@@ -13,8 +13,8 @@ import (
 	"github.com/tidwall/sjson"
 	"github.com/valyala/fasthttp"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	"github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // anthropicToolTypePrefixToFeature maps Anthropic server-tool type prefixes
@@ -40,7 +40,7 @@ var anthropicToolTypePrefixToFeature = map[string]func(ProviderFeatureSupport) b
 // isAnthropicServerToolSupported returns whether the given Anthropic server-tool
 // type string is supported by the provider's ProviderFeatureSupport. Unknown
 // types return true (forward-compat: let the provider reject if truly invalid
-// rather than UnifAI dropping a tool Anthropic has just added).
+// rather than Raksha dropping a tool Anthropic has just added).
 func isAnthropicServerToolSupported(toolType string, features ProviderFeatureSupport) bool {
 	// Exact-match types first.
 	if toolType == "mcp_toolset" {
@@ -98,8 +98,8 @@ func ValidateChatToolsForProvider(tools []schemas.ChatTool, provider schemas.Mod
 // Does NOT mutate its input. Callers decide the policy (silent strip vs
 // fail-fast). The Bedrock and anthropic-family Responses paths use silent strip
 // so the request still reaches the provider without the unsupported tool — e.g.
-// an `mcp` server tool that points back at UnifAI's own gateway is consumed by
-// UnifAI (exposed to the model as function tools) and must not be forwarded to
+// an `mcp` server tool that points back at Raksha's own gateway is consumed by
+// Raksha (exposed to the model as function tools) and must not be forwarded to
 // providers like Bedrock/Vertex whose Converse APIs have no remote-MCP connector.
 //
 // Unknown providers keep all tools (safe default for custom providers),
@@ -213,8 +213,8 @@ func ValidateToolsForProvider(tools []schemas.ResponsesTool, provider schemas.Mo
 }
 
 var (
-	// Maps provider-specific finish reasons to UnifAI format
-	anthropicFinishReasonToUnifAI = map[AnthropicStopReason]string{
+	// Maps provider-specific finish reasons to Raksha format
+	anthropicFinishReasonToRaksha = map[AnthropicStopReason]string{
 		AnthropicStopReasonEndTurn:      "stop",
 		AnthropicStopReasonMaxTokens:    "length",
 		AnthropicStopReasonStopSequence: "stop",
@@ -222,8 +222,8 @@ var (
 		AnthropicStopReasonCompaction:   "compaction",
 	}
 
-	// Maps UnifAI finish reasons to provider-specific format
-	unifaiToAnthropicFinishReason = map[string]AnthropicStopReason{
+	// Maps Raksha finish reasons to provider-specific format
+	rakshaToAnthropicFinishReason = map[string]AnthropicStopReason{
 		"stop":       AnthropicStopReasonEndTurn, // canonical default
 		"length":     AnthropicStopReasonMaxTokens,
 		"tool_calls": AnthropicStopReasonToolUse,
@@ -619,7 +619,7 @@ func StripUnsupportedFieldsFromRawBody(jsonBody []byte, provider schemas.ModelPr
 			base := fmt.Sprintf("tools.%d", i)
 			// Server tools with a nested `model` field (e.g. advisor_20260301)
 			// expect a bare Anthropic model id. Strip the prefix when
-			// it's a known UnifAI provider; bare ids pass through unchanged.
+			// it's a known Raksha provider; bare ids pass through unchanged.
 			if modelResult := providerUtils.GetJSONField(jsonBody, base+".model"); modelResult.Exists() && modelResult.Type == gjson.String {
 				if prefixProvider, bare := schemas.ParseModelString(modelResult.String(), ""); prefixProvider != "" {
 					jsonBody, err = providerUtils.SetJSONField(jsonBody, base+".model", bare)
@@ -1011,9 +1011,9 @@ func computerUseBaseTool(toolType string) string {
 	return ""
 }
 
-// MapUnifAIEffortToAnthropic maps a UnifAI effort level to an Anthropic effort level.
-// Anthropic supports "low", "medium", "high", "max"; UnifAI also has "minimal" which maps to "low".
-func MapUnifAIEffortToAnthropic(effort string) string {
+// MapRakshaEffortToAnthropic maps a Raksha effort level to an Anthropic effort level.
+// Anthropic supports "low", "medium", "high", "max"; Raksha also has "minimal" which maps to "low".
+func MapRakshaEffortToAnthropic(effort string) string {
 	if effort == "minimal" {
 		return "low"
 	}
@@ -1031,7 +1031,7 @@ func setEffortOnOutputConfig(req *AnthropicMessageRequest, effort string) {
 
 // AddMissingBetaHeadersToContext analyzes the Anthropic request and adds missing beta headers to the context.
 // The provider parameter controls which headers are included — unsupported headers for the given provider are skipped.
-func AddMissingBetaHeadersToContext(ctx *schemas.UnifAIContext, req *AnthropicMessageRequest, provider schemas.ModelProvider) error {
+func AddMissingBetaHeadersToContext(ctx *schemas.RakshaContext, req *AnthropicMessageRequest, provider schemas.ModelProvider) error {
 	features, hasProvider := ProviderFeatures[provider]
 	headers := []string{}
 	hasCachingScope := false
@@ -1208,10 +1208,10 @@ func AddMissingBetaHeadersToContext(ctx *schemas.UnifAIContext, req *AnthropicMe
 		return nil
 	}
 	var extraHeaders map[string][]string
-	if ctx.Value(schemas.UnifAIContextKeyExtraHeaders) == nil {
+	if ctx.Value(schemas.RakshaContextKeyExtraHeaders) == nil {
 		extraHeaders = map[string][]string{}
 	} else {
-		if ctxExtraHeaders, ok := ctx.Value(schemas.UnifAIContextKeyExtraHeaders).(map[string][]string); ok {
+		if ctxExtraHeaders, ok := ctx.Value(schemas.RakshaContextKeyExtraHeaders).(map[string][]string); ok {
 			extraHeaders = ctxExtraHeaders
 		}
 	}
@@ -1229,7 +1229,7 @@ func AddMissingBetaHeadersToContext(ctx *schemas.UnifAIContext, req *AnthropicMe
 		}
 		extraHeaders[AnthropicBetaHeader] = existing
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyExtraHeaders, extraHeaders)
+	ctx.SetValue(schemas.RakshaContextKeyExtraHeaders, extraHeaders)
 	return nil
 }
 
@@ -1591,7 +1591,7 @@ func MergeBetaHeaders(ctx context.Context, providerExtraHeaders map[string]strin
 			add(v)
 		}
 	}
-	if ctxHeaders, ok := ctx.Value(schemas.UnifAIContextKeyExtraHeaders).(map[string][]string); ok {
+	if ctxHeaders, ok := ctx.Value(schemas.RakshaContextKeyExtraHeaders).(map[string][]string); ok {
 		for k, vals := range ctxHeaders {
 			if !strings.EqualFold(k, AnthropicBetaHeader) {
 				continue
@@ -1712,7 +1712,7 @@ func appendBetaHeader(req *fasthttp.Request, betaHeader string) {
 
 // convertChatResponseFormatToTool converts a response_format config to an Anthropic tool for structured output
 // This is used when the provider is Vertex, which doesn't support native structured outputs
-func convertChatResponseFormatToTool(ctx *schemas.UnifAIContext, params *schemas.ChatParameters) *AnthropicTool {
+func convertChatResponseFormatToTool(ctx *schemas.RakshaContext, params *schemas.ChatParameters) *AnthropicTool {
 	if params == nil || params.ResponseFormat == nil {
 		return nil
 	}
@@ -1752,9 +1752,9 @@ func convertChatResponseFormatToTool(ctx *schemas.UnifAIContext, params *schemas
 		description = desc
 	}
 
-	// Set unifai context key structured output tool name
+	// Set raksha context key structured output tool name
 	toolName = fmt.Sprintf("uf_so_%s", toolName)
-	ctx.SetValue(schemas.UnifAIContextKeyStructuredOutputToolName, toolName)
+	ctx.SetValue(schemas.RakshaContextKeyStructuredOutputToolName, toolName)
 
 	// Create the Anthropic tool
 	normalizedSchema := normalizeSchemaForAnthropic(schemaObj)
@@ -1769,7 +1769,7 @@ func convertChatResponseFormatToTool(ctx *schemas.UnifAIContext, params *schemas
 
 // convertResponsesTextFormatToTool converts a text config to an Anthropic tool for structured output
 // This is used when the provider is Vertex, which doesn't support native structured outputs
-func convertResponsesTextFormatToTool(ctx *schemas.UnifAIContext, textConfig *schemas.ResponsesTextConfig) *AnthropicTool {
+func convertResponsesTextFormatToTool(ctx *schemas.RakshaContext, textConfig *schemas.ResponsesTextConfig) *AnthropicTool {
 	if textConfig == nil || textConfig.Format == nil {
 		return nil
 	}
@@ -1790,7 +1790,7 @@ func convertResponsesTextFormatToTool(ctx *schemas.UnifAIContext, textConfig *sc
 	}
 
 	toolName = fmt.Sprintf("uf_so_%s", toolName)
-	ctx.SetValue(schemas.UnifAIContextKeyStructuredOutputToolName, toolName)
+	ctx.SetValue(schemas.RakshaContextKeyStructuredOutputToolName, toolName)
 
 	var schemaParams *schemas.ToolFunctionParameters
 	if format.JSONSchema != nil {
@@ -2034,77 +2034,77 @@ func convertMapToToolFunctionParameters(m map[string]interface{}) *schemas.ToolF
 	return params
 }
 
-// ConvertAnthropicFinishReasonToUnifAI converts provider finish reasons to UnifAI format
-// MapAnthropicRequestServiceTierToUnifAI maps Anthropic request service_tier values back to UnifAI/OpenAI values.
+// ConvertAnthropicFinishReasonToRaksha converts provider finish reasons to Raksha format
+// MapAnthropicRequestServiceTierToRaksha maps Anthropic request service_tier values back to Raksha/OpenAI values.
 // Anthropic request values: "auto" or "standard_only".
-func MapAnthropicRequestServiceTierToUnifAI(tier string) schemas.UnifAIServiceTier {
+func MapAnthropicRequestServiceTierToRaksha(tier string) schemas.RakshaServiceTier {
 	switch tier {
 	case "standard_only":
-		return schemas.UnifAIServiceTierDefault
+		return schemas.RakshaServiceTierDefault
 	case "auto":
-		return schemas.UnifAIServiceTierAuto
+		return schemas.RakshaServiceTierAuto
 	default:
-		return schemas.UnifAIServiceTierAuto
+		return schemas.RakshaServiceTierAuto
 	}
 }
 
-// MapUnifAIServiceTierToAnthropicRequest maps OpenAI-compatible service_tier request values to Anthropic's two allowed values.
+// MapRakshaServiceTierToAnthropicRequest maps OpenAI-compatible service_tier request values to Anthropic's two allowed values.
 // Anthropic only supports "auto" (use priority if available) or "standard_only" (always standard).
-func MapUnifAIServiceTierToAnthropicRequest(tier schemas.UnifAIServiceTier) string {
+func MapRakshaServiceTierToAnthropicRequest(tier schemas.RakshaServiceTier) string {
 	switch tier {
-	case schemas.UnifAIServiceTierAuto, schemas.UnifAIServiceTierPriority:
+	case schemas.RakshaServiceTierAuto, schemas.RakshaServiceTierPriority:
 		return "auto"
-	case schemas.UnifAIServiceTierDefault, schemas.UnifAIServiceTierFlex:
+	case schemas.RakshaServiceTierDefault, schemas.RakshaServiceTierFlex:
 		return "standard_only"
 	default:
 		return "auto"
 	}
 }
 
-// MapAnthropicServiceTierToUnifAI maps Anthropic response service_tier values to OpenAI-compatible UnifAI values.
+// MapAnthropicServiceTierToRaksha maps Anthropic response service_tier values to OpenAI-compatible Raksha values.
 // Anthropic response values: "standard", "priority", "batch".
-func MapAnthropicServiceTierToUnifAI(tier string) schemas.UnifAIServiceTier {
+func MapAnthropicServiceTierToRaksha(tier string) schemas.RakshaServiceTier {
 	switch tier {
 	case "standard":
-		return schemas.UnifAIServiceTierDefault
+		return schemas.RakshaServiceTierDefault
 	case "priority":
-		return schemas.UnifAIServiceTierPriority
+		return schemas.RakshaServiceTierPriority
 	default:
-		return schemas.UnifAIServiceTier(tier)
+		return schemas.RakshaServiceTier(tier)
 	}
 }
 
-// MapUnifAIServiceTierToAnthropicResponse maps UnifAI/OpenAI response service_tier values back to Anthropic wire format.
-// Used when re-encoding a UnifAI response into Anthropic format.
-func MapUnifAIServiceTierToAnthropicResponse(tier schemas.UnifAIServiceTier) string {
+// MapRakshaServiceTierToAnthropicResponse maps Raksha/OpenAI response service_tier values back to Anthropic wire format.
+// Used when re-encoding a Raksha response into Anthropic format.
+func MapRakshaServiceTierToAnthropicResponse(tier schemas.RakshaServiceTier) string {
 	switch tier {
-	case schemas.UnifAIServiceTierDefault:
+	case schemas.RakshaServiceTierDefault:
 		return "standard"
-	case schemas.UnifAIServiceTierPriority:
+	case schemas.RakshaServiceTierPriority:
 		return "priority"
-	case schemas.UnifAIServiceTierAuto, schemas.UnifAIServiceTierFlex:
+	case schemas.RakshaServiceTierAuto, schemas.RakshaServiceTierFlex:
 		return "standard"
 	default:
 		return string(tier)
 	}
 }
 
-func ConvertAnthropicFinishReasonToUnifAI(providerReason AnthropicStopReason) string {
-	if unifaiReason, ok := anthropicFinishReasonToUnifAI[providerReason]; ok {
-		return unifaiReason
+func ConvertAnthropicFinishReasonToRaksha(providerReason AnthropicStopReason) string {
+	if rakshaReason, ok := anthropicFinishReasonToRaksha[providerReason]; ok {
+		return rakshaReason
 	}
 	return string(providerReason)
 }
 
-// ConvertUnifAIFinishReasonToAnthropic converts UnifAI finish reasons to provider format
-func ConvertUnifAIFinishReasonToAnthropic(unifaiReason string) AnthropicStopReason {
-	if providerReason, ok := unifaiToAnthropicFinishReason[unifaiReason]; ok {
+// ConvertRakshaFinishReasonToAnthropic converts Raksha finish reasons to provider format
+func ConvertRakshaFinishReasonToAnthropic(rakshaReason string) AnthropicStopReason {
+	if providerReason, ok := rakshaToAnthropicFinishReason[rakshaReason]; ok {
 		return providerReason
 	}
-	return AnthropicStopReason(unifaiReason)
+	return AnthropicStopReason(rakshaReason)
 }
 
-// ConvertToAnthropicImageBlock converts a UnifAI image block to Anthropic format
+// ConvertToAnthropicImageBlock converts a Raksha image block to Anthropic format
 // Uses the same pattern as the original buildAnthropicImageSourceMap function
 func ConvertToAnthropicImageBlock(block schemas.ChatContentBlock) AnthropicContentBlock {
 	imageBlock := AnthropicContentBlock{
@@ -2161,7 +2161,7 @@ func ConvertToAnthropicImageBlock(block schemas.ChatContentBlock) AnthropicConte
 	return imageBlock
 }
 
-// ConvertToAnthropicDocumentBlock converts a UnifAI file block to Anthropic document format
+// ConvertToAnthropicDocumentBlock converts a Raksha file block to Anthropic document format
 func ConvertToAnthropicDocumentBlock(block schemas.ChatContentBlock) AnthropicContentBlock {
 	documentBlock := AnthropicContentBlock{
 		Type:         AnthropicContentBlockTypeDocument,
@@ -2323,7 +2323,7 @@ func ConvertResponsesFileBlockToAnthropic(fileBlock *schemas.ResponsesInputMessa
 	return documentBlock
 }
 
-func (block AnthropicContentBlock) ToUnifAIContentImageBlock() schemas.ChatContentBlock {
+func (block AnthropicContentBlock) ToRakshaContentImageBlock() schemas.ChatContentBlock {
 	return schemas.ChatContentBlock{
 		Type: schemas.ChatContentBlockTypeImage,
 		ImageURLStruct: &schemas.ChatInputImage{
@@ -3210,11 +3210,11 @@ func sanitizeWebSearchArguments(argumentsJSON string) string {
 }
 
 // attachWebSearchSourcesToCall finds a web_search_call by tool_use_id and attaches sources to it.
-// It searches backwards through unifaiMessages to find the matching call and updates its action.
-func attachWebSearchSourcesToCall(unifaiMessages []schemas.ResponsesMessage, toolUseID string, resultBlock AnthropicContentBlock, includeExtendedFields bool) {
+// It searches backwards through rakshaMessages to find the matching call and updates its action.
+func attachWebSearchSourcesToCall(rakshaMessages []schemas.ResponsesMessage, toolUseID string, resultBlock AnthropicContentBlock, includeExtendedFields bool) {
 	// Search backwards to find matching web_search_call
-	for i := len(unifaiMessages) - 1; i >= 0; i-- {
-		msg := &unifaiMessages[i]
+	for i := len(rakshaMessages) - 1; i >= 0; i-- {
+		msg := &rakshaMessages[i]
 		if msg.Type != nil && *msg.Type == schemas.ResponsesMessageTypeWebSearchCall &&
 			msg.ID != nil &&
 			*msg.ID == toolUseID {
@@ -3307,15 +3307,15 @@ func anthropicExtractFloat64(v interface{}) (float64, bool) {
 
 // IsClaudeCodeMaxMode checks if the request is a Claude Code max mode request.
 // In the max mode - we don't need to forward the key
-func IsClaudeCodeMaxMode(ctx *schemas.UnifAIContext) bool {
-	userAgent, _ := ctx.Value(schemas.UnifAIContextKeyUserAgent).(string)
-	skipKeySelection, _ := ctx.Value(schemas.UnifAIContextKeySkipKeySelection).(bool)
+func IsClaudeCodeMaxMode(ctx *schemas.RakshaContext) bool {
+	userAgent, _ := ctx.Value(schemas.RakshaContextKeyUserAgent).(string)
+	skipKeySelection, _ := ctx.Value(schemas.RakshaContextKeySkipKeySelection).(bool)
 	return schemas.ClaudeCLI.Matches(userAgent) && skipKeySelection
 }
 
 // IsClaudeCodeRequest checks if the request is a Claude Code request.
-func IsClaudeCodeRequest(ctx *schemas.UnifAIContext) bool {
-	if userAgent, ok := ctx.Value(schemas.UnifAIContextKeyUserAgent).(string); ok {
+func IsClaudeCodeRequest(ctx *schemas.RakshaContext) bool {
+	if userAgent, ok := ctx.Value(schemas.RakshaContextKeyUserAgent).(string); ok {
 		return schemas.ClaudeCLI.Matches(userAgent)
 	}
 	return false

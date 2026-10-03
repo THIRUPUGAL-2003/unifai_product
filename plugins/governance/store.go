@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
-	"github.com/unifai/unifai/core/schemas"
-	"github.com/unifai/unifai/framework/configstore"
-	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/unifai/unifai/framework/modelcatalog"
-	"github.com/unifai/unifai/framework/routing"
+	"github.com/raksha/raksha/core/schemas"
+	"github.com/raksha/raksha/framework/configstore"
+	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/raksha/raksha/framework/modelcatalog"
+	"github.com/raksha/raksha/framework/routing"
 	"gorm.io/gorm"
 )
 
@@ -2813,7 +2813,7 @@ func (gs *LocalGovernanceStore) collectRateLimitsFromHierarchy(ctx context.Conte
 // Plugin-private context keys carrying request attribution.
 const (
 	// governanceUserTeamIDsContextKey holds the requesting user's team memberships ([]string).
-	governanceUserTeamIDsContextKey schemas.UnifAIContextKey = "unifai-governance-user-team-ids"
+	governanceUserTeamIDsContextKey schemas.RakshaContextKey = "raksha-governance-user-team-ids"
 )
 
 // vkTeamIDs returns the VK's linked teams, primary team first, without duplicates.
@@ -2876,7 +2876,7 @@ func billedTeamID(ctx context.Context, vk *configstoreTables.TableVirtualKey) st
 // request-scoped customer, else the billed team's customer, else the VK's primary direct customer.
 func (gs *LocalGovernanceStore) billedCustomerIDs(ctx context.Context, vk *configstoreTables.TableVirtualKey, teamID string) []string {
 	if ctx != nil {
-		if scoped, _ := ctx.Value(schemas.UnifAIContextKeyGovernanceScopedCustomerID).(string); scoped != "" {
+		if scoped, _ := ctx.Value(schemas.RakshaContextKeyGovernanceScopedCustomerID).(string); scoped != "" {
 			return []string{scoped}
 		}
 	}
@@ -3726,7 +3726,7 @@ func (gs *LocalGovernanceStore) CreateUserGovernanceInMemory(ctx context.Context
 }
 
 func (gs *LocalGovernanceStore) CreateUserNameInMemory(ctx context.Context, userID string, userName string) {
-	// Optional display cache — logging uses UnifAIContextKeyUserName from session.
+	// Optional display cache — logging uses RakshaContextKeyUserName from session.
 }
 
 // UpdateUserGovernanceInMemory updates user governance data in the in-memory store.
@@ -3831,7 +3831,7 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 }
 
 // stampBusinessUnitsForTeam copies BU id/name onto ctx for observability rankings.
-func (gs *LocalGovernanceStore) stampBusinessUnitsForTeam(ctx *schemas.UnifAIContext, teamID string) {
+func (gs *LocalGovernanceStore) stampBusinessUnitsForTeam(ctx *schemas.RakshaContext, teamID string) {
 	if teamID == "" {
 		return
 	}
@@ -3839,7 +3839,7 @@ func (gs *LocalGovernanceStore) stampBusinessUnitsForTeam(ctx *schemas.UnifAICon
 }
 
 // stampBusinessUnitsForTeams unions BUs across the given teams and stamps scalar + array keys.
-func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.UnifAIContext, teamIDs []string) {
+func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.RakshaContext, teamIDs []string) {
 	if ctx == nil || len(teamIDs) == 0 {
 		return
 	}
@@ -3866,10 +3866,10 @@ func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.UnifAICo
 	if len(ids) == 0 {
 		return
 	}
-	ctx.SetValue(schemas.UnifAIContextKeyGovernanceBusinessUnitID, ids[0])
-	ctx.SetValue(schemas.UnifAIContextKeyGovernanceBusinessUnitName, names[0])
-	ctx.SetValue(schemas.UnifAIContextKeyGovernanceBusinessUnitIDs, ids)
-	ctx.SetValue(schemas.UnifAIContextKeyGovernanceBusinessUnitNames, names)
+	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitID, ids[0])
+	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitName, names[0])
+	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitIDs, ids)
+	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitNames, names)
 }
 
 // UpdateModelConfigInMemory adds or updates a model config in the in-memory store (lock-free)

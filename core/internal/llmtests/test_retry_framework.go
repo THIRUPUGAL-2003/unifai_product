@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // retryAfterRegex is compiled once at package level for performance
@@ -19,7 +19,7 @@ var retryAfterRegex = regexp.MustCompile(`(?i)retry after (\d+)\s*(seconds?|minu
 // parseRetryAfterFromError extracts the retry-after duration from rate limit error messages.
 // Matches patterns like "retry after 28 seconds", "retry after 1 minute", "Please retry after 30 seconds".
 // Returns the duration to wait, or 0 if not found.
-func parseRetryAfterFromError(err *schemas.UnifAIError) time.Duration {
+func parseRetryAfterFromError(err *schemas.RakshaError) time.Duration {
 	if err == nil || err.Error == nil {
 		return 0
 	}
@@ -50,7 +50,7 @@ func parseRetryAfterFromError(err *schemas.UnifAIError) time.Duration {
 //   - VALIDATION FAILURES ALWAYS TRIGGER RETRIES
 //     Content validation errors indicate functionality issues that should be retried
 //     multiple times to verify the system works correctly. Network-level failures
-//     are already handled by unifai core, so these retries focus on content/functionality.
+//     are already handled by raksha core, so these retries focus on content/functionality.
 //
 //   - RETRY CONDITIONS ARE SECONDARY
 //     Additional retry conditions (empty responses, malformed data, etc.) provide
@@ -65,14 +65,14 @@ func parseRetryAfterFromError(err *schemas.UnifAIError) time.Duration {
 //
 // =============================================================================
 
-// DeepCopyUnifAIStreamChunk creates a deep copy of a UnifAIStreamChunk object to avoid pooling issues
-func DeepCopyUnifAIStreamChunk(original *schemas.UnifAIStreamChunk) *schemas.UnifAIStreamChunk {
+// DeepCopyRakshaStreamChunk creates a deep copy of a RakshaStreamChunk object to avoid pooling issues
+func DeepCopyRakshaStreamChunk(original *schemas.RakshaStreamChunk) *schemas.RakshaStreamChunk {
 	if original == nil {
 		return nil
 	}
 
 	// Use reflection to create a deep copy
-	return deepCopyReflect(original).(*schemas.UnifAIStreamChunk)
+	return deepCopyReflect(original).(*schemas.RakshaStreamChunk)
 }
 
 // deepCopyReflect performs a deep copy using reflection
@@ -145,123 +145,123 @@ func deepCopyValue(original reflect.Value) reflect.Value {
 }
 
 // TestRetryCondition defines an interface for checking if a test operation should be retried
-// This focuses specifically on LLM behavior inconsistencies, not HTTP errors (handled by UnifAI core)
+// This focuses specifically on LLM behavior inconsistencies, not HTTP errors (handled by Raksha core)
 type TestRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // ChatRetryCondition defines an interface for checking if a chat test operation should be retried
 type ChatRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIChatResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaChatResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // TextCompletionRetryCondition defines an interface for checking if a text completion test operation should be retried
 type TextCompletionRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAITextCompletionResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaTextCompletionResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // ResponsesRetryCondition defines an interface for checking if a Responses API test operation should be retried
 type ResponsesRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIResponsesResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaResponsesResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // SpeechRetryCondition defines an interface for checking if a speech test operation should be retried
 type SpeechRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAISpeechResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaSpeechResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // TranscriptionRetryCondition defines an interface for checking if a transcription test operation should be retried
 type TranscriptionRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAITranscriptionResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaTranscriptionResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // EmbeddingRetryCondition defines an interface for checking if an embedding test operation should be retried
 type EmbeddingRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIEmbeddingResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaEmbeddingResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // ImageGenerationRetryCondition defines an interface for checking if an image generation test operation should be retried
 type ImageGenerationRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIImageGenerationResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaImageGenerationResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // CountTokensRetryCondition defines an interface for checking if a count tokens test operation should be retried
 type CountTokensRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAICountTokensResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaCountTokensResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // ListModelsRetryCondition defines an interface for checking if a list models test operation should be retried
 type ListModelsRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIListModelsResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaListModelsResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // BatchCreateRetryCondition defines an interface for checking if a batch create test operation should be retried
 type BatchCreateRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIBatchCreateResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaBatchCreateResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // BatchListRetryCondition defines an interface for checking if a batch list test operation should be retried
 type BatchListRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIBatchListResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaBatchListResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // BatchRetrieveRetryCondition defines an interface for checking if a batch retrieve test operation should be retried
 type BatchRetrieveRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIBatchRetrieveResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaBatchRetrieveResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // BatchCancelRetryCondition defines an interface for checking if a batch cancel test operation should be retried
 type BatchCancelRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIBatchCancelResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaBatchCancelResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // BatchResultsRetryCondition defines an interface for checking if a batch results test operation should be retried
 type BatchResultsRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIBatchResultsResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaBatchResultsResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // FileUploadRetryCondition defines an interface for checking if a file upload test operation should be retried
 type FileUploadRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIFileUploadResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaFileUploadResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // FileListRetryCondition defines an interface for checking if a file list test operation should be retried
 type FileListRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIFileListResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaFileListResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // FileRetrieveRetryCondition defines an interface for checking if a file retrieve test operation should be retried
 type FileRetrieveRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIFileRetrieveResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaFileRetrieveResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // FileDeleteRetryCondition defines an interface for checking if a file delete test operation should be retried
 type FileDeleteRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIFileDeleteResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaFileDeleteResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
 // FileContentRetryCondition defines an interface for checking if a file content test operation should be retried
 type FileContentRetryCondition interface {
-	ShouldRetry(response *schemas.UnifAIFileContentResponse, err *schemas.UnifAIError, context TestRetryContext) (bool, string)
+	ShouldRetry(response *schemas.RakshaFileContentResponse, err *schemas.RakshaError, context TestRetryContext) (bool, string)
 	GetConditionName() string
 }
 
@@ -498,11 +498,11 @@ func WithChatTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIChatResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaChatResponse, *schemas.RakshaError),
+) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIChatResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaChatResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -522,7 +522,7 @@ func WithChatTestRetry(
 			}
 
 			// Validation failed - ALWAYS retry validation failures for functionality checks
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			if attempt < config.MaxAttempts {
 				// ALWAYS retry on timeout errors - this takes precedence over all other conditions
 				if err != nil && isTimeoutError(err) {
@@ -575,7 +575,7 @@ func WithChatTestRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -583,10 +583,10 @@ func WithChatTestRetry(
 				config.OnFinalFail(attempt, finalErr, t)
 			}
 
-			// Return nil response + UnifAIError so calling test fails
+			// Return nil response + RakshaError so calling test fails
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -663,11 +663,11 @@ func WithResponsesTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
+) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIResponsesResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaResponsesResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -687,7 +687,7 @@ func WithResponsesTestRetry(
 			}
 
 			// Validation failed - ALWAYS retry validation failures for functionality checks
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			if attempt < config.MaxAttempts {
 				// ALWAYS retry on timeout errors - this takes precedence over all other conditions
 				if err != nil && isTimeoutError(err) {
@@ -740,7 +740,7 @@ func WithResponsesTestRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -748,10 +748,10 @@ func WithResponsesTestRetry(
 				config.OnFinalFail(attempt, finalErr, t)
 			}
 
-			// Return nil response + UnifAIError so calling test fails
+			// Return nil response + RakshaError so calling test fails
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -826,10 +826,10 @@ func WithStreamRetry(
 	t *testing.T,
 	config TestRetryConfig,
 	context TestRetryContext,
-	operation func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError),
-) (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError) {
-	var lastChannel chan *schemas.UnifAIStreamChunk
-	var lastError *schemas.UnifAIError
+	operation func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError),
+) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	var lastChannel chan *schemas.RakshaStreamChunk
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -875,7 +875,7 @@ func WithStreamRetry(
 					}
 				} else {
 					// Even if no condition matches, retry on any error for streaming
-					// Network errors are handled by unifai core, so these are likely transient
+					// Network errors are handled by raksha core, so these are likely transient
 					shouldRetry = true
 					errorMsg := GetErrorMessage(lastError)
 					if !strings.Contains(errorMsg, "❌") {
@@ -934,7 +934,7 @@ func WithStreamRetry(
 
 // checkStreamRetryConditions evaluates retry conditions for streaming operations
 func checkStreamRetryConditions(
-	err *schemas.UnifAIError,
+	err *schemas.RakshaError,
 	context TestRetryContext,
 	conditions []TestRetryCondition,
 ) (bool, string) {
@@ -973,12 +973,12 @@ var timeoutPhrases = []string{
 
 // isTimeoutError checks if an error is a timeout error
 // This is used to ALWAYS retry on timeout errors regardless of other conditions
-func isTimeoutError(err *schemas.UnifAIError) bool {
+func isTimeoutError(err *schemas.RakshaError) bool {
 	if err == nil {
 		return false
 	}
 
-	// Check error category first (from ParseUnifAIError categorization)
+	// Check error category first (from ParseRakshaError categorization)
 	// This catches errors categorized as timeout by the error parser
 	if err.Error != nil && err.Error.Message != "" {
 		errorMsg := strings.ToLower(err.Error.Message)
@@ -1271,10 +1271,10 @@ func DefaultListModelsRetryConfig() TestRetryConfig {
 
 // DualAPITestResult represents the result of testing both Chat Completions and Responses APIs
 type DualAPITestResult struct {
-	ChatCompletionsResponse *schemas.UnifAIChatResponse
-	ChatCompletionsError    *schemas.UnifAIError
-	ResponsesAPIResponse    *schemas.UnifAIResponsesResponse
-	ResponsesAPIError       *schemas.UnifAIError
+	ChatCompletionsResponse *schemas.RakshaChatResponse
+	ChatCompletionsError    *schemas.RakshaError
+	ResponsesAPIResponse    *schemas.RakshaResponsesResponse
+	ResponsesAPIError       *schemas.RakshaError
 	BothSucceeded           bool
 }
 
@@ -1282,15 +1282,15 @@ type DualAPITestResult struct {
 // The test passes only when BOTH APIs succeed according to expectations
 //
 // RETRY STRATEGY: Validation failures ALWAYS trigger retries (primary purpose: functionality checks)
-// Network errors are handled by unifai core, so retries here focus on content/functionality validation
+// Network errors are handled by raksha core, so retries here focus on content/functionality validation
 func WithDualAPITestRetry(
 	t *testing.T,
 	config TestRetryConfig,
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	chatOperation func() (*schemas.UnifAIChatResponse, *schemas.UnifAIError),
-	responsesOperation func() (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError),
+	chatOperation func() (*schemas.RakshaChatResponse, *schemas.RakshaError),
+	responsesOperation func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
 ) DualAPITestResult {
 
 	var lastResult DualAPITestResult
@@ -1366,7 +1366,7 @@ func WithDualAPITestRetry(
 
 			// ALWAYS retry on validation failures - this is the primary purpose of these tests
 			// Content validation errors indicate functionality issues that should be retried
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			shouldRetry := !chatValidationPassed || !responsesValidationPassed
 			var retryReason string
 			if !chatValidationPassed {
@@ -1473,7 +1473,7 @@ func GetTestRetryConfigForScenario(scenarioName string, testConfig Comprehensive
 }
 
 // checkChatRetryConditions checks if any chat retry conditions are met
-func checkChatRetryConditions(response *schemas.UnifAIChatResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []ChatRetryCondition) (bool, string) {
+func checkChatRetryConditions(response *schemas.RakshaChatResponse, err *schemas.RakshaError, context TestRetryContext, conditions []ChatRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -1484,7 +1484,7 @@ func checkChatRetryConditions(response *schemas.UnifAIChatResponse, err *schemas
 }
 
 // checkResponsesRetryConditions checks if any Responses API retry conditions are met
-func checkResponsesRetryConditions(response *schemas.UnifAIResponsesResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []ResponsesRetryCondition) (bool, string) {
+func checkResponsesRetryConditions(response *schemas.RakshaResponsesResponse, err *schemas.RakshaError, context TestRetryContext, conditions []ResponsesRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -1501,11 +1501,11 @@ func WithTextCompletionTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError),
-) (*schemas.UnifAITextCompletionResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError),
+) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAITextCompletionResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaTextCompletionResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -1525,7 +1525,7 @@ func WithTextCompletionTestRetry(
 			}
 
 			// Validation failed - ALWAYS retry validation failures for functionality checks
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			if attempt < config.MaxAttempts {
 				// ALWAYS retry on timeout errors - this takes precedence over all other conditions
 				if err != nil && isTimeoutError(err) {
@@ -1578,7 +1578,7 @@ func WithTextCompletionTestRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -1586,10 +1586,10 @@ func WithTextCompletionTestRetry(
 				config.OnFinalFail(attempt, finalErr, t)
 			}
 
-			// Return nil response + UnifAIError so calling test fails
+			// Return nil response + RakshaError so calling test fails
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -1666,11 +1666,11 @@ func WithSpeechTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAISpeechResponse, *schemas.UnifAIError),
-) (*schemas.UnifAISpeechResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError),
+) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAISpeechResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaSpeechResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -1690,7 +1690,7 @@ func WithSpeechTestRetry(
 			}
 
 			// Validation failed - ALWAYS retry validation failures for functionality checks
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			if attempt < config.MaxAttempts {
 				// ALWAYS retry on timeout errors - this takes precedence over all other conditions
 				if err != nil && isTimeoutError(err) {
@@ -1743,7 +1743,7 @@ func WithSpeechTestRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -1751,10 +1751,10 @@ func WithSpeechTestRetry(
 				config.OnFinalFail(attempt, finalErr, t)
 			}
 
-			// Return nil response + UnifAIError so calling test fails
+			// Return nil response + RakshaError so calling test fails
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -1825,7 +1825,7 @@ func WithSpeechTestRetry(
 }
 
 // checkTextCompletionRetryConditions checks if any text completion retry conditions are met
-func checkTextCompletionRetryConditions(response *schemas.UnifAITextCompletionResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []TextCompletionRetryCondition) (bool, string) {
+func checkTextCompletionRetryConditions(response *schemas.RakshaTextCompletionResponse, err *schemas.RakshaError, context TestRetryContext, conditions []TextCompletionRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -1836,7 +1836,7 @@ func checkTextCompletionRetryConditions(response *schemas.UnifAITextCompletionRe
 }
 
 // checkSpeechRetryConditions checks if any speech retry conditions are met
-func checkSpeechRetryConditions(response *schemas.UnifAISpeechResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []SpeechRetryCondition) (bool, string) {
+func checkSpeechRetryConditions(response *schemas.RakshaSpeechResponse, err *schemas.RakshaError, context TestRetryContext, conditions []SpeechRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -1853,11 +1853,11 @@ func WithEmbeddingTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIEmbeddingResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError),
+) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIEmbeddingResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaEmbeddingResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -1877,7 +1877,7 @@ func WithEmbeddingTestRetry(
 			}
 
 			// Validation failed - ALWAYS retry validation failures for functionality checks
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			if attempt < config.MaxAttempts {
 				// ALWAYS retry on timeout errors - this takes precedence over all other conditions
 				if err != nil && isTimeoutError(err) {
@@ -1930,7 +1930,7 @@ func WithEmbeddingTestRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -1938,10 +1938,10 @@ func WithEmbeddingTestRetry(
 				config.OnFinalFail(attempt, finalErr, t)
 			}
 
-			// Return nil response + UnifAIError so calling test fails
+			// Return nil response + RakshaError so calling test fails
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -2018,11 +2018,11 @@ func WithTranscriptionTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError),
-) (*schemas.UnifAITranscriptionResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError),
+) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAITranscriptionResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaTranscriptionResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -2042,7 +2042,7 @@ func WithTranscriptionTestRetry(
 			}
 
 			// Validation failed - ALWAYS retry validation failures for functionality checks
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			if attempt < config.MaxAttempts {
 				// ALWAYS retry on timeout errors - this takes precedence over all other conditions
 				if err != nil && isTimeoutError(err) {
@@ -2095,7 +2095,7 @@ func WithTranscriptionTestRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -2103,10 +2103,10 @@ func WithTranscriptionTestRetry(
 				config.OnFinalFail(attempt, finalErr, t)
 			}
 
-			// Return nil response + UnifAIError so calling test fails
+			// Return nil response + RakshaError so calling test fails
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -2144,7 +2144,7 @@ func WithTranscriptionTestRetry(
 
 			shouldRetry, retryReason := checkTranscriptionRetryConditions(response, err, context, config.Conditions)
 
-			// ALWAYS retry on non-structural errors (network errors are handled by unifai core)
+			// ALWAYS retry on non-structural errors (network errors are handled by raksha core)
 			// If no condition matches, still retry on any error as it's likely transient
 			if !shouldRetry {
 				shouldRetry = true
@@ -2190,7 +2190,7 @@ func WithTranscriptionTestRetry(
 }
 
 // checkEmbeddingRetryConditions checks if any embedding retry conditions are met
-func checkEmbeddingRetryConditions(response *schemas.UnifAIEmbeddingResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []EmbeddingRetryCondition) (bool, string) {
+func checkEmbeddingRetryConditions(response *schemas.RakshaEmbeddingResponse, err *schemas.RakshaError, context TestRetryContext, conditions []EmbeddingRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -2207,11 +2207,11 @@ func WithCountTokensTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError),
-) (*schemas.UnifAICountTokensResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaCountTokensResponse, *schemas.RakshaError),
+) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAICountTokensResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaCountTokensResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -2275,7 +2275,7 @@ func WithCountTokensTestRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -2284,8 +2284,8 @@ func WithCountTokensTestRetry(
 			}
 
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -2351,7 +2351,7 @@ func WithCountTokensTestRetry(
 }
 
 // checkCountTokensRetryConditions checks if any count tokens retry conditions are met
-func checkCountTokensRetryConditions(response *schemas.UnifAICountTokensResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []CountTokensRetryCondition) (bool, string) {
+func checkCountTokensRetryConditions(response *schemas.RakshaCountTokensResponse, err *schemas.RakshaError, context TestRetryContext, conditions []CountTokensRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -2361,7 +2361,7 @@ func checkCountTokensRetryConditions(response *schemas.UnifAICountTokensResponse
 }
 
 // checkTranscriptionRetryConditions checks if any transcription retry conditions are met
-func checkTranscriptionRetryConditions(response *schemas.UnifAITranscriptionResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []TranscriptionRetryCondition) (bool, string) {
+func checkTranscriptionRetryConditions(response *schemas.RakshaTranscriptionResponse, err *schemas.RakshaError, context TestRetryContext, conditions []TranscriptionRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -2377,11 +2377,11 @@ func WithImageGenerationRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIImageGenerationResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError),
+) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIImageGenerationResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaImageGenerationResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -2401,7 +2401,7 @@ func WithImageGenerationRetry(
 			}
 
 			// Validation failed - ALWAYS retry validation failures for functionality checks
-			// Network errors are handled by unifai core, so these are content/functionality validation errors
+			// Network errors are handled by raksha core, so these are content/functionality validation errors
 			if attempt < config.MaxAttempts {
 				// ALWAYS retry on timeout errors - this takes precedence over all other conditions
 				if err != nil && isTimeoutError(err) {
@@ -2454,7 +2454,7 @@ func WithImageGenerationRetry(
 				}
 			}
 
-			// All retries failed validation - create a UnifAIError to force test failure
+			// All retries failed validation - create a RakshaError to force test failure
 			validationErrors := strings.Join(validationResult.Errors, "; ")
 
 			if config.OnFinalFail != nil {
@@ -2462,10 +2462,10 @@ func WithImageGenerationRetry(
 				config.OnFinalFail(attempt, finalErr, t)
 			}
 
-			// Return nil response + UnifAIError so calling test fails
+			// Return nil response + RakshaError so calling test fails
 			statusCode := 400
-			testFailureError := &schemas.UnifAIError{
-				IsUnifAIError: true,
+			testFailureError := &schemas.RakshaError{
+				IsRakshaError: true,
 				StatusCode:     &statusCode,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("❌ Validation failed after %d attempts: %s", attempt, validationErrors),
@@ -2503,7 +2503,7 @@ func WithImageGenerationRetry(
 
 			shouldRetry, retryReason := checkImageGenerationRetryConditions(response, err, context, config.Conditions)
 
-			// ALWAYS retry on non-structural errors (network errors are handled by unifai core)
+			// ALWAYS retry on non-structural errors (network errors are handled by raksha core)
 			// If no condition matches, still retry on any error as it's likely transient
 			if !shouldRetry {
 				shouldRetry = true
@@ -2549,7 +2549,7 @@ func WithImageGenerationRetry(
 }
 
 // checkImageGenerationRetryConditions checks if any image generation retry conditions are met
-func checkImageGenerationRetryConditions(response *schemas.UnifAIImageGenerationResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []ImageGenerationRetryCondition) (bool, string) {
+func checkImageGenerationRetryConditions(response *schemas.RakshaImageGenerationResponse, err *schemas.RakshaError, context TestRetryContext, conditions []ImageGenerationRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -2568,11 +2568,11 @@ func WithListModelsTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIListModelsResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError),
+) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIListModelsResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaListModelsResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -2593,7 +2593,7 @@ func WithListModelsTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -2685,7 +2685,7 @@ func WithListModelsTestRetry(
 }
 
 // checkListModelsRetryConditions checks if any list models retry conditions are met
-func checkListModelsRetryConditions(response *schemas.UnifAIListModelsResponse, err *schemas.UnifAIError, context TestRetryContext, conditions []ListModelsRetryCondition) (bool, string) {
+func checkListModelsRetryConditions(response *schemas.RakshaListModelsResponse, err *schemas.RakshaError, context TestRetryContext, conditions []ListModelsRetryCondition) (bool, string) {
 	for _, condition := range conditions {
 		if shouldRetry, reason := condition.ShouldRetry(response, err, context); shouldRetry {
 			return true, fmt.Sprintf("%s: %s", condition.GetConditionName(), reason)
@@ -2706,11 +2706,11 @@ func WithBatchCreateTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIBatchCreateResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError),
+) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIBatchCreateResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaBatchCreateResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -2730,7 +2730,7 @@ func WithBatchCreateTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -2810,11 +2810,11 @@ func WithBatchListTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIBatchListResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaBatchListResponse, *schemas.RakshaError),
+) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIBatchListResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaBatchListResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -2831,7 +2831,7 @@ func WithBatchListTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -2906,11 +2906,11 @@ func WithBatchRetrieveTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIBatchRetrieveResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError),
+) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIBatchRetrieveResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaBatchRetrieveResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -2927,7 +2927,7 @@ func WithBatchRetrieveTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3002,11 +3002,11 @@ func WithBatchCancelTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIBatchCancelResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError),
+) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIBatchCancelResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaBatchCancelResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -3023,7 +3023,7 @@ func WithBatchCancelTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3098,11 +3098,11 @@ func WithBatchResultsTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIBatchResultsResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError),
+) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIBatchResultsResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaBatchResultsResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -3119,7 +3119,7 @@ func WithBatchResultsTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3198,11 +3198,11 @@ func WithFileUploadTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIFileUploadResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaFileUploadResponse, *schemas.RakshaError),
+) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIFileUploadResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaFileUploadResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -3219,7 +3219,7 @@ func WithFileUploadTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3294,11 +3294,11 @@ func WithFileListTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIFileListResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIFileListResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaFileListResponse, *schemas.RakshaError),
+) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIFileListResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaFileListResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -3315,7 +3315,7 @@ func WithFileListTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3390,11 +3390,11 @@ func WithFileRetrieveTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIFileRetrieveResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError),
+) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIFileRetrieveResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaFileRetrieveResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -3411,7 +3411,7 @@ func WithFileRetrieveTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3486,11 +3486,11 @@ func WithFileDeleteTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIFileDeleteResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError),
+) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIFileDeleteResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaFileDeleteResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -3507,7 +3507,7 @@ func WithFileDeleteTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3582,11 +3582,11 @@ func WithFileContentTestRetry(
 	context TestRetryContext,
 	expectations ResponseExpectations,
 	scenarioName string,
-	operation func() (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError),
-) (*schemas.UnifAIFileContentResponse, *schemas.UnifAIError) {
+	operation func() (*schemas.RakshaFileContentResponse, *schemas.RakshaError),
+) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
 
-	var lastResponse *schemas.UnifAIFileContentResponse
-	var lastError *schemas.UnifAIError
+	var lastResponse *schemas.RakshaFileContentResponse
+	var lastError *schemas.RakshaError
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		context.AttemptNumber = attempt
@@ -3603,7 +3603,7 @@ func WithFileContentTestRetry(
 			if isTimeoutError(err) {
 				retryReason = fmt.Sprintf("timeout error detected: %s", GetErrorMessage(err))
 			} else {
-				parsed := ParseUnifAIError(err)
+				parsed := ParseRakshaError(err)
 				retryReason = fmt.Sprintf("❌ error occurred: %s", FormatErrorConcise(parsed))
 			}
 		}
@@ -3686,8 +3686,8 @@ func WithSpeechStreamValidationRetry(
 	t *testing.T,
 	config TestRetryConfig,
 	context TestRetryContext,
-	operation func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError),
-	validateStream func(chan *schemas.UnifAIStreamChunk) SpeechStreamValidationResult,
+	operation func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError),
+	validateStream func(chan *schemas.RakshaStreamChunk) SpeechStreamValidationResult,
 ) SpeechStreamValidationResult {
 	var lastResult SpeechStreamValidationResult
 
@@ -3837,8 +3837,8 @@ func WithResponsesStreamValidationRetry(
 	t *testing.T,
 	config TestRetryConfig,
 	context TestRetryContext,
-	operation func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError),
-	validateStream func(chan *schemas.UnifAIStreamChunk) ResponsesStreamValidationResult,
+	operation func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError),
+	validateStream func(chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult,
 ) ResponsesStreamValidationResult {
 	var lastResult ResponsesStreamValidationResult
 
@@ -4057,8 +4057,8 @@ func WithChatStreamValidationRetry(
 	t *testing.T,
 	config TestRetryConfig,
 	context TestRetryContext,
-	operation func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError),
-	validateStream func(chan *schemas.UnifAIStreamChunk) ChatStreamValidationResult,
+	operation func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError),
+	validateStream func(chan *schemas.RakshaStreamChunk) ChatStreamValidationResult,
 ) ChatStreamValidationResult {
 	var lastResult ChatStreamValidationResult
 
@@ -4215,8 +4215,8 @@ func WithImageGenerationStreamRetry(
 	t *testing.T,
 	config TestRetryConfig,
 	context TestRetryContext,
-	operation func() (chan *schemas.UnifAIStreamChunk, *schemas.UnifAIError),
-	validateStream func(chan *schemas.UnifAIStreamChunk) ImageGenerationStreamValidationResult) ImageGenerationStreamValidationResult {
+	operation func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError),
+	validateStream func(chan *schemas.RakshaStreamChunk) ImageGenerationStreamValidationResult) ImageGenerationStreamValidationResult {
 
 	var lastResult ImageGenerationStreamValidationResult
 

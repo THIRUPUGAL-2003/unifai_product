@@ -152,7 +152,7 @@ function authLabel(authType?: MCPAuthType | string): string {
 function authHelpText(authType?: MCPAuthType | string): string {
 	switch (authType) {
 		case "headers":
-			return "Add the request headers UnifAI should send with each tool call.";
+			return "Add the request headers Raksha should send with each tool call.";
 		case "oauth":
 			return "Most enterprise MCP servers need an OAuth app you create at the provider. Paste Client ID below, then Continue — empty Client ID only works when the provider allows open Dynamic Client Registration.";
 		case "per_user_oauth":
@@ -168,7 +168,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 	const hasCreateMCPClientAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Create);
 	const { toast } = useToast();
 	const [createMCPClient] = useCreateMCPClientMutation();
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
 	const [isLoading, setIsLoading] = useState(false);
 	const [scopesText, setScopesText] = useState("");
 	const [envVars, setEnvVars] = useState<Record<string, string>>({});
@@ -260,8 +260,8 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 	}, [defaultValues, initialEnvVars, open, reset]);
 
 	const oauthRedirectUri = useMemo(
-		() => mcpOAuthRedirectUri(getExternalBaseUrl(unifaiConfig?.client_config)),
-		[unifaiConfig?.client_config],
+		() => mcpOAuthRedirectUri(getExternalBaseUrl(rakshaConfig?.client_config)),
+		[rakshaConfig?.client_config],
 	);
 	const needsPreRegisteredOauth = useMemo(
 		() => oauthLikelyNeedsPreRegisteredClient(server.connection_url, server.name),
@@ -459,7 +459,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 			<SheetContent className="flex w-full flex-col overflow-x-hidden p-0 pt-4 sm:max-w-2xl">
 				<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky px-8 -top-4 bg-card z-10">
 					<SheetTitle>Install MCP server</SheetTitle>
-					<SheetDescription>Confirm the catalog configuration before adding this server to UnifAI.</SheetDescription>
+					<SheetDescription>Confirm the catalog configuration before adding this server to Raksha.</SheetDescription>
 				</SheetHeader>
 
 				<Form {...form}>
@@ -495,7 +495,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 							<section className="space-y-4">
 								<div className="space-y-1">
 									<h3 className="text-sm font-medium">Client details</h3>
-									<p className="text-muted-foreground text-sm">UnifAI uses this name internally when routing MCP tool calls.</p>
+									<p className="text-muted-foreground text-sm">Raksha uses this name internally when routing MCP tool calls.</p>
 								</div>
 
 								<FormField
@@ -539,12 +539,12 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 														<Info className="text-muted-foreground h-4 w-4 cursor-help" />
 													</TooltipTrigger>
 													<TooltipContent className="max-w-xs">
-														<p>Leave a value blank to read it from the environment where UnifAI runs.</p>
+														<p>Leave a value blank to read it from the environment where Raksha runs.</p>
 													</TooltipContent>
 												</Tooltip>
 											</TooltipProvider>
 										</div>
-										<p className="text-muted-foreground text-sm">Values used when UnifAI starts this stdio MCP server.</p>
+										<p className="text-muted-foreground text-sm">Values used when Raksha starts this stdio MCP server.</p>
 									</div>
 									<HeadersTable
 										value={envVars}
@@ -741,8 +741,8 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																<TooltipContent className="max-w-xs">
 																	<p>
 																		{needsPreRegisteredOauth
-																			? "Required for most Adobe / AWS / Google-style MCP servers. Empty Client ID only works when the provider allows open DCR for UnifAI."
-																			: "Leave empty only if the provider supports Dynamic Client Registration for UnifAI's redirect URI."}
+																			? "Required for most Adobe / AWS / Google-style MCP servers. Empty Client ID only works when the provider allows open DCR for Raksha."
+																			: "Leave empty only if the provider supports Dynamic Client Registration for Raksha's redirect URI."}
 																	</p>
 																</TooltipContent>
 															</Tooltip>

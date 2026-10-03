@@ -6,24 +6,24 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 
 export function LoggingDisabledView() {
-	const { data: unifaiConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 
 	const handleEnable = useCallback(async () => {
-		if (!unifaiConfig?.client_config) {
+		if (!rakshaConfig?.client_config) {
 			toast.error("Configuration not loaded");
 			return;
 		}
 		try {
 			await updateCoreConfig({
-				...unifaiConfig,
-				client_config: { ...unifaiConfig.client_config, enable_logging: true },
+				...rakshaConfig,
+				client_config: { ...rakshaConfig.client_config, enable_logging: true },
 			}).unwrap();
 			toast.success("Logging enabled.");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [unifaiConfig, updateCoreConfig]);
+	}, [rakshaConfig, updateCoreConfig]);
 
 	return (
 		<div className={cn("flex flex-col items-center justify-center gap-4 text-center mx-auto w-full max-w-7xl min-h-[80vh]")}>

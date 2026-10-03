@@ -5,13 +5,13 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	providerUtils "github.com/unifai/unifai/core/providers/utils"
-	schemas "github.com/unifai/unifai/core/schemas"
+	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-func parseElevenlabsError(resp *fasthttp.Response) *schemas.UnifAIError {
+func parseElevenlabsError(resp *fasthttp.Response) *schemas.RakshaError {
 	var errorResp ElevenlabsError
-	unifaiErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 	if errorResp.Detail != nil {
 		var message string
 		// Handle validation errors (array format)
@@ -56,8 +56,8 @@ func parseElevenlabsError(resp *fasthttp.Response) *schemas.UnifAIError {
 			}
 
 			if message != "" {
-				result := &schemas.UnifAIError{
-					IsUnifAIError: false,
+				result := &schemas.RakshaError{
+					IsRakshaError: false,
 					StatusCode:     schemas.Ptr(resp.StatusCode()),
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(errorType),
@@ -79,12 +79,12 @@ func parseElevenlabsError(resp *fasthttp.Response) *schemas.UnifAIError {
 		}
 
 		if message != "" {
-			if unifaiErr.Error == nil {
-				unifaiErr.Error = &schemas.ErrorField{}
+			if rakshaErr.Error == nil {
+				rakshaErr.Error = &schemas.ErrorField{}
 			}
-			unifaiErr.Error.Type = schemas.Ptr(errorType)
-			unifaiErr.Error.Message = message
+			rakshaErr.Error.Type = schemas.Ptr(errorType)
+			rakshaErr.Error.Message = message
 		}
 	}
-	return unifaiErr
+	return rakshaErr
 }

@@ -17,7 +17,7 @@ from agent_config import (
     AGENT_VERSION,
     HEALTH_SECONDS,
     PROXY_ADDR,
-    UNIFAI_BACKEND_URL,
+    RAKSHA_BACKEND_URL,
     _FIRST_RUN_FLAG,
     _HEALTH_WHEN_PROXY_DOWN_SECONDS,
     proxy_listen_port,
@@ -82,7 +82,7 @@ def free_proxy_port(port: int) -> None:
         for pid in pids:
             try:
                 os.kill(pid, signal.SIGTERM)
-                print(f"[UnifAI Guard] Freed stale listener pid={pid} on :{port} (SIGTERM)")
+                print(f"[Raksha Guard] Freed stale listener pid={pid} on :{port} (SIGTERM)")
             except Exception:
                 pass
         time.sleep(0.5)
@@ -90,12 +90,12 @@ def free_proxy_port(port: int) -> None:
         for pid in _listener_pids():
             try:
                 os.kill(pid, signal.SIGKILL)
-                print(f"[UnifAI Guard] Freed stale listener pid={pid} on :{port} (SIGKILL)")
+                print(f"[Raksha Guard] Freed stale listener pid={pid} on :{port} (SIGKILL)")
             except Exception:
                 pass
         time.sleep(0.3)
     except Exception as e:
-        print(f"[UnifAI Guard WARNING] free_proxy_port: {e}")
+        print(f"[Raksha Guard WARNING] free_proxy_port: {e}")
 
 
 def _detect_pac_mode() -> str:
@@ -132,10 +132,10 @@ def run_health_check(proxy_port: int | None = None) -> dict:
     checks: dict[str, bool] = {}
     details: list[str] = []
 
-    targets = _http_get_text(f"{UNIFAI_BACKEND_URL}/api/browser-ai/targets?for=agent", "application/json", timeout=45)
+    targets = _http_get_text(f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets?for=agent", "application/json", timeout=45)
     checks["backend_targets"] = bool(targets and "targets" in targets)
     if not checks["backend_targets"]:
-        targets = _http_get_text(f"{UNIFAI_BACKEND_URL}/api/browser-ai/targets", "application/json", timeout=45)
+        targets = _http_get_text(f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets", "application/json", timeout=45)
         checks["backend_targets"] = bool(targets and "targets" in targets)
     if not checks["backend_targets"]:
         details.append("backend targets unreachable")
@@ -191,7 +191,7 @@ def run_health_check(proxy_port: int | None = None) -> dict:
     report = {
         "status": status,
         "agent_version": AGENT_VERSION,
-        "backend_url": UNIFAI_BACKEND_URL,
+        "backend_url": RAKSHA_BACKEND_URL,
         "proxy_addr": PROXY_ADDR,
         "pac_mode": pac_mode,
         "checks": checks,
@@ -204,8 +204,8 @@ def run_health_check(proxy_port: int | None = None) -> dict:
         with open(health_path(), "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2)
     except Exception as e:
-        print(f"[UnifAI Guard WARNING] Could not write health.json: {e}")
-    print(f"[UnifAI Guard] Health={status} checks={checks}")
+        print(f"[Raksha Guard WARNING] Could not write health.json: {e}")
+    print(f"[Raksha Guard] Health={status} checks={checks}")
     return report
 
 
@@ -226,19 +226,19 @@ def health_loop(stop_event: threading.Event, proxy_port: int) -> None:
                 # ERR_PROXY_CONNECTION_FAILED while MitM is restarting.
                 if fail_streak >= 2:
                     write_local_pac(
-                        "// UnifAI Guard — local proxy down; fail open until proxy returns.\n"
+                        "// Raksha Guard — local proxy down; fail open until proxy returns.\n"
                         'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
                     )
                     apply_pac_with_bust(silent=True, force_new=True)
                     proxy_was_down = True
-                    print("[UnifAI Guard] Proxy port down x2 — PAC fail-open DIRECT (browsers stay online).")
+                    print("[Raksha Guard] Proxy port down x2 — PAC fail-open DIRECT (browsers stay online).")
             else:
                 if fail_streak > 0 or proxy_was_down:
                     pac = fetch_proxy_pac()
                     if pac:
                         write_local_pac(pac)
                     apply_pac_with_bust(silent=True, force_new=True)
-                    print("[UnifAI Guard] Proxy healthy again — PAC restored (forced browser refetch).")
+                    print("[Raksha Guard] Proxy healthy again — PAC restored (forced browser refetch).")
                     proxy_was_down = False
                 else:
                     # Healthy steady-state: do NOT rotate ?v= (avoids mid-session disconnects).
@@ -246,11 +246,11 @@ def health_loop(stop_event: threading.Event, proxy_port: int) -> None:
                 fail_streak = 0
                 # Keep CA trust healthy without DB — retry install if missing.
                 if not ca_trusted():
-                    print("[UnifAI Guard] CA not trusted — retrying certificate install…")
+                    print("[Raksha Guard] CA not trusted — retrying certificate install…")
                     install_ca_certificate()
             set_browser_quic(enable_quic=False)
         except Exception as e:
-            print(f"[UnifAI Guard WARNING] Health loop: {e}")
+            print(f"[Raksha Guard WARNING] Health loop: {e}")
         # Probe faster while proxy is down so MitM recovery is not stuck for 45s.
         wait_s = _HEALTH_WHEN_PROXY_DOWN_SECONDS if fail_streak > 0 else HEALTH_SECONDS
         stop_event.wait(wait_s)

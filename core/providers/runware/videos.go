@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	schemas "github.com/unifai/unifai/core/schemas"
+	schemas "github.com/raksha/raksha/core/schemas"
 )
 
-// ToRunwareVideoGenerationRequest converts a UnifAI video generation request to a Runware
+// ToRunwareVideoGenerationRequest converts a Raksha video generation request to a Runware
 // videoInference task. An input reference image turns it into image-to-video generation.
-func ToRunwareVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationRequest) (*RunwareInferenceRequest, error) {
-	if unifaiReq.Input == nil {
+func ToRunwareVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*RunwareInferenceRequest, error) {
+	if rakshaReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
@@ -22,26 +22,26 @@ func ToRunwareVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationReq
 		TaskType:       taskTypeVideoInference,
 		TaskUUID:       uuid.New().String(),
 		DeliveryMethod: new(deliveryMethodAsync),
-		Model:          unifaiReq.Model,
+		Model:          rakshaReq.Model,
 		Width:          new(defaultRunwareVideoWidth),
 		Height:         new(defaultRunwareVideoHeight),
 	}
 
-	if unifaiReq.Input.Prompt != "" {
-		request.PositivePrompt = &unifaiReq.Input.Prompt
+	if rakshaReq.Input.Prompt != "" {
+		request.PositivePrompt = &rakshaReq.Input.Prompt
 	}
 
 	// Input reference image (image-to-video): anchored to the first frame.
-	if unifaiReq.Input.InputReference != nil && *unifaiReq.Input.InputReference != "" {
-		sanitizedURL, err := schemas.SanitizeImageURL(*unifaiReq.Input.InputReference)
+	if rakshaReq.Input.InputReference != nil && *rakshaReq.Input.InputReference != "" {
+		sanitizedURL, err := schemas.SanitizeImageURL(*rakshaReq.Input.InputReference)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
 		request.FrameImages = []RunwareFrameImage{{InputImage: sanitizedURL, Frame: new("first")}}
 	}
 
-	if unifaiReq.Params != nil {
-		params := unifaiReq.Params
+	if rakshaReq.Params != nil {
+		params := rakshaReq.Params
 
 		request.NegativePrompt = params.NegativePrompt
 		request.Seed = params.Seed
@@ -64,9 +64,9 @@ func ToRunwareVideoGenerationRequest(unifaiReq *schemas.UnifAIVideoGenerationReq
 	return request, nil
 }
 
-// ToUnifAIVideoGenerationResponse converts a Runware video task result to a UnifAI video response.
-func ToUnifAIVideoGenerationResponse(result *RunwareResult) *schemas.UnifAIVideoGenerationResponse {
-	response := &schemas.UnifAIVideoGenerationResponse{
+// ToRakshaVideoGenerationResponse converts a Runware video task result to a Raksha video response.
+func ToRakshaVideoGenerationResponse(result *RunwareResult) *schemas.RakshaVideoGenerationResponse {
+	response := &schemas.RakshaVideoGenerationResponse{
 		ID:        result.TaskUUID,
 		Object:    "video",
 		CreatedAt: time.Now().Unix(),

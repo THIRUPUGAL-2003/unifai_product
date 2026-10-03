@@ -1,34 +1,34 @@
 package anthropic
 
 import (
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
-// ToUnifAICountTokensResponse converts an Anthropic count tokens response to UnifAI format
-func (resp *AnthropicCountTokensResponse) ToUnifAICountTokensResponse(model string) *schemas.UnifAICountTokensResponse {
+// ToRakshaCountTokensResponse converts an Anthropic count tokens response to Raksha format
+func (resp *AnthropicCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
 
 	totalTokens := resp.InputTokens
 
-	unifaiResp := &schemas.UnifAICountTokensResponse{
+	rakshaResp := &schemas.RakshaCountTokensResponse{
 		Model:       model,
 		InputTokens: resp.InputTokens,
 		TotalTokens: &totalTokens,
 		Object:      "response.input_tokens",
 	}
 
-	return unifaiResp
+	return rakshaResp
 }
 
-// ToAnthropicCountTokensResponse converts a UnifAI count tokens response to Anthropic format.
-func ToAnthropicCountTokensResponse(unifaiResp *schemas.UnifAICountTokensResponse) *AnthropicCountTokensResponse {
-	if unifaiResp == nil {
+// ToAnthropicCountTokensResponse converts a Raksha count tokens response to Anthropic format.
+func ToAnthropicCountTokensResponse(rakshaResp *schemas.RakshaCountTokensResponse) *AnthropicCountTokensResponse {
+	if rakshaResp == nil {
 		return nil
 	}
 
 	return &AnthropicCountTokensResponse{
-		InputTokens: unifaiResp.InputTokens,
+		InputTokens: rakshaResp.InputTokens,
 	}
 }

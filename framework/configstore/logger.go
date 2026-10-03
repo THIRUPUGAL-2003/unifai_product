@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 	gormLibLogger "gorm.io/gorm/logger"
 )
 

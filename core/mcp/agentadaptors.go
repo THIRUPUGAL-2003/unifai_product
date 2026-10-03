@@ -3,7 +3,7 @@ package mcp
 import (
 	"fmt"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // agentAPIAdapter defines the interface for API-specific operations in agent mode.
@@ -50,7 +50,7 @@ type agentAPIAdapter interface {
 	createNewRequest(conversation []interface{}) interface{}
 
 	// Make LLM call
-	makeLLMCall(ctx *schemas.UnifAIContext, request interface{}) (interface{}, *schemas.UnifAIError)
+	makeLLMCall(ctx *schemas.RakshaContext, request interface{}) (interface{}, *schemas.RakshaError)
 
 	// Create response with executed tools and non-auto-executable calls
 	createResponseWithExecutedTools(
@@ -60,18 +60,18 @@ type agentAPIAdapter interface {
 		nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
 	) interface{}
 
-	// extractUsage returns the token usage from a response as UnifAILLMUsage.
-	extractUsage(response interface{}) *schemas.UnifAILLMUsage
+	// extractUsage returns the token usage from a response as RakshaLLMUsage.
+	extractUsage(response interface{}) *schemas.RakshaLLMUsage
 
 	// applyUsage sets accumulated usage on the response in place.
-	applyUsage(response interface{}, usage *schemas.UnifAILLMUsage)
+	applyUsage(response interface{}, usage *schemas.RakshaLLMUsage)
 }
 
 // chatAPIAdapter implements agentAPIAdapter for Chat API
 type chatAPIAdapter struct {
-	originalReq     *schemas.UnifAIChatRequest
-	initialResponse *schemas.UnifAIChatResponse
-	makeReq         func(ctx *schemas.UnifAIContext, req *schemas.UnifAIChatRequest) (*schemas.UnifAIChatResponse, *schemas.UnifAIError)
+	originalReq     *schemas.RakshaChatRequest
+	initialResponse *schemas.RakshaChatResponse
+	makeReq         func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError)
 }
 
 // responsesAPIAdapter implements agentAPIAdapter for Responses API.
@@ -80,18 +80,18 @@ type chatAPIAdapter struct {
 //
 // Key conversions performed:
 //   - extractToolCalls(): Converts ResponsesMessage tool calls to ChatAssistantMessageToolCall
-//     via UnifAIResponsesResponse.ToUnifAIChatResponse() and existing extraction logic
+//     via RakshaResponsesResponse.ToRakshaChatResponse() and existing extraction logic
 //   - addToolResults(): Converts ChatMessage tool results back to ResponsesMessage
 //     via ChatMessage.ToResponsesMessages() and ToResponsesToolMessage()
-//   - createNewRequest(): Builds a new UnifAIResponsesRequest from converted conversation
+//   - createNewRequest(): Builds a new RakshaResponsesRequest from converted conversation
 //   - createResponseWithExecutedTools(): Creates a Responses response with results and pending tools
 //
 // This adapter enables full feature parity between Chat Completions and Responses APIs
 // for tool execution in agent mode.
 type responsesAPIAdapter struct {
-	originalReq     *schemas.UnifAIResponsesRequest
-	initialResponse *schemas.UnifAIResponsesResponse
-	makeReq         func(ctx *schemas.UnifAIContext, req *schemas.UnifAIResponsesRequest) (*schemas.UnifAIResponsesResponse, *schemas.UnifAIError)
+	originalReq     *schemas.RakshaResponsesRequest
+	initialResponse *schemas.RakshaResponsesResponse
+	makeReq         func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError)
 }
 
 // Chat API adapter implementations
@@ -114,17 +114,17 @@ func (c *chatAPIAdapter) getInitialResponse() interface{} {
 }
 
 func (c *chatAPIAdapter) hasToolCalls(response interface{}) bool {
-	chatResponse := response.(*schemas.UnifAIChatResponse)
+	chatResponse := response.(*schemas.RakshaChatResponse)
 	return hasToolCallsForChatResponse(chatResponse)
 }
 
 func (c *chatAPIAdapter) extractToolCalls(response interface{}) []schemas.ChatAssistantMessageToolCall {
-	chatResponse := response.(*schemas.UnifAIChatResponse)
+	chatResponse := response.(*schemas.RakshaChatResponse)
 	return extractToolCalls(chatResponse)
 }
 
 func (c *chatAPIAdapter) addAssistantMessage(conversation []interface{}, response interface{}) []interface{} {
-	chatResponse := response.(*schemas.UnifAIChatResponse)
+	chatResponse := response.(*schemas.RakshaChatResponse)
 	for _, choice := range chatResponse.Choices {
 		if choice.ChatNonStreamResponseChoice != nil && choice.ChatNonStreamResponseChoice.Message != nil {
 			conversation = append(conversation, *choice.ChatNonStreamResponseChoice.Message)
@@ -152,7 +152,7 @@ func (c *chatAPIAdapter) createNewRequest(conversation []interface{}) interface{
 		}
 	}
 
-	return &schemas.UnifAIChatRequest{
+	return &schemas.RakshaChatRequest{
 		Provider:  c.originalReq.Provider,
 		Model:     c.originalReq.Model,
 		Fallbacks: c.originalReq.Fallbacks,
@@ -161,8 +161,8 @@ func (c *chatAPIAdapter) createNewRequest(conversation []interface{}) interface{
 	}
 }
 
-func (c *chatAPIAdapter) makeLLMCall(ctx *schemas.UnifAIContext, request interface{}) (interface{}, *schemas.UnifAIError) {
-	chatRequest := request.(*schemas.UnifAIChatRequest)
+func (c *chatAPIAdapter) makeLLMCall(ctx *schemas.RakshaContext, request interface{}) (interface{}, *schemas.RakshaError) {
+	chatRequest := request.(*schemas.RakshaChatRequest)
 	return c.makeReq(ctx, chatRequest)
 }
 
@@ -172,7 +172,7 @@ func (c *chatAPIAdapter) createResponseWithExecutedTools(
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
 ) interface{} {
-	chatResponse := response.(*schemas.UnifAIChatResponse)
+	chatResponse := response.(*schemas.RakshaChatResponse)
 	return createChatResponseWithExecutedToolsAndNonAutoExecutableCalls(
 		chatResponse,
 		executedToolResults,
@@ -181,12 +181,12 @@ func (c *chatAPIAdapter) createResponseWithExecutedTools(
 	)
 }
 
-func (c *chatAPIAdapter) extractUsage(response interface{}) *schemas.UnifAILLMUsage {
-	return response.(*schemas.UnifAIChatResponse).Usage
+func (c *chatAPIAdapter) extractUsage(response interface{}) *schemas.RakshaLLMUsage {
+	return response.(*schemas.RakshaChatResponse).Usage
 }
 
-func (c *chatAPIAdapter) applyUsage(response interface{}, usage *schemas.UnifAILLMUsage) {
-	response.(*schemas.UnifAIChatResponse).Usage = usage
+func (c *chatAPIAdapter) applyUsage(response interface{}, usage *schemas.RakshaLLMUsage) {
+	response.(*schemas.RakshaChatResponse).Usage = usage
 }
 
 // createChatResponseWithExecutedToolsAndNonAutoExecutableCalls creates a chat response
@@ -202,20 +202,20 @@ func (c *chatAPIAdapter) applyUsage(response interface{}, usage *schemas.UnifAIL
 //   - nonAutoExecutableToolCalls: List of tool calls that require manual execution
 //
 // Returns:
-//   - *schemas.UnifAIChatResponse: A new chat response with executed results and pending tool calls
+//   - *schemas.RakshaChatResponse: A new chat response with executed results and pending tool calls
 func createChatResponseWithExecutedToolsAndNonAutoExecutableCalls(
-	originalResponse *schemas.UnifAIChatResponse,
+	originalResponse *schemas.RakshaChatResponse,
 	executedToolResults []*schemas.ChatMessage,
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
-) *schemas.UnifAIChatResponse {
+) *schemas.RakshaChatResponse {
 	// Start with a copy of the original response metadata
-	response := &schemas.UnifAIChatResponse{
+	response := &schemas.RakshaChatResponse{
 		ID:                originalResponse.ID,
 		Object:            originalResponse.Object,
 		Created:           originalResponse.Created,
 		Model:             originalResponse.Model,
-		Choices:           make([]schemas.UnifAIResponseChoice, 0),
+		Choices:           make([]schemas.RakshaResponseChoice, 0),
 		ServiceTier:       originalResponse.ServiceTier,
 		SystemFingerprint: originalResponse.SystemFingerprint,
 		Usage:             originalResponse.Usage,
@@ -299,7 +299,7 @@ func createChatResponseWithExecutedToolsAndNonAutoExecutableCalls(
 	finishReason := "stop"
 
 	// Create a single choice with the formatted content and non-auto-executable tool calls
-	response.Choices = append(response.Choices, schemas.UnifAIResponseChoice{
+	response.Choices = append(response.Choices, schemas.RakshaResponseChoice{
 		Index:        0,
 		FinishReason: &finishReason,
 		ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -336,19 +336,19 @@ func (r *responsesAPIAdapter) getInitialResponse() interface{} {
 }
 
 func (r *responsesAPIAdapter) hasToolCalls(response interface{}) bool {
-	responsesResponse := response.(*schemas.UnifAIResponsesResponse)
+	responsesResponse := response.(*schemas.RakshaResponsesResponse)
 	return hasToolCallsForResponsesResponse(responsesResponse)
 }
 
 func (r *responsesAPIAdapter) extractToolCalls(response interface{}) []schemas.ChatAssistantMessageToolCall {
-	responsesResponse := response.(*schemas.UnifAIResponsesResponse)
+	responsesResponse := response.(*schemas.RakshaResponsesResponse)
 	// Convert to Chat format and extract tool calls using existing logic
-	chatResponse := responsesResponse.ToUnifAIChatResponse()
+	chatResponse := responsesResponse.ToRakshaChatResponse()
 	return extractToolCalls(chatResponse)
 }
 
 func (r *responsesAPIAdapter) addAssistantMessage(conversation []interface{}, response interface{}) []interface{} {
-	responsesResponse := response.(*schemas.UnifAIResponsesResponse)
+	responsesResponse := response.(*schemas.RakshaResponsesResponse)
 	for _, output := range responsesResponse.Output {
 		conversation = append(conversation, output)
 	}
@@ -373,7 +373,7 @@ func (r *responsesAPIAdapter) createNewRequest(conversation []interface{}) inter
 		responsesMessages = append(responsesMessages, msg.(schemas.ResponsesMessage))
 	}
 
-	return &schemas.UnifAIResponsesRequest{
+	return &schemas.RakshaResponsesRequest{
 		Provider:  r.originalReq.Provider,
 		Model:     r.originalReq.Model,
 		Fallbacks: r.originalReq.Fallbacks,
@@ -382,8 +382,8 @@ func (r *responsesAPIAdapter) createNewRequest(conversation []interface{}) inter
 	}
 }
 
-func (r *responsesAPIAdapter) makeLLMCall(ctx *schemas.UnifAIContext, request interface{}) (interface{}, *schemas.UnifAIError) {
-	responsesRequest := request.(*schemas.UnifAIResponsesRequest)
+func (r *responsesAPIAdapter) makeLLMCall(ctx *schemas.RakshaContext, request interface{}) (interface{}, *schemas.RakshaError) {
+	responsesRequest := request.(*schemas.RakshaResponsesRequest)
 	return r.makeReq(ctx, responsesRequest)
 }
 
@@ -393,7 +393,7 @@ func (r *responsesAPIAdapter) createResponseWithExecutedTools(
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
 ) interface{} {
-	responsesResponse := response.(*schemas.UnifAIResponsesResponse)
+	responsesResponse := response.(*schemas.RakshaResponsesResponse)
 
 	// Create response with executed tools directly on Responses schema
 	return createResponsesResponseWithExecutedToolsAndNonAutoExecutableCalls(
@@ -404,12 +404,12 @@ func (r *responsesAPIAdapter) createResponseWithExecutedTools(
 	)
 }
 
-func (r *responsesAPIAdapter) extractUsage(response interface{}) *schemas.UnifAILLMUsage {
-	return response.(*schemas.UnifAIResponsesResponse).Usage.ToUnifAILLMUsage()
+func (r *responsesAPIAdapter) extractUsage(response interface{}) *schemas.RakshaLLMUsage {
+	return response.(*schemas.RakshaResponsesResponse).Usage.ToRakshaLLMUsage()
 }
 
-func (r *responsesAPIAdapter) applyUsage(response interface{}, usage *schemas.UnifAILLMUsage) {
-	response.(*schemas.UnifAIResponsesResponse).Usage = usage.ToResponsesResponseUsage()
+func (r *responsesAPIAdapter) applyUsage(response interface{}, usage *schemas.RakshaLLMUsage) {
+	response.(*schemas.RakshaResponsesResponse).Usage = usage.ToResponsesResponseUsage()
 }
 
 // createResponsesResponseWithExecutedToolsAndNonAutoExecutableCalls creates a responses response
@@ -424,15 +424,15 @@ func (r *responsesAPIAdapter) applyUsage(response interface{}, usage *schemas.Un
 //   - nonAutoExecutableToolCalls: List of tool calls that require manual execution
 //
 // Returns:
-//   - *schemas.UnifAIResponsesResponse: A new responses response with executed results and pending tool calls
+//   - *schemas.RakshaResponsesResponse: A new responses response with executed results and pending tool calls
 func createResponsesResponseWithExecutedToolsAndNonAutoExecutableCalls(
-	originalResponse *schemas.UnifAIResponsesResponse,
+	originalResponse *schemas.RakshaResponsesResponse,
 	executedToolResults []*schemas.ChatMessage,
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
-) *schemas.UnifAIResponsesResponse {
+) *schemas.RakshaResponsesResponse {
 	// Start with a copy of the original response, preserving all Response-specific fields
-	response := &schemas.UnifAIResponsesResponse{
+	response := &schemas.RakshaResponsesResponse{
 		ID:                   originalResponse.ID,
 		Background:           originalResponse.Background,
 		Conversation:         originalResponse.Conversation,

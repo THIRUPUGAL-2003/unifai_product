@@ -6,7 +6,7 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/unifai/unifai/core/schemas"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 type MCPCatalog struct {

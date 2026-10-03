@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	unifai "github.com/unifai/unifai/core"
-	"github.com/unifai/unifai/core/schemas"
+	raksha "github.com/raksha/raksha/core"
+	"github.com/raksha/raksha/core/schemas"
 )
 
 // RunResponsesLifecycleTest exercises OpenAI Responses API lifecycle: create with store,
 // retrieve, list input_items, delete. Cancel is only meaningful for background responses and is omitted.
-func RunResponsesLifecycleTest(t *testing.T, client *unifai.UnifAI, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunResponsesLifecycleTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ResponsesLifecycle {
 		return
 	}
@@ -23,9 +23,9 @@ func RunResponsesLifecycleTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		model = "gpt-4o-mini"
 	}
 
-	bfCtx := schemas.NewUnifAIContext(ctx, schemas.NoDeadline)
+	bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
 	store := true
-	createReq := &schemas.UnifAIResponsesRequest{
+	createReq := &schemas.RakshaResponsesRequest{
 		Provider: testConfig.Provider,
 		Model:    model,
 		Input: []schemas.ResponsesMessage{
@@ -50,13 +50,13 @@ func RunResponsesLifecycleTest(t *testing.T, client *unifai.UnifAI, ctx context.
 	}
 	rid := *created.ID
 	t.Cleanup(func() {
-		_, _ = client.ResponsesDeleteRequest(bfCtx, &schemas.UnifAIResponsesDeleteRequest{
+		_, _ = client.ResponsesDeleteRequest(bfCtx, &schemas.RakshaResponsesDeleteRequest{
 			Provider:   testConfig.Provider,
 			ResponseID: rid,
 		})
 	})
 
-	retrieved, err := client.ResponsesRetrieveRequest(bfCtx, &schemas.UnifAIResponsesRetrieveRequest{
+	retrieved, err := client.ResponsesRetrieveRequest(bfCtx, &schemas.RakshaResponsesRetrieveRequest{
 		Provider:   testConfig.Provider,
 		ResponseID: rid,
 	})
@@ -67,7 +67,7 @@ func RunResponsesLifecycleTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		t.Fatalf("retrieve id mismatch: got %#v want id %s", retrieved, rid)
 	}
 
-	items, err := client.ResponsesInputItemsRequest(bfCtx, &schemas.UnifAIResponsesInputItemsRequest{
+	items, err := client.ResponsesInputItemsRequest(bfCtx, &schemas.RakshaResponsesInputItemsRequest{
 		Provider:   testConfig.Provider,
 		ResponseID: rid,
 		Limit:      schemas.Ptr(20),
@@ -79,7 +79,7 @@ func RunResponsesLifecycleTest(t *testing.T, client *unifai.UnifAI, ctx context.
 		t.Fatalf("expected input_items list payload")
 	}
 
-	deleted, err := client.ResponsesDeleteRequest(bfCtx, &schemas.UnifAIResponsesDeleteRequest{
+	deleted, err := client.ResponsesDeleteRequest(bfCtx, &schemas.RakshaResponsesDeleteRequest{
 		Provider:   testConfig.Provider,
 		ResponseID: rid,
 	})
