@@ -58,6 +58,7 @@ import {
 	ScrollText,
 	Trash2,
 } from "lucide-react";
+import { useGetSessionUsersQuery } from "@/lib/store/apis/sessionUsersApi";
 import { useQueryState } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -373,7 +374,7 @@ export default function VirtualKeysTable({
 	const { data: sessionUsersData } = useGetSessionUsersQuery();
 	const userNames = useMemo(() => {
 		const names = new Map<string, string>();
-		for (const u of sessionUsersData?.users ?? []) {
+		for (const u of sessionUsersData ?? []) {
 			names.set(u.id, getUserDisplayName(u));
 		}
 		return names;
