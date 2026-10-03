@@ -55,6 +55,7 @@ import {
 	useSetVirtualKeyUserMutation,
 } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { cn } from "@/lib/utils";
+import { describeTeamVirtualKey, virtualKeysForTeam } from "@/lib/utils/governance";
 
 function IndeterminateCheckbox({
 	checked,
@@ -107,6 +108,30 @@ function UserTeamCell({ userId }: { userId: string }) {
 			) : (
 				<span className="text-muted-foreground text-[11px]">Direct Team</span>
 			)}
+		</div>
+	);
+}
+
+// Direct, team and customer keys: team/customer keys reach the user without a direct assignment.
+function UserVirtualKeysCell({ userId }: { userId: string }) {
+	const { data } = useGetUserVirtualKeysQuery(userId);
+	const keys = (data?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
+	if (keys.length === 0) {
+		return <span className="text-muted-foreground text-xs italic">No key</span>;
+	}
+	return (
+		<div className="flex flex-col gap-0.5">
+			{keys.map((vk) => (
+				<span key={vk.id} className="text-sm">
+					{vk.name}
+					{vk.origin === "team" || vk.origin === "customer" ? (
+						<span className="text-muted-foreground text-xs">
+							{" "}
+							({vk.origin === "team" ? "Team" : "Customer"}: {vk.origin_name})
+						</span>
+					) : null}
+				</span>
+			))}
 		</div>
 	);
 }
@@ -211,6 +236,9 @@ export default function UsersView() {
 	const otherDirectVirtualKeys = isEditOpen
 		? (editUserVKs?.virtual_keys ?? []).filter((vk) => (vk.origin ?? "direct") === "direct" && vk.id !== initialVirtualKeyId)
 		: [];
+
+	const selectedTeam = teams.find((t) => t.id === teamId);
+	const inheritedVirtualKeys = selectedTeam ? virtualKeysForTeam(virtualKeys, selectedTeam) : [];
 
 	const toggleExpanded = (key: WorkspaceSectionKey) => {
 		setExpandedSections((prev) => {
@@ -329,10 +357,18 @@ export default function UsersView() {
 	const virtualKeyPicker =
 		role !== "admin" ? (
 			<div className="space-y-2">
-				<label className="text-muted-foreground text-sm font-medium">Virtual Key (required for Prompt Repository chat)</label>
-				<p className="text-muted-foreground text-xs">
-					Without a Virtual Key, this user can open prompts but cannot send messages.
-				</p>
+				<label className="text-muted-foreground text-sm font-medium">
+					{inheritedVirtualKeys.length > 0 ? "Direct Virtual Key (optional)" : "Virtual Key (required for Prompt Repository chat)"}
+				</label>
+				{inheritedVirtualKeys.length > 0 ? (
+					<p className="text-xs text-teal-500" data-testid="user-inherited-virtual-keys">
+						Access via team/customer: {inheritedVirtualKeys.map(describeTeamVirtualKey).join(", ")}. No direct key needed.
+					</p>
+				) : (
+					<p className="text-muted-foreground text-xs">
+						Without a Virtual Key, this user can open prompts but cannot send messages.
+					</p>
+				)}
 				<select
 					value={virtualKeyId || "__none__"}
 					onChange={(e) => setVirtualKeyId(e.target.value === "__none__" ? "" : e.target.value)}
@@ -545,7 +581,7 @@ export default function UsersView() {
 					resetForm();
 					return;
 				}
-				if (!virtualKeyId) {
+				if (!virtualKeyId && inheritedVirtualKeys.length === 0) {
 					toast.warning("User created without a Virtual Key — Prompt Repository chat will stay blocked until you assign one.");
 				}
 			}
@@ -594,7 +630,7 @@ export default function UsersView() {
 			if (role !== "admin") {
 				await syncUserTeam(selectedUser.id, teamId, initialTeamId);
 				await syncUserVirtualKey(selectedUser.id, virtualKeyId, initialVirtualKeyId);
-				if (!virtualKeyId && role === "user") {
+				if (!virtualKeyId && role === "user" && inheritedVirtualKeys.length === 0) {
 					toast.warning("Saved without a Virtual Key — Prompt Repository chat stays blocked until you assign one.");
 				}
 			} else if (initialTeamId) {
@@ -980,6 +1016,7 @@ export default function UsersView() {
 											<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Role</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Team</TableHead>
+											<TableHead className="text-foreground/90 font-semibold">Virtual Keys</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Budget (USD)</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Rate Limit (RPM)</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Allowed Repositories</TableHead>
@@ -1021,6 +1058,13 @@ export default function UsersView() {
 														<span className="text-muted-foreground text-sm">—</span>
 													) : (
 														<UserTeamCell userId={user.id} />
+													)}
+												</TableCell>
+												<TableCell>
+													{user.role === "admin" ? (
+														<span className="text-muted-foreground text-sm">—</span>
+													) : (
+														<UserVirtualKeysCell userId={user.id} />
 													)}
 												</TableCell>
 												<TableCell className="font-mono text-xs">

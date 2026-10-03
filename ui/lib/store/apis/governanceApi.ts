@@ -277,6 +277,7 @@ export const governanceApi = baseApi.injectEndpoints({
 			invalidatesTags: (result, error, { teamId, userId }) => [
 				{ type: "Teams", id: `${teamId}-members` },
 				{ type: "Teams", id: `user-${userId}-teams` },
+				{ type: "VirtualKeys", id: `user-${userId}` },
 				"Teams",
 				"Prompts",
 				"Folders",
@@ -292,6 +293,7 @@ export const governanceApi = baseApi.injectEndpoints({
 			invalidatesTags: (result, error, { teamId, userId }) => [
 				{ type: "Teams", id: `${teamId}-members` },
 				{ type: "Teams", id: `user-${userId}-teams` },
+				{ type: "VirtualKeys", id: `user-${userId}` },
 				"Teams",
 				"Prompts",
 				"Folders",

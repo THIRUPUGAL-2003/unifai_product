@@ -18,6 +18,7 @@ export interface GetUserVirtualKeysResponse {
 		is_active?: boolean;
 		created_at?: string;
 		origin?: "direct" | "team" | "customer";
+		origin_name?: string;
 	}>;
 }
 
