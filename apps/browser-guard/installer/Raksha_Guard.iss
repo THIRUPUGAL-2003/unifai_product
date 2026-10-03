@@ -41,6 +41,8 @@ Name: "autostart"; Description: "Start Raksha Guard automatically at Windows log
 
 [Files]
 Source: "staging\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Browser AI → Setup → Build now ships a server-fresh config next to Setup.exe; it wins over the compiled-in one.
+Source: "{src}\raksha_guard_config.json"; DestDir: "{app}"; Flags: external skipifsourcedoesntexist ignoreversion
 
 [Icons]
 Name: "{group}\Raksha Guard"; Filename: "{app}\{#MyAppExeName}"

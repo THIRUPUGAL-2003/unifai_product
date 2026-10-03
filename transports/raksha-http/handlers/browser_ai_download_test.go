@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,76 @@ import (
 
 	"github.com/valyala/fasthttp"
 )
+
+func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	rel := filepath.Join("apps", "browser-guard", "release")
+	if err := os.MkdirAll(rel, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"Raksha_Guard_Setup.exe":   "MZ setup",
+		"Raksha_Guard.exe":         "MZ portable",
+		"VERSION.txt":              "1.1.16\n",
+		"raksha_guard_config.json": `{"backend_url":"https://old.example","proxy_addr":"127.0.0.1:1","listen_host":"127.0.0.1"}`,
+	} {
+		if err := os.WriteFile(filepath.Join(rel, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("SERVER_DOMAIN", "https://new.example/")
+	t.Setenv("RAKSHA_PROXY_ADDR", "127.0.0.1:18103")
+	t.Setenv("PAC_HTTP_PORT", "18195")
+	t.Setenv("RAKSHA_GUARD_SECRET", "s3cret")
+
+	cfg, err := freshGuardConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := buildWindowsPackage(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.OpenReader(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	files := map[string]string{}
+	for _, f := range zr.File {
+		rc, _ := f.Open()
+		b, _ := io.ReadAll(rc)
+		rc.Close()
+		files[f.Name] = string(b)
+	}
+	for _, name := range []string{"Raksha_Guard_Setup.exe", "Raksha_Guard.exe", "VERSION.txt", guardConfigFileName} {
+		if _, ok := files[name]; !ok {
+			t.Fatalf("missing %s in %v", name, files)
+		}
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(files[guardConfigFileName]), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"backend_url":   "https://new.example",
+		"pac_url":       "https://new.example/api/browser-ai/pac",
+		"proxy_addr":    "127.0.0.1:18103",
+		"pac_http_port": float64(18195),
+		"guard_secret":  "s3cret",
+		"listen_host":   "127.0.0.1",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("config[%s] = %v, want %v", k, got[k], v)
+		}
+	}
+	saved, _ := os.ReadFile(filepath.Join(rel, guardConfigFileName))
+	if !bytes.Contains(saved, []byte("https://new.example")) {
+		t.Fatal("release config was not refreshed")
+	}
+}
 
 func TestFindFirstExistingSkipsGitLFSPointer(t *testing.T) {
 	dir := t.TempDir()
@@ -88,7 +159,7 @@ func TestWriteMacZipWithHelpersAddsUpdaterAndExecBits(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := writeMacZipWithHelpers(&out, src); err != nil {
+	if err := writeMacZipWithHelpers(&out, src, nil); err != nil {
 		t.Fatal(err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))

@@ -658,16 +658,13 @@ func (s *RDBLogStore) SearchLogs(ctx context.Context, filters SearchFilters, pag
 	})
 
 	g.Go(func() error {
-		err := s.findWithSafeJsonb(gCtx, func() error {
-			logs = nil
-			dataQuery := s.ScopedDB(gCtx).Model(&Log{})
-			dataQuery = s.applyFilters(dataQuery, filters)
-			dataQuery = dataQuery.Order(orderClause).Select(s.listSelectColumns()).Limit(limit)
-			if pagination.Offset > 0 {
-				dataQuery = dataQuery.Offset(pagination.Offset)
-			}
-			return dataQuery.Find(&logs).Error
-		})
+		dataQuery := s.ScopedDB(gCtx).Model(&Log{})
+		dataQuery = s.applyFilters(dataQuery, filters)
+		dataQuery = dataQuery.Order(orderClause).Select(s.listSelectColumns()).Limit(limit)
+		if pagination.Offset > 0 {
+			dataQuery = dataQuery.Offset(pagination.Offset)
+		}
+		err := dataQuery.Find(&logs).Error
 		if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -734,18 +731,15 @@ func (s *RDBLogStore) GetSessionLogs(ctx context.Context, sessionID string, pagi
 	})
 
 	g.Go(func() error {
-		err := s.findWithSafeJsonb(gCtx, func() error {
-			logs = nil
-			dataQuery := baseQuery.Session(&gorm.Session{}).
-				WithContext(gCtx).
-				Order(orderClause).
-				Select(s.listSelectColumns()).
-				Limit(limit)
-			if pagination.Offset > 0 {
-				dataQuery = dataQuery.Offset(pagination.Offset)
-			}
-			return dataQuery.Find(&logs).Error
-		})
+		dataQuery := baseQuery.Session(&gorm.Session{}).
+			WithContext(gCtx).
+			Order(orderClause).
+			Select(s.listSelectColumns()).
+			Limit(limit)
+		if pagination.Offset > 0 {
+			dataQuery = dataQuery.Offset(pagination.Offset)
+		}
+		err := dataQuery.Find(&logs).Error
 		if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -861,24 +855,6 @@ func normalizeAggregateTimestamp(value any) string {
 //
 // Realtime turn rows are kept intact because the logs table renders them as a
 // combined Tool/User/Assistant summary and needs the full turn context.
-// findWithSafeJsonb runs a list query and, if Postgres reports raksha_safe_jsonb missing,
-// recreates the function once and retries instead of failing the logs page.
-func (s *RDBLogStore) findWithSafeJsonb(ctx context.Context, run func() error) error {
-	err := run()
-	if err == nil || s.db.Dialector.Name() != "postgres" {
-		return err
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "raksha_safe_jsonb") || !(strings.Contains(msg, "does not exist") || strings.Contains(msg, "42883")) {
-		return err
-	}
-	if ensureErr := ensureSafeJsonbFunction(ctx, s.db); ensureErr != nil {
-		s.logger.Error("logstore: recreating raksha_safe_jsonb failed: %v", ensureErr)
-		return err
-	}
-	return run()
-}
-
 func (s *RDBLogStore) listSelectColumns() string {
 	baseCols := strings.Join([]string{
 		"id", "parent_request_id", "timestamp", "object_type", "provider", "model", "alias",
@@ -902,19 +878,24 @@ func (s *RDBLogStore) listSelectColumns() string {
 	var inputHistoryExpr, responsesInputExpr, outputMessageExpr string
 	switch s.db.Dialector.Name() {
 	case "postgres":
-		// Postgres jsonb rejects malformed JSON (22P02), \u0000 escapes
-		// (22P05), and unpaired UTF-16 surrogates (22P05). A single bad row
-		// would otherwise abort the whole list query. raksha_safe_jsonb
-		// wraps the cast in an EXCEPTION block and returns the raw TEXT on
-		// any parse failure; see migrationAddSafeJsonbFunction.
+		// A single malformed row must not abort the whole list query, so the
+		// cast only runs after IS JSON ARRAY (Postgres 16+, never raises) has
+		// validated the text. The json type (not jsonb) keeps \u0000 escapes
+		// valid; nested CASE guarantees the cast is evaluated after the check.
 		inputHistoryExpr = `CASE
 			WHEN object_type = 'realtime.turn' THEN input_history
-			ELSE raksha_safe_jsonb(input_history)
-			END AS input_history`
+			WHEN input_history IS JSON ARRAY THEN
+				CASE WHEN json_array_length(input_history::json) > 0
+				THEN json_build_array(input_history::json -> -1)::text
+				ELSE input_history END
+			ELSE input_history END AS input_history`
 		responsesInputExpr = `CASE
 			WHEN object_type = 'realtime.turn' THEN responses_input_history
-			ELSE raksha_safe_jsonb(responses_input_history)
-			END AS responses_input_history`
+			WHEN responses_input_history IS JSON ARRAY THEN
+				CASE WHEN json_array_length(responses_input_history::json) > 0
+				THEN json_build_array(responses_input_history::json -> -1)::text
+				ELSE responses_input_history END
+			ELSE responses_input_history END AS responses_input_history`
 		outputMessageExpr = `CASE WHEN object_type = 'realtime.turn' THEN output_message ELSE NULL END AS output_message`
 	default: // sqlite
 		inputHistoryExpr = `CASE

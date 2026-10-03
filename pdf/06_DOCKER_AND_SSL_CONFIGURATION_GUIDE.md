@@ -1,152 +1,157 @@
 # UnifAI / Raksha Enterprise Docker & SSL/TLS Configuration Guide
-# Complete Container Operations, Command Handbook, SSL Certificate Generation & Trust Store Integration
 
-**Document Version:** 2.4.0  
-**Classification:** Enterprise Infrastructure, Container Orchestration & PKI / Cryptography  
-**Target Audience:** DevOps Engineers, Cloud Engineers, SREs, Security Operations (SecOps)  
-
----
-
-## 1. Docker Architecture & Topology
-
-UnifAI utilizes Docker Compose v2 for production and lab deployment. The stack comprises two core services and external networking bridges:
-
-```
-                               ┌────────────────────────────────────────────────────────┐
-                               │                    Docker Host                         │
-                               │                                                        │
- ┌──────────────────────┐      │   ┌─────────────────────────────────────────────────┐  │
- │  Inbound HTTPS:443   ├──────┼──►│             Nginx / Reverse Proxy               │  │
- └──────────────────────┘      │   └────────┬──────────────────────┬─────────────────┘  │
-                               │            │ http://127.0.0.1:6000│                    │
-                               │            ▼                      ▼                    │
-                               │   ┌──────────────────┐   ┌──────────────────────────┐  │
-                               │   │   raksha_tech    │   │ raksha_browser_ai_proxy  │  │
-                               │   │   (Go Backend &  │   │ (Optional Network Proxy  │  │
-                               │   │    Embedded UI)  │   │  mitmproxy profile)      │  │
-                               │   └────────┬─────────┘   └────────────┬─────────────┘  │
-                               │            │                          │                │
-                               │            │ (raksha-network bridge)  │                │
-                               │            └──────────────┬───────────┘                │
-                               │                           │                            │
-                               │                           ▼                            │
-                               │   ┌─────────────────────────────────────────────────┐  │
-                               │   │   External Network: 1panel-network / host       │  │
-                               │   │   • PostgreSQL Database (port 5432)             │  │
-                               │   │   • Ollama LLM Service  (port 11434)            │  │
-                               │   └─────────────────────────────────────────────────┘  │
-                               └────────────────────────────────────────────────────────┘
-```
+**Audience:** DevOps Engineers, Cloud Engineers, SREs, Systems & Security Administrators  
+**Scope:** Docker topology, multi-container orchestration, exhaustive Docker command handbook, SSL/TLS certificate acquisition via Certbot, OpenSSL self-signed generation, Browser Guard Root CA generation, OS trust store deployment commands, Nginx reverse proxy integration, and diagnostics.  
+**Baseline:** Repo commit `16d4c3e`  
 
 ---
 
-## 2. Exhaustive Docker & Docker Compose Command Reference
+## 1. Container Topology & Architecture
 
-All commands must be executed from the project root directory (`d:\unifai_project` or `/opt/unifai`) where `docker-compose.yml` and `.env` reside.
+UnifAI deploys as a multi-container Docker Compose application:
 
-### 2.1 Essential Service Orchestration Commands
+```
+                            ┌────────────────────────────────────────────────────────┐
+                            │                    Docker Host                         │
+                            │                                                        │
+┌──────────────────────┐    │   ┌─────────────────────────────────────────────────┐  │
+│  Inbound HTTPS:443   ├────┼──►│        Nginx / Caddy Reverse Proxy (Edge)       │  │
+└──────────────────────┘    │   └────────┬──────────────────────┬─────────────────┘  │
+                            │            │ http://127.0.0.1:6000│                    │
+                            │            ▼                      ▼                    │
+                            │   ┌──────────────────┐   ┌──────────────────────────┐  │
+                            │   │   raksha_tech    │   │ raksha_browser_ai_proxy  │  │
+                            │   │   (Go Backend &  │   │ (Optional Network Proxy  │  │
+                            │   │    Embedded UI)  │   │  mitmproxy profile)      │  │
+                            │   └────────┬─────────┘   └────────────┬─────────────┘  │
+                            │            │                          │                │
+                            │            │ (raksha-network bridge)  │                │
+                            │            └──────────────┬───────────┘                │
+                            │                           │                            │
+                            │                           ▼                            │
+                            │   ┌─────────────────────────────────────────────────┐  │
+                            │   │   External Network: 1panel-network / host       │  │
+                            │   │   • PostgreSQL Database (port 5432)             │  │
+                            │   │   • Ollama LLM Service  (port 11434)            │  │
+                            │   └─────────────────────────────────────────────────┘  │
+                            └────────────────────────────────────────────────────────┘
+```
 
+### Services Defined in `docker-compose.yml`
+1. **`raksha_tech` (Primary Application):**
+   - Multi-stage build (`deploy/docker/Dockerfile.local`): `node:25-alpine` builds React UI $\rightarrow$ `golang:1.26.4-alpine` builds Go binary $\rightarrow$ `alpine:3.23` lightweight runtime.
+   - Serves the UI, `/v1/*` inference gateway, `/api/*` management plane, and Browser AI endpoints.
+2. **`raksha_browser_ai_proxy` (Optional Network Proxy):**
+   - Enabled via profile: `docker compose --profile network-proxy up -d`.
+   - Runs `mitmproxy/mitmproxy:latest` with the Browser Guard Python addon for office/lab PAC proxying.
+
+---
+
+## 2. Complete Docker & Docker Compose Command Handbook
+
+All commands should be executed from the project root (`d:\unifai_project` or `/opt/unifai`).
+
+### 2.1 Network Setup (Prerequisite)
+The compose file references an external network for Ollama (`1panel-network`). Create it once:
 ```bash
-# ==============================================================================
-# 1. PREREQUISITE: CREATE EXTERNAL DOCKER NETWORKS
-# ==============================================================================
-# Create the external Ollama network if not already present
+# Create external Ollama network (required before startup)
 docker network create 1panel-network
 
-# Create the primary application bridge network (if custom name specified)
+# Create primary application bridge network (if custom name specified in .env)
 docker network create raksha-network
 
-# Verify created networks
+# List all Docker networks
 docker network ls
+```
 
-# ==============================================================================
-# 2. STARTING CONTAINERS
-# ==============================================================================
-# Start the primary UnifAI container in the background (detached mode)
+### 2.2 Container Startup & Rebuild Commands
+```bash
+# 1. Start primary UnifAI container in background (detached mode)
 docker compose up -d
 
-# Start both primary backend AND the optional network proxy container
+# 2. Start both primary backend AND the optional network proxy
 docker compose --profile network-proxy up -d
 
-# Start containers with rebuild of images (forced re-compilation)
+# 3. Start with fresh rebuild (forces re-compilation of UI and Go binary)
 docker compose up -d --build
 
-# Start containers without using cache during build
+# 4. Clean rebuild without using any Docker build cache
 docker compose build --no-cache && docker compose up -d
 
-# ==============================================================================
-# 3. STATUS & INSPECTION COMMANDS
-# ==============================================================================
-# Check status of running containers, ports, and health
+# 5. Start in foreground (prints logs directly to console; Ctrl+C to stop)
+docker compose up
+```
+
+### 2.3 Status, Monitoring & Inspection Commands
+```bash
+# View status of running containers, ports, and healthcheck status
 docker compose ps
 
-# Show status including stopped or exited containers
+# View status of all containers including stopped or exited ones
 docker compose ps -a
 
-# View live container resource consumption (CPU %, Memory, Network I/O, PIDs)
+# View real-time CPU %, Memory usage, Network I/O, and PIDs
 docker stats raksha_tech
 
 # Inspect detailed container JSON metadata (IP address, mounts, environment)
 docker inspect raksha_tech
 
-# Inspect Docker network and see connected container IPs
+# Inspect network to see assigned IP addresses of connected containers
 docker network inspect raksha-network
 docker network inspect 1panel-network
+```
 
-# ==============================================================================
-# 4. LOGS & REAL-TIME MONITORING
-# ==============================================================================
-# Follow real-time output of all containers
+### 2.4 Live Logs & Diagnostics Commands
+```bash
+# Follow real-time logs of all containers
 docker compose logs -f
 
-# Follow logs of the primary Go backend with last 100 lines
+# Follow logs of primary Go backend with last 100 lines
 docker compose logs -f --tail=100 raksha_tech
 
-# Follow logs of the network proxy container
+# Follow logs of network proxy container
 docker compose logs -f --tail=100 raksha_browser_ai_proxy
 
-# Search logs for errors or warnings
+# Filter logs for errors or warnings
 docker compose logs raksha_tech | grep -i "error"
 
-# ==============================================================================
-# 5. RESTARTING, STOPPING & REMOVAL
-# ==============================================================================
-# Gracefully restart the backend container (after editing .env)
+# Check startup banner and plugin status table
+docker compose logs raksha_tech | grep -E "successfully started|plugin status:"
+```
+
+### 2.5 Container Execution & In-Container Debugging
+```bash
+# Open an interactive shell inside the running backend container
+docker exec -it raksha_tech /bin/sh
+
+# Test backend healthcheck directly from inside the container
+docker exec -it raksha_tech curl -v http://localhost:6000/health
+
+# Verify environment variables loaded inside the container
+docker exec -it raksha_tech env | grep -E "APP_PORT|DB_HOST|SERVER_DOMAIN"
+
+# Inspect data directory contents inside container
+docker exec -it raksha_tech ls -la /app/data
+```
+
+### 2.6 Stopping, Restarting & Cleanup Commands
+```bash
+# Restart the backend container gracefully (after modifying .env)
 docker compose restart raksha_tech
 
-# Stop running containers without removing them
+# Stop running containers without deleting them
 docker compose stop
 
 # Stop and remove containers, networks, and internal links
 docker compose down
 
-# Stop and remove containers, networks, and anonymous volumes (CAUTION: does not delete bind mounts)
+# Stop and remove containers, networks, and anonymous volumes (bind mounts preserved)
 docker compose down -v
 
-# ==============================================================================
-# 6. EXECUTING COMMANDS INSIDE RUNNING CONTAINERS
-# ==============================================================================
-# Open an interactive shell inside the running backend container
-docker exec -it raksha_tech /bin/sh
-# (or bash if available)
-docker exec -it raksha_tech /bin/bash
-
-# Execute a health check directly inside the container
-docker exec -it raksha_tech curl -v http://localhost:6000/health
-
-# Check environment variables active inside the container
-docker exec -it raksha_tech env | grep -E "APP_PORT|DB_HOST|SERVER_DOMAIN"
-
-# Inspect data volume contents inside container
-docker exec -it raksha_tech ls -la /app/data
-
-# ==============================================================================
-# 7. CLEANUP & DISK PRUNING COMMANDS
-# ==============================================================================
-# Remove unused dangling images
+# Remove dangling unused images
 docker image prune -f
 
-# Comprehensive cleanup: remove stopped containers, unused networks, and dangling images
+# Clean up stopped containers, unused networks, and dangling images
 docker system prune -f
 
 # Full nuclear prune: removes all unused images, stopped containers, and unused volumes (CAUTION)

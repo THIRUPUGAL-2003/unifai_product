@@ -2,7 +2,7 @@
 # Complete Documentation Suite & Master Directory Index
 
 **Classification:** Enterprise System Documentation  
-**Suite Release:** Version 2.4.0  
+**Suite Release:** Version 2.4.0 (Baseline commit `16d4c3e`)  
 **Storage Directory:** `/pdf/` & `/docs/pdf/`  
 **Generated Date:** October 2026  
 
@@ -16,16 +16,16 @@ All documentation is provided in both **Markdown (`.md`)** format for source tra
 
 ---
 
-## 2. Document Catalog & Purpose
+## 2. Document Catalog & Coverage
 
 | # | Document File | Formats Available | Primary Audience | Description & Coverage |
 |---|---|---|---|---|
-| **1** | **Technical Documentation** | `01_TECHNICAL_DOCUMENTATION.md`<br>`01_Technical_Documentation.pdf` | Architects, Lead Developers, Security Engineers | Complete system architecture, Fasthttp gateway engine, GORM data models, ~28 AI provider connectors, Browser Guard MitM proxy architecture, DLP engine, RBAC matrix, and plugin system. |
-| **2** | **Server Implementation Guide** | `02_SERVER_IMPLEMENTATION_GUIDE.md`<br>`02_Server_Implementation_Guide.pdf` | DevOps, SRE, Systems Administrators | Hardware capacity planning, bare-metal Linux systemd deployment, complete `.env` configuration breakdown, Nginx & Caddy reverse proxy setup, Prometheus metrics, health checks, log management, and zero-downtime rolling upgrades. |
-| **3** | **Admin Console Guide** | `03_ADMIN_CONSOLE_GUIDE.md`<br>`03_Admin_Console_Guide.pdf` | Platform Admins, InfoSec, Workspace Managers | First-time bootstrap setup, User lifecycle management, Custom RBAC role builder (33 resources × 6 operations), Access Profiles, Model Provider connections, Virtual Key spend limits, Browser AI Target Websites, DLP Rules, Fleet Agent monitoring, and Workspace Configuration views (Client Settings, Compatibility, Caching, Security, API Keys, Performance Tuning, Feature Flags). |
-| **4** | **End-User & Developer Guide** | `04_USER_GUIDE.md`<br>`04_User_Guide.pdf` | Employees, Developers, Data Scientists | Account registration and approval, navigating the Prompt Repository, Skills Repository, Model Playground, Developer API integration (Python, Node.js, LangChain, Cursor, Claude Desktop), Desktop Browser Guard installation for Windows & macOS, in-browser DLP alerts, and privacy protections. |
-| **5** | **Database Configuration Guide** | `05_DATABASE_CONFIGURATION_GUIDE.md`<br>`05_Database_Configuration_Guide.pdf` | DBAs, DevOps, Infrastructure Engineers | PostgreSQL 16 setup on Ubuntu/Debian/RHEL/Docker, UTF-8 schemas, `pg_hba.conf` network security, SSL/TLS database encryption, GORM table schemas, high-volume log partitioning, PgBouncer connection pooling, production performance tuning parameters, and automated daily backup scripts with disaster recovery restore procedures. |
-| **6** | **Docker & SSL/TLS Configuration Guide** | `06_DOCKER_AND_SSL_CONFIGURATION_GUIDE.md`<br>`06_Docker_and_SSL_Configuration_Guide.pdf` | DevOps, Cloud Engineers, SREs, SecOps | Multi-container Docker Compose architecture, exhaustive Docker command reference (`up`, `down`, `logs`, `exec`, `build`, `prune`), Public HTTPS with Let's Encrypt / Certbot, OpenSSL self-signed certificate generation, Browser Guard Root CA generation (`raksha-ca.crt`), client trust store installation (Windows `certutil`, macOS `security`, Linux `update-ca-certificates`, Firefox NSS), Nginx reverse proxy configuration, and SSL handshake diagnostic commands. |
+| **1** | **Technical Documentation** | `01_TECHNICAL_DOCUMENTATION.md`<br>`01_Technical_Documentation.pdf` | Architects, Lead Developers, Security Engineers | Complete system overview, dual-plane architecture, Go 1.26+ `fasthttp` gateway engine, `core/providers` (~28 AI vendors), universal schemas, MCP client, key selectors, `framework/configstore`, `framework/logstore`, RBAC (33 resources × 6 operations, section grants), plugin pipeline, HTTP routes, ConfigStore & Browser AI tables, Browser Guard agent (`apps/browser-guard/agent`), mitmproxy addon parts, React 19 UI architecture, security model, and developer test workflows. |
+| **2** | **Server Implementation Guide** | `02_SERVER_IMPLEMENTATION_GUIDE.md`<br>`02_Server_Implementation_Guide.pdf` | DevOps, SRE, Systems Administrators | Deployment specifications, system requirements (CPU, RAM, Disk, Kernel sysctl limits), complete `.env` configuration breakdown, `config.json` reference, multi-stage Docker build, volumes, network proxy profile, PostgreSQL database setup, Nginx reverse proxy configuration (SSL, HTTP/2, WebSocket upgrades, unbuffered SSE streaming), Kubernetes Helm chart (`deploy/helm/unifai`), operations (start/stop/restart, logs, health, backups, rolling upgrades, HA), and troubleshooting matrix. |
+| **3** | **Admin Console Guide** | `03_ADMIN_CONSOLE_GUIDE.md`<br>`03_Admin_Console_Guide.pdf` | Platform Admins, InfoSec, Workspace Managers | Initial onboarding checklist, roles (`admin`, `sub_admin`, `user`, custom roles), User lifecycle management (approvals, rejections, SCIM), Access Profiles, Virtual Keys (budgets, RPM/TPM rate limits), Model Providers and catalog, Complexity Router, routing rules, circuit breakers, Guardrails vs Guard Rules, Browser AI control plane (Target Websites, Guard Rules, interaction controls, Fleet configuration, Guard Agents, Setup & packaging, company uninstall keys), and Workspace Config views. |
+| **4** | **End-User & Developer Guide** | `04_USER_GUIDE.md`<br>`04_User_Guide.pdf` | Employees, Developers, Data Scientists | Platform introduction in plain language, account registration, email verification, login, password recovery, navigating the Workspace UI (Prompt Repository, Skills Repository, Model Playground, Personal Observability), Developer API integration (Virtual Keys, `curl`, Python OpenAI SDK, TypeScript, LangChain, Cursor IDE), Desktop Browser Guard employee guide (Windows & macOS installation, in-browser DLP alerts: Block, Redact, Warn, and privacy protections). |
+| **5** | **Database Configuration Guide** | `05_DATABASE_CONFIGURATION_GUIDE.md`<br>`05_Database_Configuration_Guide.pdf` | DBAs, DevOps, Infrastructure Engineers | PostgreSQL 16 installation on Ubuntu/Debian/RHEL/Docker, UTF-8 schemas and user provisioning SQL (`agent_unify`, `raksha_new`), `pg_hba.conf` network security (SCRAM-SHA-256), SSL/TLS database encryption (generating `server.key` & `server.crt`, `DB_SSL_MODE=require`), GORM table reference, PgBouncer connection pooling setup (`pgbouncer.ini`), production performance tuning parameters for `postgresql.conf`, automated daily backup bash script with 30-day retention and crontab scheduling, and disaster recovery restore procedure. |
+| **6** | **Docker & SSL/TLS Configuration Guide** | `06_DOCKER_AND_SSL_CONFIGURATION_GUIDE.md`<br>`06_Docker_and_SSL_Configuration_Guide.pdf` | DevOps, Cloud Engineers, SREs, SecOps | Multi-container Docker Compose architecture, exhaustive Docker command reference (`up`, `down`, `logs`, `exec`, `build`, `prune`), Public HTTPS with Let's Encrypt / Certbot (standalone, webroot, nginx plugin, auto-renew crontab), OpenSSL self-signed certificate generation (4096-bit RSA, SAN extensions), Browser Guard Root CA generation (`raksha-ca.crt`, `raksha-ca.key`, `mitmproxy-ca.pem`), client trust store installation (Windows `certutil`, macOS `security`, Linux `update-ca-certificates`, Firefox NSS), Nginx reverse proxy configuration, and SSL handshake diagnostic commands. |
 
 ---
 
@@ -34,6 +34,7 @@ All documentation is provided in both **Markdown (`.md`)** format for source tra
 - **Public Web / HTTPS:** `443` (Nginx / Caddy Reverse Proxy)
 - **Plain HTTP Redirect:** `80` (Certbot ACME challenge & HTTPS redirect)
 - **UnifAI Go Backend Core:** `6000` (Internal localhost bind: `127.0.0.1:6000`)
+- **Docker Network Proxy:** `18182` (Optional compose profile `network-proxy`)
 - **PostgreSQL Database:** `5432` (or `6432` with PgBouncer)
 - **Local Ollama LLM Service:** `11434` (Internal service for AI Guard Bot)
 - **Browser Guard Local MitM Proxy:** `18103` (Bound to client laptop loopback `127.0.0.1`)

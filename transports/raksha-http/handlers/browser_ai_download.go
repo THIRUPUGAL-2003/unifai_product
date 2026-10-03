@@ -119,10 +119,14 @@ var macZipHelperScripts = []string{"Update_Raksha_Guard_macOS.command"}
 
 // writeMacZipWithHelpers re-streams the macOS package without recompressing it, restores
 // the executable bit that Windows-built ZIPs (Compress-Archive) drop on .command files and
-// the .app binary, and appends any missing helper scripts from release/.
-func writeMacZipWithHelpers(w io.Writer, zipPath string) error {
+// the .app binary, and appends any missing helper scripts from release/. A non-nil config
+// replaces the top-level raksha_guard_config.json that the install script copies into place.
+func writeMacZipWithHelpers(w io.Writer, zipPath string, config []byte) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
+		if config != nil {
+			return err
+		}
 		f, openErr := os.Open(zipPath)
 		if openErr != nil {
 			return openErr
@@ -135,6 +139,9 @@ func writeMacZipWithHelpers(w io.Writer, zipPath string) error {
 	zw := zip.NewWriter(w)
 	present := make(map[string]bool, len(zr.File))
 	for _, f := range zr.File {
+		if config != nil && f.Name == guardConfigFileName {
+			continue
+		}
 		present[f.Name] = true
 		fh := f.FileHeader
 		isExecutable := strings.HasSuffix(f.Name, ".command") || strings.Contains(f.Name, ".app/Contents/MacOS/")
@@ -173,6 +180,17 @@ func writeMacZipWithHelpers(w io.Writer, zipPath string) error {
 			return err
 		}
 		if _, err := entry.Write(data); err != nil {
+			return err
+		}
+	}
+	if config != nil {
+		fh := &zip.FileHeader{Name: guardConfigFileName, Method: zip.Deflate, Modified: time.Now()}
+		fh.SetMode(0o644)
+		entry, err := zw.CreateHeader(fh)
+		if err != nil {
+			return err
+		}
+		if _, err := entry.Write(config); err != nil {
 			return err
 		}
 	}
@@ -373,6 +391,10 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	} else if strings.Contains(path, "download-mac") {
 		platform = "mac"
 	}
+	if ctx.IsGet() && string(ctx.QueryArgs().Peek("build")) == "1" {
+		h.buildAndServeSetupPackage(ctx, platform)
+		return
+	}
 
 	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_Setup.exe"])
 	exePath, exeOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard.exe"])
@@ -393,7 +415,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 			setGuardVersionHeaders(ctx, macVer)
 		}
 		ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
-			_ = writeMacZipWithHelpers(w, macZipPath)
+			_ = writeMacZipWithHelpers(w, macZipPath, nil)
 			_ = w.Flush()
 		})
 		return
