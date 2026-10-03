@@ -345,8 +345,8 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 				virtualKey?.user_ids && virtualKey.user_ids.length > 0
 					? virtualKey.user_ids
 					: virtualKey?.users && virtualKey.users.length > 0
-						? virtualKey.users.map((u) => u.id)
-						: assignedUsers.map((u) => u.id),
+						? virtualKey.users.map((u) => u.user_id)
+						: directUsers.map((u) => u.id),
 			isActive: virtualKey?.is_active ?? true,
 			expiresAt: virtualKey?.expires_at
 				? (() => {
@@ -391,15 +391,18 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 		}
 	}, [mcpClientsError]);
 
-	// Sync assignedUsers from hook when loaded for an existing virtual key if userIds empty
+	// Sync direct users from hook when loaded for an existing virtual key if userIds empty
 	useEffect(() => {
-		if (assignedUsers.length > 0 && !form.formState.dirtyFields.userIds) {
+		if (directUsers.length > 0 && !form.formState.dirtyFields.userIds) {
 			const current = form.getValues("userIds") || [];
 			if (current.length === 0) {
-				form.setValue("userIds", assignedUsers.map((u) => u.id));
+				form.setValue(
+					"userIds",
+					directUsers.map((u) => u.id),
+				);
 			}
 		}
-	}, [assignedUsers, form]);
+	}, [directUsers, form]);
 
 	// MultiSelect options for Teams, Customers, and Users
 	// Team-only assignment never involves the customer, so show the plain team name; the customer
