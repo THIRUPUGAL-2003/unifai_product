@@ -114,6 +114,9 @@ export function SettingsPanel() {
 
 	// Ensure current provider always has a label-resolved option (even before providers query loads)
 	const providerOptions = useMemo(() => {
+		if (isMemberOnly) {
+			return selectedVKProviders.map((p) => ({ label: getProviderLabel(p), value: p as ModelProviderName }));
+		}
 		const scoped =
 			selectedVKProviders.length > 0 ? configuredProviders.filter((p) => selectedVKProviders.includes(p.name)) : configuredProviders;
 		const opts = scoped.map((p) => ({ label: getProviderLabel(p.name), value: p.name }));
@@ -121,7 +124,7 @@ export function SettingsPanel() {
 			opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
 		}
 		return opts;
-	}, [configuredProviders, provider, selectedVKProviders]);
+	}, [configuredProviders, provider, selectedVKProviders, isMemberOnly]);
 
 	const providerKeys = useMemo(() => {
 		// Members must use assigned Virtual Keys only — never raw provider keys.
@@ -274,7 +277,12 @@ export function SettingsPanel() {
 								</div>
 
 								{!keyFirst && keySelector}
-								{!!provider && (
+								{isMemberOnly && providerVirtualKeys.length === 0 && (
+									<p className="text-amber-600 text-xs" data-testid="settings-no-member-key">
+										No virtual key is available to you yet. Ask your admin to assign one to you, your team or your customer.
+									</p>
+								)}
+								{!!provider && !isMemberOnly && (
 									<p className="text-muted-foreground text-xs">
 										MCP tools use the Virtual Key you pick here (Bearer <code className="text-[10px]">sk-uf-…</code>
 										). Install servers with &quot;Available to all virtual keys&quot; on, or attach this key in MCP Catalog.

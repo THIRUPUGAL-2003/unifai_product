@@ -5,7 +5,7 @@
 def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     """Detect Claude / Anthropic chat submit from request path or JSON body — not hostname."""
     path_l = (path or "").lower()
-    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion", "claudeai-rpc", "anthropic.")):
+    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion", "claudeai-rpc", "anthropic.", "performaction")):
         return True
     if not body or not body.lstrip().startswith("{"):
         return False
@@ -1573,6 +1573,11 @@ def _deep_extract_from_json(data, depth: int = 0, max_depth: int = 10) -> str | 
         for key in _UNIVERSAL_PROMPT_KEYS:
             val = data.get(key)
             if isinstance(val, (str, int, float)):
+                if isinstance(val, (int, float, bool)):
+                    if key in ("code", "data", "payload", "body", "operation", "entry", "status", "type", "id", "index", "count", "version", "step"):
+                        continue
+                    if val in (0, 1):
+                        continue
                 sval = str(val).strip()
                 # Unpack nested JSON string values.
                 if sval.startswith(("{", "[")):
@@ -1594,7 +1599,7 @@ def _deep_extract_from_json(data, depth: int = 0, max_depth: int = 10) -> str | 
                     # For floats/ints that clean to empty string, return raw stripped value
                     if isinstance(val, (int, float)):
                         raw = str(val).strip()
-                        if raw:
+                        if raw and raw not in ("0", "1"):
                             return raw
             elif isinstance(val, list):
                 got = _parts_to_text(val)
@@ -1973,6 +1978,174 @@ def extract_prompt_from_query_string(url: str) -> str | None:
     return None
 
 
+def extract_protobuf_strings(data: bytes) -> list[str]:
+    """Parse arbitrary protobuf message and extract all length-delimited (wire_type 2) strings."""
+    if not data or len(data) < 2:
+        return []
+    strings: list[str] = []
+    idx = 0
+    n = len(data)
+    while idx < n:
+        tag = 0
+        shift = 0
+        while idx < n:
+            b = data[idx]
+            idx += 1
+            tag |= (b & 0x7F) << shift
+            if not (b & 0x80):
+                break
+            shift += 7
+        wire_type = tag & 0x07
+        field_num = tag >> 3
+        if field_num == 0:
+            break
+        if wire_type == 0:  # varint
+            while idx < n and (data[idx] & 0x80):
+                idx += 1
+            idx += 1
+        elif wire_type == 1:  # 64-bit
+            idx += 8
+        elif wire_type == 2:  # length-delimited (string / bytes / submessage)
+            length = 0
+            shift = 0
+            while idx < n:
+                b = data[idx]
+                idx += 1
+                length |= (b & 0x7F) << shift
+                if not (b & 0x80):
+                    break
+                shift += 7
+            if idx + length > n or length < 0:
+                break
+            chunk = data[idx : idx + length]
+            idx += length
+            try:
+                s = chunk.decode("utf-8")
+                if any(c.isprintable() for c in s) and not any(ord(c) < 32 and c not in "\n\r\t" for c in s):
+                    strings.append(s)
+            except Exception:
+                pass
+            if length >= 2:
+                strings.extend(extract_protobuf_strings(chunk))
+        elif wire_type == 5:  # 32-bit
+            idx += 4
+        else:
+            break
+    return strings
+
+
+def _is_claude_wire_noise(s: str) -> bool:
+    t = (s or "").strip()
+    if not t:
+        return True
+    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.I):
+        return True
+    if "organizations/" in t or "chat_conversations/" in t:
+        return True
+    if any(x in t for x in ("anthropic.", "ConversationService", "PerformAction", "ReportViewing")):
+        return True
+    if t.startswith("claude-") or t.startswith("anthropic-"):
+        return True
+    if t in ("text", "text/plain", "user", "assistant", "human", "model", "application/json", "0", "1"):
+        return True
+    if t.isupper() and "_" in t and len(t) < 40:
+        return True
+    if _is_internal_wire_text(t) or _is_opaque_wire_blob(t) or _is_chat_metadata_token(t):
+        return True
+    return False
+
+
+def _filter_and_pick_claude_prompt(candidates: list[str]) -> str | None:
+    valid = []
+    for s in candidates:
+        s_clean = (s or "").strip()
+        if not s_clean or _is_claude_wire_noise(s_clean) or not looks_like_user_prompt(s_clean):
+            continue
+        valid.append(s_clean)
+    if not valid:
+        return None
+    return _pick_best_user_text(valid) or valid[-1]
+
+
+def extract_connect_rpc_prompt(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:
+    """Extract prompt from Connect-RPC / gRPC-Web / Protobuf payloads (e.g. Claude Web PerformAction)."""
+    if not body_bytes or len(body_bytes) < 4:
+        return None
+    url_l = (url or "").lower()
+    ct_l = (content_type or "").lower()
+
+    is_rpc = (
+        "claudeai-rpc" in url_l
+        or "anthropic." in url_l
+        or "performaction" in url_l
+        or "connect" in ct_l
+        or "grpc" in ct_l
+        or "proto" in ct_l
+        or (len(body_bytes) >= 5 and body_bytes[0] in (0, 1) and 0 < int.from_bytes(body_bytes[1:5], "big") <= len(body_bytes) - 5)
+    )
+    if not is_rpc and not ("claude" in (host or "").lower()):
+        return None
+
+    data = body_bytes
+    if "grpc-web-text" in ct_l or (data[:2] == b"AA" and len(data) % 4 == 0):
+        try:
+            import base64
+            data = base64.b64decode(data)
+        except Exception:
+            pass
+
+    payloads = []
+    idx = 0
+    while idx + 5 <= len(data):
+        flag = data[idx]
+        if flag not in (0, 1, 2):
+            break
+        frame_len = int.from_bytes(data[idx+1:idx+5], "big")
+        if frame_len <= 0 or idx + 5 + frame_len > len(data):
+            break
+        frame_data = data[idx+5 : idx+5+frame_len]
+        idx += 5 + frame_len
+        if flag == 1:
+            try:
+                import gzip
+                frame_data = gzip.decompress(frame_data)
+            except Exception:
+                try:
+                    import zlib
+                    frame_data = zlib.decompress(frame_data, 16 + zlib.MAX_WBITS)
+                except Exception:
+                    pass
+        payloads.append(frame_data)
+
+    if not payloads:
+        payloads = [data]
+
+    for p in payloads:
+        p_strip = p.strip()
+        if p_strip.startswith((b"{", b"[")):
+            try:
+                j = json.loads(p.decode("utf-8", errors="ignore"))
+                got = _deep_extract_from_json(j) or _extract_from_json(j)
+                if got and looks_like_user_prompt(got) and not _is_claude_wire_noise(got):
+                    return got
+            except Exception:
+                pass
+
+        pb_strings = extract_protobuf_strings(p)
+        if pb_strings:
+            cand = _filter_and_pick_claude_prompt(pb_strings)
+            if cand:
+                return cand
+
+        runs = _printable_runs(p)
+        if runs:
+            cand = _filter_and_pick_claude_prompt(runs)
+            if cand:
+                return cand
+
+    return None
+
+
 def extract_prompt_universal(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:
     return _unwrap_json_prompt(_extract_prompt_universal_raw(body_bytes, content_type, host, url))
 
@@ -1981,6 +2154,7 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
     """Universal prompt extraction for ANY admin Target Website — any format.
 
     Tries ALL known AI request formats in priority order:
+      0. Connect-RPC / gRPC-Web / Protobuf (Claude Web PerformAction, etc.)
       1. Platform-specific parsers (OpenAI/ChatGPT/Claude/Gemini/Grok/Copilot)
       2. GET query string parameters
       3. JSON — deep recursive walk (10 levels, all _UNIVERSAL_PROMPT_KEYS)
@@ -1996,6 +2170,11 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
     Copilot, Poe, HuggingFace, Ollama, LMStudio, enterprise custom AI —
     will be caught by at least one of the above layers.
     """
+    # ── Step 0: Connect-RPC / gRPC-Web / Protobuf (Claude Web PerformAction, etc.) ──
+    rpc_prompt = extract_connect_rpc_prompt(body_bytes, content_type, host, url)
+    if rpc_prompt:
+        return rpc_prompt
+
     # ── Step 1: Platform-specific parsers (most accurate) ─────────────────
     got = extract_prompt(body_bytes, content_type, host=host)
     if got:

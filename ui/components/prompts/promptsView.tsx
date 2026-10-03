@@ -67,10 +67,6 @@ export default function PromptsView() {
 								<div className="flex flex-1 items-center justify-center">
 									<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
 								</div>
-							) : isUserRole ? (
-								<div className="flex-1 overflow-hidden">
-									<PlaygroundPanel />
-								</div>
 							) : (
 								<ResizablePanelGroup direction="horizontal" className="flex-1">
 									<ResizablePanel defaultSize={70} minSize={40}>
