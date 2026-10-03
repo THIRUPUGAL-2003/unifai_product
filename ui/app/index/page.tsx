@@ -227,9 +227,6 @@ console.log(response.choices[0].message.content);`
 									<span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
 								</span>
 							</div>
-							<span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-								{productFullName}
-							</span>
 						</div>
 					</a>
 
