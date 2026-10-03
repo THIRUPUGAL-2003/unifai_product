@@ -86,9 +86,10 @@ function isWorkspaceAdminRole(role: string): boolean {
 	return role === "admin" || role === "sub_admin";
 }
 
-// Built-in "user" is server-locked to Prompt Repository, so section grants never apply to it.
+// Built-in "user" is server-locked to Prompt Repository and admins are unrestricted,
+// so section grants never apply to either.
 function sectionGrantsApply(role: string): boolean {
-	return role !== "user";
+	return role !== "user" && role !== "admin";
 }
 
 function UserTeamCell({ userId }: { userId: string }) {
@@ -1093,7 +1094,8 @@ export default function UsersView() {
 										setVirtualKeyId("");
 									} else if (nextRole === "sub_admin") {
 										setAllowedPromptRepos("");
-									} else if (!sectionGrantsApply(nextRole)) {
+									}
+									if (!sectionGrantsApply(nextRole)) {
 										setAllowedSections(new Set());
 										setExpandedSections(new Set());
 									}
@@ -1258,7 +1260,8 @@ export default function UsersView() {
 										setVirtualKeyId("");
 									} else if (nextRole === "sub_admin") {
 										setAllowedPromptRepos("");
-									} else if (!sectionGrantsApply(nextRole)) {
+									}
+									if (!sectionGrantsApply(nextRole)) {
 										setAllowedSections(new Set());
 										setExpandedSections(new Set());
 									}

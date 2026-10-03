@@ -74,7 +74,12 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE, COMPANY_NAME, COMPANY_LOGO, COMPANY_SHORT_NAME } from "@/lib/constants/config";
 import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, useLogoutMutation, useIsAuthEnabledQuery } from "@/lib/store";
 import { clearAuthStorage } from "@/lib/store/apis";
-import { getScopedWorkspaceSections, invalidateSessionAuthCache, USER_ROLE_HOME_PATH } from "@/lib/utils/workspaceAccess";
+import {
+	getScopedWorkspaceSections,
+	invalidateSessionAuthCache,
+	isPublicWorkspacePath,
+	USER_ROLE_HOME_PATH,
+} from "@/lib/utils/workspaceAccess";
 import {
 	SECTION_KEY_BY_TITLE,
 	isPathAllowedForUser,
@@ -1193,6 +1198,9 @@ export default function AppSidebar() {
 	}, []);
 
 	useEffect(() => {
+		if (isPublicWorkspacePath(pathname)) {
+			return;
+		}
 		if (authStatus?.role === "user") {
 			if (!pathname.startsWith(USER_ROLE_HOME_PATH)) {
 				navigate(USER_ROLE_HOME_PATH);
@@ -1206,7 +1214,7 @@ export default function AppSidebar() {
 					: pathname;
 			if (!isPathAllowedForUser(pathWithTab, scopedSidebarSections)) {
 				const fallback = getDefaultPathForSections(scopedSidebarSections);
-				if (fallback.split("?")[0] !== pathname) {
+				if (fallback !== pathWithTab) {
 					navigate(fallback);
 				}
 			}

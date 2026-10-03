@@ -2204,7 +2204,7 @@ export function LogDetailView({
 								) : null}
 							</div>
 							<div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-								{(log.params?.tools as any[]).map((tool, i) => {
+								{((log.params?.tools as any[] | undefined) ?? []).map((tool, i) => {
 									const name = tool?.function?.name ?? tool?.name ?? `tool_${i}`;
 									const description = tool?.function?.description ?? tool?.description ?? "";
 									const schema = tool?.function?.parameters ?? tool?.input_schema ?? tool?.parameters ?? null;

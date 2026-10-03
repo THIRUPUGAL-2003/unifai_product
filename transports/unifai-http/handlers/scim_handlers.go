@@ -440,6 +440,11 @@ func (h *WorkspaceHandler) scimValidRole(ctx *fasthttp.RequestCtx, requested, cu
 		if candidate == "" {
 			continue
 		}
+		// An exact role name wins over an alias, so a custom role called "manager" is not
+		// escalated to sub_admin.
+		if name, ok := known[strings.ToLower(strings.TrimSpace(candidate))]; ok {
+			return name
+		}
 		if name, ok := known[scimNormalizeRole(candidate)]; ok {
 			return name
 		}
@@ -628,7 +633,7 @@ func applySCIMUserPatch(user *tables.TableUser, patch map[string]any) {
 			if roles, ok := v.([]any); ok && len(roles) > 0 {
 				if roleMap, ok := roles[0].(map[string]any); ok {
 					if role, ok := roleMap["value"].(string); ok && role != "" {
-						user.Role = scimNormalizeRole(role)
+						user.Role = strings.ToLower(strings.TrimSpace(role))
 					}
 				}
 			}
@@ -653,7 +658,7 @@ func applySCIMUserPatch(user *tables.TableUser, patch map[string]any) {
 			// Entra: roles[primary eq "True"].value = "<role>"
 			if strings.HasPrefix(cleanKey, "roles[") {
 				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-					user.Role = scimNormalizeRole(s)
+					user.Role = strings.ToLower(strings.TrimSpace(s))
 				}
 				continue
 			}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ import (
 	providerUtils "github.com/unifai/unifai/core/providers/utils"
 	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/configstore"
+	"github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/unifai/unifai/framework/rbac"
 	"github.com/unifai/unifai/framework/temptoken"
 	"github.com/unifai/unifai/framework/tracing"
@@ -842,6 +844,7 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 	allowedValues := make(map[string]string, len(allowedIDs)) // value → id
 	var firstValue string
 	assignedKeys := 0
+	var usable []*tables.TableVirtualKey
 	for vkID := range allowedIDs {
 		vk, gerr := m.store.GetVirtualKey(context.Background(), vkID)
 		if errors.Is(gerr, configstore.ErrNotFound) {
@@ -856,9 +859,18 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 			continue
 		}
 		allowedValues[val] = vk.ID
-		if firstValue == "" {
-			firstValue = val
+		usable = append(usable, vk)
+	}
+	// Map iteration order is random; pick the default key deterministically (oldest first)
+	// so the same member is always charged to the same VK → Team → Customer budget chain.
+	sort.Slice(usable, func(i, j int) bool {
+		if !usable[i].CreatedAt.Equal(usable[j].CreatedAt) {
+			return usable[i].CreatedAt.Before(usable[j].CreatedAt)
 		}
+		return usable[i].ID < usable[j].ID
+	})
+	if len(usable) > 0 {
+		firstValue = strings.TrimSpace(usable[0].Value.GetValue())
 	}
 	// No VK assigned (or every assigned VK was deleted): allow Prompt Repo via
 	// Auto / configured provider keys. Strip any client-supplied VK so members
@@ -1169,6 +1181,11 @@ func (m *AuthMiddleware) UpdateTempTokenAuthEnabled(enabled bool) {
 // their own success/failure semantics and silently rescuing a bad password
 // with a temp token would be surprising.
 func (m *AuthMiddleware) tryTempTokenOrUnauthorized(ctx *fasthttp.RequestCtx, next fasthttp.RequestHandler) {
+	m.tryTempTokenOr(ctx, next, fasthttp.StatusUnauthorized, "Unauthorized")
+}
+
+// tryTempTokenOr runs next when a valid scoped temp token is present, otherwise sends status/msg.
+func (m *AuthMiddleware) tryTempTokenOr(ctx *fasthttp.RequestCtx, next fasthttp.RequestHandler, status int, msg string) {
 	if m.tempTokensService != nil && m.tempTokensEnabled.Load() {
 		token := string(ctx.Request.Header.Peek("X-UnifAI-Temp-Token"))
 		if token != "" {
@@ -1181,7 +1198,7 @@ func (m *AuthMiddleware) tryTempTokenOrUnauthorized(ctx *fasthttp.RequestCtx, ne
 			}
 		}
 	}
-	SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
+	SendError(ctx, status, msg)
 }
 
 // InferenceMiddleware is for inference requests (including MCP routes).
@@ -1419,7 +1436,8 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 						next(ctx)
 						return
 					case sessionForbidden:
-						SendError(ctx, fasthttp.StatusForbidden, "Forbidden: your role does not have access to this resource")
+						// A non-admin browser on the MCP per-user OAuth page carries a scoped temp token.
+						m.tryTempTokenOr(ctx, next, fasthttp.StatusForbidden, "Forbidden: your role does not have access to this resource")
 						return
 					}
 				}

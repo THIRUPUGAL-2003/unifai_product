@@ -1011,15 +1011,13 @@ func (gs *LocalGovernanceStore) CheckBudget(ctx context.Context, entityWiseBudge
 	// Check each budget in hierarchy order using in-memory data
 	for entity, budgets := range entityWiseBudgets {
 		for _, budget := range budgets { // Check if budget needs reset (in-memory check)
-			if budget.ResetDuration != "" {
-				if duration, err := configstoreTables.ParseDuration(budget.ResetDuration); err == nil {
-					if time.Since(budget.LastReset) >= duration {
-						// Budget expired but hasn't been reset yet - treat as reset
-						// Note: actual reset will happen in post-hook via AtomicBudgetUpdate
-						gs.logger.Debug("LocalStore CheckBudget: Budget %s (%s) expired, skipping check", budget.ID, entity)
-						continue // Skip budget check for expired budgets
-					}
-				}
+			// Calendar-aware: a "1M" calendar budget is not expired on day 31 just because
+			// ParseDuration treats a month as 30 days.
+			if budget.ResetDuration != "" && gs.budgetResetTarget(budget, time.Now()) != nil {
+				// Budget expired but hasn't been reset yet - treat as reset
+				// Note: actual reset will happen in post-hook via AtomicBudgetUpdate
+				gs.logger.Debug("LocalStore CheckBudget: Budget %s (%s) expired, skipping check", budget.ID, entity)
+				continue // Skip budget check for expired budgets
 			}
 			baseline, exists := baselines[budget.ID]
 			if !exists {
@@ -2575,6 +2573,48 @@ func (gs *LocalGovernanceStore) rebuildInMemoryStructures(ctx context.Context, c
 		gs.storeVirtualKey(vk.Value.GetValue(), vk)
 	}
 
+	// The flat budgets/rate-limits lists carry no owner context, so calendar alignment
+	// must be stamped from the owning VK / provider config / team; otherwise calendar-aligned
+	// budgets silently become rolling windows after a restart.
+	vkAligned := make(map[string]bool, len(virtualKeys))
+	pcAligned := make(map[uint]bool)
+	alignRateLimit := func(id *string, aligned bool) {
+		if id == nil || *id == "" {
+			return
+		}
+		if raw, ok := gs.rateLimits.Load(*id); ok {
+			if rl, ok := raw.(*configstoreTables.TableRateLimit); ok && rl != nil {
+				rl.IsCalendarAligned = aligned
+			}
+		}
+	}
+	for i := range virtualKeys {
+		vk := &virtualKeys[i]
+		vkAligned[vk.ID] = vk.CalendarAligned
+		alignRateLimit(vk.RateLimitID, vk.CalendarAligned)
+		for j := range vk.ProviderConfigs {
+			pc := &vk.ProviderConfigs[j]
+			pcAligned[pc.ID] = vk.CalendarAligned
+			alignRateLimit(pc.RateLimitID, vk.CalendarAligned)
+		}
+	}
+	teamAligned := make(map[string]bool, len(teams))
+	for i := range teams {
+		teamAligned[teams[i].ID] = teams[i].CalendarAligned
+		alignRateLimit(teams[i].RateLimitID, teams[i].CalendarAligned)
+	}
+	for i := range budgets {
+		budget := &budgets[i]
+		switch {
+		case budget.VirtualKeyID != nil && *budget.VirtualKeyID != "":
+			budget.IsCalendarAligned = vkAligned[*budget.VirtualKeyID]
+		case budget.ProviderConfigID != nil:
+			budget.IsCalendarAligned = pcAligned[*budget.ProviderConfigID]
+		case budget.TeamID != nil && *budget.TeamID != "":
+			budget.IsCalendarAligned = teamAligned[*budget.TeamID]
+		}
+	}
+
 	// Build model configs map.
 	// Key format (global scope): "modelName" for all-provider configs, "modelName:provider"
 	// for provider-specific configs. Non-global scopes (e.g. virtual_key) prefix the key with
@@ -3667,10 +3707,16 @@ func (gs *LocalGovernanceStore) upsertUserGovernanceInMemory(userID string, budg
 	if userID == "" {
 		return
 	}
+	// Callers pass the user's full state: a nil budget / rate limit means it was removed,
+	// so the previous in-memory entry must stop being enforced.
 	ug := &UserGovernance{}
 	if existing, ok := gs.GetUserGovernance(context.Background(), userID); ok && existing != nil {
-		ug.BudgetID = existing.BudgetID
-		ug.RateLimitID = existing.RateLimitID
+		if existing.BudgetID != nil && (budget == nil || budget.ID != *existing.BudgetID) {
+			gs.DeleteBudget(context.Background(), *existing.BudgetID)
+		}
+		if existing.RateLimitID != nil && (rateLimit == nil || rateLimit.ID != *existing.RateLimitID) {
+			gs.DeleteRateLimit(context.Background(), *existing.RateLimitID)
+		}
 	}
 	if budget != nil && budget.ID != "" {
 		id := budget.ID

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -178,13 +179,33 @@ func resolveMCPClientID(ctx context.Context, store configstore.ConfigStore, item
 func applyAccessProfileRateLimit(ctx context.Context, store configstore.ConfigStore, vk *tables.TableVirtualKey, spec map[string]any) error {
 	rl := rateLimitFromSpec(spec, vk.RateLimitID)
 	if vk.RateLimitID != nil && *vk.RateLimitID != "" {
-		existing := *rl
-		existing.ID = *vk.RateLimitID
-		if err := store.UpdateRateLimit(ctx, &existing); err != nil {
+		existing, err := store.GetRateLimit(ctx, *vk.RateLimitID)
+		if err == nil && existing != nil {
+			// Merge only what the profile specifies: live counters, reset times and limits
+			// the profile does not model must survive every propagation.
+			if rl.RequestMaxLimit != nil {
+				existing.RequestMaxLimit = rl.RequestMaxLimit
+			}
+			if rl.RequestResetDuration != nil {
+				existing.RequestResetDuration = rl.RequestResetDuration
+			}
+			if rl.TokenMaxLimit != nil {
+				existing.TokenMaxLimit = rl.TokenMaxLimit
+			}
+			if rl.TokenResetDuration != nil {
+				existing.TokenResetDuration = rl.TokenResetDuration
+			}
+			existing.UpdatedAt = time.Now().UTC()
+			return store.UpdateRateLimit(ctx, existing)
+		}
+		if err != nil && !errors.Is(err, configstore.ErrNotFound) {
 			return err
 		}
-		return nil
+		// The VK points at a rate limit that no longer exists: recreate it under the same ID.
 	}
+	now := time.Now().UTC()
+	rl.TokenLastReset = now
+	rl.RequestLastReset = now
 	if err := store.CreateRateLimit(ctx, rl); err != nil {
 		return err
 	}

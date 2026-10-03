@@ -1101,7 +1101,7 @@ func (h *PromptsHandler) checkSessionOwnership(ctx *fasthttp.RequestCtx, session
 		return false
 	}
 	userID, role := h.promptCallerIdentity(ctx)
-	if role == "admin" || role == "super_admin" {
+	if isWorkspaceAdminRole(role) {
 		return true
 	}
 	if userID == "" {
@@ -1200,7 +1200,7 @@ func (h *PromptsHandler) getPromptSessions(ctx *fasthttp.RequestCtx) {
 	}
 
 	filterUserID := callerID
-	if role == "admin" || role == "super_admin" {
+	if isWorkspaceAdminRole(role) {
 		// Admins can see all user chat sessions for this prompt, or filter by specific ?user_id= query arg if provided
 		queryUser := string(ctx.QueryArgs().Peek("user_id"))
 		filterUserID = strings.TrimSpace(queryUser)
@@ -1730,7 +1730,7 @@ func (h *PromptsHandler) getPromptSettings(ctx *fasthttp.RequestCtx) {
 // updatePromptSettings handles PUT /api/prompt-repo/settings
 func (h *PromptsHandler) updatePromptSettings(ctx *fasthttp.RequestCtx) {
 	_, role := h.promptCallerIdentity(ctx)
-	if role != "" && role != "admin" && role != "super_admin" {
+	if role != "" && !isWorkspaceAdminRole(role) {
 		SendError(ctx, fasthttp.StatusForbidden, "Forbidden: admin access required")
 		return
 	}
@@ -1754,7 +1754,7 @@ func (h *PromptsHandler) updatePromptSettings(ctx *fasthttp.RequestCtx) {
 // clearAllPromptHistory handles POST /api/prompt-repo/history/clear
 func (h *PromptsHandler) clearAllPromptHistory(ctx *fasthttp.RequestCtx) {
 	_, role := h.promptCallerIdentity(ctx)
-	if role != "" && role != "admin" && role != "super_admin" {
+	if role != "" && !isWorkspaceAdminRole(role) {
 		SendError(ctx, fasthttp.StatusForbidden, "Forbidden: admin access required")
 		return
 	}

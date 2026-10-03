@@ -1,16 +1,17 @@
 import FullPageLoader from "@/components/fullPageLoader";
 import { useIsAuthEnabledQuery } from "@/lib/store";
-import { fetchSessionAuth, getWorkspaceAccessRedirect, hasNoWorkspaceSections } from "@/lib/utils/workspaceAccess";
+import {
+	fetchSessionAuth,
+	getWorkspaceAccessRedirect,
+	hasNoWorkspaceSections,
+	isPublicWorkspacePath,
+} from "@/lib/utils/workspaceAccess";
 import { createFileRoute, Outlet, redirect, useLocation } from "@tanstack/react-router";
 import { ShieldOff } from "lucide-react";
 import { ClientLayout } from "../clientLayout";
 
 function WorkspaceLayout({ children }: { children: React.ReactNode }) {
 	return <ClientLayout>{children}</ClientLayout>;
-}
-
-function isPublicScopedPath(pathname: string): boolean {
-	return pathname.startsWith("/workspace/mcp-sessions/auth") || pathname.startsWith("/workspace/oauth");
 }
 
 function NoSectionsAssigned() {
@@ -28,11 +29,20 @@ function NoSectionsAssigned() {
 	);
 }
 
-function RouteComponent() {
+// Must render inside ClientLayout: useIsAuthEnabledQuery needs the ReduxProvider it mounts.
+function WorkspaceOutlet() {
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const pathname = useLocation({ select: (l) => l.pathname });
-	const blocked = hasNoWorkspaceSections(authStatus) && !isPublicScopedPath(pathname);
-	return <WorkspaceLayout>{blocked ? <NoSectionsAssigned /> : <Outlet />}</WorkspaceLayout>;
+	const blocked = hasNoWorkspaceSections(authStatus) && !isPublicWorkspacePath(pathname);
+	return blocked ? <NoSectionsAssigned /> : <Outlet />;
+}
+
+function RouteComponent() {
+	return (
+		<WorkspaceLayout>
+			<WorkspaceOutlet />
+		</WorkspaceLayout>
+	);
 }
 
 function PendingComponent() {
@@ -43,7 +53,7 @@ export const Route = createFileRoute("/workspace")({
 	beforeLoad: async ({ location }) => {
 		const auth = await fetchSessionAuth(false);
 		if (auth && auth.is_auth_enabled && !auth.has_valid_token) {
-			if (!isPublicScopedPath(location.pathname)) {
+			if (!isPublicWorkspacePath(location.pathname)) {
 				const goto = location.pathname + (location.searchStr ?? "");
 				throw redirect({
 					href: `/login?goto=${encodeURIComponent(goto)}`,

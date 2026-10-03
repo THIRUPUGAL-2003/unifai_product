@@ -69,16 +69,45 @@ func restoreRedactedKeys(dst, stored map[string]any) {
 	}
 }
 
+func isSCIMSecretKey(key string) bool {
+	lower := strings.ToLower(key)
+	return strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "password")
+}
+
 func redactSecretKeys(m map[string]any) {
 	for key, value := range m {
-		lower := strings.ToLower(key)
 		switch v := value.(type) {
 		case map[string]any:
 			redactSecretKeys(v)
 		case string:
-			if v != "" && (strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "password")) {
+			if v != "" && isSCIMSecretKey(key) {
 				m[key] = scimRedacted
 			}
+		}
+	}
+}
+
+// keepStoredSecretKeys overwrites every secret-like key in dst with the stored value
+// (or drops it when nothing is stored), so the caller cannot set or change secrets.
+func keepStoredSecretKeys(dst, stored map[string]any) {
+	for key, value := range dst {
+		if nested, ok := value.(map[string]any); ok {
+			storedNested, _ := stored[key].(map[string]any)
+			keepStoredSecretKeys(nested, storedNested)
+			continue
+		}
+		if !isSCIMSecretKey(key) {
+			continue
+		}
+		if prev, ok := stored[key]; ok {
+			dst[key] = prev
+		} else {
+			delete(dst, key)
+		}
+	}
+	for key, value := range stored {
+		if _, present := dst[key]; !present && isSCIMSecretKey(key) {
+			dst[key] = value
 		}
 	}
 }
@@ -106,15 +135,21 @@ func (h *WorkspaceHandler) updateSCIMConfig(ctx *fasthttp.RequestCtx) {
 	if payload.Config == nil {
 		payload.Config = map[string]any{}
 	}
-	// A config loaded by a non-admin comes back with redacted secrets: keep the stored values.
+	isAdmin := h.callerRole(ctx) == "admin"
+	var stored scimConfigPayload
 	if row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingSCIM); err == nil && row != nil {
-		var stored scimConfigPayload
-		if json.Unmarshal([]byte(row.Data), &stored) == nil {
-			if payload.BearerToken == scimRedacted {
-				payload.BearerToken = stored.BearerToken
-			}
-			restoreRedactedKeys(payload.Config, stored.Config)
+		_ = json.Unmarshal([]byte(row.Data), &stored)
+	}
+	if isAdmin {
+		// A config loaded by a non-admin comes back with redacted secrets: keep the stored values.
+		if payload.BearerToken == scimRedacted {
+			payload.BearerToken = stored.BearerToken
 		}
+		restoreRedactedKeys(payload.Config, stored.Config)
+	} else {
+		// The bearer token can create admin users over SCIM, so only admins may set secrets.
+		payload.BearerToken = stored.BearerToken
+		keepStoredSecretKeys(payload.Config, stored.Config)
 	}
 	ensureSCIMBearerToken(&payload)
 	raw, err := json.Marshal(payload)
@@ -125,6 +160,9 @@ func (h *WorkspaceHandler) updateSCIMConfig(ctx *fasthttp.RequestCtx) {
 	if err := store.UpsertWorkspaceSetting(ctx, configstore.WorkspaceSettingSCIM, string(raw)); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to save scim config")
 		return
+	}
+	if !isAdmin {
+		redactSCIMSecrets(&payload)
 	}
 	SendJSON(ctx, payload)
 }

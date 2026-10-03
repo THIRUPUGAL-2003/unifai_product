@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/unifai/unifai/transports/unifai-http/lib"
@@ -464,6 +465,7 @@ func TestOktaSCIMFlow(t *testing.T) {
 	putCtx.Request.SetRequestURI("/api/scim/config")
 	rawBody, _ := json.Marshal(oktaCfg)
 	putCtx.Request.SetBody(rawBody)
+	putCtx.SetUserValue(schemas.IsLocalAdminContextKey, true)
 	handler.updateSCIMConfig(putCtx)
 	if putCtx.Response.StatusCode() != http.StatusOK {
 		t.Fatalf("Failed to save Okta config, got %d", putCtx.Response.StatusCode())
@@ -580,6 +582,7 @@ func TestKeycloakSCIMFlow(t *testing.T) {
 	putCtx.Request.SetRequestURI("/api/scim/config")
 	rawBody, _ := json.Marshal(keycloakCfg)
 	putCtx.Request.SetBody(rawBody)
+	putCtx.SetUserValue(schemas.IsLocalAdminContextKey, true)
 	handler.updateSCIMConfig(putCtx)
 	if putCtx.Response.StatusCode() != http.StatusOK {
 		t.Fatalf("Failed to save Keycloak config, got %d", putCtx.Response.StatusCode())

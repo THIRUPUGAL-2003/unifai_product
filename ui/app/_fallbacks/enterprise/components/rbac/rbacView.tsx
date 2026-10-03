@@ -128,12 +128,13 @@ export default function RBACView() {
 	// Queries
 	const { data: roleData, isLoading: rolesLoading } = useGetRolesQuery();
 	const { data: permData } = useGetPermissionsQuery();
-	const { data: sessionUsers = [], isLoading: usersLoading } = useGetSessionUsersQuery();
+	const { data: sessionUsersData, isLoading: usersLoading } = useGetSessionUsersQuery();
+	const sessionUsers = useMemo(() => sessionUsersData ?? [], [sessionUsersData]);
 	const { data: teamsData, isLoading: teamsLoading } = useGetTeamsQuery();
 	const { data: customersData, isLoading: customersLoading } = useGetCustomersQuery();
 
-	const roles = roleData?.roles || [];
-	const permissions = permData?.permissions || [];
+	const roles = useMemo(() => roleData?.roles ?? [], [roleData]);
+	const permissions = useMemo(() => permData?.permissions ?? [], [permData]);
 	const teams = teamsData?.teams || [];
 	const customers = customersData?.customers || [];
 
@@ -203,7 +204,7 @@ export default function RBACView() {
 			}
 			setSelectedPerms(granted.map((p) => p.id));
 		} else if (activeRoleId === 0) {
-			setSelectedPerms([]);
+			setSelectedPerms((prev) => (prev.length ? [] : prev));
 		}
 	}, [target, targetUser, rolePermData, permissions, activeRoleId]);
 

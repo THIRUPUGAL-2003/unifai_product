@@ -63,6 +63,18 @@ export async function fetchSessionAuth(forceRefresh = false): Promise<SessionAut
 
 export const USER_ROLE_HOME_PATH = "/workspace/prompt-repo";
 
+const PUBLIC_WORKSPACE_PATHS = [
+	"/workspace/mcp-sessions/auth",
+	"/workspace/mcp-sessions/auth-success",
+	"/workspace/mcp-sessions/auth-failed",
+	"/workspace/oauth",
+];
+
+/** Workspace pages reachable without a session or section grant (OAuth / MCP auth callbacks). */
+export function isPublicWorkspacePath(pathname: string): boolean {
+	return PUBLIC_WORKSPACE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 /**
  * Section grants that apply to this session, or null for "no section filter".
  * Admins (and sessions without a role, e.g. auth disabled) are unrestricted.
@@ -124,6 +136,9 @@ export function getWorkspaceAccessRedirect(
 	auth: SessionAuth | null | undefined,
 	pathname: string,
 ): string | null {
+	if (isPublicWorkspacePath(pathname)) {
+		return null;
+	}
 	let target: string | null = null;
 
 	if (auth?.role === "user") {

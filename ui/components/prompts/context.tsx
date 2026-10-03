@@ -497,6 +497,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	// Handlers
 	const handleSelectPrompt = useCallback(
 		(id: string) => {
+			abortRef.current?.abort();
+			abortRef.current = null;
+			activeRunRef.current = null;
+			setIsStreaming(false);
 			loadedPlaygroundKeyRef.current = "";
 			setMessages([Message.system("")]);
 			setProvider("");

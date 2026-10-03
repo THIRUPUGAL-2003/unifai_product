@@ -1635,13 +1635,15 @@ func (p *GovernancePlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas
 	// Extract governance information
 	virtualKey := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyVirtualKey)
 	requestID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyRequestID)
+	userID := unifai.GetStringFromContext(ctx, schemas.UnifAIContextKeyUserID)
 
 	if unifai.GetBoolFromContext(ctx, schemas.UnifAIContextKeySkipVirtualKeyUsageTracking) {
 		virtualKey = ""
 	}
 
-	// Skip if no virtual key
-	if virtualKey == "" {
+	// PreMCPHook enforces user budgets / rate limits too, so usage must be charged
+	// whenever either a virtual key or a user is attributed.
+	if virtualKey == "" && userID == "" {
 		return resp, unifaiErr, nil
 	}
 
@@ -1666,6 +1668,7 @@ func (p *GovernancePlugin) PostMCPHook(ctx *schemas.UnifAIContext, resp *schemas
 	// Create usage update for tracker (business logic) - MCP requests track request count and tool cost
 	usageUpdate := &UsageUpdate{
 		VirtualKey:   virtualKey,
+		UserID:       userID,
 		Success:      success,
 		Cost:         toolCost,
 		RequestID:    requestID,

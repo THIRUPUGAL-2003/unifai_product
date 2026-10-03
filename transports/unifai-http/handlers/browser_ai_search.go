@@ -434,7 +434,7 @@ func (h *BrowserAIHandler) deleteSearchLogIDs(ctx *fasthttp.RequestCtx, ids []st
 	searchLogsList = kept
 	searchLogsMu.Unlock()
 
-	if h.manager == nil || h.manager.GetDB() == nil {
+	if memDeleted > deleted {
 		deleted = memDeleted
 	}
 	if deleted == 0 && len(ids) == 1 {

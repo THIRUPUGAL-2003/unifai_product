@@ -132,17 +132,27 @@ func (gs *LocalGovernanceStore) stampBilledTeam(ctx *schemas.UnifAIContext, vk *
 		return
 	}
 	ctx.SetValue(schemas.UnifAIContextKeyGovernanceTeamID, teamID)
+	teamName := ""
 	if v, ok := gs.teams.Load(teamID); ok && v != nil {
 		if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil {
-			ctx.SetValue(schemas.UnifAIContextKeyGovernanceTeamName, team.Name)
-			if team.CustomerID != nil && *team.CustomerID != "" {
-				ctx.SetValue(schemas.UnifAIContextKeyGovernanceCustomerID, *team.CustomerID)
-				if team.Customer != nil {
-					ctx.SetValue(schemas.UnifAIContextKeyGovernanceCustomerName, team.Customer.Name)
-				}
+			teamName = team.Name
+		}
+	}
+	ctx.SetValue(schemas.UnifAIContextKeyGovernanceTeamName, teamName)
+
+	// The primary team's customer was stamped earlier; replace it with the billed one
+	// so customer policies, logs and charging all agree.
+	customerID, customerName := "", ""
+	if ids := gs.billedCustomerIDs(ctx, vk, teamID); len(ids) > 0 {
+		customerID = ids[0]
+		if v, ok := gs.customers.Load(customerID); ok && v != nil {
+			if customer, ok := v.(*configstoreTables.TableCustomer); ok && customer != nil {
+				customerName = customer.Name
 			}
 		}
 	}
+	ctx.SetValue(schemas.UnifAIContextKeyGovernanceCustomerID, customerID)
+	ctx.SetValue(schemas.UnifAIContextKeyGovernanceCustomerName, customerName)
 	gs.stampBusinessUnitsForTeam(ctx, teamID)
 }
 
