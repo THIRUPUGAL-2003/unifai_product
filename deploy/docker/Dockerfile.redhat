@@ -76,14 +76,8 @@ COPY LICENSE /licenses/LICENSE
 COPY --from=builder /app/main .
 COPY deploy/docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY configs/ /app/configs/
-COPY apps/browser-guard/release/Raksha_Guard_Setup.exe /app/release/Raksha_Guard_Setup.exe
-COPY apps/browser-guard/release/Raksha_Guard_macOS.zip /app/release/Raksha_Guard_macOS.zip
-COPY apps/browser-guard/release/INSTALL_MACOS.txt /app/release/INSTALL_MACOS.txt
-COPY apps/browser-guard/release/UNINSTALL_MACOS.txt /app/release/UNINSTALL_MACOS.txt
-COPY apps/browser-guard/release/EMPLOYEE_README_MAC.txt /app/release/EMPLOYEE_README_MAC.txt
-COPY apps/browser-guard/release/Install_Raksha_Guard.command /app/release/Install_Raksha_Guard.command
-COPY apps/browser-guard/release/Uninstall_Raksha_Guard.command /app/release/Uninstall_Raksha_Guard.command
-COPY apps/browser-guard/release/VERSION.txt /app/release/VERSION.txt
+# Guard binaries are not in git; upload them with tools/upload_guard_release.ps1 (or mount the folder).
+COPY apps/browser-guard/release/ /app/release/
 COPY apps/browser-guard/proxy/browser_ai_proxy.py /app/guard-proxy/browser_ai_proxy.py
 COPY apps/browser-guard/proxy/raksha_proxy_parts/ /app/guard-proxy/raksha_proxy_parts/
 COPY apps/browser-guard/agent/*.py /app/guard-agent/

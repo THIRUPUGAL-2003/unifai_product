@@ -406,7 +406,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	// 1. MAC DEDICATED DOWNLOAD
 	if platform == "mac" || platform == "macos" || platform == "darwin" {
 		if !macZipOK {
-			SendError(ctx, fasthttp.StatusNotFound, "No macOS Guard installer on server — add Raksha_Guard_macOS.zip under apps/browser-guard/release/ (if it is a Git LFS pointer, run: git lfs install && git lfs pull)")
+			SendError(ctx, fasthttp.StatusNotFound, "No macOS Guard installer on server — upload Raksha_Guard_macOS.zip to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 			return
 		}
 		ctx.SetStatusCode(fasthttp.StatusOK)
@@ -425,7 +425,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	// 2. WINDOWS DEDICATED DOWNLOAD
 	if platform == "windows" || platform == "win" {
 		if !setupOK && !exeOK {
-			SendError(ctx, fasthttp.StatusNotFound, "No Windows Guard installer on server — add Raksha_Guard_Setup.exe or Raksha_Guard.exe under apps/browser-guard/release/ (if they are Git LFS pointers, run: git lfs install && git lfs pull)")
+			SendError(ctx, fasthttp.StatusNotFound, "No Windows Guard installer on server — upload Raksha_Guard_Setup.exe or Raksha_Guard.exe to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 			return
 		}
 		// Always ship BOTH when present: Setup (Inno install) + portable EXE.

@@ -69,8 +69,8 @@ apps/browser-guard/installer/staging-*/
 apps/browser-guard/release/Raksha_Guard.app/
 apps/browser-guard/installer/pkg-root/
 
-# Allow Browser Guard release binaries (tracked via Git LFS)
-!apps/browser-guard/release/*.zip
-!apps/browser-guard/release/*.pkg
-!apps/browser-guard/release/*.exe
+# Guard release binaries are uploaded to the server (tools/upload_guard_release.ps1), not committed.
+apps/browser-guard/release/*.zip
+apps/browser-guard/release/*.pkg
+apps/browser-guard/release/*.exe
 

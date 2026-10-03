@@ -99,7 +99,7 @@ func buildWindowsPackage(config []byte) (string, error) {
 	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_Setup.exe"])
 	exePath, exeOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard.exe"])
 	if !setupOK && !exeOK {
-		return "", errors.New("no Windows Guard EXE on server — add Raksha_Guard_Setup.exe / Raksha_Guard.exe under apps/browser-guard/release/ (if they are Git LFS pointers, run: git lfs install && git lfs pull)")
+		return "", errors.New("no Windows Guard EXE on server — upload Raksha_Guard_Setup.exe / Raksha_Guard.exe to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 	}
 	releaseDir := filepath.Dir(setupPath)
 	if !setupOK {
@@ -163,7 +163,7 @@ func buildWindowsPackage(config []byte) (string, error) {
 func buildMacPackage(config []byte) (string, error) {
 	macZipPath, ok := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_macOS.zip"])
 	if !ok {
-		return "", errors.New("no macOS Guard package on server — add Raksha_Guard_macOS.zip under apps/browser-guard/release/ (if it is a Git LFS pointer, run: git lfs install && git lfs pull)")
+		return "", errors.New("no macOS Guard package on server — upload Raksha_Guard_macOS.zip to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 	}
 	if err := writeReleaseFileAtomic(macZipPath, func(w io.Writer) error {
 		return writeMacZipWithHelpers(w, macZipPath, config)
