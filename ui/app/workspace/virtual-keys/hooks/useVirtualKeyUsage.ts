@@ -1,8 +1,7 @@
 import { Budget, RateLimit, VirtualKey } from "@/lib/types/governance";
 import { useGetUserAccessProfilesQuery } from "@enterprise/lib/store/apis/accessProfileApi";
-import { useGetVirtualKeyUsersQuery } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
+import { useGetVirtualKeyUsersQuery, VirtualKeyUser } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { UserAccessProfile } from "@enterprise/lib/types/accessProfile";
-import { User } from "@enterprise/lib/types/user";
 
 /**
  * When a VK is attached to users via an access profile, the governance plugin tracks usage on the
@@ -12,12 +11,13 @@ import { User } from "@enterprise/lib/types/user";
  *
  * The AP query polls every 5s so bars reflect live usage without manual refresh.
  *
- * `assignedUsers[0]` is safe: the enterprise schema enforces a uniqueIndex on
- * TableVirtualKeyUser.virtual_key_id, so each VK can belong to at most one user. The list is
- * either empty or length 1 — [0] is always the sole assignee when one exists.
+ * `assignedUsers` lists everyone who can use the key (direct, team and customer members);
+ * `directUsers` only the users linked to the key itself — the only ones the edit form owns.
+ * An access profile provisions its key for a single user, who is the first direct link.
  */
 export function useVirtualKeyUsage(vk: VirtualKey | null | undefined): {
-	assignedUsers: User[];
+	assignedUsers: VirtualKeyUser[];
+	directUsers: VirtualKeyUser[];
 	isManagedByProfile: boolean;
 	managingProfile: UserAccessProfile | undefined;
 	hasApRateLimit: boolean;
@@ -27,8 +27,9 @@ export function useVirtualKeyUsage(vk: VirtualKey | null | undefined): {
 } {
 	const { data: vkUsersData } = useGetVirtualKeyUsersQuery(vk?.id ?? "", { skip: !vk?.id });
 	const assignedUsers = vkUsersData?.users ?? [];
+	const directUsers = assignedUsers.filter((u) => !u.origin || u.origin === "direct");
 
-	const managingUserId = assignedUsers[0]?.id;
+	const managingUserId = directUsers[0]?.id;
 	const { data: userAPsData } = useGetUserAccessProfilesQuery(managingUserId ?? "", {
 		skip: !managingUserId,
 		pollingInterval: managingUserId ? 5000 : 0,
@@ -71,7 +72,7 @@ export function useVirtualKeyUsage(vk: VirtualKey | null | undefined): {
 		: vk?.rate_limit;
 
 	const isExhausted =
-		(displayBudgets?.some((b) => b.max_limit > 0 && b.current_usage >= b.max_limit) ?? false) ||
+		(displayBudgets?.some((b) => b.current_usage >= b.max_limit) ?? false) ||
 		(displayRateLimit?.token_current_usage != null &&
 			displayRateLimit?.token_max_limit != null &&
 			displayRateLimit.token_max_limit > 0 &&
@@ -81,5 +82,5 @@ export function useVirtualKeyUsage(vk: VirtualKey | null | undefined): {
 			displayRateLimit.request_max_limit > 0 &&
 			displayRateLimit.request_current_usage >= displayRateLimit.request_max_limit);
 
-	return { assignedUsers, isManagedByProfile, managingProfile, hasApRateLimit, displayBudgets, displayRateLimit, isExhausted };
+	return { assignedUsers, directUsers, isManagedByProfile, managingProfile, hasApRateLimit, displayBudgets, displayRateLimit, isExhausted };
 }

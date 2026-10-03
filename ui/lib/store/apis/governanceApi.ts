@@ -163,8 +163,10 @@ export const governanceApi = baseApi.injectEndpoints({
 					const queries = (getState() as any).api.queries;
 					for (const entry of Object.values(queries) as any[]) {
 						if (entry?.endpointName !== "getTeams" || entry?.status !== "fulfilled") continue;
-						const search = entry.originalArgs?.search as string | undefined;
-						if (search && !data.team.name.toLowerCase().includes(search.toLowerCase())) continue;
+						const args = entry.originalArgs as GetTeamsParams | undefined;
+						if (args?.search && !data.team.name.toLowerCase().includes(args.search.toLowerCase())) continue;
+						if (args?.customer_id && args.customer_id !== data.team.customer_id) continue;
+						if (args?.offset) continue;
 						dispatch(
 							governanceApi.util.updateQueryData("getTeams", entry.originalArgs, (draft) => {
 								if (!draft.teams) draft.teams = [];
@@ -335,6 +337,7 @@ export const governanceApi = baseApi.injectEndpoints({
 						if (entry?.endpointName !== "getCustomers" || entry?.status !== "fulfilled") continue;
 						const search = entry.originalArgs?.search as string | undefined;
 						if (search && !data.customer.name.toLowerCase().includes(search.toLowerCase())) continue;
+						if (entry.originalArgs?.offset) continue;
 						dispatch(
 							governanceApi.util.updateQueryData("getCustomers", entry.originalArgs, (draft) => {
 								if (!draft.customers) draft.customers = [];
@@ -356,7 +359,15 @@ export const governanceApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: data,
 			}),
-			invalidatesTags: (result, error, { customerId }) => ["Customers", { type: "Customers", id: customerId }, "Folders", "Prompts"],
+			// Teams and VKs embed the customer (name, budgets), so they go stale on rename too.
+			invalidatesTags: (result, error, { customerId }) => [
+				"Customers",
+				{ type: "Customers", id: customerId },
+				"Teams",
+				"VirtualKeys",
+				"Folders",
+				"Prompts",
+			],
 			async onQueryStarted({ customerId }, { dispatch, getState, queryFulfilled }) {
 				try {
 					const { data } = await queryFulfilled;

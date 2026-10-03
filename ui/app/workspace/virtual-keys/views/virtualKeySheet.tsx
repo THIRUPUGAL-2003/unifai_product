@@ -241,11 +241,10 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 
 	// Detect AP-managed status via the managing profile's virtual_key_ids, not just by the presence
 	// of assignees — directly-attached users don't imply an access-profile relation.
-	const { assignedUsers, isManagedByProfile: isManagedByProfileHook } = useVirtualKeyUsage(virtualKey);
+	// Only direct links belong to the form; team/customer members reach the key through those.
+	const { directUsers, isManagedByProfile: isManagedByProfileHook } = useVirtualKeyUsage(virtualKey);
 	const isManagedByProfile = isEditing && isManagedByProfileHook;
 	const { data: sessionUsers = [] } = useGetSessionUsersQuery();
-	const [setVirtualKeyUser, { isLoading: isAssigningUser }] = useSetVirtualKeyUserMutation();
-	const [deleteVirtualKeyUser] = useDeleteVirtualKeyUserMutation();
 	// Team attachment: when creating from a team context (defaultTeamId provided), the entity
 	// assignment is pre-set and locked. When editing an existing VK the assignment can be changed.
 	const attachedTeamId = isEditing ? virtualKey?.team_id || "" : defaultTeamId || "";
@@ -317,7 +316,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 								? "team"
 								: virtualKey?.customer_id
 									? "customer"
-									: assignedUsers.length > 0
+									: directUsers.length > 0
 										? "user"
 										: !isEditing && defaultTeamId
 											? "team"

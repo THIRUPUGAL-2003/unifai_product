@@ -1,8 +1,14 @@
 import { User } from "@enterprise/lib/types/user";
 import { baseApi } from "@/lib/store/apis/baseApi";
 
+/** A user who can use the key: assigned directly, or a member of an assigned team/customer. */
+export type VirtualKeyUser = User & {
+	origin?: "direct" | "team" | "customer";
+	origin_name?: string;
+};
+
 export interface GetVirtualKeyUsersResponse {
-	users: User[];
+	users: VirtualKeyUser[];
 }
 
 export interface GetUserVirtualKeysResponse {
@@ -31,11 +37,7 @@ export const virtualKeyUsersApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: { user_id },
 			}),
-			invalidatesTags: (_result, _error, { vkId, user_id }) => [
-				{ type: "VirtualKeys", id: vkId },
-				{ type: "VirtualKeys", id: `user-${user_id}` },
-				{ type: "VirtualKeys", id: "LIST" },
-			],
+			invalidatesTags: ["VirtualKeys"],
 		}),
 		deleteVirtualKeyUser: builder.mutation<{ users: User[] }, { vkId: string; user_id?: string } | string>({
 			query: (arg) => {
@@ -48,18 +50,7 @@ export const virtualKeyUsersApi = baseApi.injectEndpoints({
 					body: userId ? { user_id: userId } : undefined,
 				};
 			},
-			invalidatesTags: (_result, _error, arg) => {
-				const vkId = typeof arg === "string" ? arg : arg.vkId;
-				const userId = typeof arg === "string" ? undefined : arg.user_id;
-				const tags: Array<{ type: "VirtualKeys"; id: string }> = [
-					{ type: "VirtualKeys", id: vkId },
-					{ type: "VirtualKeys", id: "LIST" },
-				];
-				if (userId) {
-					tags.push({ type: "VirtualKeys", id: `user-${userId}` });
-				}
-				return tags;
-			},
+			invalidatesTags: ["VirtualKeys"],
 		}),
 	}),
 });
