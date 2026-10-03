@@ -2,6 +2,7 @@ package governance
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +123,22 @@ func TestExhaustedBilledEntity(t *testing.T) {
 	directKey := &configstoreTables.TableVirtualKey{ID: "vk-direct"}
 	if scope, _ := gs.ExhaustedBilledEntity(context.Background(), directKey, []string{"team-dev"}); scope != "" {
 		t.Fatalf("direct key billed to no team/customer blocked by %q", scope)
+	}
+}
+
+func TestBudgetExhaustedReasonNamesTheSpentLevel(t *testing.T) {
+	cases := map[string]string{
+		"User:u1":     "Your personal budget is used up ($10.00 of $10.00 used)",
+		"Team:t1":     "Team budget is used up ($10.00 of $10.00 used). This virtual key is blocked for your team — please use another virtual key.",
+		"Team":        "Team budget is used up",
+		"Customer:c1": "Customer budget is used up ($10.00 of $10.00 used). This virtual key is blocked for all of the customer's teams",
+		"VK":          "Virtual key budget is used up ($10.00 of $10.00 used). Please use another virtual key.",
+	}
+	for entity, want := range cases {
+		got := budgetExhaustedReason(&BudgetExceededError{Entity: entity, Usage: 10, Limit: 10}, DecisionBudgetExceeded)
+		if !strings.HasPrefix(got, want) {
+			t.Errorf("%s: reason = %q, want prefix %q", entity, got, want)
+		}
 	}
 }
 

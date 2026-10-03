@@ -1116,6 +1116,17 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 	// Step 4: User-level governance (enterprise-only).
 	if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow {
 		result = p.resolver.EvaluateUserRequest(ctx, evaluationRequest.UserID, evaluationRequest)
+	} else if !skipBudgetsAndRateLimits && result.Decision == DecisionBudgetExceeded && ctx != nil && hierarchyVK != nil {
+		// A spent personal budget blocks every key, so report it over a key/team/customer
+		// budget: telling the user to switch keys would not help.
+		p.stampUserFromVKAssignment(ctx, hierarchyVK)
+		userID := evaluationRequest.UserID
+		if userID == "" {
+			userID = raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+		}
+		if userResult := p.resolver.EvaluateUserRequest(ctx, userID, evaluationRequest); userResult.Decision == DecisionBudgetExceeded {
+			result = userResult
+		}
 	}
 
 	// Check the actual MCP tools injected into the request against the VK MCPConfigs.

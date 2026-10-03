@@ -1045,6 +1045,24 @@ func (gs *LocalGovernanceStore) CheckRateLimit(ctx context.Context, entityWiseRa
 	return DecisionAllow, nil
 }
 
+// BudgetExceededError names the spent budget's level: "VK", "Team", "Customer", a provider
+// name, or "<Level>:<id>" for direct team/customer/user checks.
+type BudgetExceededError struct {
+	Entity string
+	Usage  float64
+	Limit  float64
+}
+
+func (e *BudgetExceededError) Error() string {
+	return fmt.Sprintf("%s budget exceeded: %.4f >= %.4f dollars", e.Entity, e.Usage, e.Limit)
+}
+
+// Level is the entity without its ID suffix.
+func (e *BudgetExceededError) Level() string {
+	level, _, _ := strings.Cut(e.Entity, ":")
+	return level
+}
+
 // Generic check budget method
 // The idea is to keep this as a common method for checking all budgets. The entire business logic resides in here
 func (gs *LocalGovernanceStore) CheckBudget(ctx context.Context, entityWiseBudgets EntityWiseBudgets, baselines map[string]float64) (Decision, error) {
@@ -1068,8 +1086,7 @@ func (gs *LocalGovernanceStore) CheckBudget(ctx context.Context, entityWiseBudge
 			// Check if current usage (local + remote baseline) exceeds budget limit
 			if budget.CurrentUsage+baseline >= budget.MaxLimit {
 				gs.logger.Debug("LocalStore CheckBudget: Budget %s EXCEEDED", budget.ID)
-				return DecisionBudgetExceeded, fmt.Errorf("%s budget exceeded: %.4f >= %.4f dollars",
-					entity, budget.CurrentUsage+baseline, budget.MaxLimit)
+				return DecisionBudgetExceeded, &BudgetExceededError{Entity: entity, Usage: budget.CurrentUsage + baseline, Limit: budget.MaxLimit}
 			}
 		}
 	}

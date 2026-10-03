@@ -3,6 +3,7 @@ package governance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -99,7 +100,7 @@ func (r *BudgetResolver) EvaluateModelAndProviderRequest(ctx *schemas.RakshaCont
 		if decision, err := r.store.CheckProviderBudget(ctx, request, nil); err != nil || isBudgetViolation(decision) {
 			return &EvaluationResult{
 				Decision: decision,
-				Reason:   fmt.Sprintf("Warning: Provider-level budget exceeded: %s", reasonFromErr(err, decision)),
+				Reason:   budgetExhaustedReason(err, decision),
 			}
 		}
 	}
@@ -116,7 +117,7 @@ func (r *BudgetResolver) EvaluateModelAndProviderRequest(ctx *schemas.RakshaCont
 		if decision, err := r.store.CheckModelBudget(ctx, request, nil); err != nil || isBudgetViolation(decision) {
 			return &EvaluationResult{
 				Decision: decision,
-				Reason:   fmt.Sprintf("Warning: Model-level budget exceeded: %s", reasonFromErr(err, decision)),
+				Reason:   budgetExhaustedReason(err, decision),
 			}
 		}
 	}
@@ -147,7 +148,7 @@ func (r *BudgetResolver) EvaluateCustomerRequest(ctx *schemas.RakshaContext, cus
 	if decision, err := r.store.CheckCustomerBudget(ctx, customerID, request, nil); err != nil || isBudgetViolation(decision) {
 		return &EvaluationResult{
 			Decision: decision,
-			Reason:   fmt.Sprintf("Warning: Customer-level budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:   budgetExhaustedReason(err, decision),
 		}
 	}
 
@@ -177,7 +178,7 @@ func (r *BudgetResolver) EvaluateTeamRequest(ctx *schemas.RakshaContext, teamID 
 	if decision, err := r.store.CheckTeamBudget(ctx, teamID, request, nil); err != nil || isBudgetViolation(decision) {
 		return &EvaluationResult{
 			Decision: decision,
-			Reason:   fmt.Sprintf("Warning: Team-level budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:   budgetExhaustedReason(err, decision),
 		}
 	}
 
@@ -212,7 +213,7 @@ func (r *BudgetResolver) EvaluateUserRequest(ctx *schemas.RakshaContext, userID 
 	if decision, err := r.store.CheckUserBudget(ctx, userID, request, nil); err != nil || isBudgetViolation(decision) {
 		return &EvaluationResult{
 			Decision: decision,
-			Reason:   fmt.Sprintf("Warning: User-level budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:   budgetExhaustedReason(err, decision),
 		}
 	}
 
@@ -475,7 +476,7 @@ func (r *BudgetResolver) checkBudgetHierarchy(ctx context.Context, vk *configsto
 		r.logger.Debug(fmt.Sprintf("Atomic budget exceeded for VK %s: %s", vk.ID, reasonFromErr(err, decision)))
 		return &EvaluationResult{
 			Decision:   decision,
-			Reason:     fmt.Sprintf("Warning: Budget exceeded: %s", reasonFromErr(err, decision)),
+			Reason:     budgetExhaustedReason(err, decision),
 			VirtualKey: vk,
 		}
 	}
@@ -535,6 +536,28 @@ func isRateLimitViolation(decision Decision) bool {
 // isBudgetViolation returns true if the decision indicates a budget violation.
 func isBudgetViolation(decision Decision) bool {
 	return decision == DecisionBudgetExceeded
+}
+
+// budgetExhaustedReason is the caller-facing message for a budget block: which budget ran
+// out and whether switching to another virtual key can help.
+func budgetExhaustedReason(err error, decision Decision) string {
+	var exceeded *BudgetExceededError
+	if !errors.As(err, &exceeded) {
+		return fmt.Sprintf("Budget is used up (%s). Please use another virtual key.", reasonFromErr(err, decision))
+	}
+	used := fmt.Sprintf("$%.2f of $%.2f used", exceeded.Usage, exceeded.Limit)
+	switch exceeded.Level() {
+	case "User":
+		return fmt.Sprintf("Your personal budget is used up (%s). Requests are blocked until it resets or an admin raises it.", used)
+	case "Team":
+		return fmt.Sprintf("Team budget is used up (%s). This virtual key is blocked for your team — please use another virtual key.", used)
+	case "Customer":
+		return fmt.Sprintf("Customer budget is used up (%s). This virtual key is blocked for all of the customer's teams — please use another virtual key.", used)
+	case "VK":
+		return fmt.Sprintf("Virtual key budget is used up (%s). Please use another virtual key.", used)
+	default:
+		return fmt.Sprintf("%s budget is used up (%s). Please use another virtual key or provider.", exceeded.Level(), used)
+	}
 }
 
 // reasonFromErr yields a non-nil-safe reason string. When the store returns a

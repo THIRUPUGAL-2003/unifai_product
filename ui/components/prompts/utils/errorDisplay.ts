@@ -1,6 +1,9 @@
 import { isRateLimitMessage, shortenRateLimitMessage } from "@/lib/constants/logs";
 
+const BUDGET_WARNING_PATTERN = /budget is used up|budget exceeded|budget_exceeded/i;
+
 const PROVIDER_WARNING_PATTERNS = [
+	BUDGET_WARNING_PATTERN,
 	/provider api error/i,
 	/http error! status:/i,
 	/\bstatus\s*(?:4\d{2}|5\d{2})\b/i,
@@ -38,6 +41,10 @@ export function formatPromptWarningMessage(message?: string | null): string {
 	}
 	if (isRateLimitMessage(message)) {
 		return shortenRateLimitMessage(message);
+	}
+
+	if (BUDGET_WARNING_PATTERN.test(message)) {
+		return message;
 	}
 
 	const statusMatch = message.match(/status\s*(\d{3})/i);

@@ -832,7 +832,7 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 			}
 		}
 		if hasBudgetRow && currentUsage >= dbUser.Budget {
-			return fmt.Sprintf("User personal budget limit reached ($%.2f / $%.2f). Prompt execution blocked.", currentUsage, dbUser.Budget)
+			return fmt.Sprintf("Your personal budget is used up ($%.2f of $%.2f used). Requests are blocked until it resets or an admin raises it.", currentUsage, dbUser.Budget)
 		}
 	}
 
