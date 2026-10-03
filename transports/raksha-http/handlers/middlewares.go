@@ -902,9 +902,10 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 	return ""
 }
 
-// enforceCommittedPromptModelForMember locks non-admin Prompt Repo chat to the
-// prompt's latest committed provider/model. Members cannot switch models via
-// a modified client — the request body model is rewritten when x-uf-prompt-id is set.
+// enforceCommittedPromptModelForMember checks the member's prompt allowlist when x-uf-prompt-id
+// is set. Members running on an assigned Virtual Key keep the model they picked — the key's
+// provider/model allowlist is enforced by governance. Without a key (Auto), or when no model
+// was sent, the prompt's committed provider/model is used.
 func (m *AuthMiddleware) enforceCommittedPromptModelForMember(ctx *fasthttp.RequestCtx) string {
 	if m == nil || m.store == nil {
 		return ""
@@ -951,12 +952,6 @@ func (m *AuthMiddleware) enforceCommittedPromptModelForMember(ctx *fasthttp.Requ
 	if !allowed {
 		return "You do not have access to this prompt."
 	}
-	version := prompt.LatestVersion
-	if version == nil || strings.TrimSpace(version.Provider) == "" || strings.TrimSpace(version.Model) == "" {
-		return "This prompt has no committed model. Ask your admin to commit a provider/model on the prompt."
-	}
-	expectedModel := strings.TrimSpace(version.Provider) + "/" + strings.TrimSpace(version.Model)
-
 	body := ctx.PostBody()
 	if len(body) == 0 {
 		return ""
@@ -965,7 +960,19 @@ func (m *AuthMiddleware) enforceCommittedPromptModelForMember(ctx *fasthttp.Requ
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ""
 	}
-	payload["model"] = expectedModel
+	requested, _ := payload["model"].(string)
+	requested = strings.TrimSpace(requested)
+	if vk := governance.ParseVirtualKeyFromFastHTTPRequest(ctx); requested != "" && vk != nil && *vk != "" {
+		return ""
+	}
+	version := prompt.LatestVersion
+	if version == nil || strings.TrimSpace(version.Provider) == "" || strings.TrimSpace(version.Model) == "" {
+		if requested != "" {
+			return ""
+		}
+		return "Select a model for this prompt."
+	}
+	payload["model"] = strings.TrimSpace(version.Provider) + "/" + strings.TrimSpace(version.Model)
 	rewritten, err := json.Marshal(payload)
 	if err != nil {
 		return "Failed to lock prompt model."

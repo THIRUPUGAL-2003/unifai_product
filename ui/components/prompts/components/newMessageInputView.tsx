@@ -373,7 +373,7 @@ export function NewMessageInputView() {
 								</Button>
 							</TooltipTrigger>
 							<TooltipContent side="top">
-								{!canRun ? <span>Select a prompt with a committed model to run</span> : <span>Run prompt</span>}
+								{!canRun ? <span>Select a key and a model in Settings to run</span> : <span>Run prompt</span>}
 								<kbd className="bg-primary-foreground/20 ml-1.5 rounded px-1 py-0.5 font-mono text-[10px]">↵</kbd>
 							</TooltipContent>
 						</Tooltip>

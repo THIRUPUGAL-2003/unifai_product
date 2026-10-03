@@ -766,8 +766,16 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.RakshaContext, req *sc
 		}
 	}
 
+	var billedTeamID, billedTeamName, billedCustomerID, billedCustomerName string
+	if local, ok := p.store.(*LocalGovernanceStore); ok && virtualKey != nil {
+		billedTeamID, billedTeamName, billedCustomerID, billedCustomerName = local.billedIdentity(ctx, virtualKey)
+	}
 	routingCtx := &RoutingContext{
 		VirtualKey:               virtualKey,
+		BilledTeamID:             billedTeamID,
+		BilledTeamName:           billedTeamName,
+		BilledCustomerID:         billedCustomerID,
+		BilledCustomerName:       billedCustomerName,
 		Provider:                 provider,
 		Model:                    model,
 		RequestType:              requestType,
@@ -1052,7 +1060,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 		result = p.resolver.EvaluateVirtualKeyRequest(ctx, evaluationRequest.VirtualKey, evaluationRequest.Provider, evaluationRequest.Model, requestType, skipVKBudgetLimit)
 	}
 
-	// Step 2: Customer-level budget (customer attached directly to VK, or via the VK's team).
+	// Step 2: Customer-level budget (only for keys assigned directly to a customer).
 	// Fall back to the loaded relation IDs so VKs populated via joins without FK
 	// pointer columns still participate in customer-level enforcement.
 	local, hasLocalStore := p.store.(*LocalGovernanceStore)
@@ -1068,27 +1076,15 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 			}
 		}
 	} else if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil {
+		// Team-only keys never bill the team's parent customer (mirrors billedCustomerIDs).
 		var customerID string
-		customerFromTeam := false
 		switch {
 		case hierarchyVK.CustomerID != nil:
 			customerID = *hierarchyVK.CustomerID
 		case hierarchyVK.Customer != nil:
 			customerID = hierarchyVK.Customer.ID
-		case hierarchyVK.Team != nil && hierarchyVK.Team.CustomerID != nil:
-			customerID = *hierarchyVK.Team.CustomerID
-			customerFromTeam = true
-		case hierarchyVK.Team != nil && hierarchyVK.Team.Customer != nil:
-			customerID = hierarchyVK.Team.Customer.ID
-			customerFromTeam = true
 		}
-		// When the request is scoped to a specific customer (header-driven, team-VK
-		// path; stamped by the enterprise plugin), skip enforcing the scalar
-		// team.CustomerID customer if it is not the scoped one — the enterprise layer
-		// enforces the scoped customer instead. Mirrors collectBudgetsFromHierarchy.
-		scopedCustomerID, _ := ctx.Value(schemas.RakshaContextKeyGovernanceScopedCustomerID).(string)
-		scopedAway := customerFromTeam && scopedCustomerID != "" && scopedCustomerID != customerID
-		if customerID != "" && !scopedAway {
+		if customerID != "" {
 			result = p.resolver.EvaluateCustomerRequest(ctx, customerID, evaluationRequest)
 		}
 	}

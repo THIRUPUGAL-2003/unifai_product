@@ -87,8 +87,8 @@ def get_custom_styles():
         'DocTitle',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=20,
-        leading=24,
+        fontSize=24,
+        leading=28,
         textColor=PRIMARY_COLOR,
         spaceAfter=6,
     ))
@@ -416,8 +416,25 @@ def process_table(table_lines, styles):
 
     # Calculate column widths to fit page exactly (printable width = letter[0] - 108 = 504 pt)
     available_width = letter[0] - 108
-    col_width = available_width / float(num_cols)
-    col_widths = [col_width] * num_cols
+
+    # Calculate intelligent column weights based on content lengths
+    weights = []
+    for c in range(num_cols):
+        col_cells = [header[c] if c < len(header) else ''] + [r[c] if c < len(r) else '' for r in data_rows]
+        avg_len = sum(len(txt) for txt in col_cells) / float(len(col_cells) or 1)
+        max_len = max(len(txt) for txt in col_cells) if col_cells else 1
+        # Blend average and max for a smooth weight
+        weight = (avg_len * 0.55) + (max_len * 0.45)
+        weights.append(max(weight, 5.0))
+
+    total_weight = sum(weights) or 1.0
+    col_widths = [available_width * (w / total_weight) for w in weights]
+
+    # Enforce minimum column width of 48pt and renormalize to fit page perfectly
+    min_col_width = 46.0
+    col_widths = [max(w, min_col_width) for w in col_widths]
+    norm_factor = available_width / sum(col_widths)
+    col_widths = [w * norm_factor for w in col_widths]
 
     # Build Table data
     table_data = []

@@ -38,6 +38,10 @@ type RoutingDecision struct {
 // Reuses existing configstore table types for VirtualKey, Team, Customer
 type RoutingContext struct {
 	VirtualKey               *configstoreTables.TableVirtualKey  // nil if no VK
+	BilledTeamID             string                              // Team the request is billed to (user's team for customer keys)
+	BilledTeamName           string                              // Display name of BilledTeamID
+	BilledCustomerID         string                              // Customer the request is billed to (or the billed team's customer)
+	BilledCustomerName       string                              // Display name of BilledCustomerID
 	Provider                 schemas.ModelProvider               // Current provider
 	Model                    string                              // Current model
 	RequestType              string                              // Normalized request type (e.g., "chat_completion", "embedding") from HTTP context
@@ -101,7 +105,7 @@ func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.RakshaContext, routin
 	visitedRuleIDs := map[string]struct{}{}
 
 	// Build scope chain once — it's based on the immutable VirtualKey and won't change across chain steps.
-	scopeChain := buildScopeChain(routingCtx.VirtualKey)
+	scopeChain := buildScopeChain(routingCtx.VirtualKey, routingCtx.BilledTeamID, routingCtx.BilledCustomerID)
 
 	// Cache rules per scope upfront to avoid redundant store lookups when rules chain
 	// and we re-evaluate the scope hierarchy on subsequent steps.
@@ -353,7 +357,10 @@ func selectWeightedTarget(targets []configstoreTables.TableRoutingTarget) (confi
 //
 // Prefer FK IDs (TeamID / CustomerID) when the nested Team/Customer relations are not
 // preloaded in memory — otherwise team/customer-scoped routing rules never enter the chain.
-func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel {
+//
+// billedTeamID / billedCustomerID (what the request is charged to) lead their levels, so a
+// customer key used by a team member also honours that team's routing rules — matching budgets.
+func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey, billedTeamID, billedCustomerID string) []ScopeLevel {
 	var chain []ScopeLevel
 
 	// VirtualKey level (highest precedence)
@@ -365,6 +372,13 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel
 
 		// Team level
 		seenTeams := make(map[string]bool)
+		if billedTeamID != "" {
+			seenTeams[billedTeamID] = true
+			chain = append(chain, ScopeLevel{
+				ScopeName: "team",
+				ScopeID:   billedTeamID,
+			})
+		}
 		teamID := ""
 		switch {
 		case virtualKey.Team != nil && virtualKey.Team.ID != "":
@@ -372,7 +386,7 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel
 		case virtualKey.TeamID != nil && *virtualKey.TeamID != "":
 			teamID = *virtualKey.TeamID
 		}
-		if teamID != "" {
+		if teamID != "" && !seenTeams[teamID] {
 			seenTeams[teamID] = true
 			chain = append(chain, ScopeLevel{
 				ScopeName: "team",
@@ -391,6 +405,13 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel
 
 		// Customer level (VK→customer, or via team FK / nested relation)
 		seenCustomers := make(map[string]bool)
+		if billedCustomerID != "" {
+			seenCustomers[billedCustomerID] = true
+			chain = append(chain, ScopeLevel{
+				ScopeName: "customer",
+				ScopeID:   billedCustomerID,
+			})
+		}
 		customerID := ""
 		switch {
 		case virtualKey.Customer != nil && virtualKey.Customer.ID != "":
@@ -402,7 +423,7 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey) []ScopeLevel
 		case virtualKey.Team != nil && virtualKey.Team.CustomerID != nil && *virtualKey.Team.CustomerID != "":
 			customerID = *virtualKey.Team.CustomerID
 		}
-		if customerID != "" {
+		if customerID != "" && !seenCustomers[customerID] {
 			seenCustomers[customerID] = true
 			chain = append(chain, ScopeLevel{
 				ScopeName: "customer",
@@ -513,8 +534,11 @@ func extractRoutingVariables(ctx *RoutingContext) (map[string]interface{}, error
 		variables["virtual_key_name"] = ""
 	}
 
-	// Extract Team context if available (from VirtualKey)
-	if ctx.VirtualKey != nil && ctx.VirtualKey.Team != nil {
+	// Extract Team context: the billed team wins, else the VK's nested team
+	if ctx.BilledTeamID != "" {
+		variables["team_id"] = ctx.BilledTeamID
+		variables["team_name"] = ctx.BilledTeamName
+	} else if ctx.VirtualKey != nil && ctx.VirtualKey.Team != nil {
 		variables["team_id"] = ctx.VirtualKey.Team.ID
 		variables["team_name"] = ctx.VirtualKey.Team.Name
 	} else {
@@ -522,8 +546,11 @@ func extractRoutingVariables(ctx *RoutingContext) (map[string]interface{}, error
 		variables["team_name"] = ""
 	}
 
-	// Extract Customer context if available (from Team or directly from VirtualKey)
-	if ctx.VirtualKey != nil {
+	// Extract Customer context: the billed customer wins, else from Team or directly from VirtualKey
+	if ctx.BilledCustomerID != "" {
+		variables["customer_id"] = ctx.BilledCustomerID
+		variables["customer_name"] = ctx.BilledCustomerName
+	} else if ctx.VirtualKey != nil {
 		if ctx.VirtualKey.Team != nil && ctx.VirtualKey.Team.Customer != nil {
 			variables["customer_id"] = ctx.VirtualKey.Team.Customer.ID
 			variables["customer_name"] = ctx.VirtualKey.Team.Customer.Name

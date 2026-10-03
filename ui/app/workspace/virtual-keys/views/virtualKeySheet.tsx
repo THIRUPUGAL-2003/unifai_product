@@ -403,14 +403,16 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 	}, [assignedUsers, form]);
 
 	// MultiSelect options for Teams, Customers, and Users
-	const teamMultiSelectOptions = useMemo(
-		() =>
-			(teams || []).map((team) => ({
-				value: team.id,
-				label: team.customer ? `${team.name} — ${team.customer.name}` : team.name,
-			})),
-		[teams],
-	);
+	// Team-only assignment never involves the customer, so show the plain team name; the customer
+	// is appended only to tell apart teams that share a name.
+	const teamMultiSelectOptions = useMemo(() => {
+		const nameCounts = new Map<string, number>();
+		for (const team of teams || []) nameCounts.set(team.name, (nameCounts.get(team.name) ?? 0) + 1);
+		return (teams || []).map((team) => ({
+			value: team.id,
+			label: (nameCounts.get(team.name) ?? 0) > 1 && team.customer ? `${team.name} (${team.customer.name})` : team.name,
+		}));
+	}, [teams]);
 
 	const customerMultiSelectOptions = useMemo(
 		() =>
@@ -1090,7 +1092,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 												<TooltipContent>
 													<p>
 														LLM / model access for this key. Leave empty for an MCP-only key. Add providers + allowed models for chat.
-														Entity assignment is Team OR Customer OR None — never both.
+														Customer = all its teams and users; Team = only that team&apos;s members.
 													</p>
 												</TooltipContent>
 											</Tooltip>
@@ -1942,9 +1944,22 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 												<p className="text-muted-foreground text-xs mt-1">
 													Attach this key to Teams, Customers, and/or Users. You can assign to multiple teams, customers, and users simultaneously, or leave unassigned.
 												</p>
+												<ul className="text-muted-foreground mt-1.5 list-disc space-y-0.5 pl-4 text-xs">
+													<li>
+														<span className="text-foreground font-medium">Customer</span> — every team and every user under that customer
+														gets this key; usage counts against the user&apos;s budget, their team&apos;s budget and the customer budget.
+													</li>
+													<li>
+														<span className="text-foreground font-medium">Team</span> — only that team&apos;s members get this key (not the
+														customer&apos;s other teams); usage counts against the team budget.
+													</li>
+													<li>
+														<span className="text-foreground font-medium">User</span> — only the selected users.
+													</li>
+												</ul>
 											</div>
 
-											<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+											<div className="grid grid-cols-1 gap-4 md:grid-cols-3 [&>*]:min-w-0">
 												{teams?.length > 0 && (
 													<FormField
 														control={form.control}

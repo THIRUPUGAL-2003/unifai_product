@@ -254,8 +254,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const prompts = useMemo(() => promptsData?.prompts ?? [], [promptsData]);
 	const selectedPrompt = useMemo(() => prompts.find((p) => p.id === selectedPromptId), [prompts, selectedPromptId]);
 
-	// Members always run on the committed model, so capabilities come from that model.
-	const capabilityModel = (isUserRole && selectedPrompt?.latest_version?.model) || model;
+	// Members run on the model they picked, falling back to the committed one.
+	const capabilityModel = model || (isUserRole && selectedPrompt?.latest_version?.model) || "";
 	const { data: datasheetData } = useGetModelParametersQuery(capabilityModel, { skip: !capabilityModel });
 	const supportsVision = datasheetData?.supports_vision ?? false;
 
@@ -633,11 +633,13 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			let execApiKeyId = apiKeyId;
 			if (isUserRole) {
 				const committed = selectedPrompt?.latest_version;
-				if (committed?.provider) execProvider = committed.provider;
-				if (committed?.model) execModel = committed.model;
-				if (assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
 				if (!execProvider || !execModel) {
-					toast.error("This prompt has no committed model. Ask your admin to commit a provider/model on the prompt.");
+					execProvider = committed?.provider || execProvider;
+					execModel = committed?.model || execModel;
+				}
+				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
+				if (!execProvider || !execModel) {
+					toast.error("Select a key and a model in Settings before running.");
 					setIsStreaming(false);
 					activeRunRef.current = null;
 					return;
@@ -761,9 +763,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			let execApiKeyId = apiKeyId;
 			if (isUserRole) {
 				const committed = selectedPrompt?.latest_version;
-				if (committed?.provider) execProvider = committed.provider;
-				if (committed?.model) execModel = committed.model;
-				if (assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
+				if (!execProvider || !execModel) {
+					execProvider = committed?.provider || execProvider;
+					execModel = committed?.model || execModel;
+				}
+				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
 			}
 			setIsStreaming(true);
 			await executePrompt(

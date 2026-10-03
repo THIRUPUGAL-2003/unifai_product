@@ -692,10 +692,10 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 							}}
 						>
 							{selectedValues.length > 0 ? (
-								<div className="flex w-full items-center justify-between">
+								<div className="flex w-full min-w-0 items-center justify-between">
 									<div
 										className={cn(
-											"flex items-center gap-1",
+											"flex min-w-0 flex-1 items-center gap-1",
 											singleLine ? "multiselect-singleline-scroll overflow-x-auto" : "flex-wrap",
 											responsiveSettings.compactMode && "gap-0.5",
 										)}
@@ -733,7 +733,7 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 															multiSelectVariants({ variant }),
 															responsiveSettings.compactMode && "px-1.5 py-0.5 text-xs",
 															screenSize === "mobile" && "max-w-[120px] truncate",
-															singleLine && "flex-shrink-0 whitespace-nowrap",
+															singleLine ? "flex-shrink-0 whitespace-nowrap" : "max-w-full min-w-0 shrink justify-start",
 															"[&>svg]:pointer-events-auto",
 															"bg-primary-foreground text-foreground",
 														)}
@@ -751,7 +751,9 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 																})}
 															/>
 														)}
-														<span className={cn(screenSize === "mobile" && "truncate")}>{option.label}</span>
+														<span className={cn(!singleLine && "min-w-0 truncate", screenSize === "mobile" && "truncate")} title={option.label}>
+															{option.label}
+														</span>
 														<div
 															role="button"
 															tabIndex={0}
@@ -767,7 +769,7 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 																}
 															}}
 															aria-label={`Remove ${option.label} from selection`}
-															className="ring-none -m-0.5 ml-2 h-4 w-4 cursor-pointer rounded-sm focus:outline-none"
+															className="ring-none -m-0.5 ml-2 h-4 w-4 shrink-0 cursor-pointer rounded-sm focus:outline-none"
 														>
 															<XCircle className={cn("h-3 w-3", responsiveSettings.compactMode && "h-2.5 w-2.5")} />
 														</div>
@@ -797,7 +799,7 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 											</Badge>
 										)}
 									</div>
-									<div className="flex items-center justify-between">
+									<div className="flex shrink-0 items-center justify-between">
 										<div
 											role="button"
 											tabIndex={0}

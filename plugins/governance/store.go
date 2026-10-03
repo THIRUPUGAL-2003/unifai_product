@@ -2792,7 +2792,7 @@ func (gs *LocalGovernanceStore) collectRateLimitsFromHierarchy(ctx context.Conte
 	}
 	addRateLimit("VK", vk.RateLimitID)
 
-	teamID := billedTeamID(ctx, vk)
+	teamID := gs.billedTeam(ctx, vk)
 	if teamID != "" {
 		if teamValue, exists := gs.teams.Load(teamID); exists && teamValue != nil {
 			if team, ok := teamValue.(*configstoreTables.TableTeam); ok && team != nil {
@@ -2872,23 +2872,46 @@ func billedTeamID(ctx context.Context, vk *configstoreTables.TableVirtualKey) st
 	return teams[0]
 }
 
+// billedTeam is billedTeamID plus the customer-key case: a key assigned to a customer (not to a
+// team) bills the requesting user's own team under that customer, so one request meters
+// user → team → customer.
+func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreTables.TableVirtualKey) string {
+	if tid := billedTeamID(ctx, vk); tid != "" || ctx == nil {
+		return tid
+	}
+	customers := vkCustomerIDs(vk)
+	if len(customers) == 0 {
+		return ""
+	}
+	member, _ := ctx.Value(governanceUserTeamIDsContextKey).([]string)
+	for _, tid := range member {
+		if cid := gs.teamCustomerID(nil, tid); cid != "" && slices.Contains(customers, cid) {
+			return tid
+		}
+	}
+	return ""
+}
+
 // billedCustomerIDs returns the customer a VK request is attributed to (at most one): the
-// request-scoped customer, else the billed team's customer, else the VK's primary direct customer.
+// request-scoped customer, else the VK's direct customer — preferring the billed team's own
+// customer when the key is linked to it. A team-only key never bills the team's parent customer:
+// customer budgets meter customer-assigned keys only.
 func (gs *LocalGovernanceStore) billedCustomerIDs(ctx context.Context, vk *configstoreTables.TableVirtualKey, teamID string) []string {
 	if ctx != nil {
 		if scoped, _ := ctx.Value(schemas.RakshaContextKeyGovernanceScopedCustomerID).(string); scoped != "" {
 			return []string{scoped}
 		}
 	}
+	direct := vkCustomerIDs(vk)
+	if len(direct) == 0 {
+		return nil
+	}
 	if teamID != "" {
-		if cid := gs.teamCustomerID(vk, teamID); cid != "" {
+		if cid := gs.teamCustomerID(vk, teamID); cid != "" && slices.Contains(direct, cid) {
 			return []string{cid}
 		}
 	}
-	if direct := vkCustomerIDs(vk); len(direct) > 0 {
-		return direct[:1]
-	}
-	return nil
+	return direct[:1]
 }
 
 func (gs *LocalGovernanceStore) teamCustomerID(vk *configstoreTables.TableVirtualKey, teamID string) string {
@@ -2911,8 +2934,34 @@ func (gs *LocalGovernanceStore) teamCustomerID(vk *configstoreTables.TableVirtua
 // BilledEntities returns the team and customers a VK request is attributed to; the
 // pre-request team/customer checks and post-request charging must agree on them.
 func (gs *LocalGovernanceStore) BilledEntities(ctx context.Context, vk *configstoreTables.TableVirtualKey) (string, []string) {
-	teamID := billedTeamID(ctx, vk)
+	teamID := gs.billedTeam(ctx, vk)
 	return teamID, gs.billedCustomerIDs(ctx, vk, teamID)
+}
+
+// billedIdentity resolves the billed team/customer with display names so routing rules see the
+// same team/customer the request is charged to.
+func (gs *LocalGovernanceStore) billedIdentity(ctx context.Context, vk *configstoreTables.TableVirtualKey) (teamID, teamName, customerID, customerName string) {
+	teamID, customers := gs.BilledEntities(ctx, vk)
+	if teamID != "" {
+		if v, ok := gs.teams.Load(teamID); ok && v != nil {
+			if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil {
+				teamName = team.Name
+			}
+		}
+	}
+	if len(customers) > 0 {
+		customerID = customers[0]
+	} else if teamID != "" {
+		customerID = gs.teamCustomerID(vk, teamID)
+	}
+	if customerID != "" {
+		if v, ok := gs.customers.Load(customerID); ok && v != nil {
+			if customer, ok := v.(*configstoreTables.TableCustomer); ok && customer != nil {
+				customerName = customer.Name
+			}
+		}
+	}
+	return teamID, teamName, customerID, customerName
 }
 
 // collectBudgetsFromHierarchy collects budgets and their metadata from the hierarchy (Provider Configs → VK → Customer -> User -> Team → BusinessUnit)
@@ -2972,7 +3021,7 @@ func (gs *LocalGovernanceStore) collectBudgetsFromHierarchy(ctx context.Context,
 		}
 	}
 	// One team and at most one customer per request (see billedTeamID / billedCustomerIDs).
-	teamID := billedTeamID(ctx, vk)
+	teamID := gs.billedTeam(ctx, vk)
 	if teamID != "" {
 		if teamValue, exists := gs.teams.Load(teamID); exists && teamValue != nil {
 			if team, ok := teamValue.(*configstoreTables.TableTeam); ok && team != nil {

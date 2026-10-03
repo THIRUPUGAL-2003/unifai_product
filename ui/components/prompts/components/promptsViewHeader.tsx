@@ -45,11 +45,11 @@ export default function PromptsViewHeader() {
 
 	const committedLabel = useMemo(() => {
 		const version = selectedPrompt?.latest_version;
-		const p = version?.provider || provider;
-		const m = version?.model || model;
+		const p = (model && provider) || version?.provider || provider;
+		const m = model || version?.model;
 		if (p && m) return `${String(p).toUpperCase()} — ${m}`;
 		if (m) return m;
-		return "No committed model";
+		return "No model selected";
 	}, [selectedPrompt?.latest_version, provider, model]);
 
 	const [sessionsOpen, setSessionsOpen] = useState(false);

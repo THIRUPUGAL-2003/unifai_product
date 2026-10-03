@@ -300,15 +300,7 @@ def set_firefox_proxy_policy(enable: bool, pac_url: str | None = None) -> None:
     _write_firefox_policies_json(enable=enable, pac_url=pac_url)
     if IS_WIN and winreg is not None:
         try:
-            try:
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Policies\Mozilla\Firefox")
-            except Exception:
-                key = winreg.CreateKeyEx(
-                    winreg.HKEY_CURRENT_USER,
-                    r"Software\Policies\Mozilla\Firefox",
-                    0,
-                    winreg.KEY_SET_VALUE | winreg.KEY_CREATE_SUB_KEY,
-                )
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Policies\Mozilla\Firefox\Certificates")
             if enable:
                 winreg.SetValueEx(key, "ImportEnterpriseRoots", 0, winreg.REG_DWORD, 1)
             else:
@@ -317,6 +309,9 @@ def set_firefox_proxy_policy(enable: bool, pac_url: str | None = None) -> None:
                 except FileNotFoundError:
                     pass
             winreg.CloseKey(key)
+        except PermissionError:
+            # Standard users cannot write the Policies hive; user.js enterprise_roots covers trust.
+            pass
         except Exception as e:
             print(f"[Raksha Guard WARNING] Firefox registry policy: {e}")
     if enable:

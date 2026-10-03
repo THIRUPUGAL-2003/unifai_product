@@ -1,9 +1,11 @@
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { resetDurationLabels } from "@/lib/constants/governance";
 import { useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { Customer } from "@/lib/types/governance";
 import { cn } from "@/lib/utils";
+import { virtualKeysForCustomer } from "@/lib/utils/governance";
 import { formatCompactNumber } from "@/lib/utils/numbers";
 import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
 import { Link } from "@tanstack/react-router";
@@ -101,9 +103,7 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 
 	const customerTeams = (teamsData?.teams || []).filter((t) => t.customer_id === customer?.id);
 	const teamIds = new Set(customerTeams.map((t) => t.id));
-	const customerVKs = (vksData?.virtual_keys || []).filter(
-		(vk) => vk.customer_id === customer?.id || (vk.team_id != null && teamIds.has(vk.team_id)),
-	);
+	const customerVKs = customer ? virtualKeysForCustomer(vksData?.virtual_keys || [], customer.id, customerTeams) : [];
 	// Related BUs: any unit that includes at least one of this customer's teams (derived — BU is not a Customer child).
 	const relatedBUs = (buData?.business_units || []).filter((bu) => (bu.team_ids || []).some((id) => teamIds.has(id)));
 
@@ -191,14 +191,18 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 						<DetailCard title="Virtual Keys">
 							{customerVKs.length > 0 ? (
 								<ul className="space-y-1.5 text-sm">
-									{customerVKs.map((vk) => (
+									{customerVKs.map(({ vk, scope, teamNames }) => (
 										<li key={vk.id} className="flex items-center justify-between gap-2">
-											<span>
-												{vk.name}
-												<span className="text-muted-foreground ml-2 text-xs">
-													{vk.team_id ? "via team" : "direct"}
-												</span>
-											</span>
+											<span className="min-w-0 truncate">{vk.name}</span>
+											{scope === "customer" ? (
+												<Badge variant="outline" className="shrink-0 text-xs">
+													All teams
+												</Badge>
+											) : (
+												<Badge variant="secondary" className="max-w-[60%] shrink truncate text-xs" title={teamNames.join(", ")}>
+													Only: {teamNames.join(", ")}
+												</Badge>
+											)}
 										</li>
 									))}
 								</ul>

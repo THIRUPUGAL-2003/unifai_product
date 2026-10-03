@@ -22,7 +22,6 @@ import { useIsAuthEnabledQuery } from "@/lib/store";
 
 export function SettingsPanel() {
 	const {
-		selectedPrompt,
 		provider,
 		setProvider,
 		model,
@@ -44,14 +43,20 @@ export function SettingsPanel() {
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isMemberOnly = Boolean(authStatus?.role && authStatus.role !== "admin");
 
+	const { data: virtualKeysData } = useGetVirtualKeysQuery();
+
 	const onProviderChange = useCallback(
 		(p: string) => {
 			setProvider(p);
-			setApiKeyId("__auto__");
+			// Keep the picked virtual key when it also serves the new provider.
+			const current = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId);
+			if (!current?.provider_configs?.some((pc) => pc.provider === p)) {
+				setApiKeyId("__auto__");
+			}
 			onModelChange("");
 			onModelParamsChange({} as ModelParams);
 		},
-		[setProvider, setApiKeyId, onModelChange, onModelParamsChange],
+		[setProvider, setApiKeyId, onModelChange, onModelParamsChange, virtualKeysData, apiKeyId],
 	);
 
 	const onApiKeyIdChange = useCallback(
@@ -62,7 +67,6 @@ export function SettingsPanel() {
 	);
 	// Dynamic providers
 	const { data: providers, isLoading: isLoadingProviders } = useGetProvidersQuery();
-	const { data: virtualKeysData } = useGetVirtualKeysQuery();
 	// Keys for the API Key selector (from /api/keys endpoint, provider-filtered)
 	const { data: allKeys, isSuccess: hasLoadedAllKeys } = useGetAllKeysQuery();
 	const { data: skillsData } = useListSkillsQuery({ limit: 100, offset: 0 }, { skip: isMemberOnly });
@@ -91,14 +95,33 @@ export function SettingsPanel() {
 		});
 	}, [providers, virtualKeysData, allKeys, hasLoadedAllKeys]);
 
+	// Picking a virtual key narrows Provider to the providers configured on that key.
+	const selectedVirtualKey = useMemo(
+		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId),
+		[virtualKeysData, apiKeyId],
+	);
+	const selectedVKProviders = useMemo(
+		() => [...new Set((selectedVirtualKey?.provider_configs ?? []).map((pc) => pc.provider))],
+		[selectedVirtualKey],
+	);
+	useEffect(() => {
+		if (selectedVKProviders.length === 0) return;
+		if (provider && selectedVKProviders.includes(provider)) return;
+		setProvider(selectedVKProviders[0]);
+		onModelChange("");
+		onModelParamsChange({} as ModelParams);
+	}, [selectedVKProviders, provider, setProvider, onModelChange, onModelParamsChange]);
+
 	// Ensure current provider always has a label-resolved option (even before providers query loads)
 	const providerOptions = useMemo(() => {
-		const opts = configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name }));
+		const scoped =
+			selectedVKProviders.length > 0 ? configuredProviders.filter((p) => selectedVKProviders.includes(p.name)) : configuredProviders;
+		const opts = scoped.map((p) => ({ label: getProviderLabel(p.name), value: p.name }));
 		if (provider && !opts.find((o) => o.value === provider)) {
 			opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
 		}
 		return opts;
-	}, [configuredProviders, provider]);
+	}, [configuredProviders, provider, selectedVKProviders]);
 
 	const providerKeys = useMemo(() => {
 		// Members must use assigned Virtual Keys only — never raw provider keys.
@@ -154,6 +177,19 @@ export function SettingsPanel() {
 
 	const hasModel = Boolean(model);
 
+	// Members start from their assigned key: it sets the provider and limits Model to the key's models.
+	const keyFirst = isMemberOnly && providerVirtualKeys.length > 0;
+	const showKeySelector = (providerKeys.length > 0 || providerVirtualKeys.length > 0) && (keyFirst || !!provider);
+	const keySelector = showKeySelector ? (
+		<ApiKeySelectorView
+			providerKeys={providerKeys}
+			virtualKeys={providerVirtualKeys}
+			value={apiKeyId}
+			onValueChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
+			disabled={!keyFirst && !provider}
+		/>
+	) : null;
+
 	type SettingsSection = "parameters" | "deployments";
 	const [openSection, setOpenSection] = useState<SettingsSection | undefined>("parameters");
 
@@ -205,57 +241,36 @@ export function SettingsPanel() {
 							className="min-h-0 flex-1 overflow-y-auto pt-0 pb-2"
 						>
 							<div className="space-y-6">
-								{isMemberOnly && selectedPrompt?.latest_version ? (
-									<div className="space-y-3 rounded-lg border bg-muted/40 p-3" data-testid="settings-locked-model">
-										<div className="flex flex-col gap-1">
-											<Label className="text-muted-foreground text-xs font-medium uppercase">Assigned Model</Label>
-											<div className="font-semibold text-sm">
-												{String(selectedPrompt.latest_version.provider || provider).toUpperCase()} — {selectedPrompt.latest_version.model || model}
-											</div>
-										</div>
-										<p className="text-xs text-muted-foreground">
-											This prompt is locked to its committed version model for members.
-										</p>
-									</div>
-								) : (
-									<>
-										<div className="flex flex-col gap-2" data-testid="settings-provider">
-											<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
-											<ComboboxSelect
-												options={providerOptions}
-												value={provider}
-												onValueChange={(v) => v && onProviderChange(v)}
-												placeholder="Select provider"
-												hideClear
-											/>
-										</div>
-
-										<div className="flex flex-col gap-2" data-testid="settings-model">
-											<Label className="text-muted-foreground text-xs font-medium uppercase">Model</Label>
-											<ModelMultiselect
-												provider={provider}
-												keys={filterKeys && filterKeys.length > 0 ? filterKeys : undefined}
-												vks={filterVks}
-												value={model}
-												onChange={(v) => onModelChange(v)}
-												isSingleSelect
-												placeholder={!provider ? "Select a provider first" : "Select model"}
-												disabled={!provider}
-												unfiltered={true}
-											/>
-										</div>
-									</>
-								)}
-
-								{(providerKeys.length > 0 || providerVirtualKeys.length > 0) && !!provider && (
-									<ApiKeySelectorView
-										providerKeys={providerKeys}
-										virtualKeys={providerVirtualKeys}
-										value={apiKeyId}
-										onValueChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
-										disabled={!provider}
+								{keyFirst && keySelector}
+								<div className="flex flex-col gap-2" data-testid="settings-provider">
+									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
+									<ComboboxSelect
+										options={providerOptions}
+										value={provider}
+										onValueChange={(v) => v && onProviderChange(v)}
+										placeholder="Select provider"
+										hideClear
 									/>
-								)}
+								</div>
+
+								<div className="flex flex-col gap-2" data-testid="settings-model">
+									<Label className="text-muted-foreground text-xs font-medium uppercase">Model</Label>
+									<ModelMultiselect
+										provider={provider}
+										keys={filterKeys && filterKeys.length > 0 ? filterKeys : undefined}
+										vks={filterVks}
+										value={model}
+										onChange={(v) => onModelChange(v)}
+										isSingleSelect
+										placeholder={
+											!provider ? "Select a provider first" : filterVks ? "Select a model from this key" : "Select model"
+										}
+										disabled={!provider}
+										unfiltered={true}
+									/>
+								</div>
+
+								{!keyFirst && keySelector}
 								{!!provider && (
 									<p className="text-muted-foreground text-xs">
 										MCP tools use the Virtual Key you pick here (Bearer <code className="text-[10px]">sk-uf-…</code>

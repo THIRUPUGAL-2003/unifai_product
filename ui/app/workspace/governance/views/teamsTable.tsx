@@ -20,7 +20,7 @@ import { resetDurationLabels } from "@/lib/constants/governance";
 import { getErrorMessage, useDeleteTeamMutation } from "@/lib/store";
 import { Customer, Team, VirtualKey } from "@/lib/types/governance";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils/governance";
+import { describeTeamVirtualKey, formatCurrency, virtualKeysForTeam } from "@/lib/utils/governance";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Link } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Edit, MoreHorizontal, Plus, ScrollText, Search, Trash2 } from "lucide-react";
@@ -196,9 +196,7 @@ export default function TeamsTable({
 		onDialogClose();
 	};
 
-	const getVirtualKeysForTeam = (teamId: string) => {
-		return virtualKeys.filter((vk) => vk.team_id === teamId);
-	};
+	const getVirtualKeysForTeam = (team: Team) => virtualKeysForTeam(virtualKeys, team);
 
 	const getCustomerName = (customerId?: string) => {
 		if (!customerId) return "-";
@@ -272,7 +270,7 @@ export default function TeamsTable({
 									</TableRow>
 								) : (
 									teams.map((team) => {
-										const vks = getVirtualKeysForTeam(team.id);
+										const vks = getVirtualKeysForTeam(team);
 										const customerName = getCustomerName(team.customer_id);
 
 										// Budget calculations — any of the team's budgets exhausted
@@ -448,7 +446,7 @@ export default function TeamsTable({
 																		{vks.length} {vks.length === 1 ? "key" : "keys"}
 																	</Badge>
 																</TooltipTrigger>
-																<TooltipContent>{vks.map((vk) => vk.name).join(", ")}</TooltipContent>
+																<TooltipContent>{vks.map(describeTeamVirtualKey).join(", ")}</TooltipContent>
 															</Tooltip>
 														</div>
 													) : (

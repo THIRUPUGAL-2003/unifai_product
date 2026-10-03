@@ -20,7 +20,7 @@ import { resetDurationLabels } from "@/lib/constants/governance";
 import { getErrorMessage, useDeleteCustomerMutation } from "@/lib/store";
 import { Customer, Team, VirtualKey } from "@/lib/types/governance";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils/governance";
+import { describeCustomerVirtualKey, formatCurrency, virtualKeysForCustomer } from "@/lib/utils/governance";
 import { CustomerDetailSheet } from "@enterprise/components/user-groups/sheets/customerDetailSheet";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Link } from "@tanstack/react-router";
@@ -181,13 +181,8 @@ export default function CustomersTable({
 		return teams.filter((team) => team.customer_id === customerId);
 	};
 
-	// Direct customer VKs + VKs attached to this customer's teams (Team XOR Customer on VK).
-	const getVirtualKeysForCustomer = (customerId: string) => {
-		const teamIds = new Set(getTeamsForCustomer(customerId).map((t) => t.id));
-		return virtualKeys.filter(
-			(vk) => vk.customer_id === customerId || (vk.team_id != null && teamIds.has(vk.team_id)),
-		);
-	};
+	const getVirtualKeysForCustomer = (customerId: string) =>
+		virtualKeysForCustomer(virtualKeys, customerId, getTeamsForCustomer(customerId));
 
 	const hasActiveFilters = debouncedSearch;
 
@@ -485,7 +480,7 @@ export default function CustomersTable({
 																		{vks.length} {vks.length === 1 ? "key" : "keys"}
 																	</Badge>
 																</TooltipTrigger>
-																<TooltipContent>{vks.map((vk) => vk.name).join(", ")}</TooltipContent>
+																<TooltipContent>{vks.map(describeCustomerVirtualKey).join(", ")}</TooltipContent>
 															</Tooltip>
 														</div>
 													) : (

@@ -152,7 +152,7 @@ for fname, data in test_files.items():
 print("=" * 70)
 if failures:
     print(f"FAILED FILES ({len(failures)}): {failures}")
-    sys.exit(1)
-else:
-    print("ALL FILES PASSED EXTRACTION AND RULE CHECK!")
-    sys.exit(0)
+    if __name__ == "__main__":
+        sys.exit(1)
+    raise AssertionError(f"extraction failed for: {failures}")
+print("ALL FILES PASSED EXTRACTION AND RULE CHECK!")

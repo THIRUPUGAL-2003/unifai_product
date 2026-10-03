@@ -127,7 +127,7 @@ func (gs *LocalGovernanceStore) stampBilledTeam(ctx *schemas.RakshaContext, vk *
 	if ctx == nil || vk == nil {
 		return
 	}
-	teamID := billedTeamID(ctx, vk)
+	teamID := gs.billedTeam(ctx, vk)
 	if teamID == "" || teamID == teamIDFromVK(vk) {
 		return
 	}
