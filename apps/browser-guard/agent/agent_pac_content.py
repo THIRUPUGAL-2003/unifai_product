@@ -167,6 +167,19 @@ def ensure_pac_strict_proxy(pac: str) -> str:
         pac,
         flags=re.IGNORECASE,
     )
+
+    # Ensure search engine routing (Google, Bing, DDG, Yahoo) is present for Search Logs
+    # even when an older server PAC build omitted searchEnginePACRule.
+    if "google.*" not in pac:
+        proxy_target = (agent_config.PAC_ADVERTISE_ADDR or PROXY_ADDR or "127.0.0.1:18103").strip()
+        rule = "\n".join(line.replace("{proxy}", proxy_target) for line in SEARCH_ENGINE_PAC_RULE)
+        pac = re.sub(
+            r'(function\s+FindProxyForURL\s*\([^)]*\)\s*\{(?:\s*host\s*=\s*host\.toLowerCase\(\)\s*;)?\s*)',
+            r'\1\n' + rule + '\n',
+            pac,
+            count=1,
+            flags=re.IGNORECASE,
+        )
     return pac
 
 
