@@ -460,6 +460,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"enable_enforce_auth_on_inference_default"}, run: migrationEnableEnforceAuthOnInferenceDefault},
 	{IDs: []string{"add_owner_user_id_to_prompts"}, run: migrationAddOwnerUserIDToPrompts},
 	{IDs: []string{"widen_prompt_message_json_mysql"}, run: migrationWidenPromptMessageJSONMySQL},
+	{IDs: []string{"drop_unconfigured_telemetry_otel_plugins"}, run: migrationDropUnconfiguredObservabilityPlugins},
 }
 
 // migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
@@ -11303,6 +11304,86 @@ func migrationAddGovernanceVirtualKeyUsersTable(ctx context.Context, db *gorm.DB
 		return fmt.Errorf("error running %s migration: %w", migrationName, err)
 	}
 	return nil
+}
+
+// migrationDropUnconfiguredObservabilityPlugins removes Prometheus (telemetry) and
+// OpenTelemetry plugin rows that never point at a destination, so Observability →
+// Connectors starts empty and admins connect them explicitly.
+func migrationDropUnconfiguredObservabilityPlugins(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "drop_unconfigured_telemetry_otel_plugins"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if !tx.Migrator().HasTable(&tables.TablePlugin{}) {
+				return nil
+			}
+			var rows []tables.TablePlugin
+			if err := tx.Where("name IN ?", []string{"telemetry", "otel"}).Find(&rows).Error; err != nil {
+				return err
+			}
+			for i := range rows {
+				if observabilityPluginConfigured(rows[i].Name, rows[i].Config) {
+					continue
+				}
+				if err := tx.Delete(&tables.TablePlugin{}, rows[i].ID).Error; err != nil {
+					return err
+				}
+				logger.Info("[configstore] removed unconfigured %s plugin from Connectors", rows[i].Name)
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error { return nil },
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+// observabilityPluginConfigured reports whether a telemetry/otel plugin row sends data
+// somewhere: a Prometheus push gateway, or an OpenTelemetry profile with a collector URL.
+func observabilityPluginConfigured(name string, config any) bool {
+	raw, err := json.Marshal(config)
+	if err != nil {
+		return true
+	}
+	var cfg map[string]any
+	if json.Unmarshal(raw, &cfg) != nil || cfg == nil {
+		return false
+	}
+	switch name {
+	case "telemetry":
+		if enabled, _ := cfg["push_gateway_enabled"].(bool); enabled {
+			return true
+		}
+	case "otel":
+		profiles, _ := cfg["profiles"].([]any)
+		for _, p := range profiles {
+			profile, _ := p.(map[string]any)
+			if secretVarSet(profile["collector_url"]) {
+				return true
+			}
+		}
+		return secretVarSet(cfg["collector_url"])
+	}
+	return false
+}
+
+func secretVarSet(v any) bool {
+	switch val := v.(type) {
+	case string:
+		return strings.TrimSpace(val) != ""
+	case map[string]any:
+		for _, key := range []string{"value", "env_var"} {
+			if s, _ := val[key].(string); strings.TrimSpace(s) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // migrationEnableEnforceAuthOnInferenceDefault turns on VK/auth enforcement for

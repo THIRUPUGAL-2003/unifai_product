@@ -107,8 +107,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleDisplayName": "Raksha Guard",
         "CFBundleName": "Raksha Guard",
-        "CFBundleShortVersionString": "1.1.15",
-        "CFBundleVersion": "1.1.15",
+        "CFBundleShortVersionString": "1.1.16",
+        "CFBundleVersion": "1.1.16",
         "LSBackgroundOnly": False,
         "NSHighResolutionCapable": True,
     },

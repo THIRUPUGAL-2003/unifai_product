@@ -3,8 +3,10 @@ package connectors
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/raksha/raksha/core/schemas"
 	"github.com/raksha/raksha/framework/configstore"
@@ -50,7 +52,7 @@ func ReloadFromStore(ctx context.Context, store configstore.WorkspaceStore) erro
 		}
 		var payload struct {
 			Enabled bool           `json:"enabled"`
-			Config  map[string]any   `json:"config"`
+			Config  map[string]any `json:"config"`
 		}
 		if err := json.Unmarshal([]byte(row.Data), &payload); err != nil {
 			return fmt.Errorf("parse connector %s: %w", name, err)
@@ -78,34 +80,41 @@ func (r *Runtime) settings(name string) (Settings, bool) {
 	return s, ok
 }
 
-// ExportTrace forwards a completed trace to all enabled connectors.
-func (r *Runtime) ExportTrace(ctx context.Context, trace *schemas.Trace) {
+// exportTimeout bounds one connector export so a slow destination cannot stall trace completion.
+const exportTimeout = 15 * time.Second
+
+// ExportTrace forwards a completed trace to all enabled connectors and returns the
+// joined per-connector errors (export is best-effort; callers only log them).
+func (r *Runtime) ExportTrace(ctx context.Context, trace *schemas.Trace) error {
 	if trace == nil {
-		return
+		return nil
 	}
+	var errs []error
 	for _, name := range ConnectorNames {
 		cfg, ok := r.settings(name)
 		if !ok || !cfg.Enabled {
 			continue
 		}
+		exportCtx, cancel := context.WithTimeout(ctx, exportTimeout)
 		var err error
 		switch name {
 		case "datadog":
-			err = exportDatadog(ctx, cfg, trace)
+			err = exportDatadog(exportCtx, cfg, trace)
 		case "kafka":
-			err = exportKafka(ctx, cfg, trace)
+			err = exportKafka(exportCtx, cfg, trace)
 		case "bigquery":
-			err = exportBigQuery(ctx, cfg, trace)
+			err = exportBigQuery(exportCtx, cfg, trace)
 		case "pubsub":
-			err = exportPubSub(ctx, cfg, trace)
+			err = exportPubSub(exportCtx, cfg, trace)
 		case "newrelic":
-			err = exportNewRelic(ctx, cfg, trace)
+			err = exportNewRelic(exportCtx, cfg, trace)
 		}
+		cancel()
 		if err != nil {
-			// Best-effort export; do not fail the request pipeline.
-			_ = err
+			errs = append(errs, fmt.Errorf("%s connector export failed: %w", name, err))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // Test validates connectivity for a connector by name using current or supplied settings.

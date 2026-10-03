@@ -111,10 +111,43 @@ func guardSecretMatches(provided, configured string) bool {
 	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
 }
 
+const guardKeyHeader = "X-Raksha-Guard-Key"
+
+// guardKeyHeaderPrefix returns "X-<Brand>-" for a request authenticated with an
+// X-<Brand>-Guard-Key header. Older Guard builds use a different brand in the header
+// name; accepting any brand lets them authenticate and auto-update to the current build.
+func guardKeyHeaderPrefix(ctx *fasthttp.RequestCtx) (prefix, key string) {
+	if v := strings.TrimSpace(string(ctx.Request.Header.Peek(guardKeyHeader))); v != "" {
+		return "X-Raksha-", v
+	}
+	for name, value := range ctx.Request.Header.All() {
+		n := string(name)
+		if len(n) <= len("X--Guard-Key") || !strings.EqualFold(n[:2], "X-") || !strings.EqualFold(n[len(n)-len("-Guard-Key"):], "-Guard-Key") {
+			continue
+		}
+		brand := n[2 : len(n)-len("-Guard-Key")]
+		if strings.ContainsAny(brand, "-_ ") {
+			continue
+		}
+		if v := strings.TrimSpace(string(value)); v != "" {
+			return n[:2+len(brand)+1], v
+		}
+	}
+	return "", ""
+}
+
+// setGuardVersionHeaders advertises the release version under the current header name and,
+// for an older Guard, under the header name that build reads.
+func setGuardVersionHeaders(ctx *fasthttp.RequestCtx, version string) {
+	ctx.Response.Header.Set("X-Raksha-Guard-Version", version)
+	if prefix, _ := guardKeyHeaderPrefix(ctx); prefix != "" && !strings.EqualFold(prefix, "X-Raksha-") {
+		ctx.Response.Header.Set(prefix+"Guard-Version", version)
+	}
+}
+
 func extractGuardKey(ctx *fasthttp.RequestCtx) string {
-	providedKey := strings.TrimSpace(string(ctx.Request.Header.Peek("X-Raksha-Guard-Key")))
-	if providedKey != "" {
-		return providedKey
+	if _, key := guardKeyHeaderPrefix(ctx); key != "" {
+		return key
 	}
 	auth := string(ctx.Request.Header.Peek("Authorization"))
 	if strings.HasPrefix(auth, "Bearer ") {

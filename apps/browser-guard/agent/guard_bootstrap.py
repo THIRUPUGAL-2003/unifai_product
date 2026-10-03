@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 
-RUNTIME_VERSION_BAKED = "1.1.15"
+RUNTIME_VERSION_BAKED = "1.1.16"
 MAX_BOOT_ATTEMPTS = 3
 _SERVICE_MODES = ("--mitm-worker", "--uninstall", "/uninstall", "--uninstall-prompt")
 

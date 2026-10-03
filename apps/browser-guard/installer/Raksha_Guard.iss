@@ -2,11 +2,12 @@
 ; Build: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Raksha_Guard.iss
 
 #define MyAppName "Raksha Guard"
-#define MyAppVersion "1.1.15"
+#define MyAppVersion "1.1.16"
 #define MyAppPublisher "Raksha"
 ; Synced from .env SERVER_DOMAIN by apps/browser-guard/scripts/sync_config_from_env.py
 #define MyAppURL "https://unifai.yespanchi.com"
 #define MyAppExeName "Raksha_Guard.exe"
+#define MyAppId "{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"
 
 [Setup]
 AppId={{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}
@@ -18,6 +19,8 @@ AppSupportURL={#MyAppURL}
 DefaultDirName={localappdata}\Programs\Raksha\Guard
 DefaultGroupName=Raksha Guard
 DisableProgramGroupPage=yes
+UsePreviousAppDir=no
+UsePreviousGroup=no
 OutputDir=..\release
 OutputBaseFilename=Raksha_Guard_Setup
 SetupIconFile=raksha_guard.ico
@@ -47,7 +50,6 @@ Name: "{userdesktop}\Raksha Guard"; Filename: "{app}\{#MyAppExeName}"; Tasks: au
 [Registry]
 ; Permanent autostart for current user (HKCU) — required so PAC/proxy apply to the logged-in user
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Raksha_Guard"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
-
 [Run]
 ; No skipifsilent — auto-update uses /VERYSILENT and must restart Guard after replace.
 ; Via cmd with PYINSTALLER_RESET_ENVIRONMENT: an auto-updating Guard (onefile EXE) launches this
@@ -74,6 +76,72 @@ begin
   Result := True;
 end;
 
+const
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1';
+
+function PreviousInstallValue(const Name: String): String;
+begin
+  Result := '';
+  if not RegQueryStringValue(HKCU, UninstallKey, Name, Result) then
+    RegQueryStringValue(HKLM, UninstallKey, Name, Result);
+end;
+
+// An earlier build under this AppId may live in another <Vendor>\Guard folder with its own EXE
+// name, autostart value and data dir. Left running, both Guards fight over the PAC/proxy, so
+// stop and remove it, keeping its data dir (device identity) for this build.
+procedure RemovePreviousBuild();
+var
+  ResultCode: Integer;
+  OldDir, OldGroup, Vendor, OldData, NewData, Script: String;
+begin
+  OldDir := RemoveBackslashUnlessRoot(PreviousInstallValue('InstallLocation'));
+  if (OldDir = '') or SameText(OldDir, RemoveBackslashUnlessRoot(ExpandConstant('{app}'))) then
+    exit;
+  if not SameText(ExtractFileName(OldDir), 'Guard') then
+    exit;
+
+  // Also cancels the "ping ... & start <old exe>" relaunch an auto-updating old Guard queued.
+  Script := ExpandConstant('{tmp}\stop_previous_guard.ps1');
+  SaveStringToFile(Script,
+    'param([string]$d)' + #13#10 +
+    '$d = $d.TrimEnd(''\'') + ''\''' + #13#10 +
+    '$c = [StringComparison]::OrdinalIgnoreCase' + #13#10 +
+    'Get-CimInstance Win32_Process | Where-Object { $_.Name -eq ''cmd.exe'' -and $_.CommandLine -and $_.CommandLine.IndexOf($d, $c) -ge 0 } | Invoke-CimMethod -MethodName Terminate | Out-Null' + #13#10 +
+    'Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d, $c) } | Stop-Process -Force -ErrorAction SilentlyContinue' + #13#10 +
+    '$k = ''HKCU:\Software\Microsoft\Windows\CurrentVersion\Run''' + #13#10 +
+    '$p = Get-ItemProperty -Path $k -ErrorAction SilentlyContinue' + #13#10 +
+    'if ($p) { foreach ($n in (Get-Item -Path $k).Property) { if (([string]$p.$n).IndexOf($d, $c) -ge 0) { Remove-ItemProperty -Path $k -Name $n -ErrorAction SilentlyContinue } } }' + #13#10 +
+    '$s = New-Object -ComObject WScript.Shell' + #13#10 +
+    'Get-ChildItem -Path ([Environment]::GetFolderPath(''Desktop'')) -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { ([string]$s.CreateShortcut($_.FullName).TargetPath).StartsWith($d, $c) } | Remove-Item -Force -ErrorAction SilentlyContinue' + #13#10,
+    False);
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + Script + '" "' + OldDir + '"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(500);
+
+  OldGroup := PreviousInstallValue('Inno Setup: Icon Group');
+  if (OldGroup <> '') and not SameText(OldGroup, 'Raksha Guard') then
+    DelTree(ExpandConstant('{userprograms}\') + OldGroup, True, True, True);
+
+  Vendor := ExtractFileName(ExtractFileDir(OldDir));
+  if (Vendor <> '') and not SameText(Vendor, 'Raksha') then
+  begin
+    OldData := ExpandConstant('{localappdata}\') + Vendor + '\Guard';
+    NewData := ExpandConstant('{localappdata}\Raksha\Guard');
+    // proxy_bundle targets the old EXE and must not be reused.
+    if DirExists(OldData) and (DirExists(NewData) or
+      (Exec(ExpandConstant('{sys}\robocopy.exe'), '"' + OldData + '" "' + NewData + '" /E /XD proxy_bundle /R:1 /W:1 /NFL /NDL /NJH /NJS',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode < 8))) then
+    begin
+      DelTree(OldData, True, True, True);
+      RemoveDir(ExtractFileDir(OldData));
+    end;
+  end;
+
+  DelTree(OldDir, True, True, True);
+  RemoveDir(ExtractFileDir(OldDir));
+end;
+
 function InitializeSetup(): Boolean;
 begin
   StopRunningGuard();
@@ -83,6 +151,7 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   StopRunningGuard();
+  RemovePreviousBuild();
   Result := '';
 end;
 

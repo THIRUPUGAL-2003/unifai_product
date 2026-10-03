@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -103,16 +104,101 @@ func browserAISetupCandidates() map[string][]string {
 			"/app/release/Update_Raksha_Guard.ps1",
 			"/app/apps/browser-guard/release/Update_Raksha_Guard.ps1",
 		},
+		"Update_Raksha_Guard_macOS.command": {
+			filepath.Join("apps", "browser-guard", "release", "Update_Raksha_Guard_macOS.command"),
+			filepath.Join("release", "Update_Raksha_Guard_macOS.command"),
+			"/app/release/Update_Raksha_Guard_macOS.command",
+			"/app/apps/browser-guard/release/Update_Raksha_Guard_macOS.command",
+		},
 	}
+}
+
+// macZipHelperScripts are top-level helpers every macOS download must carry; they are
+// added from release/ when an older Raksha_Guard_macOS.zip was built without them.
+var macZipHelperScripts = []string{"Update_Raksha_Guard_macOS.command"}
+
+// writeMacZipWithHelpers re-streams the macOS package without recompressing it, restores
+// the executable bit that Windows-built ZIPs (Compress-Archive) drop on .command files and
+// the .app binary, and appends any missing helper scripts from release/.
+func writeMacZipWithHelpers(w io.Writer, zipPath string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		f, openErr := os.Open(zipPath)
+		if openErr != nil {
+			return openErr
+		}
+		defer f.Close()
+		_, err = io.Copy(w, f)
+		return err
+	}
+	defer zr.Close()
+	zw := zip.NewWriter(w)
+	present := make(map[string]bool, len(zr.File))
+	for _, f := range zr.File {
+		present[f.Name] = true
+		fh := f.FileHeader
+		isExecutable := strings.HasSuffix(f.Name, ".command") || strings.Contains(f.Name, ".app/Contents/MacOS/")
+		if isExecutable && !strings.HasSuffix(f.Name, "/") && fh.Mode()&os.ModeSymlink == 0 {
+			fh.SetMode(0o755)
+		}
+		dst, err := zw.CreateRaw(&fh)
+		if err != nil {
+			return err
+		}
+		src, err := f.OpenRaw()
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(dst, src); err != nil {
+			return err
+		}
+	}
+	for _, name := range macZipHelperScripts {
+		if present[name] {
+			continue
+		}
+		p, ok := findFirstExisting(browserAISetupCandidates()[name])
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+		fh := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Now()}
+		fh.SetMode(0o755)
+		entry, err := zw.CreateHeader(fh)
+		if err != nil {
+			return err
+		}
+		if _, err := entry.Write(data); err != nil {
+			return err
+		}
+	}
+	return zw.Close()
 }
 
 func findFirstExisting(candidates []string) (string, bool) {
 	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && !isGitLFSPointer(candidate, info.Size()) {
 			return candidate, true
 		}
 	}
 	return "", false
+}
+
+// isGitLFSPointer reports a release binary checked out without `git lfs pull`: a ~130-byte
+// text stub that would otherwise be shipped to employees as the installer.
+func isGitLFSPointer(path string, size int64) bool {
+	if size > 1024 {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return bytes.HasPrefix(data, []byte("version https://git-lfs.github.com/spec/"))
 }
 
 func readGuardReleaseVersion() string {
@@ -297,22 +383,17 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	// 1. MAC DEDICATED DOWNLOAD
 	if platform == "mac" || platform == "macos" || platform == "darwin" {
 		if !macZipOK {
-			SendError(ctx, fasthttp.StatusNotFound, "No macOS Guard installer on server — add Raksha_Guard_macOS.zip under apps/browser-guard/release/")
+			SendError(ctx, fasthttp.StatusNotFound, "No macOS Guard installer on server — add Raksha_Guard_macOS.zip under apps/browser-guard/release/ (if it is a Git LFS pointer, run: git lfs install && git lfs pull)")
 			return
 		}
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/zip")
 		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Raksha_Guard_macOS.zip"`)
 		if macVer != "" {
-			ctx.Response.Header.Set("X-Raksha-Guard-Version", macVer)
+			setGuardVersionHeaders(ctx, macVer)
 		}
 		ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
-			f, err := os.Open(macZipPath)
-			if err != nil {
-				return
-			}
-			defer f.Close()
-			_, _ = io.Copy(w, f)
+			_ = writeMacZipWithHelpers(w, macZipPath)
 			_ = w.Flush()
 		})
 		return
@@ -321,7 +402,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	// 2. WINDOWS DEDICATED DOWNLOAD
 	if platform == "windows" || platform == "win" {
 		if !setupOK && !exeOK {
-			SendError(ctx, fasthttp.StatusNotFound, "No Windows Guard installer on server — add Raksha_Guard_Setup.exe or Raksha_Guard.exe under apps/browser-guard/release/")
+			SendError(ctx, fasthttp.StatusNotFound, "No Windows Guard installer on server — add Raksha_Guard_Setup.exe or Raksha_Guard.exe under apps/browser-guard/release/ (if they are Git LFS pointers, run: git lfs install && git lfs pull)")
 			return
 		}
 		// Always ship BOTH when present: Setup (Inno install) + portable EXE.
@@ -342,7 +423,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		ctx.SetContentType("application/zip")
 		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Raksha_Guard_Windows.zip"`)
 		if winVer != "" {
-			ctx.Response.Header.Set("X-Raksha-Guard-Version", winVer)
+			setGuardVersionHeaders(ctx, winVer)
 		}
 		ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
 			zw := zip.NewWriter(w)
@@ -392,6 +473,8 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		"EMPLOYEE_README_MAC.txt",
 		"Install_Raksha_Guard.command",
 		"Uninstall_Raksha_Guard.command",
+		"Update_Raksha_Guard_macOS.command",
+		"Update_Raksha_Guard.ps1",
 		"VERSION.txt",
 		"raksha_guard_config.json",
 	} {
@@ -415,7 +498,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	ctx.SetContentType("application/zip")
 	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="raksha-browser-ai-setup.zip"`)
 	if winVer != "" {
-		ctx.Response.Header.Set("X-Raksha-Guard-Version", winVer)
+		setGuardVersionHeaders(ctx, winVer)
 	}
 	ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
 		zw := zip.NewWriter(w)

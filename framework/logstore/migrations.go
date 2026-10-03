@@ -3206,7 +3206,33 @@ func migrationAddSafeJsonbFunction(ctx context.Context, db *gorm.DB, logger sche
 				return nil
 			}
 			tx = tx.WithContext(ctx)
-			const stmt = `
+			if err := tx.Exec(safeJsonbFunctionSQL).Error; err != nil {
+				return fmt.Errorf("failed to create raksha_safe_jsonb: %w", err)
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			return tx.Exec("DROP FUNCTION IF EXISTS raksha_safe_jsonb(text)").Error
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error while adding raksha_safe_jsonb function: %s", err.Error())
+	}
+	return nil
+}
+
+// ensureSafeJsonbFunction (re)creates raksha_safe_jsonb outside the migrator. The list
+// query depends on it, and a migration row recorded under an earlier ID would otherwise
+// leave it missing and every logs list request failing.
+func ensureSafeJsonbFunction(ctx context.Context, db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	return db.WithContext(ctx).Exec(safeJsonbFunctionSQL).Error
+}
+
+const safeJsonbFunctionSQL = `
 CREATE OR REPLACE FUNCTION raksha_safe_jsonb(t text) RETURNS text
 LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE
@@ -3229,21 +3255,6 @@ BEGIN
     RETURN jsonb_build_array(j->-1)::text;
 END;
 $$;`
-			if err := tx.Exec(stmt).Error; err != nil {
-				return fmt.Errorf("failed to create raksha_safe_jsonb: %w", err)
-			}
-			return nil
-		},
-		Rollback: func(tx *gorm.DB) error {
-			tx = tx.WithContext(ctx)
-			return tx.Exec("DROP FUNCTION IF EXISTS raksha_safe_jsonb(text)").Error
-		},
-	}})
-	if err := m.Migrate(); err != nil {
-		return fmt.Errorf("error while adding raksha_safe_jsonb function: %s", err.Error())
-	}
-	return nil
-}
 
 // migrationAddDACColumnsToMCPToolLogs adds user_id, team_id, customer_id,
 // and business_unit_id columns to mcp_tool_logs so DAC scope can apply the

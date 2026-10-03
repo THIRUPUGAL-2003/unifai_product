@@ -24,10 +24,9 @@ func (p *Plugin) GetName() string { return PluginName }
 // Cleanup is a no-op for the connectors plugin.
 func (p *Plugin) Cleanup() error { return nil }
 
-// Inject exports the trace to Datadog, Kafka, BigQuery, and Pub/Sub when enabled.
+// Inject exports the trace to Datadog, Kafka, BigQuery, Pub/Sub, and New Relic when enabled.
 func (p *Plugin) Inject(ctx context.Context, trace *schemas.Trace) error {
-	connectors.Default.ExportTrace(ctx, trace)
-	return nil
+	return connectors.Default.ExportTrace(ctx, trace)
 }
 
 var _ schemas.ObservabilityPlugin = (*Plugin)(nil)

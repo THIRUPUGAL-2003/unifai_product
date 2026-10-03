@@ -12,6 +12,7 @@ import (
 	"github.com/raksha/raksha/plugins/compat"
 	"github.com/raksha/raksha/plugins/connectors"
 	"github.com/raksha/raksha/plugins/governance"
+	"github.com/raksha/raksha/plugins/guardrails"
 	"github.com/raksha/raksha/plugins/logging"
 	"github.com/raksha/raksha/plugins/maxim"
 	"github.com/raksha/raksha/plugins/modelcatalogresolver"
@@ -19,7 +20,6 @@ import (
 	"github.com/raksha/raksha/plugins/prompts"
 	"github.com/raksha/raksha/plugins/semanticcache"
 	"github.com/raksha/raksha/plugins/telemetry"
-	"github.com/raksha/raksha/plugins/guardrails"
 	"github.com/raksha/raksha/transports/raksha-http/handlers"
 	"github.com/raksha/raksha/transports/raksha-http/lib"
 )
@@ -193,15 +193,10 @@ func (s *RakshaHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 	builtinPlacement := schemas.Ptr(schemas.PluginPlacementBuiltin)
 
 	// 1. Telemetry (always first - tracks everything).
-	// Default-on: absent PluginConfig entry is treated as enabled, matching pre-#3269 behavior
-	// so upgraders don't silently lose /metrics. Only an explicit Enabled=false disables it.
+	// Opt-in: Prometheus runs only after an admin connects it in Observability → Connectors.
 	telemetryPluginConfig := s.getPluginConfig(telemetry.PluginName)
-	var pluginConfig any
-	if telemetryPluginConfig != nil {
-		pluginConfig = telemetryPluginConfig.Config
-	}
-	if telemetryPluginConfig == nil || telemetryPluginConfig.Enabled {
-		s.registerPluginWithStatus(ctx, telemetry.PluginName, nil, pluginConfig, false)
+	if telemetryPluginConfig != nil && telemetryPluginConfig.Enabled {
+		s.registerPluginWithStatus(ctx, telemetry.PluginName, nil, telemetryPluginConfig.Config, false)
 	} else {
 		s.markPluginDisabled(telemetry.PluginName)
 	}

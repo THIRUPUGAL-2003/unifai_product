@@ -48,7 +48,7 @@ DEFAULT_BACKEND = (
     or os.environ.get("RAKSHA_BACKEND_URL")
     or ""
 ).strip().rstrip("/")
-AGENT_VERSION_BAKED = "1.1.15"
+AGENT_VERSION_BAKED = "1.1.16"
 
 
 def _read_version_file(path: str) -> str:

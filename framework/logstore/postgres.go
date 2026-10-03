@@ -133,6 +133,9 @@ func newPostgresLogStore(ctx context.Context, config *PostgresConfig, logger sch
 		_ = closePool(mDb)
 		return nil, err
 	}
+	if err := ensureSafeJsonbFunction(ctx, mDb); err != nil {
+		logger.Error("logstore: ensuring raksha_safe_jsonb failed (logs list will retry): %v", err)
+	}
 	logger.Info("logstore: schema migrations complete; closing migration pool")
 	if err := closePool(mDb); err != nil {
 		return nil, fmt.Errorf("close migration db connection: %w", err)

@@ -1683,8 +1683,10 @@ export default function BrowserAiPage() {
 				let msg = `Download failed (${res.status})`;
 				try {
 					const errJson = await res.json();
-					if (errJson?.error || errJson?.message) {
-						msg = errJson.error || errJson.message;
+					const serverMsg =
+						typeof errJson?.error === "string" ? errJson.error : errJson?.error?.message || errJson?.message;
+					if (serverMsg) {
+						msg = serverMsg;
 					}
 				} catch {
 					// fallback

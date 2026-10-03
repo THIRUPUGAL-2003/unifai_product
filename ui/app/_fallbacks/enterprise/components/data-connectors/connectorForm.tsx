@@ -37,7 +37,9 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 				toast.error(connection.error || `${title} saved but connection failed`);
 				return;
 			}
-			if (connection?.ok) {
+			if (!enabled) {
+				toast.success(`${title} saved (disabled — turn it on to start exporting)`);
+			} else if (connection?.ok) {
 				toast.success(`${title} connected and saved`);
 			} else {
 				toast.success(`${title} connector saved`);

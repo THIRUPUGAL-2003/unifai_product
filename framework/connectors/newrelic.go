@@ -53,8 +53,8 @@ func sendNewRelic(ctx context.Context, cfg Settings, attributes map[string]any) 
 			},
 		},
 		"logs": []map[string]any{{
-			"timestamp": time.Now().UnixMilli(),
-			"message":   "raksha inference trace",
+			"timestamp":  time.Now().UnixMilli(),
+			"message":    "raksha inference trace",
 			"attributes": attributes,
 		}},
 	}})
@@ -68,10 +68,6 @@ func sendNewRelic(ctx context.Context, cfg Settings, attributes map[string]any) 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Api-Key", apiKey)
-	req.Header.Set("X-License-Key", apiKey)
-	if accountID != "" {
-		req.Header.Set("X-Insert-Key", apiKey)
-	}
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

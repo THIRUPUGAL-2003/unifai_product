@@ -658,13 +658,16 @@ func (s *RDBLogStore) SearchLogs(ctx context.Context, filters SearchFilters, pag
 	})
 
 	g.Go(func() error {
-		dataQuery := s.ScopedDB(gCtx).Model(&Log{})
-		dataQuery = s.applyFilters(dataQuery, filters)
-		dataQuery = dataQuery.Order(orderClause).Select(s.listSelectColumns()).Limit(limit)
-		if pagination.Offset > 0 {
-			dataQuery = dataQuery.Offset(pagination.Offset)
-		}
-		err := dataQuery.Find(&logs).Error
+		err := s.findWithSafeJsonb(gCtx, func() error {
+			logs = nil
+			dataQuery := s.ScopedDB(gCtx).Model(&Log{})
+			dataQuery = s.applyFilters(dataQuery, filters)
+			dataQuery = dataQuery.Order(orderClause).Select(s.listSelectColumns()).Limit(limit)
+			if pagination.Offset > 0 {
+				dataQuery = dataQuery.Offset(pagination.Offset)
+			}
+			return dataQuery.Find(&logs).Error
+		})
 		if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -731,15 +734,18 @@ func (s *RDBLogStore) GetSessionLogs(ctx context.Context, sessionID string, pagi
 	})
 
 	g.Go(func() error {
-		dataQuery := baseQuery.Session(&gorm.Session{}).
-			WithContext(gCtx).
-			Order(orderClause).
-			Select(s.listSelectColumns()).
-			Limit(limit)
-		if pagination.Offset > 0 {
-			dataQuery = dataQuery.Offset(pagination.Offset)
-		}
-		err := dataQuery.Find(&logs).Error
+		err := s.findWithSafeJsonb(gCtx, func() error {
+			logs = nil
+			dataQuery := baseQuery.Session(&gorm.Session{}).
+				WithContext(gCtx).
+				Order(orderClause).
+				Select(s.listSelectColumns()).
+				Limit(limit)
+			if pagination.Offset > 0 {
+				dataQuery = dataQuery.Offset(pagination.Offset)
+			}
+			return dataQuery.Find(&logs).Error
+		})
 		if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -855,6 +861,24 @@ func normalizeAggregateTimestamp(value any) string {
 //
 // Realtime turn rows are kept intact because the logs table renders them as a
 // combined Tool/User/Assistant summary and needs the full turn context.
+// findWithSafeJsonb runs a list query and, if Postgres reports raksha_safe_jsonb missing,
+// recreates the function once and retries instead of failing the logs page.
+func (s *RDBLogStore) findWithSafeJsonb(ctx context.Context, run func() error) error {
+	err := run()
+	if err == nil || s.db.Dialector.Name() != "postgres" {
+		return err
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "raksha_safe_jsonb") || !(strings.Contains(msg, "does not exist") || strings.Contains(msg, "42883")) {
+		return err
+	}
+	if ensureErr := ensureSafeJsonbFunction(ctx, s.db); ensureErr != nil {
+		s.logger.Error("logstore: recreating raksha_safe_jsonb failed: %v", ensureErr)
+		return err
+	}
+	return run()
+}
+
 func (s *RDBLogStore) listSelectColumns() string {
 	baseCols := strings.Join([]string{
 		"id", "parent_request_id", "timestamp", "object_type", "provider", "model", "alias",

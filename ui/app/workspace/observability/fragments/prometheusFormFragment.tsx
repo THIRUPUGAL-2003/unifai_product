@@ -304,6 +304,10 @@ export function PrometheusFormFragment({
 							<p className="text-muted-foreground mt-2 text-xs">
 								Configure your Prometheus server to scrape this endpoint. Served only while Pull-based scraping is enabled.
 							</p>
+							<p className="text-muted-foreground mt-1 text-xs">
+								/metrics needs a dashboard login. For an external Prometheus, set <code>RAKSHA_METRICS_TOKEN</code> in .env and add{" "}
+								<code>authorization: {"{"} credentials: &lt;token&gt; {"}"}</code> to its scrape job.
+							</p>
 						</div>
 
 						{renderActions("pull", isPullDirty, resetPullTab)}

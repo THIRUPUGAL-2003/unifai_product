@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
 	"errors"
 	"fmt"
@@ -1572,7 +1573,19 @@ func (s *RakshaHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Serv
 		}
 		metricsAdapter(ctx)
 	}
-	s.Router.GET("/metrics", lib.ChainMiddlewares(metricsHandler, middlewares...))
+	authedMetrics := lib.ChainMiddlewares(metricsHandler, middlewares...)
+	s.Router.GET("/metrics", func(ctx *fasthttp.RequestCtx) {
+		// External Prometheus cannot hold a dashboard session: when RAKSHA_METRICS_TOKEN
+		// is set, "Authorization: Bearer <token>" scrapes /metrics without login.
+		if token := strings.TrimSpace(os.Getenv("RAKSHA_METRICS_TOKEN")); token != "" {
+			got := strings.TrimSpace(strings.TrimPrefix(string(ctx.Request.Header.Peek("Authorization")), "Bearer "))
+			if subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1 {
+				metricsHandler(ctx)
+				return
+			}
+		}
+		authedMetrics(ctx)
+	})
 	// 404 handler
 	s.Router.NotFound = func(ctx *fasthttp.RequestCtx) {
 		handlers.SendError(ctx, fasthttp.StatusNotFound, "Route not found: "+string(ctx.Path()))
@@ -1629,13 +1642,17 @@ func (s *RakshaHTTPServer) GetAllRedactedRoutingRules(ctx context.Context, ids [
 func (s *RakshaHTTPServer) PrepareCommonMiddlewares() []schemas.RakshaHTTPMiddleware {
 	commonMiddlewares := []schemas.RakshaHTTPMiddleware{}
 	// Preparing middlewares
-	// Initializing prometheus plugin
-	prometheusPlugin, err := lib.FindPluginAs[*telemetry.PrometheusPlugin](s.Config, telemetry.PluginName)
-	if err == nil {
-		commonMiddlewares = append(commonMiddlewares, prometheusPlugin.HTTPMiddleware)
-	} else {
-		logger.Warn("prometheus plugin not found, skipping telemetry middleware")
-	}
+	// Prometheus is opt-in from Observability → Connectors; resolve it per request so
+	// connecting it later takes effect without a restart.
+	commonMiddlewares = append(commonMiddlewares, func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
+		return func(ctx *fasthttp.RequestCtx) {
+			if prometheusPlugin, err := lib.FindPluginAs[*telemetry.PrometheusPlugin](s.Config, telemetry.PluginName); err == nil && prometheusPlugin != nil {
+				prometheusPlugin.HTTPMiddleware(next)(ctx)
+				return
+			}
+			next(ctx)
+		}
+	})
 	// OTel HTTP metrics (http_requests_total etc., pushed via OTLP). The otel plugin is
 	// resolved per request rather than captured here: a config reload swaps in a freshly
 	// constructed plugin instance, and a pointer captured at startup would keep recording

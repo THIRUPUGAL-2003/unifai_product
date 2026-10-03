@@ -182,13 +182,14 @@ cp release/INSTALL_MACOS.txt "$STAGE/INSTALL_MACOS.txt"
 cp release/UNINSTALL_MACOS.txt "$STAGE/UNINSTALL_MACOS.txt"
 cp installer/Install_Raksha_Guard.command "$STAGE/Install_Raksha_Guard.command"
 cp installer/Uninstall_Raksha_Guard.command "$STAGE/Uninstall_Raksha_Guard.command"
+cp release/Update_Raksha_Guard_macOS.command "$STAGE/Update_Raksha_Guard_macOS.command"
 # Strip Windows CRLF so Mac Terminal never hits: bad interpreter: /bin/bash^M
-for _cmd in "$STAGE/Install_Raksha_Guard.command" "$STAGE/Uninstall_Raksha_Guard.command"; do
+for _cmd in "$STAGE/Install_Raksha_Guard.command" "$STAGE/Uninstall_Raksha_Guard.command" "$STAGE/Update_Raksha_Guard_macOS.command"; do
   if [[ -f "$_cmd" ]]; then
     "$PYTHON" -c "from pathlib import Path; p=Path(r'''$_cmd'''); p.write_bytes(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\r', b'\n'))"
   fi
 done
-chmod +x "$STAGE/Install_Raksha_Guard.command" "$STAGE/Uninstall_Raksha_Guard.command"
+chmod +x "$STAGE/Install_Raksha_Guard.command" "$STAGE/Uninstall_Raksha_Guard.command" "$STAGE/Update_Raksha_Guard_macOS.command"
 if [[ -f "$STAGE/Raksha_Guard.app/Contents/MacOS/Raksha_Guard" ]]; then
   chmod +x "$STAGE/Raksha_Guard.app/Contents/MacOS/Raksha_Guard"
 fi
@@ -212,6 +213,7 @@ rm -f "$ZIP_OUT"
     UNINSTALL_MACOS.txt
     Install_Raksha_Guard.command
     Uninstall_Raksha_Guard.command
+    Update_Raksha_Guard_macOS.command
   )
   if [[ -f "Raksha_Guard_Setup.pkg" ]]; then
     ZIP_FILES=(Raksha_Guard_Setup.pkg "${ZIP_FILES[@]}")
@@ -224,7 +226,7 @@ rm -f release/MAC_ZIP_STALE.txt
 
 cp -f installer/Install_Raksha_Guard.command release/Install_Raksha_Guard.command
 cp -f installer/Uninstall_Raksha_Guard.command release/Uninstall_Raksha_Guard.command
-chmod +x release/Install_Raksha_Guard.command release/Uninstall_Raksha_Guard.command
+chmod +x release/Install_Raksha_Guard.command release/Uninstall_Raksha_Guard.command release/Update_Raksha_Guard_macOS.command
 
 echo ""
 echo "============================================================"
