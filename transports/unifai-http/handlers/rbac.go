@@ -446,6 +446,10 @@ func (h *WorkspaceHandler) assignUserRole(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusForbidden, "only an admin can change admin role assignments")
 		return
 	}
+	if !callerMayManageRole(ctx, h.store.ConfigStore, roleName) || !callerMayManageRole(ctx, h.store.ConfigStore, user.Role) {
+		SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
+		return
+	}
 	user.Role = roleName
 	if err := h.store.ConfigStore.UpdateUser(ctx, user); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to assign role")

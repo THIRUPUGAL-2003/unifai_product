@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/unifai/unifai/framework/configstore"
-	"github.com/unifai/unifai/framework/encrypt"
 	"github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/unifai/unifai/framework/encrypt"
 	"github.com/valyala/fasthttp"
 )
 
@@ -102,13 +102,13 @@ func (h *WorkspaceHandler) scimAssignDefaultTeam(ctx *fasthttp.RequestCtx, userI
 
 func (h *WorkspaceHandler) scimServiceProviderConfig(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, map[string]any{
-		"schemas": []string{"urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"},
-		"patch":   map[string]any{"supported": true},
-		"bulk":    map[string]any{"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
-		"filter":  map[string]any{"supported": true, "maxResults": 200},
+		"schemas":        []string{"urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"},
+		"patch":          map[string]any{"supported": true},
+		"bulk":           map[string]any{"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
+		"filter":         map[string]any{"supported": true, "maxResults": 200},
 		"changePassword": map[string]any{"supported": false},
-		"sort":    map[string]any{"supported": false},
-		"etag":    map[string]any{"supported": false},
+		"sort":           map[string]any{"supported": false},
+		"etag":           map[string]any{"supported": false},
 		"authenticationSchemes": []map[string]any{{
 			"type":        "oauthbearertoken",
 			"name":        "OAuth Bearer Token",
@@ -326,6 +326,10 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		scimError(ctx, fasthttp.StatusBadRequest, "userName is required", "invalidValue")
 		return
 	}
+	if isBuiltinAdminIdentity(ctx, h.store.ConfigStore, username, email) {
+		scimError(ctx, fasthttp.StatusConflict, "userName or email is reserved for the built-in admin account", "uniqueness")
+		return
+	}
 
 	requestedRole := ""
 	if len(body.Roles) > 0 {
@@ -393,6 +397,7 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	}
 	if user.IsApproved() {
 		h.scimAssignDefaultTeam(ctx, user.ID)
+		trySendProvisionedEmail(h.store.ConfigStore, ctx, user.Username, user.Email)
 	}
 	SendJSONWithStatus(ctx, scimUserResource(user), fasthttp.StatusCreated)
 }
@@ -567,7 +572,12 @@ func (h *WorkspaceHandler) scimSaveUser(ctx *fasthttp.RequestCtx, prev, user *ta
 	if !strings.EqualFold(prev.Role, user.Role) {
 		user.Role = h.scimValidRole(ctx, user.Role, prev.Role)
 	}
-	if (!strings.EqualFold(prev.Username, user.Username) || !strings.EqualFold(prev.Email, user.Email)) && h.scimUniquenessConflict(ctx, user) {
+	identityChanged := !strings.EqualFold(prev.Username, user.Username) || !strings.EqualFold(prev.Email, user.Email)
+	if identityChanged && isBuiltinAdminIdentity(ctx, h.store.ConfigStore, user.Username, user.Email) {
+		scimError(ctx, fasthttp.StatusConflict, "userName or email is reserved for the built-in admin account", "uniqueness")
+		return
+	}
+	if identityChanged && h.scimUniquenessConflict(ctx, user) {
 		scimError(ctx, fasthttp.StatusConflict, "userName or email is already used by another user", "uniqueness")
 		return
 	}
@@ -691,7 +701,7 @@ func scimStatusFromActive(active bool) string {
 	if active {
 		return tables.UserStatusApproved
 	}
-	return tables.UserStatusPending
+	return tables.UserStatusDisabled
 }
 
 func scimUserResource(user *tables.TableUser) map[string]any {
@@ -710,7 +720,7 @@ func scimUserResource(user *tables.TableUser) map[string]any {
 		"name": map[string]any{
 			"formatted": user.Username,
 		},
-		"active":   user.IsApproved(),
+		"active": user.IsApproved(),
 		"emails": []map[string]any{{
 			"value": email, "primary": true,
 		}},
@@ -1285,6 +1295,9 @@ func (h *WorkspaceHandler) scimDeleteGroup(ctx *fasthttp.RequestCtx) {
 		scimError(ctx, fasthttp.StatusInternalServerError, "failed to delete group")
 		return
 	}
+	removeRBACScopeGrant(ctx, h.store.ConfigStore, rbacScopeTeam, id)
+	if reloader, ok := h.governanceManager.(interface{ ReloadBusinessUnitTeamIndex(context.Context) }); ok {
+		reloader.ReloadBusinessUnitTeamIndex(ctx)
+	}
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }
-

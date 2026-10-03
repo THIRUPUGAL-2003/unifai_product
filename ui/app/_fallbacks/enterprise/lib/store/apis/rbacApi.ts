@@ -1,4 +1,4 @@
-import { RBACPermission, RBACRole } from "@enterprise/lib/types/workspace";
+import { RBACPermission, RBACRole, RBACScopeGrants, RBACScopeType } from "@enterprise/lib/types/workspace";
 import { baseApi } from "@/lib/store/apis/baseApi";
 
 export const rbacApi = baseApi.injectEndpoints({
@@ -47,6 +47,17 @@ export const rbacApi = baseApi.injectEndpoints({
 			}),
 			invalidatesTags: ["Users", "Roles", "Permissions"],
 		}),
+		getRBACScopeGrants: builder.query<RBACScopeGrants, void>({
+			query: () => ({ url: "/rbac/scope-grants" }),
+			providesTags: ["RBACScopeGrants"],
+		}),
+		updateRBACScopeGrant: builder.mutation<
+			RBACScopeGrants,
+			{ scope_type: RBACScopeType; scope_id?: string; permission_ids: number[]; allowed_sections: string }
+		>({
+			query: (body) => ({ url: "/rbac/scope-grants", method: "PUT", body }),
+			invalidatesTags: ["RBACScopeGrants"],
+		}),
 	}),
 });
 
@@ -59,4 +70,6 @@ export const {
 	useDeleteRoleMutation,
 	useGetMyRBACPermissionsQuery,
 	useAssignUserRoleMutation,
+	useGetRBACScopeGrantsQuery,
+	useUpdateRBACScopeGrantMutation,
 } = rbacApi;

@@ -14,7 +14,7 @@ import { ProviderUsageTab } from "../providerUsageTab";
 
 export interface ProviderUsageTabViewHandle {
 	getData: () => Partial<DashboardData>;
-	loadData: () => Promise<void>;
+	loadData: () => Promise<Partial<DashboardData>>;
 }
 
 const sanitizeSeriesLabels = (values?: string[]): string[] => {
@@ -75,7 +75,16 @@ export const ProviderUsageTabView = forwardRef<ProviderUsageTabViewHandle, Provi
 	const [triggerProviderLatency] = useLazyGetLogsProviderLatencyHistogramQuery();
 
 	const loadData = useCallback(async () => {
-		await Promise.all([triggerProviderCost(fetchArg, true), triggerProviderTokens(fetchArg, true), triggerProviderLatency(fetchArg, true)]);
+		const [cost, tokens, latency] = await Promise.all([
+			triggerProviderCost(fetchArg, true),
+			triggerProviderTokens(fetchArg, true),
+			triggerProviderLatency(fetchArg, true),
+		]);
+		return {
+			providerCostData: cost.data ?? null,
+			providerTokenData: tokens.data ?? null,
+			providerLatencyData: latency.data ?? null,
+		};
 	}, [fetchArg, triggerProviderCost, triggerProviderTokens, triggerProviderLatency]);
 
 	useImperativeHandle(

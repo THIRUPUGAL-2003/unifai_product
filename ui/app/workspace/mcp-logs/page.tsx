@@ -1,3 +1,4 @@
+import { McpLogsExportButton } from "@/app/workspace/logs/views/logsExportButton";
 import { LogsVolumeChart } from "@/app/workspace/logs/views/logsVolumeChart";
 import { MCPFilterSidebar } from "@/components/filters/mcpFilterSidebar";
 import FullPageLoader from "@/components/fullPageLoader";
@@ -447,7 +448,7 @@ export default function MCPLogsPage() {
 
 					{/* Main Content */}
 					<div className="bg-card flex min-w-0 flex-1 flex-col gap-2 overflow-hidden rounded-l-md">
-						<div className="p-4 pb-0">
+						<div className="flex items-center gap-2 p-4 pb-0">
 							<McpHeaderView
 								filters={filters}
 								onFiltersChange={setFilters}
@@ -462,6 +463,7 @@ export default function MCPLogsPage() {
 								onToggleColumnVisibility={toggleColumnVisibility}
 								onResetColumns={resetColumns}
 							/>
+							<McpLogsExportButton filters={filters} className="h-7.5" />
 						</div>
 						{/* Quick Stats */}
 						<div className="px-4">

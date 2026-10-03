@@ -217,10 +217,11 @@ export default function DashboardPage() {
 		virtualKeyRankingsRef,
 	];
 
-	const getDashboardData = useCallback((): DashboardData => {
+	const handlePreloadData = useCallback(async (): Promise<DashboardData> => {
+		const loaded = await Promise.all(allRefs.map((r) => r.current?.loadData()));
 		const merged: Partial<DashboardData> = {};
-		for (const r of allRefs) {
-			if (r.current) Object.assign(merged, r.current.getData());
+		for (const part of loaded) {
+			if (part) Object.assign(merged, part);
 		}
 		return {
 			histogramData: null,
@@ -242,10 +243,6 @@ export default function DashboardPage() {
 			mcpTopToolsData: null,
 			...merged,
 		};
-	}, []);
-
-	const handlePreloadData = useCallback(async () => {
-		await Promise.all(allRefs.map((r) => r.current?.loadData()));
 	}, []);
 
 	// Tab change handler
@@ -399,7 +396,12 @@ export default function DashboardPage() {
 			"dashboard-section-user-rankings",
 			"dashboard-section-virtual-key-rankings",
 		];
-		return ids.map((id) => document.getElementById(id)).filter(Boolean) as HTMLElement[];
+		return ids.flatMap((id, index) => {
+			const el = document.getElementById(id);
+			if (!el) return [];
+			el.dataset.pdfIndex = String(index);
+			return [el];
+		});
 	}, [handlePreloadData]);
 
 	const handlePdfExportDone = useCallback(() => {
@@ -433,8 +435,7 @@ export default function DashboardPage() {
 					</div>
 					<div className="flex items-center gap-2">
 						<ExportPopover
-							getData={getDashboardData}
-							onPreloadData={handlePreloadData}
+							onLoadData={handlePreloadData}
 							onPdfExport={handlePdfExport}
 							onPdfExportDone={handlePdfExportDone}
 						/>

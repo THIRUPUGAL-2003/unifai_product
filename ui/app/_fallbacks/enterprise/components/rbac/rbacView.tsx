@@ -8,20 +8,24 @@ import {
 	useGetCustomersQuery,
 	useGetSessionUsersQuery,
 	useGetTeamsQuery,
+	useGetUserTeamsQuery,
 	useUpdateSessionUserMutation,
-	type SessionUser,
 } from "@/lib/store";
+import type { SessionUser } from "@/lib/store";
+import { allowedSectionsToString } from "@/lib/constants/workspaceSections";
 import type { Customer, Team } from "@/lib/types/governance";
 import {
 	useAssignUserRoleMutation,
 	useCreateRoleMutation,
 	useDeleteRoleMutation,
 	useGetPermissionsQuery,
+	useGetRBACScopeGrantsQuery,
 	useGetRolePermissionsQuery,
 	useGetRolesQuery,
+	useUpdateRBACScopeGrantMutation,
 	useUpdateRolePermissionsMutation,
 } from "@enterprise/lib/store/apis/rbacApi";
-import { RBACPermission, RBACRole } from "@enterprise/lib/types/workspace";
+import { RBACPermission, RBACRole, RBACScopeGrant, RBACScopeGrants, RBACScopeType } from "@enterprise/lib/types/workspace";
 import {
 	Building2,
 	Check,
@@ -46,37 +50,47 @@ import { toast } from "sonner";
 type SelectionTarget =
 	| { type: "role"; role: RBACRole }
 	| { type: "all_users" }
+	| { type: "all_sub_admins" }
 	| { type: "user"; user: SessionUser }
 	| { type: "all_teams" }
 	| { type: "team"; team: Team }
 	| { type: "all_customers" }
 	| { type: "customer"; customer: Customer };
 
-// Resource to Section Mapping for automatic sidebar permission syncing
+// Resource → the sidebar entries (keys from WORKSPACE_SECTIONS) its API backs. Only the
+// specific children are listed: a parent section is granted when all its children are
+// (see allowedSectionsToString), never because one child was selected.
 const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
-	Logs: ["observability/llm-logs", "observability"],
-	Observability: ["observability", "observability/connectors"],
+	Logs: ["observability/llm-logs"],
+	Observability: ["observability/connectors"],
 	Dashboard: ["observability/dashboard"],
 	MCPLogs: ["observability/mcp-logs"],
-	VirtualKeys: ["governance/virtual-keys", "governance"],
+	VirtualKeys: ["governance/virtual-keys"],
 	Governance: ["governance"],
-	Users: ["governance/users", "governance"],
-	Teams: ["governance/teams", "governance"],
-	Customers: ["governance/customers", "governance"],
-	UserProvisioning: ["governance/user-provisioning", "governance"],
-	RBAC: ["governance/roles-permissions", "governance"],
-	AccessProfiles: ["governance/access-profiles", "governance"],
-	AuditLogs: ["governance/audit-logs", "governance"],
-	ModelProvider: ["models/model-providers", "models"],
-	RoutingRules: ["models/routing-rules", "models"],
-	CircuitBreaker: ["models/circuit-breaker", "models"],
-	MCPGateway: ["mcp-gateway/mcp-catalog", "mcp-gateway"],
-	MCPToolGroups: ["mcp-gateway/tool-groups", "mcp-gateway"],
+	Users: ["governance/users"],
+	Teams: ["governance/teams", "governance/business-units"],
+	Customers: ["governance/customers"],
+	UserProvisioning: ["governance/user-provisioning"],
+	RBAC: ["governance/roles-permissions"],
+	AccessProfiles: ["governance/access-profiles"],
+	AuditLogs: ["governance/audit-logs"],
+	ModelProvider: ["models/model-providers", "models/model-catalog", "models/budgets-limits"],
+	RoutingRules: ["models/routing-rules", "models/complexity-router"],
+	CircuitBreaker: ["models/circuit-breaker"],
+	MCPGateway: [
+		"mcp-gateway/mcp-catalog",
+		"mcp-gateway/mcp-library",
+		"mcp-gateway/auth-sessions",
+		"mcp-gateway/oauth-grants",
+		"mcp-gateway/mcp-settings",
+	],
+	MCPToolGroups: ["mcp-gateway/tool-groups"],
 	Plugins: ["plugins"],
-	GuardrailsConfig: ["guardrails/rules", "guardrails"],
-	GuardrailsProviders: ["guardrails/providers", "guardrails"],
-	Cluster: ["guardrails/cluster-config", "cluster-config"],
-	Settings: ["settings"],
+	GuardrailsConfig: ["guardrails/rules"],
+	GuardrailRules: ["guardrails/rules"],
+	GuardrailsProviders: ["guardrails/providers"],
+	Cluster: ["guardrails/cluster-config"],
+	Settings: ["settings", "observability/logs-settings", "models/pricing-overrides", "models/model-settings"],
 	FeatureFlags: ["settings/feature-flags"],
 	APIKeys: ["settings/api-keys"],
 	AdaptiveRouter: ["adaptive-routing"],
@@ -85,6 +99,14 @@ const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
 	SkillsRepository: ["skills-repository"],
 };
 
+// A saved section grants a mapped entry directly or through its parent section.
+function sectionGranted(allowed: Set<string>, section: string): boolean {
+	if (allowed.has(section)) return true;
+	const parent = section.split("/")[0];
+	if (parent !== section && allowed.has(parent)) return true;
+	return section === "guardrails/cluster-config" && allowed.has("cluster-config");
+}
+
 // allowed_sections only scopes sub_admin and custom roles: admin is unrestricted and the
 // built-in "user" role is server-locked to Prompt Repository.
 function sectionScopeApplies(role?: string): boolean {
@@ -92,25 +114,64 @@ function sectionScopeApplies(role?: string): boolean {
 	return r !== "admin" && r !== "user";
 }
 
+function isSubAdminRole(role?: string): boolean {
+	return (role || "").toLowerCase() === "sub_admin";
+}
+
+// "user" and "sub_admin" have their own tree sections (All Users / All Sub Admins).
+function hasOwnTreeSection(role: RBACRole): boolean {
+	const r = role.name?.toLowerCase();
+	return r === "user" || r === "sub_admin";
+}
+
+type TargetScope = { type: RBACScopeType; id?: string; label: string; grant?: RBACScopeGrant };
+
+// Teams and customers are saved as scope grants that their members inherit.
+function targetScope(target: SelectionTarget, grants?: RBACScopeGrants): TargetScope | null {
+	switch (target.type) {
+		case "all_teams":
+			return { type: "all_teams", label: "All Teams", grant: grants?.all_teams };
+		case "team":
+			return { type: "team", id: target.team.id, label: `team '${target.team.name}'`, grant: grants?.teams?.[target.team.id] };
+		case "all_customers":
+			return { type: "all_customers", label: "All Customers", grant: grants?.all_customers };
+		case "customer":
+			return {
+				type: "customer",
+				id: target.customer.id,
+				label: `customer '${target.customer.name}'`,
+				grant: grants?.customers?.[target.customer.id],
+			};
+		default:
+			return null;
+	}
+}
+
+function countSections(list?: string): number {
+	return (list || "")
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean).length;
+}
+
 export default function RBACView() {
 	// Navigation Tree Accordion States
 	const [expandedSections, setExpandedSections] = useState<{
 		roles: boolean;
+		subAdmins: boolean;
 		users: boolean;
 		teams: boolean;
 		customers: boolean;
 	}>({
 		roles: true,
+		subAdmins: true,
 		users: true,
 		teams: true,
 		customers: false,
 	});
 
 	// Current Target Selection
-	const [target, setTarget] = useState<SelectionTarget>({
-		type: "role",
-		role: { id: 0, name: "sub_admin", description: "Sub administrator with configured permissions", dac: "all-data", is_system_role: true },
-	});
+	const [target, setTarget] = useState<SelectionTarget>({ type: "all_sub_admins" });
 
 	// Checkbox state for the active permission matrix
 	const [selectedPerms, setSelectedPerms] = useState<number[]>([]);
@@ -126,17 +187,18 @@ export default function RBACView() {
 	const [newRoleDac, setNewRoleDac] = useState("all-data");
 
 	// Queries
-	const { data: roleData, isLoading: rolesLoading } = useGetRolesQuery();
+	const { data: roleData } = useGetRolesQuery();
 	const { data: permData } = useGetPermissionsQuery();
-	const { data: sessionUsersData, isLoading: usersLoading } = useGetSessionUsersQuery();
+	const { data: sessionUsersData } = useGetSessionUsersQuery();
 	const sessionUsers = useMemo(() => sessionUsersData ?? [], [sessionUsersData]);
-	const { data: teamsData, isLoading: teamsLoading } = useGetTeamsQuery();
-	const { data: customersData, isLoading: customersLoading } = useGetCustomersQuery();
+	const { data: teamsData } = useGetTeamsQuery();
+	const { data: customersData } = useGetCustomersQuery();
+	const { data: scopeGrants } = useGetRBACScopeGrantsQuery();
 
 	const roles = useMemo(() => roleData?.roles ?? [], [roleData]);
 	const permissions = useMemo(() => permData?.permissions ?? [], [permData]);
-	const teams = teamsData?.teams || [];
-	const customers = customersData?.customers || [];
+	const teams = useMemo(() => teamsData?.teams ?? [], [teamsData]);
+	const customers = useMemo(() => customersData?.customers ?? [], [customersData]);
 
 	// The tree hands us a snapshot; read role / allowed_sections from the live list so role
 	// changes and saved sections are reflected without re-selecting the user.
@@ -156,7 +218,7 @@ export default function RBACView() {
 			const matchingRole = roles.find((r) => r.name.toLowerCase() === (targetUser?.role || "user").toLowerCase());
 			return matchingRole?.id ?? 0;
 		}
-		if (target.type === "all_teams" || target.type === "team") {
+		if (target.type === "all_sub_admins") {
 			const subAdminRole = roles.find((r) => r.name.toLowerCase() === "sub_admin");
 			return subAdminRole?.id ?? 0;
 		}
@@ -165,25 +227,56 @@ export default function RBACView() {
 
 	const { currentData: rolePermData } = useGetRolePermissionsQuery(activeRoleId, { skip: activeRoleId === 0 });
 
+	const scope = useMemo(() => targetScope(target, scopeGrants), [target, scopeGrants]);
+
+	const userUsesSectionScope = Boolean(targetUser && sectionScopeApplies(targetUser.role));
+	const { data: targetUserTeams } = useGetUserTeamsQuery(targetUser?.id ?? "", { skip: !userUsesSectionScope });
+
+	// Mirrors effectiveAllowedSections on the server: what the selected user gets from
+	// their teams and those teams' customers, on top of their own sections.
+	const inheritedForUser = useMemo(() => {
+		if (!userUsesSectionScope || !scopeGrants) return null;
+		const teamsList = targetUserTeams?.teams ?? [];
+		if (teamsList.length === 0) return null;
+		const sources: string[] = [];
+		const sections = new Set<string>();
+		const add = (grant: RBACScopeGrant | undefined, label: string) => {
+			if (!grant) return;
+			sources.push(label);
+			for (const s of grant.allowed_sections.split(",")) {
+				if (s.trim()) sections.add(s.trim());
+			}
+		};
+		let inCustomer = false;
+		for (const t of teamsList) {
+			const teamId = t.id || t.team_id || "";
+			add(scopeGrants.teams?.[teamId], `team ${t.name}`);
+			if (t.customer_id) {
+				inCustomer = true;
+				add(scopeGrants.customers?.[t.customer_id], `customer ${t.customer_name || t.customer_id}`);
+			}
+		}
+		add(scopeGrants.all_teams, "All Teams");
+		if (inCustomer) add(scopeGrants.all_customers, "All Customers");
+		return sources.length ? { sources: Array.from(new Set(sources)), count: sections.size } : null;
+	}, [userUsesSectionScope, scopeGrants, targetUserTeams]);
+
 	// Mutations
 	const [createRole, { isLoading: isCreatingRole }] = useCreateRoleMutation();
 	const [updatePerms, { isLoading: isUpdatingPerms }] = useUpdateRolePermissionsMutation();
+	const [updateScopeGrant, { isLoading: isSavingScope }] = useUpdateRBACScopeGrantMutation();
 	const [deleteRole] = useDeleteRoleMutation();
 	const [assignUserRole] = useAssignUserRoleMutation();
 	const [updateSessionUser] = useUpdateSessionUserMutation();
-
-	// Initialize selected role if none set
-	useEffect(() => {
-		if (roles.length > 0 && target.type === "role" && target.role.id === 0) {
-			const subAdmin = roles.find((r) => r.name?.toLowerCase() === "sub_admin") || roles[0];
-			setTarget({ type: "role", role: subAdmin });
-		}
-	}, [roles, target]);
 
 	// Sync permissions when target changes
 	useEffect(() => {
 		if (target.type === "role" && target.role.name?.toLowerCase() === "admin") {
 			setSelectedPerms(permissions.map((p) => p.id));
+			return;
+		}
+		if (scope) {
+			setSelectedPerms(scope.grant?.permission_ids ?? []);
 			return;
 		}
 		if (rolePermData?.permissions) {
@@ -199,14 +292,14 @@ export default function RBACView() {
 				);
 				granted = granted.filter((p) => {
 					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
-					return sections.length === 0 || sections.some((s) => allowed.has(s));
+					return sections.length === 0 || sections.some((s) => sectionGranted(allowed, s));
 				});
 			}
 			setSelectedPerms(granted.map((p) => p.id));
 		} else if (activeRoleId === 0) {
 			setSelectedPerms((prev) => (prev.length ? [] : prev));
 		}
-	}, [target, targetUser, rolePermData, permissions, activeRoleId]);
+	}, [target, targetUser, rolePermData, permissions, activeRoleId, scope]);
 
 	// Toggle accordion
 	const toggleSection = (section: keyof typeof expandedSections) => {
@@ -232,12 +325,13 @@ export default function RBACView() {
 
 	// Filtered lists for left pane tree
 	const filteredRoles = useMemo(() => {
-		if (!treeSearch.trim()) return roles;
+		const listed = roles.filter((r) => !hasOwnTreeSection(r));
+		if (!treeSearch.trim()) return listed;
 		const q = treeSearch.toLowerCase();
-		return roles.filter((r) => r.name.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
+		return listed.filter((r) => r.name.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
 	}, [roles, treeSearch]);
 
-	const filteredUsers = useMemo(() => {
+	const searchedUsers = useMemo(() => {
 		if (!treeSearch.trim()) return sessionUsers;
 		const q = treeSearch.toLowerCase();
 		return sessionUsers.filter(
@@ -247,6 +341,9 @@ export default function RBACView() {
 				u.role?.toLowerCase().includes(q),
 		);
 	}, [sessionUsers, treeSearch]);
+
+	const filteredSubAdmins = useMemo(() => searchedUsers.filter((u) => isSubAdminRole(u.role)), [searchedUsers]);
+	const filteredUsers = useMemo(() => searchedUsers.filter((u) => !isSubAdminRole(u.role)), [searchedUsers]);
 
 	const filteredTeams = useMemo(() => {
 		if (!treeSearch.trim()) return teams;
@@ -272,20 +369,7 @@ export default function RBACView() {
 				}
 			}
 		}
-		return Array.from(sections).join(",");
-	};
-
-	/** Returns how many user updates failed. */
-	const applySectionsToUsers = async (users: SessionUser[], sectionsStr: string): Promise<number> => {
-		const results = await Promise.allSettled(
-			users.map((u) =>
-				updateSessionUser({
-					id: u.id,
-					updates: { username: u.username, role: u.role, allowed_sections: sectionsStr },
-				}).unwrap(),
-			),
-		);
-		return results.filter((r) => r.status === "rejected").length;
+		return allowedSectionsToString(sections);
 	};
 
 	// Save Action for current Target
@@ -309,6 +393,17 @@ export default function RBACView() {
 				}
 				await updatePerms({ id: userRole.id, permission_ids: selectedPerms }).unwrap();
 				toast.success("Permissions updated for the 'user' role (applies to all users)");
+				return;
+			}
+
+			if (target.type === "all_sub_admins") {
+				const subAdminRole = roles.find((r) => isSubAdminRole(r.name));
+				if (!subAdminRole) {
+					toast.error("The built-in 'sub_admin' role was not found.");
+					return;
+				}
+				await updatePerms({ id: subAdminRole.id, permission_ids: selectedPerms }).unwrap();
+				toast.success("Permissions updated for the 'sub_admin' role (applies to all sub admins)");
 				return;
 			}
 
@@ -344,25 +439,18 @@ export default function RBACView() {
 				return;
 			}
 
-			if (target.type === "all_teams") {
-				const sectionsStr = computeAllowedSections(selectedPerms);
-				const scopedUsers = sessionUsers.filter((u) => sectionScopeApplies(u.role));
-				const failed = await applySectionsToUsers(scopedUsers, sectionsStr);
-				if (failed > 0) {
-					toast.error(`${failed} of ${scopedUsers.length} users could not be updated`);
-				} else {
-					toast.success(`Sidebar sections updated for ${scopedUsers.length} sub-admin / custom-role users`);
-				}
-				return;
-			}
-
-			if (target.type === "team") {
-				toast.info("Per-team permissions are not stored yet. Use All Teams, a role, or an individual user.");
-				return;
-			}
-
-			if (target.type === "all_customers" || target.type === "customer") {
-				toast.info("Customer-scoped permissions are not stored yet. Use a role or an individual user.");
+			if (scope) {
+				await updateScopeGrant({
+					scope_type: scope.type,
+					scope_id: scope.id,
+					permission_ids: selectedPerms,
+					allowed_sections: computeAllowedSections(selectedPerms),
+				}).unwrap();
+				toast.success(
+					selectedPerms.length > 0
+						? `Permissions saved for ${scope.label}. Members inherit these sections on their next page load.`
+						: `Permissions cleared for ${scope.label}.`,
+				);
 				return;
 			}
 		} catch (err) {
@@ -413,8 +501,7 @@ export default function RBACView() {
 		try {
 			await deleteRole(role.id).unwrap();
 			if (target.type === "role" && target.role.id === role.id) {
-				const fallback = roles.find((r) => r.id !== role.id) || null;
-				if (fallback) setTarget({ type: "role", role: fallback });
+				setTarget({ type: "all_sub_admins" });
 			}
 			toast.success(`Role '${role.name}' deleted`);
 		} catch (err) {
@@ -544,6 +631,70 @@ export default function RBACView() {
 							)}
 						</div>
 
+						{/* SUB ADMINS SECTION (role policy + individual sub admins) */}
+						<div className="rounded-lg border bg-muted/20">
+							<button
+								type="button"
+								onClick={() => toggleSection("subAdmins")}
+								className="flex w-full items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+								data-testid="rbac-tree-sub-admins"
+							>
+								<div className="flex items-center gap-1.5">
+									{expandedSections.subAdmins ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+									<Shield className="h-3.5 w-3.5 text-sky-500" />
+									<span>Sub Admins</span>
+								</div>
+								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+									{filteredSubAdmins.length}
+								</Badge>
+							</button>
+
+							{expandedSections.subAdmins && (
+								<div className="space-y-1 p-1 pt-0">
+									<div
+										onClick={() => setTarget({ type: "all_sub_admins" })}
+										className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+											target.type === "all_sub_admins"
+												? "bg-sky-500/15 text-sky-800 dark:text-sky-300 font-bold"
+												: "hover:bg-muted text-muted-foreground hover:text-foreground"
+										}`}
+									>
+										<Globe className="h-3.5 w-3.5 text-sky-500" />
+										<span>All Sub Admins (Role Policy)</span>
+									</div>
+
+									<div className="border-t pt-1 pl-2 space-y-0.5">
+										{filteredSubAdmins.length === 0 ? (
+											<p className="text-muted-foreground px-2 py-1 text-[11px]">No sub admins yet</p>
+										) : (
+											filteredSubAdmins.map((user) => {
+												const isSelected = target.type === "user" && target.user.id === user.id;
+												return (
+													<div
+														key={user.id}
+														onClick={() => setTarget({ type: "user", user })}
+														className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1 text-xs transition-colors ${
+															isSelected
+																? "bg-sky-500/20 text-sky-900 dark:text-sky-200 font-semibold"
+																: "hover:bg-muted text-muted-foreground hover:text-foreground"
+														}`}
+													>
+														<div className="flex items-center gap-1.5 truncate">
+															<User className="h-3 w-3 shrink-0 text-muted-foreground" />
+															<span className="truncate">{user.username}</span>
+														</div>
+														<span className={`rounded border px-1 text-[10px] ${getRoleBadgeClass(user.role || "sub_admin")}`}>
+															{user.role}
+														</span>
+													</div>
+												);
+											})
+										)}
+									</div>
+								</div>
+							)}
+						</div>
+
 						{/* 2. USERS SECTION (Mothavum & Separate) */}
 						<div className="rounded-lg border bg-muted/20">
 							<button
@@ -635,7 +786,8 @@ export default function RBACView() {
 										}`}
 									>
 										<Globe className="h-3.5 w-3.5 text-purple-500" />
-										<span>All Teams (Bulk Policy)</span>
+										<span>All Teams</span>
+										{scopeGrants?.all_teams && <Check className="ml-auto h-3 w-3 text-emerald-500" />}
 									</div>
 
 									{/* Individual Teams */}
@@ -657,8 +809,9 @@ export default function RBACView() {
 														<Building2 className="h-3 w-3 shrink-0 text-muted-foreground" />
 														<span className="truncate">{team.name}</span>
 													</div>
-													<span className="text-[10px] text-muted-foreground">
+													<span className="flex items-center gap-1 text-[10px] text-muted-foreground">
 														{team.customer?.name ? team.customer.name.slice(0, 10) : "Team"}
+														{scopeGrants?.teams?.[team.id] && <Check className="h-3 w-3 text-emerald-500" />}
 													</span>
 												</div>
 											);
@@ -696,7 +849,8 @@ export default function RBACView() {
 										}`}
 									>
 										<Globe className="h-3.5 w-3.5 text-amber-500" />
-										<span>All Customers (Bulk Root)</span>
+										<span>All Customers</span>
+										{scopeGrants?.all_customers && <Check className="ml-auto h-3 w-3 text-emerald-500" />}
 									</div>
 
 									<div className="border-t pt-1 pl-2 space-y-0.5">
@@ -717,6 +871,7 @@ export default function RBACView() {
 														<Landmark className="h-3 w-3 shrink-0 text-muted-foreground" />
 														<span className="truncate">{cust.name}</span>
 													</div>
+													{scopeGrants?.customers?.[cust.id] && <Check className="h-3 w-3 shrink-0 text-emerald-500" />}
 												</div>
 											);
 										})}
@@ -742,8 +897,10 @@ export default function RBACView() {
 									<span className="font-bold text-base">
 										{target.type === "role" && `Role: ${target.role.name}`}
 										{target.type === "all_users" && "All Users (Bulk Global Policy)"}
-										{target.type === "user" && `User: ${target.user.username}`}
-										{target.type === "all_teams" && "All Teams (Bulk Policy)"}
+										{target.type === "all_sub_admins" && "All Sub Admins (sub_admin role)"}
+										{target.type === "user" &&
+											`${isSubAdminRole(targetUser?.role ?? target.user.role) ? "Sub Admin" : "User"}: ${target.user.username}`}
+										{target.type === "all_teams" && "All Teams"}
 										{target.type === "team" && `Team: ${target.team.name}`}
 										{target.type === "all_customers" && "All Customers"}
 										{target.type === "customer" && `Customer: ${target.customer.name}`}
@@ -767,13 +924,29 @@ export default function RBACView() {
 												))}
 											</select>
 											<span>• Email: {targetUser.email || "No email"}</span>
+											{inheritedForUser && (
+												<span className="text-purple-600 dark:text-purple-400">
+													• Also inherits {inheritedForUser.count} section{inheritedForUser.count === 1 ? "" : "s"} from{" "}
+													{inheritedForUser.sources.join(", ")}
+												</span>
+											)}
 										</>
 									)}
 
-									{target.type === "team" && (
-										<>
-											<span>Scope: All members of {target.team.name} inherit granted sections</span>
-										</>
+									{scope && (
+										<span>
+											{target.type === "all_teams" && "Every sub admin / custom-role user who is in any team inherits these sections."}
+											{target.type === "team" && `Sub admin / custom-role members of ${target.team.name} inherit these sections.`}
+											{target.type === "all_customers" &&
+												"Members of any team that belongs to a customer inherit these sections."}
+											{target.type === "customer" && `Members of teams under ${target.customer.name} inherit these sections.`}{" "}
+											Their own sections are kept, and API access still follows each member's role. •{" "}
+											{scope.grant
+												? `Saved: ${countSections(scope.grant.allowed_sections)} section(s)${
+														scope.grant.updated_at ? ` on ${new Date(scope.grant.updated_at).toLocaleString()}` : ""
+													}`
+												: "Nothing saved yet"}
+										</span>
 									)}
 
 									{target.type === "role" && (
@@ -801,7 +974,7 @@ export default function RBACView() {
 								<Button
 									size="sm"
 									onClick={() => void handleSaveCurrentMatrix()}
-									disabled={isUpdatingPerms}
+									disabled={isUpdatingPerms || isSavingScope}
 									className="h-8 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold"
 								>
 									Save Permissions

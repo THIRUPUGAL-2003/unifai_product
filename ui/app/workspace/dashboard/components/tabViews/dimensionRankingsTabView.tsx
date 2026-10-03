@@ -6,7 +6,7 @@ import { DimensionRankingsTab } from "../dimensionRankingsTab";
 
 export interface DimensionRankingsTabViewHandle {
 	getData: () => Partial<DashboardData>;
-	loadData: () => Promise<void>;
+	loadData: () => Promise<Partial<DashboardData>>;
 }
 
 interface DimensionRankingsTabViewProps {
@@ -28,8 +28,9 @@ export const DimensionRankingsTabView = forwardRef<DimensionRankingsTabViewHandl
 		const [triggerDimensionRankings] = useLazyGetDimensionRankingsQuery();
 
 		const loadData = useCallback(async () => {
-			await triggerDimensionRankings(fetchArg, true);
-		}, [fetchArg, triggerDimensionRankings]);
+			const result = await triggerDimensionRankings(fetchArg, true);
+			return { [dataKey]: result.data ?? null };
+		}, [fetchArg, dataKey, triggerDimensionRankings]);
 
 		useImperativeHandle(
 			ref,

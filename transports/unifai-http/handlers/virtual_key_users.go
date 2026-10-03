@@ -33,6 +33,12 @@ func (h *GovernanceHandler) getVirtualKeyUsers(ctx *fasthttp.RequestCtx) {
 
 	seenUserIDs := make(map[string]bool)
 	users := make([]map[string]any, 0)
+	var liveBudgets map[string]*tables.TableBudget
+	if h.governanceManager != nil {
+		if data := h.governanceManager.GetGovernanceData(ctx); data != nil {
+			liveBudgets = data.Budgets
+		}
+	}
 
 	appendUser := func(userID string, origin string, originName string) {
 		if userID == "" || seenUserIDs[userID] {
@@ -45,15 +51,12 @@ func (h *GovernanceHandler) getVirtualKeyUsers(ctx *fasthttp.RequestCtx) {
 		}
 		var budgetUsage float64
 		if user.BudgetID != nil && *user.BudgetID != "" {
-			if h.governanceManager != nil {
-				data := h.governanceManager.GetGovernanceData(ctx)
-				if data != nil && data.Budgets != nil {
-					if b, ok := data.Budgets[*user.BudgetID]; ok && b != nil {
-						budgetUsage = b.CurrentUsage
-					}
-				}
+			found := false
+			if b, ok := liveBudgets[*user.BudgetID]; ok && b != nil {
+				budgetUsage = b.CurrentUsage
+				found = true
 			}
-			if budgetUsage == 0 {
+			if !found {
 				if b, err := h.configStore.GetBudget(ctx, *user.BudgetID); err == nil && b != nil {
 					budgetUsage = b.CurrentUsage
 				}
@@ -152,6 +155,9 @@ func (h *GovernanceHandler) setVirtualKeyUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid virtual key id")
 		return
 	}
+	if !h.callerCanAccessVK(ctx, vkID) {
+		return
+	}
 	var body struct {
 		UserID string `json:"user_id"`
 	}
@@ -199,6 +205,9 @@ func (h *GovernanceHandler) deleteVirtualKeyUser(ctx *fasthttp.RequestCtx) {
 	vkID := pathID(ctx, "vk_id")
 	if vkID == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid virtual key id")
+		return
+	}
+	if !h.callerCanAccessVK(ctx, vkID) {
 		return
 	}
 	ws, ok := configstore.AsWorkspaceStore(h.configStore)

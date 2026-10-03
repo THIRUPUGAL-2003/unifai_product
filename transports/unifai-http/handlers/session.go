@@ -255,7 +255,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 						hasValidToken = false
 						role = ""
 					} else {
-						allowedSections = dbUser.AllowedSections
+						allowedSections = effectiveAllowedSections(ctx, h.configStore, dbUser)
 						email = dbUser.Email
 						userID = dbUser.ID
 						userBudget = dbUser.Budget
@@ -317,26 +317,7 @@ func (h *SessionHandler) recordAuthAudit(ctx *fasthttp.RequestCtx, action, outco
 
 // getAdminCredentials returns the bootstrap super admin username and email.
 func (h *SessionHandler) getAdminCredentials(ctx *fasthttp.RequestCtx) (adminUsername, adminEmail string) {
-	if h.configStore != nil {
-		if authConfig, err := h.configStore.GetAuthConfig(ctx); err == nil && authConfig != nil {
-			if authConfig.AdminUserName != nil {
-				adminUsername = strings.TrimSpace(authConfig.AdminUserName.GetValue())
-			}
-			if authConfig.AdminEmail != nil {
-				adminEmail = strings.TrimSpace(authConfig.AdminEmail.GetValue())
-			}
-		}
-	}
-	if adminUsername == "" {
-		adminUsername = "admin"
-	}
-	if adminEmail == "" && strings.Contains(adminUsername, "@") && isValidEmail(adminUsername) {
-		adminEmail = adminUsername
-	}
-	if adminEmail == "" {
-		adminEmail = strings.TrimSpace(os.Getenv("ADMIN_EMAIL"))
-	}
-	return adminUsername, adminEmail
+	return adminCredentialsFromStore(ctx, h.configStore)
 }
 
 // isMatchingAdminIdentity checks whether an entered identifier (username or email)
@@ -401,7 +382,17 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many login attempts from this network. Try again in about %d minutes", mins))
 		return
 	}
-	if locked, retryAfter, err := checkLoginLockout(h.configStore, ctx, payload.Username); err != nil {
+
+	adminName, adminEmail := h.getAdminCredentials(ctx)
+	isBuiltinAdmin := isMatchingAdminIdentity(payload.Username, adminName, adminEmail)
+	// The built-in admin signs in as "admin", its username or its email; all of them
+	// must share one failure counter or each alias would grant a fresh set of guesses.
+	lockoutKey := payload.Username
+	if isBuiltinAdmin {
+		lockoutKey = adminName
+	}
+
+	if locked, retryAfter, err := checkLoginLockout(h.configStore, ctx, lockoutKey); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to check login lockout")
 		return
 	} else if locked {
@@ -418,9 +409,6 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 	authenticated := false
 	var activeDBUser *tables.TableUser
 
-	adminName, adminEmail := h.getAdminCredentials(ctx)
-	isBuiltinAdmin := isMatchingAdminIdentity(payload.Username, adminName, adminEmail)
-
 	// Built-in admin ALWAYS wins over any shadowed DB user with the same username
 	// (public register must not be able to lock out the bootstrap admin).
 	if isBuiltinAdmin && authConfig.AdminPassword != nil {
@@ -436,7 +424,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many login attempts from this network. Try again in about %d minutes", mins))
 				return
 			}
-			if locked, retryAfter := recordLoginFailure(h.configStore, ctx, payload.Username); locked {
+			if locked, retryAfter := recordLoginFailure(h.configStore, ctx, lockoutKey); locked {
 				mins := lockoutRetryMinutes(ctx, retryAfter)
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Account locked for about %d minutes", mins))
 				return
@@ -457,7 +445,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 					SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many login attempts from this network. Try again in about %d minutes", mins))
 					return
 				}
-				if locked, retryAfter := recordLoginFailure(h.configStore, ctx, payload.Username); locked {
+				if locked, retryAfter := recordLoginFailure(h.configStore, ctx, lockoutKey); locked {
 					mins := lockoutRetryMinutes(ctx, retryAfter)
 					SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Account locked for about %d minutes", mins))
 					return
@@ -473,6 +461,8 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 					SendError(ctx, fasthttp.StatusForbidden, "Your registration is waiting for admin approval")
 				case tables.UserStatusRejected:
 					SendError(ctx, fasthttp.StatusForbidden, "Admin has not accepted your request")
+				case tables.UserStatusDisabled:
+					SendError(ctx, fasthttp.StatusForbidden, "Your account is disabled. Contact your administrator.")
 				case tables.UserStatusEmailUnverified:
 					SendError(ctx, fasthttp.StatusForbidden, "Verify your email first — enter the code we emailed you on the Sign Up page")
 				default:
@@ -482,7 +472,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 			}
 			sessionRole = dbUser.Role
 			notifyEmail = dbUser.Email
-			sessionAllowedSections = dbUser.AllowedSections
+			sessionAllowedSections = effectiveAllowedSections(ctx, h.configStore, dbUser)
 			authenticated = true
 			activeDBUser = dbUser
 		} else {
@@ -493,7 +483,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many login attempts from this network. Try again in about %d minutes", mins))
 				return
 			}
-			if locked, retryAfter := recordLoginFailure(h.configStore, ctx, payload.Username); locked {
+			if locked, retryAfter := recordLoginFailure(h.configStore, ctx, lockoutKey); locked {
 				mins := lockoutRetryMinutes(ctx, retryAfter)
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Account locked for about %d minutes", mins))
 				return
@@ -503,8 +493,9 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	clearLoginFailures(h.configStore, ctx, payload.Username)
-	clearLoginIPFailures(h.configStore, ctx)
+	// The per-IP counter is deliberately left alone: if a success reset it, one valid
+	// account would let an attacker spray passwords at every other account indefinitely.
+	clearLoginFailures(h.configStore, ctx, lockoutKey)
 
 	// Creating a new session with secure lifetime (24 hours default, configurable via SESSION_LIFETIME_HOURS)
 	sessionDuration := time.Hour * 24
@@ -732,6 +723,12 @@ func (h *SessionHandler) assertEmailAvailable(ctx *fasthttp.RequestCtx, email, e
 	if exceptUserID != "" && other.ID == exceptUserID {
 		return true
 	}
+	// An abandoned sign-up whose code has expired must not hold the email forever.
+	if other.Status == tables.UserStatusEmailUnverified && time.Since(other.UpdatedAt) > passwordResetOTPTTL {
+		if err := h.configStore.DeleteUser(ctx, other.ID); err == nil {
+			return true
+		}
+	}
 	SendError(ctx, fasthttp.StatusConflict, "Unable to complete registration with this email. Try a different email or sign in if you already have an account.")
 	return false
 }
@@ -880,11 +877,13 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid email address format")
 		return
 	}
-	if authConfig, err := h.configStore.GetAuthConfig(ctx); err == nil && authConfig != nil && authConfig.AdminUserName != nil {
-		if strings.EqualFold(payload.Username, authConfig.AdminUserName.GetValue()) {
-			SendError(ctx, fasthttp.StatusBadRequest, "Username matches the built-in admin account. Use a different username.")
-			return
-		}
+	if isBuiltinAdminIdentity(ctx, h.configStore, payload.Username) {
+		SendError(ctx, fasthttp.StatusBadRequest, "Username matches the built-in admin account. Use a different username.")
+		return
+	}
+	if isBuiltinAdminIdentity(ctx, h.configStore, payload.Email) {
+		SendError(ctx, fasthttp.StatusConflict, "This email belongs to the built-in admin account. Use a different email.")
+		return
 	}
 	if failures := getPasswordPolicyFailures(payload.Password); len(failures) > 0 {
 		SendError(ctx, fasthttp.StatusBadRequest, "Password must include "+strings.Join(failures, ", "))
@@ -897,6 +896,10 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 	if role == "admin" && !h.isSuperAdmin(ctx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Only a super admin can create admin accounts")
+		return
+	}
+	if !h.callerMayManageRole(ctx, role) {
+		SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
 		return
 	}
 	payload.Role = role
@@ -942,6 +945,9 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 			logger.Error("failed to activate pending governance user username=%s: %v", payload.Username, err)
 			SendError(ctx, fasthttp.StatusInternalServerError, userCreateFailureMessage(err))
 			return
+		}
+		if payload.AutoCreatePrompt != nil {
+			setPromptAutoCreatePreference(ctx, h.configStore, existing.ID, autoCreatePrompt)
 		}
 		if h.promptLifecycle != nil {
 			_ = h.promptLifecycle.OnUserCreated(ctx, existing, autoCreatePrompt)
@@ -996,6 +1002,9 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if payload.AutoCreatePrompt != nil {
+		setPromptAutoCreatePreference(ctx, h.configStore, user.ID, autoCreatePrompt)
+	}
 	if h.promptLifecycle != nil {
 		_ = h.promptLifecycle.OnUserCreated(ctx, user, autoCreatePrompt)
 	}
@@ -1156,7 +1165,7 @@ func (h *SessionHandler) verifyOTP(ctx *fasthttp.RequestCtx) {
 	// Hourly per-IP cap on OTP guesses (each code also allows only maxOTPAttempts).
 	// No per-target cooldown here: it rejected the correct code after a single typo.
 	if consumeForgotPasswordQuota(h.configStore, ctx, "otp-verify:"+clientIPAddress(ctx), "") {
-		SendError(ctx, fasthttp.StatusUnauthorized, "Invalid or expired OTP")
+		SendError(ctx, fasthttp.StatusTooManyRequests, "Too many verification attempts. Please try again later.")
 		return
 	}
 	var payload struct {
@@ -1418,14 +1427,10 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 		}
 		// Terminate any existing live sessions on password reset (CWE-613)
 		_ = h.configStore.DeleteSessionsByUsername(ctx, user.Username)
-		// Do not clear login lockout here — failed-login lockout must still apply
-		// until the timer expires (forgot-password must not bypass the lock).
-		msg := "Password updated. You can sign in now."
-		if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, user.Username); locked {
-			mins := retryMinutes(retryAfter)
-			msg = fmt.Sprintf("Password updated. Your account is still locked for about %d minutes after failed logins — wait, then sign in with the new password.", mins)
-		}
-		SendJSON(ctx, map[string]any{"message": msg})
+		// The emailed code proves ownership, so the failed-login lock (which only guards
+		// the old password) is lifted. The per-IP limit still applies.
+		clearAccountLockouts(h.configStore, ctx, user.Username, user.Email)
+		SendJSON(ctx, map[string]any{"message": "Password updated. You can sign in now."})
 		return
 	}
 
@@ -1499,12 +1504,8 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 	}
 	_ = h.configStore.FlushSessions(ctx)
 
-	msg := "Password updated. You can sign in now."
-	if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, adminName); locked {
-		mins := retryMinutes(retryAfter)
-		msg = fmt.Sprintf("Password updated. Your account is still locked for about %d minutes after failed logins — wait, then sign in with the new password.", mins)
-	}
-	SendJSON(ctx, map[string]any{"message": msg})
+	clearAccountLockouts(h.configStore, ctx, adminName, adminEmail, "admin")
+	SendJSON(ctx, map[string]any{"message": "Password updated. You can sign in now."})
 }
 
 // updateUser handles PUT /api/session/users/{id} - Update user (Admin only)
@@ -1528,6 +1529,10 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Cannot modify an admin account")
 		return
 	}
+	if !h.callerMayManageRole(ctx, existingUser.Role) {
+		SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
+		return
+	}
 
 	prevRole := existingUser.Role
 	prevUsername := existingUser.Username
@@ -1535,10 +1540,10 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	roleChanged := false
 
 	var payload struct {
-		Username           string  `json:"username"`
-		Password           string  `json:"password"`
-		Role               string  `json:"role"`
-		Email              *string `json:"email"`
+		Username           string   `json:"username"`
+		Password           string   `json:"password"`
+		Role               string   `json:"role"`
+		Email              *string  `json:"email"`
 		Status             *string  `json:"status"`
 		Budget             *float64 `json:"budget"`
 		RateLimit          *int     `json:"rate_limit"`
@@ -1614,6 +1619,10 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusForbidden, "Only a super admin can change an admin account role")
 			return
 		}
+		if !h.callerMayManageRole(ctx, role) {
+			SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
+			return
+		}
 		existingUser.Role = role
 		roleChanged = role != prevRole
 	}
@@ -1643,6 +1652,9 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		_ = h.configStore.DeleteSessionsByUsername(ctx, existingUser.Username)
 		if prevUsername != "" && prevUsername != existingUser.Username {
 			_ = h.configStore.DeleteSessionsByUsername(ctx, prevUsername)
+		}
+		if payload.Password != "" {
+			clearAccountLockouts(h.configStore, ctx, existingUser.Username, existingUser.Email)
 		}
 	} else if roleChanged {
 		// Keep user signed in but refresh RBAC immediately on all live sessions.
@@ -1683,6 +1695,10 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 
 	if existing.Role == "admin" && !h.isSuperAdmin(ctx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Cannot delete an admin account")
+		return
+	}
+	if !h.callerMayManageRole(ctx, existing.Role) {
+		SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
 		return
 	}
 
@@ -1739,19 +1755,15 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Forbid registering the built-in administrator account username to prevent account shadowing
-	if authConfig, err := h.configStore.GetAuthConfig(ctx); err == nil && authConfig != nil {
-		if authConfig.AdminUserName != nil {
-			adminName := strings.TrimSpace(authConfig.AdminUserName.GetValue())
-			if adminName != "" && strings.EqualFold(payload.Username, adminName) {
-				SendError(ctx, fasthttp.StatusConflict, "Username is unavailable. Try a different username.")
-				return
-			}
-		}
-	}
-	// Always reserve the literal "admin" username even if AuthConfig admin name differs.
-	if strings.EqualFold(payload.Username, "admin") {
+	// The built-in admin's identifiers ("admin", its username and its email) are reserved:
+	// a shadow account could otherwise capture the admin's forgot-password / forgot-username mail.
+	adminName, adminEmail := h.getAdminCredentials(ctx)
+	if isMatchingAdminIdentity(payload.Username, adminName, adminEmail) {
 		SendError(ctx, fasthttp.StatusConflict, "Username is unavailable. Try a different username.")
+		return
+	}
+	if isMatchingAdminIdentity(payload.Email, adminName, adminEmail) {
+		SendError(ctx, fasthttp.StatusConflict, "This email is already registered with another account")
 		return
 	}
 
@@ -1787,6 +1799,35 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusConflict, alreadyRegisteredMessage(existing))
 			return
 		}
+		// An unverified sign-up stays reserved while its emailed code is still valid.
+		// Overwriting it (even with the same email) would swap in a new password that the
+		// real owner then unknowingly activates by entering their code.
+		if existing.Status == tables.UserStatusEmailUnverified {
+			if wait := time.Until(existing.UpdatedAt.Add(passwordResetOTPTTL)); wait > 0 {
+				// The owner resubmitting (page refresh, "Edit details") proves it with the same
+				// password: keep the hold and email a fresh code instead of a dead-end 409.
+				if ok, cmpErr := encrypt.CompareHash(existing.Password, payload.Password); cmpErr == nil && ok {
+					if !strings.EqualFold(existing.Email, payload.Email) {
+						if !h.assertEmailAvailable(ctx, payload.Email, existing.ID) {
+							return
+						}
+						existing.Email = payload.Email
+					}
+					existing.Status = initialStatus
+					existing.UpdatedAt = now
+					if err := h.configStore.UpdateUser(ctx, existing); err != nil {
+						SendError(ctx, fasthttp.StatusInternalServerError, "Failed to submit registration")
+						return
+					}
+					h.respondRegistered(ctx, existing, verifyEmail, false)
+					return
+				}
+				SendError(ctx, fasthttp.StatusConflict, fmt.Sprintf(
+					"This username has a sign-up waiting for email verification. Enter the emailed code (or use Resend Code), or try again in about %d minutes.",
+					retryMinutes(wait)))
+				return
+			}
+		}
 		// Denied or never-verified users may request access again.
 		if !h.assertEmailAvailable(ctx, payload.Email, existing.ID) {
 			return
@@ -1801,7 +1842,7 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to submit registration")
 			return
 		}
-		h.respondRegistered(ctx, existing, verifyEmail)
+		h.respondRegistered(ctx, existing, verifyEmail, true)
 		return
 	}
 
@@ -1834,7 +1875,7 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	h.respondRegistered(ctx, user, verifyEmail)
+	h.respondRegistered(ctx, user, verifyEmail, true)
 }
 
 // approveUser handles POST /api/session/users/{id}/approve
@@ -1850,6 +1891,10 @@ func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 	user, err := h.configStore.GetUserByID(ctx, id)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
+		return
+	}
+	if user.Status == tables.UserStatusDisabled {
+		SendError(ctx, fasthttp.StatusConflict, "This account was disabled by the identity provider. Re-activate it there.")
 		return
 	}
 	now := time.Now()

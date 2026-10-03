@@ -271,6 +271,99 @@ func rollbackAccessProfileMCP(ctx context.Context, store configstore.ConfigStore
 	return nil
 }
 
+// rollbackAccessProfileLimits removes budgets and rate limits the previous profile version
+// pushed onto its virtual keys and the new version no longer gives (after == nil means the
+// profile was deleted). Rows are only removed while they still carry exactly the profile's
+// values, so limits an admin changed on the VK afterwards are kept. Returns touched VK IDs.
+func rollbackAccessProfileLimits(ctx context.Context, store configstore.ConfigStore, before tables.TableAccessProfile, after *tables.TableAccessProfile) ([]string, error) {
+	if store == nil || !before.IsActive {
+		return nil, nil
+	}
+	beforeSpec := before.Spec()
+	beforeBudgets := budgetsFromSpec(specMapSlice(beforeSpec, "budgets"), "")
+	beforeRL := specMap(beforeSpec, "rate_limit")
+	if len(beforeBudgets) == 0 && beforeRL == nil {
+		return nil, nil
+	}
+	stillOnVK := map[string]bool{}
+	afterDurations := map[string]bool{}
+	afterHasRL := false
+	if after != nil && after.IsActive {
+		afterSpec := after.Spec()
+		for _, id := range specStringSlice(afterSpec, "virtual_key_ids") {
+			stillOnVK[id] = true
+		}
+		for _, b := range budgetsFromSpec(specMapSlice(afterSpec, "budgets"), "") {
+			afterDurations[b.ResetDuration] = true
+		}
+		afterHasRL = specMap(afterSpec, "rate_limit") != nil
+	}
+
+	var touched []string
+	for _, vkID := range specStringSlice(beforeSpec, "virtual_key_ids") {
+		kept := stillOnVK[vkID]
+		vk, err := store.GetVirtualKey(ctx, vkID)
+		if err != nil || vk == nil {
+			continue
+		}
+		changed := false
+		for _, want := range beforeBudgets {
+			if kept && afterDurations[want.ResetDuration] {
+				continue
+			}
+			for _, b := range vk.Budgets {
+				if b.ResetDuration == want.ResetDuration && b.MaxLimit == want.MaxLimit {
+					if err := store.DeleteBudget(ctx, b.ID); err != nil && !errors.Is(err, configstore.ErrNotFound) {
+						return touched, err
+					}
+					changed = true
+				}
+			}
+		}
+		if beforeRL != nil && !(kept && afterHasRL) && vk.RateLimitID != nil && *vk.RateLimitID != "" {
+			if rl, err := store.GetRateLimit(ctx, *vk.RateLimitID); err == nil && rl != nil && rateLimitMatchesSpec(rl, beforeRL) {
+				rlID := *vk.RateLimitID
+				vk.RateLimitID = nil
+				vk.RateLimit = nil
+				if err := store.UpdateVirtualKey(ctx, vk); err != nil {
+					return touched, err
+				}
+				if err := store.DeleteRateLimit(ctx, rlID); err != nil && !errors.Is(err, configstore.ErrNotFound) {
+					return touched, err
+				}
+				changed = true
+			}
+		}
+		if changed {
+			touched = append(touched, vkID)
+		}
+	}
+	return touched, nil
+}
+
+func rateLimitMatchesSpec(rl *tables.TableRateLimit, spec map[string]any) bool {
+	want := rateLimitFromSpec(spec, nil)
+	if want.RequestMaxLimit == nil && want.TokenMaxLimit == nil {
+		return false
+	}
+	eqInt := func(a, b *int64) bool { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }
+	eqStr := func(a, b *string) bool { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }
+	// Only compare fields the profile set; unset ones were never written by it.
+	if want.RequestMaxLimit != nil && !eqInt(rl.RequestMaxLimit, want.RequestMaxLimit) {
+		return false
+	}
+	if want.RequestResetDuration != nil && !eqStr(rl.RequestResetDuration, want.RequestResetDuration) {
+		return false
+	}
+	if want.TokenMaxLimit != nil && !eqInt(rl.TokenMaxLimit, want.TokenMaxLimit) {
+		return false
+	}
+	if want.TokenResetDuration != nil && !eqStr(rl.TokenResetDuration, want.TokenResetDuration) {
+		return false
+	}
+	return true
+}
+
 func providerConfigsFromSpec(items []map[string]any, vkID string) []tables.TableVirtualKeyProviderConfig {
 	out := make([]tables.TableVirtualKeyProviderConfig, 0, len(items))
 	for _, item := range items {

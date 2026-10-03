@@ -22,6 +22,11 @@ type LogRetentionManager interface {
 	DeleteLogsBatch(ctx context.Context, cutoff time.Time, batchSize int) (deletedCount int64, err error)
 }
 
+// MCPToolLogRetentionManager is implemented by stores that also expire MCP tool logs.
+type MCPToolLogRetentionManager interface {
+	DeleteMCPToolLogsBatch(ctx context.Context, cutoff time.Time, batchSize int) (deletedCount int64, err error)
+}
+
 // CleanerConfig holds configuration for the log cleaner
 type CleanerConfig struct {
 	RetentionDays int
@@ -113,44 +118,46 @@ func (c *LogsCleaner) cleanupOldLogs(ctx context.Context) {
 	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
 	c.logger.Info("starting log cleanup: deleting logs older than %s (retention: %d days)", cutoff.Format(time.RFC3339), retentionDays)
 
+	c.deleteInBatches(ctx, "logs", cutoff, c.manager.DeleteLogsBatch)
+	if mcp, ok := c.manager.(MCPToolLogRetentionManager); ok {
+		c.deleteInBatches(ctx, "MCP tool logs", cutoff, mcp.DeleteMCPToolLogsBatch)
+	}
+}
+
+func (c *LogsCleaner) deleteInBatches(ctx context.Context, kind string, cutoff time.Time, deleteBatch func(context.Context, time.Time, int) (int64, error)) {
 	totalDeleted := int64(0)
 	batchCount := 0
 
 	for {
-		// Check if context is cancelled
 		select {
 		case <-ctx.Done():
-			c.logger.Warn("log cleanup cancelled: %v", ctx.Err())
+			c.logger.Warn("%s cleanup cancelled: %v", kind, ctx.Err())
 			return
 		default:
 		}
 
-		// Delete logs in batches using the manager
-		deleted, err := c.manager.DeleteLogsBatch(ctx, cutoff, batchSize)
+		deleted, err := deleteBatch(ctx, cutoff, batchSize)
 		if err != nil {
-			c.logger.Error("failed to delete old logs: %v", err)
+			c.logger.Error("failed to delete old %s: %v", kind, err)
 			return
 		}
-
 		if deleted == 0 {
-			// No more logs to delete
 			break
 		}
 
 		totalDeleted += deleted
 		batchCount++
-		c.logger.Debug("deleted batch %d: %d logs", batchCount, deleted)
+		c.logger.Debug("deleted %s batch %d: %d rows", kind, batchCount, deleted)
 
-		// If we deleted fewer than the batch size, we're done
 		if deleted < int64(batchSize) {
 			break
 		}
 	}
 
 	if totalDeleted > 0 {
-		c.logger.Info("log cleanup completed: deleted %d logs in %d batches", totalDeleted, batchCount)
+		c.logger.Info("%s cleanup completed: deleted %d rows in %d batches", kind, totalDeleted, batchCount)
 	} else {
-		c.logger.Debug("log cleanup completed: no old logs to delete")
+		c.logger.Debug("%s cleanup completed: nothing to delete", kind)
 	}
 }
 

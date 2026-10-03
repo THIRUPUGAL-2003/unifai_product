@@ -17,6 +17,9 @@ import (
 
 	"github.com/fasthttp/router"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 	unifai "github.com/unifai/unifai/core"
 	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/configstore"
@@ -37,9 +40,6 @@ import (
 	"github.com/unifai/unifai/transports/unifai-http/integrations"
 	"github.com/unifai/unifai/transports/unifai-http/lib"
 	ufws "github.com/unifai/unifai/transports/unifai-http/websocket"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"gorm.io/gorm"
@@ -49,7 +49,7 @@ import (
 const (
 	DefaultHost           = "localhost"
 	DefaultPort           = "8001" // fallback when APP_PORT unset — match .env / .env.example
-	DefaultAppDir         = "" // Empty string means use OS-specific config directory
+	DefaultAppDir         = ""     // Empty string means use OS-specific config directory
 	DefaultLogLevel       = string(schemas.LogLevelInfo)
 	DefaultLogOutputStyle = string(schemas.LoggerOutputTypeJSON)
 )
@@ -573,6 +573,29 @@ func (s *UnifAIHTTPServer) ReloadModelConfig(ctx context.Context, id string) (*t
 	}
 
 	return updatedMC, nil
+}
+
+// ResetBudgetUsageInMemory zeros the live usage counters for the given budgets. The
+// caller is responsible for persisting the same reset to the database.
+func (s *UnifAIHTTPServer) ResetBudgetUsageInMemory(ctx context.Context, budgetIDs []string) error {
+	governancePlugin, err := s.getGovernancePlugin()
+	if err != nil {
+		return err
+	}
+	store, ok := governancePlugin.GetGovernanceStore().(interface {
+		ForceResetBudgetUsage(context.Context, []string, func(*tables.TableBudget) time.Time)
+	})
+	if !ok {
+		return fmt.Errorf("governance store does not support budget usage reset")
+	}
+	now := time.Now()
+	store.ForceResetBudgetUsage(ctx, budgetIDs, func(b *tables.TableBudget) time.Time {
+		if b.IsCalendarAligned && tables.IsCalendarAlignableDuration(b.ResetDuration) {
+			return tables.GetCalendarPeriodStart(b.ResetDuration, now)
+		}
+		return now
+	})
+	return nil
 }
 
 // RemoveModelConfig removes a model config from the in-memory store

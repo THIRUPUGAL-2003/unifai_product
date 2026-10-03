@@ -499,6 +499,14 @@ func (h *HybridLogStore) DeleteLogsBatch(ctx context.Context, cutoff time.Time, 
 	return h.inner.DeleteLogsBatch(ctx, cutoff, batchSize)
 }
 
+// DeleteMCPToolLogsBatch deletes old MCP tool log rows; same lifecycle note as DeleteLogsBatch.
+func (h *HybridLogStore) DeleteMCPToolLogsBatch(ctx context.Context, cutoff time.Time, batchSize int) (int64, error) {
+	if inner, ok := h.inner.(MCPToolLogRetentionManager); ok {
+		return inner.DeleteMCPToolLogsBatch(ctx, cutoff, batchSize)
+	}
+	return 0, nil
+}
+
 // Close shuts the store down cleanly: marks the store closed (so further
 // enqueues are dropped), closes the upload queue, waits for workers to drain
 // any in-flight uploads, then closes the object store and the inner store.

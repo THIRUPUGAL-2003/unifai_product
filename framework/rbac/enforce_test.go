@@ -86,6 +86,9 @@ func TestSidebarResourcesReachTheirAPIs(t *testing.T) {
 		{"GET", "/api/logs/stats", "Read", []string{"Logs", "Dashboard"}},
 		{"GET", "/api/logs/histogram/tokens", "Read", []string{"Logs", "Dashboard"}},
 		{"GET", "/api/logs/rankings", "Read", []string{"Logs", "Dashboard"}},
+		{"GET", "/api/logs/filterdata", "Read", []string{"Logs", "Dashboard"}},
+		{"GET", "/api/mcp-logs/filterdata", "Read", []string{"MCPLogs", "Logs", "Dashboard"}},
+		{"GET", "/api/mcp-logs/histogram/top-tools", "Read", []string{"MCPLogs", "Logs", "Dashboard"}},
 	}
 	for _, c := range cases {
 		req := PathRequirementFor(c.method, c.path)
@@ -107,6 +110,34 @@ func TestSidebarResourcesReachTheirAPIs(t *testing.T) {
 	}
 	if req := PathRequirementFor("GET", "/api/governance/budgets"); req == nil || req.Resource != "Governance" || len(req.AnyOfResources) != 0 {
 		t.Errorf("GET /api/governance/budgets must require Governance only, got %+v", req)
+	}
+}
+
+func TestGuardrailsRulesAndProvidersNeedTheirOwnPermission(t *testing.T) {
+	providersOnly := PermissionSet{"GuardrailsProviders": {"View": true, "Update": true}}
+	rulesOnly := PermissionSet{"GuardrailsConfig": {"View": true, "Update": true}}
+	both := PermissionSet{"GuardrailsProviders": {"Update": true}, "GuardrailsConfig": {"Update": true}}
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		perms  PermissionSet
+		want   bool
+	}{
+		{"providers role saves providers", "PUT", "/api/guardrails/providers", providersOnly, true},
+		{"providers role cannot save rules", "PUT", "/api/guardrails/rules", providersOnly, false},
+		{"rules role saves rules", "PUT", "/api/guardrails/rules", rulesOnly, true},
+		{"rules role cannot save providers", "PUT", "/api/guardrails/providers", rulesOnly, false},
+		{"combined save needs both (providers only)", "PUT", "/api/guardrails/config", providersOnly, false},
+		{"combined save needs both (rules only)", "PUT", "/api/guardrails/config", rulesOnly, false},
+		{"combined save with both", "PUT", "/api/guardrails/config", both, true},
+		{"either can read config", "GET", "/api/guardrails/config", providersOnly, true},
+	}
+	for _, c := range cases {
+		if got := PathRequirementFor(c.method, c.path).Allowed(c.perms); got != c.want {
+			t.Errorf("%s: Allowed = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

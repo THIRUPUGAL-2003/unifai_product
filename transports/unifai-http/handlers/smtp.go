@@ -297,6 +297,29 @@ func welcomeAccountEmailBody(username, email string) string {
 	)
 }
 
+func provisionedAccountEmailBody(username, email string) string {
+	return fmt.Sprintf(
+		"Hello %s,\n\nYour UnifAI account was created by your organization's identity provider.\n\nEmail: %s\nUsername: %s\n\nTo sign in for the first time, open the UnifAI login page, choose Forgot password, and set your password with the code we email you.\n",
+		username, email, username,
+	)
+}
+
+// trySendProvisionedEmail tells a SCIM-provisioned user how to set their first password
+// (SCIM accounts get a random unusable password). Same notify-on-create switch as admin create.
+func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email string) {
+	email = strings.TrimSpace(email)
+	if email == "" || store == nil {
+		return
+	}
+	smtpRow, err := store.GetSMTPConfig(ctx)
+	if err != nil || smtpRow == nil || !smtpRow.Enabled || !smtpRow.NotifyOnUserCreate {
+		return
+	}
+	if err := sendAuthEmail(store, ctx, email, "Your UnifAI account", provisionedAccountEmailBody(username, email)); err != nil {
+		logger.Warn("scim welcome email failed username=%s: %v", username, err)
+	}
+}
+
 // trySendWelcomeEmail sends create-user mail when SMTP notify-on-create is on.
 // Returns (sent, errorMessage). Missing email / disabled SMTP is not an error.
 func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email, _password string) (bool, string) {
@@ -409,6 +432,19 @@ func clearLoginFailures(store configstore.ConfigStore, ctx *fasthttp.RequestCtx,
 	_ = store.ClearLoginLockout(ctx, loginUsernameKey(username))
 }
 
+// clearAccountLockouts lifts the failed-login lock under every identifier an account
+// can sign in with (username, email, aliases).
+func clearAccountLockouts(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, identifiers ...string) {
+	if store == nil {
+		return
+	}
+	for _, id := range identifiers {
+		if strings.TrimSpace(id) != "" {
+			clearLoginFailures(store, ctx, id)
+		}
+	}
+}
+
 // retryMinutes rounds a remaining lockout up to whole minutes (never below 1).
 func retryMinutes(retryAfter time.Duration) int {
 	mins := int((retryAfter + time.Minute - 1) / time.Minute)
@@ -444,19 +480,24 @@ func directPeerIsTrustedProxy(ctx *fasthttp.RequestCtx) bool {
 	if !trustProxyHeaders() || ctx == nil {
 		return false
 	}
-	remote := ctx.RemoteIP()
-	if remote == nil {
+	return ipIsTrustedProxy(ctx.RemoteIP())
+}
+
+// ipIsTrustedProxy: with TRUSTED_PROXIES set only those networks count; otherwise
+// any loopback/private hop is treated as our own reverse proxy.
+func ipIsTrustedProxy(ip net.IP) bool {
+	if ip == nil {
 		return false
 	}
 	if cidrs := trustedProxyCIDRs(); len(cidrs) > 0 {
 		for _, n := range cidrs {
-			if n.Contains(remote) {
+			if n.Contains(ip) {
 				return true
 			}
 		}
 		return false
 	}
-	return remote.IsLoopback() || remote.IsPrivate()
+	return ip.IsLoopback() || ip.IsPrivate()
 }
 
 var (
@@ -496,9 +537,28 @@ func trustedProxyCIDRs() []*net.IPNet {
 func clientIPAddress(ctx *fasthttp.RequestCtx) string {
 	if directPeerIsTrustedProxy(ctx) {
 		if xff := string(ctx.Request.Header.Peek("X-Forwarded-For")); xff != "" {
+			// Proxies append, so only the right-hand hops are trustworthy; the left-most
+			// entry is whatever the client sent. Take the first hop (from the right) that
+			// is not one of our own proxies.
+			// When every hop is internal, the right-most one (written by our proxy) is used:
+			// anything further left could be a forged "127.0.0.1".
 			parts := strings.Split(xff, ",")
-			if ip := strings.TrimSpace(parts[0]); ip != "" {
-				return ip
+			rightmost := ""
+			for i := len(parts) - 1; i >= 0; i-- {
+				candidate := strings.TrimSpace(parts[i])
+				ip := net.ParseIP(candidate)
+				if ip == nil {
+					continue
+				}
+				if rightmost == "" {
+					rightmost = candidate
+				}
+				if !ipIsTrustedProxy(ip) {
+					return candidate
+				}
+			}
+			if rightmost != "" {
+				return rightmost
 			}
 		}
 		if xri := strings.TrimSpace(string(ctx.Request.Header.Peek("X-Real-IP"))); xri != "" {

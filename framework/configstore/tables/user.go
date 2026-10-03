@@ -11,6 +11,8 @@ const (
 	UserStatusRejected = "rejected"
 	// UserStatusEmailUnverified: self-registered, waiting for the emailed sign-up code.
 	UserStatusEmailUnverified = "email_unverified"
+	// UserStatusDisabled: deactivated by the identity provider (SCIM active=false).
+	UserStatusDisabled = "disabled"
 )
 
 // TableUser represents a custom user record stored in PostgreSQL

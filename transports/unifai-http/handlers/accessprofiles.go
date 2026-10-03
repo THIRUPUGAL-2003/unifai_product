@@ -323,7 +323,7 @@ func (h *WorkspaceHandler) updateAccessProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if err := h.rollbackRemovedVirtualKeys(ctx, *existing, row); err != nil {
-		SendError(ctx, fasthttp.StatusBadGateway, "profile updated but failed to roll back MCP grants on removed virtual keys: "+err.Error())
+		SendError(ctx, fasthttp.StatusBadGateway, "profile updated but failed to roll back grants on removed virtual keys: "+err.Error())
 		return
 	}
 	if err := h.applyAccessProfile(ctx, row); err != nil {
@@ -341,6 +341,15 @@ func (h *WorkspaceHandler) rollbackRemovedVirtualKeys(ctx context.Context, befor
 		return nil
 	}
 	cs := h.store.ConfigStore
+	limitVKs, err := rollbackAccessProfileLimits(ctx, cs, before, &after)
+	if h.governanceManager != nil {
+		for _, vkID := range limitVKs {
+			_, _ = h.governanceManager.ReloadVirtualKey(ctx, vkID)
+		}
+	}
+	if err != nil {
+		return err
+	}
 	beforeServers := specMapSlice(before.Spec(), "mcp_servers")
 	if len(beforeServers) == 0 {
 		return nil
@@ -415,6 +424,10 @@ func (h *WorkspaceHandler) deleteAccessProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if h.store != nil && h.store.ConfigStore != nil {
+		if _, err := rollbackAccessProfileLimits(ctx, h.store.ConfigStore, *row, nil); err != nil {
+			SendError(ctx, fasthttp.StatusBadGateway, "profile deleted but failed to roll back budgets/rate limits: "+err.Error())
+			return
+		}
 		if err := rollbackAccessProfileMCP(ctx, h.store.ConfigStore, *row); err != nil {
 			SendError(ctx, fasthttp.StatusBadGateway, "profile deleted but failed to roll back MCP grants: "+err.Error())
 			return
@@ -456,7 +469,7 @@ func (h *WorkspaceHandler) setAccessProfileActive(ctx *fasthttp.RequestCtx, acti
 	}
 	if !active {
 		if err := h.rollbackRemovedVirtualKeys(ctx, before, *row); err != nil {
-			SendError(ctx, fasthttp.StatusBadGateway, "profile deactivated but failed to roll back MCP grants: "+err.Error())
+			SendError(ctx, fasthttp.StatusBadGateway, "profile deactivated but failed to roll back its grants: "+err.Error())
 			return
 		}
 	}

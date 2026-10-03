@@ -20,7 +20,7 @@ import { OverviewTab } from "../overviewTab";
 
 export interface OverviewTabViewHandle {
 	getData: () => Partial<DashboardData>;
-	loadData: () => Promise<void>;
+	loadData: () => Promise<Partial<DashboardData>>;
 }
 
 const sanitizeSeriesLabels = (values?: string[]): string[] => {
@@ -91,7 +91,7 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 	const [triggerStats] = useLazyGetLogsStatsQuery();
 
 	const loadData = useCallback(async () => {
-		await Promise.all([
+		const [histogram, tokens, cost, models, latency] = await Promise.all([
 			triggerHistogram(fetchArg, true),
 			triggerTokens(fetchArg, true),
 			triggerCost(fetchArg, true),
@@ -99,6 +99,13 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 			triggerLatency(fetchArg, true),
 			triggerStats(fetchArg, true),
 		]);
+		return {
+			histogramData: histogram.data ?? null,
+			tokenData: tokens.data ?? null,
+			costData: cost.data ?? null,
+			modelData: models.data ?? null,
+			latencyData: latency.data ?? null,
+		};
 	}, [fetchArg, triggerHistogram, triggerTokens, triggerCost, triggerModels, triggerLatency, triggerStats]);
 
 	useImperativeHandle(

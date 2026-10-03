@@ -14,7 +14,7 @@ import { MCPTab } from "../mcpTab";
 
 export interface MCPTabViewHandle {
 	getData: () => Partial<DashboardData>;
-	loadData: () => Promise<void>;
+	loadData: () => Promise<Partial<DashboardData>>;
 }
 
 interface MCPTabViewProps {
@@ -44,7 +44,16 @@ export const MCPTabView = forwardRef<MCPTabViewHandle, MCPTabViewProps>(function
 	const [triggerMcpTopTools] = useLazyGetMCPTopToolsQuery();
 
 	const loadData = useCallback(async () => {
-		await Promise.all([triggerMcpHistogram(fetchArg, true), triggerMcpCost(fetchArg, true), triggerMcpTopTools(fetchArg, true)]);
+		const [histogram, cost, topTools] = await Promise.all([
+			triggerMcpHistogram(fetchArg, true),
+			triggerMcpCost(fetchArg, true),
+			triggerMcpTopTools(fetchArg, true),
+		]);
+		return {
+			mcpHistogramData: histogram.data ?? null,
+			mcpCostData: cost.data ?? null,
+			mcpTopToolsData: topTools.data ?? null,
+		};
 	}, [fetchArg, triggerMcpHistogram, triggerMcpCost, triggerMcpTopTools]);
 
 	useImperativeHandle(

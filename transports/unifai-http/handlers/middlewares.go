@@ -1001,7 +1001,16 @@ func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token
 
 	// Verify user account still exists and is approved (unless bootstrap admin)
 	authConfig, _ := store.GetAuthConfig(context.Background())
-	isBootstrapAdmin := authConfig != nil && authConfig.AdminUserName.GetValue() != "" && session.Username == authConfig.AdminUserName.GetValue()
+	isBootstrapAdmin := false
+	if authConfig != nil {
+		// Must mirror getAdminCredentials: login names the admin session "admin" when no
+		// admin username is configured.
+		adminName := strings.TrimSpace(authConfig.AdminUserName.GetValue())
+		if adminName == "" {
+			adminName = "admin"
+		}
+		isBootstrapAdmin = session.Username == adminName
+	}
 	if !isBootstrapAdmin {
 		dbUser, err := store.GetUserByUsername(context.Background(), session.Username)
 		if err != nil || dbUser == nil || !dbUser.IsApproved() {

@@ -789,7 +789,7 @@ func (m *PromptLifecycleManager) OnTeamMemberAdded(ctx context.Context, teamID s
 				_ = db.Model(&tables.TablePrompt{}).Where("id = ?", userPrompt.ID).Update("folder_id", teamFolder.ID).Error
 			}
 			m.ensureUserAllowedPrompt(ctx, user, userPrompt.ID)
-		} else {
+		} else if !promptAutoCreateDisabled(ctx, m.store, user.ID) {
 			now := time.Now()
 			prompt := &tables.TablePrompt{
 				ID:        uuid.New().String(),

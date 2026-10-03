@@ -35,18 +35,24 @@ func (p *GovernancePlugin) syncCircuitBreakerPoliciesFromStore() {
 	if !ok || ws == nil {
 		return
 	}
+	// At most one refresh every 5s, including when no policies exist (otherwise every request
+	// would hit the DB). The slot is claimed before querying so concurrent requests skip
+	// instead of queueing behind the read.
 	cbPolicySyncMu.Lock()
-	defer cbPolicySyncMu.Unlock()
-	// Always refresh when empty; otherwise at most every 5s.
-	if circuitbreaker.Default.HasPolicies() && time.Since(cbPolicySyncedAt) < 5*time.Second {
+	if time.Since(cbPolicySyncedAt) < 5*time.Second {
+		cbPolicySyncMu.Unlock()
 		return
 	}
-	rows, err := ws.ListCircuitBreakerPolicies(context.Background())
+	cbPolicySyncedAt = time.Now()
+	cbPolicySyncMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	rows, err := ws.ListCircuitBreakerPolicies(ctx)
 	if err != nil {
 		return
 	}
 	circuitbreaker.Default.LoadPolicies(rows)
-	cbPolicySyncedAt = time.Now()
 }
 
 func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) bool {

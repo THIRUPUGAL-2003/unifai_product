@@ -41,9 +41,9 @@ import (
 	plugins "github.com/unifai/unifai/framework/plugins"
 	"github.com/unifai/unifai/framework/vectorstore"
 	"github.com/unifai/unifai/plugins/compat"
-	"github.com/unifai/unifai/plugins/guardrails"
 	"github.com/unifai/unifai/plugins/governance"
 	"github.com/unifai/unifai/plugins/governance/complexity"
+	"github.com/unifai/unifai/plugins/guardrails"
 	"github.com/unifai/unifai/plugins/logging"
 	"github.com/unifai/unifai/plugins/maxim"
 	"github.com/unifai/unifai/plugins/otel"
@@ -959,12 +959,8 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 		wsConfig.CheckAndSetDefaults()
 		config.WebSocketConfig = wsConfig
 	}
-	// 14. Guardrails config
-	if configData.GuardrailsConfig != nil {
-		config.GuardrailsConfig = configData.GuardrailsConfig
-	} else {
-		config.GuardrailsConfig = &GuardrailsConfig{}
-	}
+	// 14. Guardrails config (store → file → defaults)
+	config.GuardrailsConfig = loadGuardrailsConfig(ctx, config, &configData)
 	// 15. Server config
 	if configData.Server != nil {
 		config.ServerConfig = configData.Server
@@ -4173,20 +4169,20 @@ func ResolveFrameworkPricingConfig(
 	}
 
 	return &configstoreTables.TableFrameworkConfig{
-			ID:                     configID,
-			PricingURL:             resolvedPricingURL,
-			PricingSyncInterval:    resolvedSyncSeconds,
-			ModelParametersURL:     resolvedModelParametersURL,
-			MCPLibraryURL:          resolvedMCPLibraryURL,
-			MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
-			ConfigHash:             persistedHash,
-		}, &modelcatalog.Config{
-			PricingURL:             resolvedPricingURL,
-			PricingSyncInterval:    resolvedSyncSeconds,
-			ModelParametersURL:     resolvedModelParametersURL,
-			MCPLibraryURL:          resolvedMCPLibraryURL,
-			MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
-		}, needsDBUpdate
+		ID:                     configID,
+		PricingURL:             resolvedPricingURL,
+		PricingSyncInterval:    resolvedSyncSeconds,
+		ModelParametersURL:     resolvedModelParametersURL,
+		MCPLibraryURL:          resolvedMCPLibraryURL,
+		MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
+		ConfigHash:             persistedHash,
+	}, &modelcatalog.Config{
+		PricingURL:             resolvedPricingURL,
+		PricingSyncInterval:    resolvedSyncSeconds,
+		ModelParametersURL:     resolvedModelParametersURL,
+		MCPLibraryURL:          resolvedMCPLibraryURL,
+		MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
+	}, needsDBUpdate
 }
 
 // initFrameworkConfig initializes framework config and pricing manager from file
@@ -4477,8 +4473,61 @@ func (c *Config) GetRawConfigString() string {
 	return string(data)
 }
 
-// PersistGuardrailsConfig writes guardrails_config to config.json when a config file path is configured.
+// loadGuardrailsConfig prefers the config store copy so rules survive redeploys without
+// a persistent config.json; a file-only config is seeded into the store on first boot.
+func loadGuardrailsConfig(ctx context.Context, config *Config, configData *ConfigData) *GuardrailsConfig {
+	ws, hasStore := configstore.AsWorkspaceStore(config.ConfigStore)
+	if hasStore && ws != nil {
+		row, err := ws.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingGuardrailsConfig)
+		switch {
+		case err == nil && row != nil && strings.TrimSpace(row.Data) != "":
+			var cfg GuardrailsConfig
+			uerr := json.Unmarshal([]byte(row.Data), &cfg)
+			if uerr == nil {
+				return &cfg
+			}
+			logger.Warn("failed to parse stored guardrails config, falling back to config file: %v", uerr)
+		case err != nil && !errors.Is(err, configstore.ErrNotFound):
+			logger.Warn("failed to read guardrails config from store, falling back to config file: %v", err)
+		case configData.GuardrailsConfig != nil:
+			if data, merr := json.Marshal(configData.GuardrailsConfig); merr == nil {
+				if serr := ws.UpsertWorkspaceSetting(ctx, configstore.WorkspaceSettingGuardrailsConfig, string(data)); serr != nil {
+					logger.Warn("failed to seed guardrails config into store: %v", serr)
+				}
+			}
+		}
+	}
+	if configData.GuardrailsConfig != nil {
+		return configData.GuardrailsConfig
+	}
+	return &GuardrailsConfig{}
+}
+
+// PersistGuardrailsConfig saves guardrails to the config store (source of truth) and mirrors
+// it into config.json when that file exists, so file-based deployments stay in sync.
 func (c *Config) PersistGuardrailsConfig(cfg *GuardrailsConfig) error {
+	savedToStore := false
+	if ws, ok := configstore.AsWorkspaceStore(c.ConfigStore); ok && ws != nil {
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("marshal guardrails config: %w", err)
+		}
+		if err := ws.UpsertWorkspaceSetting(context.Background(), configstore.WorkspaceSettingGuardrailsConfig, string(data)); err != nil {
+			return fmt.Errorf("save guardrails config to database: %w", err)
+		}
+		savedToStore = true
+	}
+	if err := c.persistGuardrailsConfigFile(cfg, savedToStore); err != nil {
+		if savedToStore {
+			logger.Warn("guardrails config saved to database but config.json mirror failed: %v", err)
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (c *Config) persistGuardrailsConfigFile(cfg *GuardrailsConfig, onlyIfExists bool) error {
 	if c.configPath == "" {
 		return nil
 	}
@@ -4488,6 +4537,9 @@ func (c *Config) PersistGuardrailsConfig(cfg *GuardrailsConfig) error {
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("read config file: %w", err)
+		}
+		if onlyIfExists {
+			return nil
 		}
 		root = map[string]json.RawMessage{}
 	} else if err := json.Unmarshal(data, &root); err != nil {

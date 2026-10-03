@@ -186,7 +186,14 @@ export const governanceApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: data,
 			}),
-			invalidatesTags: (result, error, { teamId }) => ["Teams", { type: "Teams", id: teamId }, "Folders", "Prompts"],
+			invalidatesTags: (result, error, { teamId }) => [
+				"Teams",
+				{ type: "Teams", id: teamId },
+				"Customers",
+				"VirtualKeys",
+				"Folders",
+				"Prompts",
+			],
 			async onQueryStarted({ teamId }, { dispatch, getState, queryFulfilled }) {
 				try {
 					const { data } = await queryFulfilled;
@@ -219,7 +226,17 @@ export const governanceApi = baseApi.injectEndpoints({
 				url: `/governance/teams/${encodeURIComponent(teamId)}`,
 				method: "DELETE",
 			}),
-			invalidatesTags: (result, error, teamId) => ["Teams", { type: "Teams", id: teamId }, "Folders", "Prompts"],
+			invalidatesTags: (result, error, teamId) => [
+				"Teams",
+				{ type: "Teams", id: teamId },
+				"Customers",
+				"VirtualKeys",
+				"Users",
+				"BusinessUnits",
+				"RBACScopeGrants",
+				"Folders",
+				"Prompts",
+			],
 			async onQueryStarted(teamId, { dispatch, getState, queryFulfilled }) {
 				try {
 					await queryFulfilled;
@@ -372,7 +389,15 @@ export const governanceApi = baseApi.injectEndpoints({
 				url: `/governance/customers/${customerId}`,
 				method: "DELETE",
 			}),
-			invalidatesTags: (result, error, customerId) => ["Customers", { type: "Customers", id: customerId }, "Folders", "Prompts"],
+			invalidatesTags: (result, error, customerId) => [
+				"Customers",
+				{ type: "Customers", id: customerId },
+				"Teams",
+				"VirtualKeys",
+				"RBACScopeGrants",
+				"Folders",
+				"Prompts",
+			],
 			async onQueryStarted(customerId, { dispatch, getState, queryFulfilled }) {
 				try {
 					await queryFulfilled;

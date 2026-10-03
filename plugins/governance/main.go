@@ -1315,7 +1315,7 @@ func (p *GovernancePlugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schem
 		}
 	}
 
-	p.applyCircuitBreakerFailover(ctx, req)
+	failedOver := p.applyCircuitBreakerFailover(ctx, req)
 
 	// Publish the VK provider allowlist for the (post routing-rules) model so downstream routing
 	// layers (load balancing, model-catalog resolution) and core enforcement intersect their
@@ -1326,6 +1326,12 @@ func (p *GovernancePlugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schem
 	if virtualKey != nil {
 		if err := p.loadBalanceProvider(ctx, req, virtualKey); err != nil {
 			return err
+		}
+		// Model-only requests have no provider until load balancing picks one, so the
+		// circuit breaker can only match its primary endpoint now.
+		if !failedOver && p.applyCircuitBreakerFailover(ctx, req) {
+			_, failoverModel, _ := req.GetRequestFields()
+			p.publishRoutingAllowlist(ctx, virtualKey, failoverModel)
 		}
 
 		// A caller-provided include-tools list can only narrow the virtual key's

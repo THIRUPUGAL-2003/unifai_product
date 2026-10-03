@@ -3,6 +3,7 @@ package guardrails
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/cel-go/cel"
 	unifai "github.com/unifai/unifai/core"
@@ -41,7 +42,7 @@ func Init(ctx context.Context, config *Config, logger schemas.Logger) (schemas.B
 		celPrograms: make(map[int]cel.Program),
 		providers:   make(map[int]Provider),
 	}
-	
+
 	if err := plugin.initializeProviders(); err != nil {
 		logger.Error("failed to initialize guardrail providers: %v", err)
 		return nil, err
@@ -62,7 +63,7 @@ func (p *GuardrailsPlugin) initializeProviders() error {
 		if !providerCfg.Enabled {
 			continue
 		}
-		
+
 		switch providerCfg.ProviderName {
 		case "regex":
 			provider, err := NewRegexProvider(providerCfg)
@@ -82,7 +83,7 @@ func (p *GuardrailsPlugin) compileRules() error {
 	if p.config == nil {
 		return nil
 	}
-	
+
 	// Create a CEL environment with variables for the request
 	env, err := cel.NewEnv(
 		cel.Variable("request.model", cel.StringType),
@@ -98,20 +99,20 @@ func (p *GuardrailsPlugin) compileRules() error {
 		if !rule.Enabled {
 			continue
 		}
-		
+
 		ast, issues := env.Compile(rule.CELExpression)
 		if issues != nil && issues.Err() != nil {
 			return fmt.Errorf("invalid CEL expression for rule %d: %w", rule.ID, issues.Err())
 		}
-		
+
 		prg, err := env.Program(ast)
 		if err != nil {
 			return fmt.Errorf("failed to create CEL program for rule %d: %w", rule.ID, err)
 		}
-		
+
 		p.celPrograms[rule.ID] = prg
 	}
-	
+
 	return nil
 }
 
@@ -138,6 +139,11 @@ func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.U
 	modelName := ""
 	if req.ChatRequest != nil {
 		modelName = req.ChatRequest.Model
+	} else if req.ResponsesRequest != nil {
+		modelName = req.ResponsesRequest.Model
+	}
+	if ctx != nil {
+		ctx.SetValue(guardrailsRequestModelKey, modelName)
 	}
 
 	currentVKID := virtualKeyIDFromContext(ctx)
@@ -180,7 +186,7 @@ func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.U
 				if !ok {
 					continue
 				}
-				
+
 				if err := provider.ValidateInput(ctx, req); err != nil {
 					return req, &schemas.LLMPluginShortCircuit{
 						Error: guardrailViolationError(fmt.Sprintf("Guardrail %q blocked input: %s", rule.Name, err.Error())),
@@ -198,25 +204,29 @@ func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas
 		return resp, err, nil
 	}
 
-	accumulateStreamOutput(ctx, resp)
+	if streamBlocked(ctx) {
+		return nil, skipStreamChunkError(), nil
+	}
+
+	isStream, chunkText := streamChunkText(resp)
+	scanWindow := ""
+	if isStream && chunkText != "" {
+		scanWindow = appendStreamWindow(ctx, chunkText)
+	}
 
 	currentVKID := virtualKeyIDFromContext(ctx)
 	rawVK := rawVirtualKeyFromContext(ctx)
 	currentVKName := virtualKeyNameFromContext(ctx)
 
+	modelName := modelNameFromResponse(resp)
+	if modelName == "" && ctx != nil {
+		modelName, _ = ctx.Value(guardrailsRequestModelKey).(string)
+	}
 	vars := map[string]interface{}{
-		"request.model":            modelNameFromResponse(resp),
+		"request.model":            modelName,
 		"request.prompt_id":        promptIDFromContext(ctx),
 		"request.virtual_key_id":   currentVKID,
 		"request.virtual_key_name": currentVKName,
-	}
-
-	streamFinished := chatStreamFinished(resp)
-	accumulated := ""
-	if streamFinished {
-		if v, ok := ctx.Value(guardrailsStreamAccumKey).(string); ok {
-			accumulated = v
-		}
 	}
 
 	for _, rule := range p.config.GuardrailRules {
@@ -248,16 +258,21 @@ func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas
 					continue
 				}
 
-				if validateErr := provider.ValidateOutput(ctx, nil, resp); validateErr != nil {
-					return nil, guardrailViolationError(fmt.Sprintf("Guardrail %q blocked output: %s", rule.Name, validateErr.Error())), nil
+				if !isStream {
+					if validateErr := provider.ValidateOutput(ctx, nil, resp); validateErr != nil {
+						return nil, guardrailViolationError(fmt.Sprintf("Guardrail %q blocked output: %s", rule.Name, validateErr.Error())), nil
+					}
+					continue
 				}
-
-				// Streaming playground path: validate full accumulated text on final chunk.
-				if streamFinished && accumulated != "" {
-					if rp, ok := provider.(*RegexProvider); ok {
-						if matchErr := rp.MatchText(accumulated, "output"); matchErr != nil {
-							return nil, guardrailViolationError(fmt.Sprintf("Guardrail %q blocked output: %s", rule.Name, matchErr.Error())), nil
-						}
+				if scanWindow == "" {
+					continue
+				}
+				if rp, ok := provider.(*RegexProvider); ok {
+					if matchErr := rp.MatchText(scanWindow, "output"); matchErr != nil {
+						// The matching chunk is replaced by this error and every later chunk is dropped,
+						// so the completed match never reaches the client.
+						ctx.SetValue(guardrailsStreamBlockedKey, true)
+						return nil, guardrailViolationError(fmt.Sprintf("Guardrail %q blocked output: %s", rule.Name, matchErr.Error())), nil
 					}
 				}
 			}
@@ -267,46 +282,83 @@ func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.UnifAIContext, resp *schemas
 	return resp, err, nil
 }
 
-const guardrailsStreamAccumKey schemas.UnifAIContextKey = "guardrails.stream_output_accum"
+const (
+	guardrailsStreamTailKey    schemas.UnifAIContextKey = "guardrails.stream_output_tail"
+	guardrailsStreamBlockedKey schemas.UnifAIContextKey = "guardrails.stream_blocked"
+	guardrailsRequestModelKey  schemas.UnifAIContextKey = "guardrails.request_model"
+)
 
-func accumulateStreamOutput(ctx *schemas.UnifAIContext, resp *schemas.UnifAIResponse) {
-	if ctx == nil || resp == nil || resp.ChatResponse == nil {
-		return
+// streamScanOverlap is how much already-streamed text is re-scanned with each new chunk,
+// so a pattern split across chunks still matches. Patterns longer than this can be missed.
+const streamScanOverlap = 4096
+
+// streamChunkText reports whether resp is a streaming chunk and returns its output text
+// (chat deltas, or Responses/Anthropic output_text and refusal deltas).
+func streamChunkText(resp *schemas.UnifAIResponse) (bool, string) {
+	if resp == nil {
+		return false, ""
 	}
+	if sr := resp.ResponsesStreamResponse; sr != nil {
+		if sr.Type == schemas.ResponsesStreamResponseTypeOutputTextDelta || sr.Type == schemas.ResponsesStreamResponseTypeRefusalDelta {
+			if sr.Delta != nil {
+				return true, *sr.Delta
+			}
+		}
+		return true, ""
+	}
+	if resp.ChatResponse == nil {
+		return false, ""
+	}
+	isStream := false
+	var sb strings.Builder
 	for _, choice := range resp.ChatResponse.Choices {
-		if choice.ChatStreamResponseChoice == nil || choice.ChatStreamResponseChoice.Delta == nil {
+		if choice.ChatStreamResponseChoice == nil {
 			continue
 		}
-		delta := choice.ChatStreamResponseChoice.Delta
-		chunk := ""
-		if delta.Content != nil {
-			chunk += *delta.Content
+		isStream = true
+		if delta := choice.ChatStreamResponseChoice.Delta; delta != nil {
+			if delta.Content != nil {
+				sb.WriteString(*delta.Content)
+			}
+			if delta.Refusal != nil {
+				sb.WriteString(*delta.Refusal)
+			}
 		}
-		if delta.Refusal != nil {
-			chunk += *delta.Refusal
-		}
-		if chunk == "" {
-			continue
-		}
-		prev, _ := ctx.Value(guardrailsStreamAccumKey).(string)
-		ctx.SetValue(guardrailsStreamAccumKey, prev+chunk)
 	}
+	return isStream, sb.String()
 }
 
-func chatStreamFinished(resp *schemas.UnifAIResponse) bool {
-	if resp == nil || resp.ChatResponse == nil {
+// appendStreamWindow returns the text to scan for this chunk (recent tail + chunk) and
+// keeps only the last streamScanOverlap bytes for the next chunk.
+func appendStreamWindow(ctx *schemas.UnifAIContext, chunk string) string {
+	if ctx == nil {
+		return chunk
+	}
+	prev, _ := ctx.Value(guardrailsStreamTailKey).(string)
+	window := prev + chunk
+	tail := window
+	if len(tail) > streamScanOverlap {
+		tail = tail[len(tail)-streamScanOverlap:]
+	}
+	ctx.SetValue(guardrailsStreamTailKey, tail)
+	return window
+}
+
+func streamBlocked(ctx *schemas.UnifAIContext) bool {
+	if ctx == nil {
 		return false
 	}
-	for _, choice := range resp.ChatResponse.Choices {
-		if choice.FinishReason != nil && *choice.FinishReason != "" {
-			return true
-		}
-		if choice.ChatStreamResponseChoice != nil {
-			// Some providers omit finish_reason on intermediate chunks only.
-			continue
-		}
+	blocked, _ := ctx.Value(guardrailsStreamBlockedKey).(bool)
+	return blocked
+}
+
+func skipStreamChunkError() *schemas.UnifAIError {
+	skip := true
+	return &schemas.UnifAIError{
+		IsUnifAIError: true,
+		Error:         &schemas.ErrorField{Message: "stream blocked by guardrail"},
+		StreamControl: &schemas.StreamControl{SkipStream: &skip},
 	}
-	return false
 }
 
 func promptIDFromContext(ctx *schemas.UnifAIContext) string {
@@ -389,4 +441,3 @@ func ruleMatchesVirtualKey(rule GuardrailRule, currentVKID string, rawVK string)
 	}
 	return false
 }
-

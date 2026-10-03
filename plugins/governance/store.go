@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/cel-go/cel"
@@ -30,16 +31,16 @@ type LocalGovernanceStore struct {
 	// giving O(1) by-ID lookups (e.g. the /mcp JWT auth path) without an O(n)
 	// scan or a database read. Maintained in lock-step with virtualKeys via
 	// storeVirtualKey / deleteVirtualKeyByValue — never write it directly.
-	virtualKeysByID sync.Map // string -> *VirtualKey (VK row ID -> VirtualKey)
-	teams           sync.Map // string -> *Team (Team ID -> Team)
-	customers       sync.Map // string -> *Customer (Customer ID -> Customer)
-	budgets         sync.Map // string -> *Budget (Budget ID -> Budget)
-	rateLimits      sync.Map // string -> *RateLimit (RateLimit ID -> RateLimit)
-	modelConfigs    sync.Map // string -> *ModelConfig (key: "modelName" or "modelName:provider" -> ModelConfig)
-	providers       sync.Map // string -> *Provider (Provider name -> Provider with preloaded relationships)
-	routingRules    sync.Map // string -> []*TableRoutingRule (key: "scope:scopeID" -> rules, scopeID="" for global)
-	users               sync.Map // string -> *UserGovernance (User ID -> budget/rate limit pointers)
-	businessUnitsByTeam sync.Map // string -> []buStamp (teamID -> BUs containing that team)
+	virtualKeysByID     sync.Map                             // string -> *VirtualKey (VK row ID -> VirtualKey)
+	teams               sync.Map                             // string -> *Team (Team ID -> Team)
+	customers           sync.Map                             // string -> *Customer (Customer ID -> Customer)
+	budgets             sync.Map                             // string -> *Budget (Budget ID -> Budget)
+	rateLimits          sync.Map                             // string -> *RateLimit (RateLimit ID -> RateLimit)
+	modelConfigs        sync.Map                             // string -> *ModelConfig (key: "modelName" or "modelName:provider" -> ModelConfig)
+	providers           sync.Map                             // string -> *Provider (Provider name -> Provider with preloaded relationships)
+	routingRules        sync.Map                             // string -> []*TableRoutingRule (key: "scope:scopeID" -> rules, scopeID="" for global)
+	users               sync.Map                             // string -> *UserGovernance (User ID -> budget/rate limit pointers)
+	businessUnitsByTeam atomic.Pointer[map[string][]buStamp] // teamID -> BUs containing that team; replaced wholesale, never mutated
 
 	// Last DB usages for budgets and rate limits
 	LastDBUsagesBudgetsMu            sync.RWMutex       // Last DB usages for budgets
@@ -532,6 +533,30 @@ func (gs *LocalGovernanceStore) ResetBudgetAt(ctx context.Context, budgetID stri
 		clone.LastReset = newLastReset
 		if gs.budgets.CompareAndSwap(budgetID, raw, &clone) {
 			return &clone, true
+		}
+	}
+}
+
+// ForceResetBudgetUsage zeros CurrentUsage for the given budgets regardless of their
+// reset window (admin-requested reset). lastReset is computed per budget so calendar
+// aligned budgets keep their period boundary.
+func (gs *LocalGovernanceStore) ForceResetBudgetUsage(ctx context.Context, budgetIDs []string, lastReset func(*configstoreTables.TableBudget) time.Time) {
+	for _, id := range budgetIDs {
+		for {
+			raw, exists := gs.budgets.Load(id)
+			if !exists || raw == nil {
+				break
+			}
+			old, ok := raw.(*configstoreTables.TableBudget)
+			if !ok || old == nil {
+				break
+			}
+			clone := *old
+			clone.CurrentUsage = 0
+			clone.LastReset = lastReset(old)
+			if gs.budgets.CompareAndSwap(id, raw, &clone) {
+				break
+			}
 		}
 	}
 }
@@ -2515,7 +2540,6 @@ func (gs *LocalGovernanceStore) rebuildInMemoryStructures(ctx context.Context, c
 	gs.providers = sync.Map{}
 	gs.routingRules = sync.Map{}
 	gs.users = sync.Map{}
-	gs.businessUnitsByTeam = sync.Map{}
 
 	// Build customers map
 	for i := range customers {
@@ -3099,11 +3123,19 @@ func (gs *LocalGovernanceStore) CreateVirtualKeyInMemory(ctx context.Context, vk
 	}
 
 	clone := *vk
+	if vk.Budgets != nil {
+		clone.Budgets = append([]configstoreTables.TableBudget(nil), vk.Budgets...)
+	}
 
 	// Clone provider configs
 	if vk.ProviderConfigs != nil {
 		clone.ProviderConfigs = make([]configstoreTables.TableVirtualKeyProviderConfig, len(vk.ProviderConfigs))
 		copy(clone.ProviderConfigs, vk.ProviderConfigs)
+		for i := range clone.ProviderConfigs {
+			if clone.ProviderConfigs[i].Budgets != nil {
+				clone.ProviderConfigs[i].Budgets = append([]configstoreTables.TableBudget(nil), clone.ProviderConfigs[i].Budgets...)
+			}
+		}
 	}
 
 	// Store budgets
@@ -3170,8 +3202,21 @@ func (gs *LocalGovernanceStore) UpdateVirtualKeyInMemory(ctx context.Context, vk
 			return // Nothing to update
 		}
 
-		// Create clone to avoid modifying the original
+		// Create clone to avoid modifying the original. Budget/provider-config slices are
+		// copied too: live budget pointers must not alias the caller's slices, which callers
+		// later mutate (e.g. hydrating governance for an API response).
 		clone := *vk
+		if vk.Budgets != nil {
+			clone.Budgets = append([]configstoreTables.TableBudget(nil), vk.Budgets...)
+		}
+		if vk.ProviderConfigs != nil {
+			clone.ProviderConfigs = append([]configstoreTables.TableVirtualKeyProviderConfig(nil), vk.ProviderConfigs...)
+			for i := range clone.ProviderConfigs {
+				if clone.ProviderConfigs[i].Budgets != nil {
+					clone.ProviderConfigs[i].Budgets = append([]configstoreTables.TableBudget(nil), clone.ProviderConfigs[i].Budgets...)
+				}
+			}
+		}
 
 		// Collect all incoming budget IDs across VK + provider configs to avoid
 		// deleting a budget that was moved between VK-level and PC-level in one update.
@@ -3751,7 +3796,8 @@ func (gs *LocalGovernanceStore) ReloadBusinessUnitTeamIndex(ctx context.Context)
 }
 
 func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context) {
-	gs.businessUnitsByTeam = sync.Map{}
+	index := map[string][]buStamp{}
+	defer func() { gs.businessUnitsByTeam.Store(&index) }()
 	if gs.configStore == nil {
 		return
 	}
@@ -3764,6 +3810,10 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 		if gs.logger != nil {
 			gs.logger.Warn("failed to load business units for team index: %v", err)
 		}
+		// Keep serving the previous index rather than dropping BU attribution.
+		if prev := gs.businessUnitsByTeam.Load(); prev != nil {
+			index = *prev
+		}
 		return
 	}
 	for i := range rows {
@@ -3773,14 +3823,7 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 			if teamID == "" {
 				continue
 			}
-			var list []buStamp
-			if v, ok := gs.businessUnitsByTeam.Load(teamID); ok {
-				if existing, ok := v.([]buStamp); ok {
-					list = append(list, existing...)
-				}
-			}
-			list = append(list, stamp)
-			gs.businessUnitsByTeam.Store(teamID, list)
+			index[teamID] = append(index[teamID], stamp)
 		}
 	}
 }
@@ -3798,6 +3841,10 @@ func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.UnifAICo
 	if ctx == nil || len(teamIDs) == 0 {
 		return
 	}
+	index := gs.businessUnitsByTeam.Load()
+	if index == nil {
+		return
+	}
 	ids := make([]string, 0)
 	names := make([]string, 0)
 	seen := map[string]bool{}
@@ -3805,15 +3852,7 @@ func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.UnifAICo
 		if teamID == "" {
 			continue
 		}
-		v, ok := gs.businessUnitsByTeam.Load(teamID)
-		if !ok {
-			continue
-		}
-		list, ok := v.([]buStamp)
-		if !ok {
-			continue
-		}
-		for _, bu := range list {
+		for _, bu := range (*index)[teamID] {
 			if bu.ID == "" || seen[bu.ID] {
 				continue
 			}

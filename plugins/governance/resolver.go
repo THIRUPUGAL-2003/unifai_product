@@ -353,12 +353,14 @@ func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.UnifAIContext, v
 					VirtualKey: vk,
 				}
 			}
-			if decision, err := r.store.CheckScopedModelBudget(ctx, configstoreTables.ModelConfigScopeVirtualKey, vk.ID, evaluationRequest, nil); err != nil || isBudgetViolation(decision) {
-				return &EvaluationResult{
-					Decision:   decision,
-					Reason:     fmt.Sprintf("Warning: Model-level budget exceeded (virtual key scope): %s", reasonFromErr(err, decision)),
-					VirtualKey: vk,
-				}
+		}
+		// Budgets are checked even without a model: MCP tool calls carry cost but no model,
+		// and only resolve to the VK's all-models tier (the VK top-level budget).
+		if decision, err := r.store.CheckScopedModelBudget(ctx, configstoreTables.ModelConfigScopeVirtualKey, vk.ID, evaluationRequest, nil); err != nil || isBudgetViolation(decision) {
+			return &EvaluationResult{
+				Decision:   decision,
+				Reason:     fmt.Sprintf("Warning: Model-level budget exceeded (virtual key scope): %s", reasonFromErr(err, decision)),
+				VirtualKey: vk,
 			}
 		}
 	}

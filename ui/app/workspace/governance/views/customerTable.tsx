@@ -561,8 +561,8 @@ export default function CustomersTable({
 						<AlertDialogHeader>
 							<AlertDialogTitle>Delete Customer</AlertDialogTitle>
 							<AlertDialogDescription>
-								Are you sure you want to delete &quot;{confirmDeleteCustomer?.name}&quot;? This will also delete all associated teams and
-								unassign any virtual keys. This action cannot be undone.
+								Are you sure you want to delete &quot;{confirmDeleteCustomer?.name}&quot;? Its budgets and rate limit are deleted; its teams
+								and virtual keys are kept but unassigned from this customer. This action cannot be undone.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
 						<AlertDialogFooter>

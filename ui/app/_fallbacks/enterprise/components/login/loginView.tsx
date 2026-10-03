@@ -32,6 +32,10 @@ import { useEffect, useState } from "react";
 
 type AuthMode = "login" | "forgot" | "reset" | "forgot_username";
 
+// Must match the server's per-account forgot-password cooldown; a resend inside it is
+// silently dropped (generic response, no email).
+const OTP_RESEND_COOLDOWN_SECONDS = 120;
+
 export default function LoginView() {
 	const [mode, setMode] = useState<AuthMode>("login");
 	const [username, setUsername] = useState("");
@@ -105,7 +109,7 @@ export default function LoginView() {
 			const payload = cleanInput.includes("@") ? { email: cleanInput } : { username: cleanInput, email: cleanInput };
 			const result = await forgotPassword(payload).unwrap();
 			setInfoMessage(result.message || "A fresh verification code was sent to your email.");
-			setResendCooldown(60);
+			setResendCooldown(OTP_RESEND_COOLDOWN_SECONDS);
 		} catch (error) {
 			setErrorMessage(getErrorMessage(error));
 		}
@@ -183,7 +187,7 @@ export default function LoginView() {
 				setIsOtpVerified(false);
 				setResetToken("");
 				setOtp("");
-				setResendCooldown(60);
+				setResendCooldown(OTP_RESEND_COOLDOWN_SECONDS);
 				return;
 			}
 			if (mode === "forgot_username") {
@@ -199,6 +203,9 @@ export default function LoginView() {
 				new_password: newPassword,
 			}).unwrap();
 			setInfoMessage(result.message || "Password updated. Sign in with your new password.");
+			// The reset lifts the server-side lock, so drop the stale countdown too.
+			setLockoutEndsAt(null);
+			setLockoutReason("");
 			setMode("login");
 			setEmail("");
 			setPassword("");

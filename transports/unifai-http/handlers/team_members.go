@@ -33,6 +33,12 @@ func (h *GovernanceHandler) getTeamMembers(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	members := make([]map[string]any, 0, len(links))
+	var liveBudgets map[string]*configstoreTables.TableBudget
+	if h.governanceManager != nil {
+		if data := h.governanceManager.GetGovernanceData(ctx); data != nil {
+			liveBudgets = data.Budgets
+		}
+	}
 	for _, link := range links {
 		user, err := h.configStore.GetUserByID(ctx, link.UserID)
 		if err != nil || user == nil {
@@ -40,15 +46,13 @@ func (h *GovernanceHandler) getTeamMembers(ctx *fasthttp.RequestCtx) {
 		}
 		var budgetUsage float64
 		if user.BudgetID != nil && *user.BudgetID != "" {
-			if h.governanceManager != nil {
-				data := h.governanceManager.GetGovernanceData(ctx)
-				if data != nil && data.Budgets != nil {
-					if b, ok := data.Budgets[*user.BudgetID]; ok && b != nil {
-						budgetUsage = b.CurrentUsage
-					}
-				}
+			// Live counters are authoritative; the DB copy lags until the next dump.
+			found := false
+			if b, ok := liveBudgets[*user.BudgetID]; ok && b != nil {
+				budgetUsage = b.CurrentUsage
+				found = true
 			}
-			if budgetUsage == 0 {
+			if !found {
 				if b, err := h.configStore.GetBudget(ctx, *user.BudgetID); err == nil && b != nil {
 					budgetUsage = b.CurrentUsage
 				}

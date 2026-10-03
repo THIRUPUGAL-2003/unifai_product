@@ -2,6 +2,7 @@ import { LogDetailSheet } from "@/app/workspace/logs/sheets/logDetailsSheet";
 import { SessionDetailsSheet } from "@/app/workspace/logs/sheets/sessionDetailsSheet";
 import { createColumns } from "@/app/workspace/logs/views/columns";
 import { EmptyState } from "@/app/workspace/logs/views/emptyState";
+import { LlmLogsExportButton } from "@/app/workspace/logs/views/logsExportButton";
 import { LogsHeaderView } from "@/app/workspace/logs/views/logsHeaderView";
 import { LogsDataTable } from "@/app/workspace/logs/views/logsTable";
 import { LogsVolumeChart } from "@/app/workspace/logs/views/logsVolumeChart";
@@ -609,7 +610,7 @@ export default function LogsPage() {
 
 					{/* Main Content */}
 					<div className="bg-card flex min-w-0 flex-1 flex-col gap-2 overflow-hidden rounded-l-md p-4 pb-2">
-						<div className="shrink-0">
+						<div className="flex shrink-0 items-center gap-2">
 							<LogsHeaderView
 								filters={filters}
 								onFiltersChange={setFilters}
@@ -632,6 +633,7 @@ export default function LogsPage() {
 								onToggleColumnVisibility={toggleColumnVisibility}
 								onResetColumns={resetColumns}
 							/>
+							<LlmLogsExportButton filters={filters} className="h-7.5" />
 						</div>
 						<div className="grid shrink-0 grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
 							{statCards.map((card) => (

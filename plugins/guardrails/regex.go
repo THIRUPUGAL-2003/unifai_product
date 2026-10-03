@@ -72,15 +72,27 @@ func NewRegexProvider(config GuardrailProvider) (*RegexProvider, error) {
 }
 
 func (p *RegexProvider) ValidateInput(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) error {
-	if req.ChatRequest == nil {
+	if req == nil {
 		return nil
 	}
-
-	for _, msg := range req.ChatRequest.Input {
-		for _, content := range extractChatMessageTexts(msg) {
-			if err := p.matchBlocked(content, "input"); err != nil {
-				return err
-			}
+	var texts []string
+	if req.ChatRequest != nil {
+		for _, msg := range req.ChatRequest.Input {
+			texts = append(texts, extractChatMessageTexts(msg)...)
+		}
+	}
+	// Anthropic /v1/messages and OpenAI /v1/responses arrive as Responses requests.
+	if req.ResponsesRequest != nil {
+		if params := req.ResponsesRequest.Params; params != nil && params.Instructions != nil && *params.Instructions != "" {
+			texts = append(texts, *params.Instructions)
+		}
+		for _, msg := range req.ResponsesRequest.Input {
+			texts = append(texts, extractResponsesMessageTexts(msg)...)
+		}
+	}
+	for _, content := range texts {
+		if err := p.matchBlocked(content, "input"); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -209,13 +221,44 @@ func truncateForScan(s string) string {
 }
 
 func extractChatOutputTexts(resp *schemas.UnifAIResponse) []string {
-	if resp == nil || resp.ChatResponse == nil || len(resp.ChatResponse.Choices) == 0 {
+	if resp == nil {
 		return nil
 	}
 	var texts []string
-	for _, choice := range resp.ChatResponse.Choices {
-		if choice.ChatNonStreamResponseChoice != nil && choice.ChatNonStreamResponseChoice.Message != nil {
-			texts = append(texts, extractChatMessageTexts(*choice.ChatNonStreamResponseChoice.Message)...)
+	if resp.ChatResponse != nil {
+		for _, choice := range resp.ChatResponse.Choices {
+			if choice.ChatNonStreamResponseChoice != nil && choice.ChatNonStreamResponseChoice.Message != nil {
+				texts = append(texts, extractChatMessageTexts(*choice.ChatNonStreamResponseChoice.Message)...)
+			}
+		}
+	}
+	if resp.ResponsesResponse != nil {
+		for _, msg := range resp.ResponsesResponse.Output {
+			texts = append(texts, extractResponsesMessageTexts(msg)...)
+		}
+	}
+	return texts
+}
+
+func extractResponsesMessageTexts(msg schemas.ResponsesMessage) []string {
+	if msg.Content == nil {
+		return nil
+	}
+	var texts []string
+	if msg.Content.ContentStr != nil && *msg.Content.ContentStr != "" {
+		texts = append(texts, *msg.Content.ContentStr)
+	}
+	for _, block := range msg.Content.ContentBlocks {
+		if block.Text != nil && *block.Text != "" {
+			texts = append(texts, *block.Text)
+		}
+		if block.ResponsesOutputMessageContentRefusal != nil && block.ResponsesOutputMessageContentRefusal.Refusal != "" {
+			texts = append(texts, block.ResponsesOutputMessageContentRefusal.Refusal)
+		}
+		if f := block.ResponsesInputMessageContentBlockFile; f != nil {
+			if text := inlineTextFileContent(&schemas.ChatInputFile{FileData: f.FileData, Filename: f.Filename, FileType: f.FileType}); text != "" {
+				texts = append(texts, text)
+			}
 		}
 	}
 	return texts

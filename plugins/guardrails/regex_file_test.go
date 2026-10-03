@@ -49,3 +49,31 @@ func TestRegexProviderBlocksSecretInsideTextFile(t *testing.T) {
 		t.Fatal("expected SSN inside attached text file to be blocked")
 	}
 }
+
+func TestRegexProviderCoversResponsesRequestsAndOutput(t *testing.T) {
+	p, err := NewRegexProvider(GuardrailProvider{ID: 1, Config: map[string]interface{}{
+		"patterns": []interface{}{map[string]interface{}{"pattern": `\b\d{3}-\d{2}-\d{4}\b`, "description": "SSN"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := func(text string) []schemas.ResponsesMessage {
+		return []schemas.ResponsesMessage{{Content: &schemas.ResponsesMessageContent{ContentBlocks: []schemas.ResponsesMessageContentBlock{
+			{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: strPtr(text)},
+		}}}}
+	}
+	if err := p.ValidateInput(nil, &schemas.UnifAIRequest{ResponsesRequest: &schemas.UnifAIResponsesRequest{Input: block("ssn 123-45-6789")}}); err == nil {
+		t.Fatal("expected SSN in Responses/Anthropic input to be blocked")
+	}
+	instr := "my ssn is 123-45-6789"
+	if err := p.ValidateInput(nil, &schemas.UnifAIRequest{ResponsesRequest: &schemas.UnifAIResponsesRequest{Params: &schemas.ResponsesParameters{Instructions: &instr}}}); err == nil {
+		t.Fatal("expected SSN in Responses instructions to be blocked")
+	}
+	if err := p.ValidateInput(nil, &schemas.UnifAIRequest{ResponsesRequest: &schemas.UnifAIResponsesRequest{Input: block("hello")}}); err != nil {
+		t.Fatalf("clean Responses input blocked: %v", err)
+	}
+	resp := &schemas.UnifAIResponse{ResponsesResponse: &schemas.UnifAIResponsesResponse{Output: block("here: 123-45-6789")}}
+	if err := p.ValidateOutput(nil, nil, resp); err == nil {
+		t.Fatal("expected SSN in Responses output to be blocked")
+	}
+}

@@ -76,6 +76,8 @@ func (h *WorkspaceHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/operations", wrap(h.listRBACOperations))
 	r.GET("/api/permissions", wrap(h.listRBACPermissions))
 	r.GET("/api/rbac/me/permissions", wrap(h.getMyRBACPermissions))
+	r.GET("/api/rbac/scope-grants", wrap(h.getRBACScopeGrants))
+	r.PUT("/api/rbac/scope-grants", wrap(h.updateRBACScopeGrant))
 	r.PUT("/api/users/{id}/role", wrap(h.assignUserRole))
 
 	r.GET("/api/governance/business-units", wrap(h.listBusinessUnits))

@@ -11,7 +11,7 @@ import { ModelRankingsTab } from "../modelRankingsTab";
 
 export interface ModelRankingsTabViewHandle {
 	getData: () => Partial<DashboardData>;
-	loadData: () => Promise<void>;
+	loadData: () => Promise<Partial<DashboardData>>;
 }
 
 interface ModelRankingsTabViewProps {
@@ -35,7 +35,8 @@ export const ModelRankingsTabView = forwardRef<ModelRankingsTabViewHandle, Model
 	const [triggerModels] = useLazyGetLogsModelHistogramQuery();
 
 	const loadData = useCallback(async () => {
-		await Promise.all([triggerRankings(fetchArg, true), triggerModels(fetchArg, true)]);
+		const [rankings, models] = await Promise.all([triggerRankings(fetchArg, true), triggerModels(fetchArg, true)]);
+		return { rankingsData: rankings.data ?? null, modelData: models.data ?? null };
 	}, [fetchArg, triggerRankings, triggerModels]);
 
 	useImperativeHandle(

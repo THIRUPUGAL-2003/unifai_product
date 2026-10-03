@@ -2732,7 +2732,6 @@ func (s *RDBConfigStore) DeleteUser(ctx context.Context, id string, tx ...*gorm.
 	return txDB.WithContext(ctx).Delete(&tables.TableUser{}, "id = ?", id).Error
 }
 
-
 // GetModelPrices retrieves all model pricing records from the database.
 func (s *RDBConfigStore) GetModelPrices(ctx context.Context) ([]tables.TableModelPricing, error) {
 	var modelPrices []tables.TableModelPricing
@@ -4440,6 +4439,9 @@ func (s *RDBConfigStore) DeleteTeam(ctx context.Context, id string, tx ...*gorm.
 	if txDB.Migrator().HasTable(&tables.TableTeamMember{}) {
 		_ = txDB.WithContext(ctx).Where("team_id = ?", id).Delete(&tables.TableTeamMember{}).Error
 	}
+	if err := removeTeamFromBusinessUnits(ctx, txDB, id); err != nil {
+		return err
+	}
 	rateLimitID := team.RateLimitID
 	// Delete the team - owned budgets cascade via FK on governance_budgets.team_id
 	if err := txDB.WithContext(ctx).Delete(&tables.TableTeam{}, "id = ?", id).Error; err != nil {
@@ -4451,6 +4453,35 @@ func (s *RDBConfigStore) DeleteTeam(ctx context.Context, id string, tx ...*gorm.
 	// Delete the team's rate limit if it exists
 	if rateLimitID != nil {
 		if err := txDB.WithContext(ctx).Delete(&tables.TableRateLimit{}, "id = ?", *rateLimitID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeTeamFromBusinessUnits drops a deleted team from every business unit's team list
+// (stored as JSON, so there is no FK to cascade).
+func removeTeamFromBusinessUnits(ctx context.Context, txDB *gorm.DB, teamID string) error {
+	if !txDB.Migrator().HasTable(&tables.TableBusinessUnit{}) {
+		return nil
+	}
+	var units []tables.TableBusinessUnit
+	if err := txDB.WithContext(ctx).Where("team_ids_json LIKE ?", "%"+teamID+"%").Find(&units).Error; err != nil {
+		return err
+	}
+	for i := range units {
+		unit := &units[i]
+		kept := make([]string, 0, len(unit.ParsedTeamIDs))
+		for _, existing := range unit.ParsedTeamIDs {
+			if existing != teamID {
+				kept = append(kept, existing)
+			}
+		}
+		if len(kept) == len(unit.ParsedTeamIDs) {
+			continue
+		}
+		unit.ParsedTeamIDs = kept
+		if err := txDB.WithContext(ctx).Save(unit).Error; err != nil {
 			return err
 		}
 	}

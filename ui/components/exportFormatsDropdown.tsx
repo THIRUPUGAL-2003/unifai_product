@@ -11,6 +11,7 @@ import {
 } from "@/lib/utils/tableExport";
 import { Braces, Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { toast } from "sonner";
 
 export type ExportFormatsPayload = {
 	filename: string;
@@ -39,8 +40,10 @@ function downloadJsonFile(filename: string, data: unknown) {
 	const link = document.createElement("a");
 	link.href = url;
 	link.download = filename.endsWith(".json") ? filename : `${filename}.json`;
+	document.body.appendChild(link);
 	link.click();
-	URL.revokeObjectURL(url);
+	link.remove();
+	setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function ExportFormatsDropdown({
@@ -63,7 +66,10 @@ export function ExportFormatsDropdown({
 					downloadJsonFile(payload.filename || "export", payload.json ?? payload.rows);
 					return;
 				}
-				if (!payload.columns.length) return;
+				if (!payload.columns.length || !payload.rows.length) {
+					toast.info("Nothing to export");
+					return;
+				}
 				if (format === "pdf") {
 					await downloadPdfTable(payload);
 				} else if (format === "excel") {
@@ -71,6 +77,8 @@ export function ExportFormatsDropdown({
 				} else {
 					await downloadDocTable(payload);
 				}
+			} catch (err) {
+				toast.error(err instanceof Error && err.message ? `Export failed: ${err.message}` : "Export failed");
 			} finally {
 				setExporting(false);
 			}

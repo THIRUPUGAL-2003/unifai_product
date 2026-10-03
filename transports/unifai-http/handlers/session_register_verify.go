@@ -14,7 +14,9 @@ import (
 const registrationVerifyGeneric = "If a sign-up is waiting for verification, a new code was sent by email"
 
 // respondRegistered finishes register(): either emails a sign-up code or reports the admin queue.
-func (h *SessionHandler) respondRegistered(ctx *fasthttp.RequestCtx, user *tables.TableUser, verifyEmail bool) {
+// discardOnSendFailure removes the just-written sign-up when the code email fails, so the
+// username and email are not held by a sign-up nobody can verify.
+func (h *SessionHandler) respondRegistered(ctx *fasthttp.RequestCtx, user *tables.TableUser, verifyEmail, discardOnSendFailure bool) {
 	if !verifyEmail {
 		SendJSON(ctx, map[string]any{
 			"message": "Sent to the admin waiting for approval",
@@ -26,6 +28,9 @@ func (h *SessionHandler) respondRegistered(ctx *fasthttp.RequestCtx, user *table
 	}
 	if err := h.sendRegistrationCode(ctx, user); err != nil {
 		logger.Warn("sign-up verification email failed username=%s: %v", user.Username, err)
+		if discardOnSendFailure {
+			_ = h.configStore.DeleteUser(ctx, user.ID)
+		}
 		SendError(ctx, fasthttp.StatusServiceUnavailable, "Could not send the verification email. Please try again in a few minutes.")
 		return
 	}
@@ -152,6 +157,10 @@ func (h *SessionHandler) resendRegistrationCode(ctx *fasthttp.RequestCtx) {
 	}
 	if err := h.sendRegistrationCode(ctx, user); err != nil {
 		logger.Warn("sign-up verification resend failed username=%s: %v", user.Username, err)
+	} else {
+		// The username hold follows the newest code's lifetime.
+		user.UpdatedAt = time.Now()
+		_ = h.configStore.UpdateUser(ctx, user)
 	}
 	SendJSON(ctx, generic)
 }

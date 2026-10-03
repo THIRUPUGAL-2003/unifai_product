@@ -395,7 +395,8 @@ export default function SecurityView() {
 						</div>
 					</div>
 					<p className="text-muted-foreground text-xs">
-						Login security: after 3 wrong passwords the account locks for 20 minutes (forgot-password does not unlock early).
+						Login security: after 3 wrong passwords the account locks for 20 minutes; resetting the password via the emailed code
+						unlocks it immediately.
 						Reset password uses a 6-digit email OTP (15 min) and cannot reuse the current password. Login emails only on first
 						sign-in or a new device/browser.
 					</p>

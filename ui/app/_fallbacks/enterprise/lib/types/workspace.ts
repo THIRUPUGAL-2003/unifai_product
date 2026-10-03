@@ -40,6 +40,21 @@ export interface RBACRole {
 	updated_at?: string;
 }
 
+export type RBACScopeType = "all_teams" | "team" | "all_customers" | "customer";
+
+export interface RBACScopeGrant {
+	permission_ids: number[];
+	allowed_sections: string;
+	updated_at?: string;
+}
+
+export interface RBACScopeGrants {
+	all_teams?: RBACScopeGrant;
+	all_customers?: RBACScopeGrant;
+	teams: Record<string, RBACScopeGrant>;
+	customers: Record<string, RBACScopeGrant>;
+}
+
 export interface RBACPermission {
 	id: number;
 	resource: string;
@@ -88,7 +103,14 @@ export interface AuditLog {
 	path: string;
 	ip: string;
 	duration_ms: number;
+	detail?: string;
 	created_at: string;
+}
+
+export interface AuditLogFilters {
+	search?: string;
+	action?: string;
+	outcome?: string;
 }
 
 export interface AuditSettings {

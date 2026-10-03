@@ -196,10 +196,11 @@ func (t *UsageTracker) UpdateUsage(ctx context.Context, update *UsageUpdate) {
 		if err := t.store.UpdateScopedModelRateLimitUsageInMemory(ctx, configstoreTables.ModelConfigScopeVirtualKey, vk.ID, update.Model, update.Provider, update.TokensUsed, shouldUpdateTokens, shouldUpdateRequests); err != nil {
 			t.logger.Error("failed to update scoped model rate limit usage for VK %s: %v", vk.ID, err)
 		}
-		if shouldUpdateBudget && update.Cost > 0 {
-			if err := t.store.UpdateScopedModelBudgetUsageInMemory(ctx, configstoreTables.ModelConfigScopeVirtualKey, vk.ID, update.Model, update.Provider, update.Cost); err != nil {
-				t.logger.Error("failed to update scoped model budget usage for VK %s: %v", vk.ID, err)
-			}
+	}
+	// Charged without a model too (MCP tool cost), mirroring the resolver's budget check.
+	if shouldUpdateBudget && update.Cost > 0 {
+		if err := t.store.UpdateScopedModelBudgetUsageInMemory(ctx, configstoreTables.ModelConfigScopeVirtualKey, vk.ID, update.Model, update.Provider, update.Cost); err != nil {
+			t.logger.Error("failed to update scoped model budget usage for VK %s: %v", vk.ID, err)
 		}
 	}
 

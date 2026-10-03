@@ -21,6 +21,12 @@ const (
 	// JSON array of system role names whose permissions an admin saved explicitly.
 	// EnsureRBACRoles must not merge default permissions back into these roles.
 	WorkspaceSettingRBACCustomizedRoles = "rbac_customized_roles"
+	// JSON section grants for teams, customers and the "all teams" / "all customers" policies.
+	WorkspaceSettingRBACScopeGrants = "rbac_scope_grants"
+	// WorkspaceSettingPromptAutoCreateOptOut lists user IDs created with "auto create prompt" off.
+	WorkspaceSettingPromptAutoCreateOptOut = "prompt_auto_create_opt_out"
+	// WorkspaceSettingGuardrailsConfig stores the guardrails rules + providers JSON.
+	WorkspaceSettingGuardrailsConfig = "guardrails_config"
 )
 
 func (s *RDBConfigStore) customizedSystemRoles(ctx context.Context) map[string]bool {
@@ -820,11 +826,13 @@ func (s *RDBConfigStore) ListAuditLogs(ctx context.Context, query AuditLogQuery)
 		return nil, 0, err
 	}
 	limit := query.Limit
-	if limit <= 0 || limit > 500 {
+	if limit <= 0 {
 		limit = 50
+	} else if limit > 500 {
+		limit = 500
 	}
 	var rows []tables.TableAuditLog
-	err := db.Order("created_at desc").Limit(limit).Offset(query.Offset).Find(&rows).Error
+	err := db.Order("created_at desc, id desc").Limit(limit).Offset(query.Offset).Find(&rows).Error
 	return rows, total, err
 }
 

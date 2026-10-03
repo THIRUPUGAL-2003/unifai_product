@@ -522,7 +522,7 @@ export default function UsersView() {
 				}
 			}
 			if (created?.email_sent) {
-				toast.success("User created — welcome email sent (username + password)");
+				toast.success("User created — welcome email sent. Share the password with the user separately.");
 			} else if (created?.email_error) {
 				toast.warning(`User created, but email failed: ${created.email_error}`);
 			} else {
@@ -709,7 +709,8 @@ export default function UsersView() {
 		return true;
 	};
 
-	const approvedUsers = users.filter((u) => (u.status || "approved") === "approved");
+	// Disabled = deactivated by the identity provider (SCIM); listed with a badge, cannot sign in.
+	const approvedUsers = users.filter((u) => ["approved", "disabled"].includes(u.status || "approved"));
 	const roleCounts = {
 		all: approvedUsers.length,
 		user: approvedUsers.filter((u) => !isAdminRole(u)).length,
@@ -932,6 +933,11 @@ export default function UsersView() {
 														{user.username.slice(0, 2)}
 													</div>
 													{user.username}
+													{user.status === "disabled" && (
+														<span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-medium text-rose-400">
+															Disabled
+														</span>
+													)}
 												</TableCell>
 												<TableCell className="text-sm text-muted-foreground">{user.email || "—"}</TableCell>
 												<TableCell>

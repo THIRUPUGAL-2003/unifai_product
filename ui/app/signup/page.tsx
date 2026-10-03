@@ -24,6 +24,9 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+// Must match the server's per-account resend cooldown; a resend inside it is silently dropped.
+const CODE_RESEND_COOLDOWN_SECONDS = 120;
+
 export default function SignupPage() {
 	const [username, setUsername] = useState("");
 	const [email, setEmail] = useState("");
@@ -99,7 +102,7 @@ export default function SignupPage() {
 			const data = await res.json().catch(() => ({}));
 			if (res.ok) {
 				setCodeInfo("If your sign-up is waiting for verification, a new code was sent.");
-				setResendCooldown(60);
+				setResendCooldown(CODE_RESEND_COOLDOWN_SECONDS);
 			} else {
 				setErrorMessage(apiError(data, "Could not resend the code"));
 			}
@@ -148,11 +151,18 @@ export default function SignupPage() {
 			});
 			const data = await res.json().catch(() => ({}));
 			if (!res.ok) {
-				setErrorMessage(apiError(data, "Registration failed"));
+				const message = apiError(data, "Registration failed");
+				if (res.status === 409 && /waiting for email verification/i.test(message)) {
+					setCodeInfo(message);
+					setNeedsCode(true);
+					return;
+				}
+				setErrorMessage(message);
 				return;
 			}
 			if (data?.verification_required) {
 				setCodeInfo(data.message || "We emailed you a 6-digit code.");
+				setResendCooldown(CODE_RESEND_COOLDOWN_SECONDS);
 				setNeedsCode(true);
 				return;
 			}

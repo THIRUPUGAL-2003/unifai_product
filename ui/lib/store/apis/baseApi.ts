@@ -75,8 +75,8 @@ const baseQueryWithErrorHandling: typeof baseQueryWithRefresh = async (args: any
 	if (result.error) {
 		const error = result.error as any;
 
-		// Handle 401 for non-enterprise (no refresh available)
-		if (error?.status === 401 && !IS_ENTERPRISE) {
+		// Still 401 after the refresh layer ran: the session is gone (expired / revoked).
+		if (error?.status === 401) {
 			// When a TempTokenScope wrapper is active, the wrapped page handles
 			// its own 401 display (an "invalid/expired link" view). Skip the
 			// global redirect so the user stays on the page they opened.
@@ -205,6 +205,7 @@ export const baseApi = createApi({
 		"BrowserAiControls",
 		"BrowserAiAgents",
 		"BrowserAiAgentSettings",
+		"RBACScopeGrants",
 	],
 	endpoints: () => ({}),
 });

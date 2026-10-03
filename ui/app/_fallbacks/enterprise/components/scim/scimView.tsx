@@ -8,7 +8,7 @@ import { useGetTeamsQuery } from "@/lib/store/apis/governanceApi";
 import { useGetRolesQuery } from "@enterprise/lib/store/apis/rbacApi";
 import { useGetSCIMConfigQuery, useUpdateSCIMConfigMutation } from "@enterprise/lib/store/apis/scimApi";
 import { SCIMConfig } from "@enterprise/lib/types/workspace";
-import { Save, UserRoundCog, Copy } from "lucide-react";
+import { Save, UserRoundCog, Copy, Eye, EyeOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
@@ -21,6 +21,8 @@ export default function SCIMView() {
 	const [updateConfig, { isLoading: saving }] = useUpdateSCIMConfigMutation();
 	const [config, setConfig] = useState<SCIMConfig>({ enabled: false, provider: "okta", config: {} });
 	const { copy: copyToClipboard } = useCopyToClipboard();
+	const [showToken, setShowToken] = useState(false);
+	const bearerToken = config.bearer_token || String(config.config?.bearer_token || "");
 	const roleNames = useMemo(() => (rolesData?.roles || []).map((r) => r.name), [rolesData]);
 	const teams = useMemo(() => teamsData?.teams || [], [teamsData]);
 	const scimBase = useMemo(() => {
@@ -196,21 +198,47 @@ export default function SCIMView() {
 					</div>
 					<div className="space-y-1">
 						<Label>SCIM bearer token (for IdP → UnifAI)</Label>
-						<Input
-							type="password"
-							autoComplete="new-password"
-							data-1p-ignore="true"
-							data-lpignore="true"
-							value={config.bearer_token || String(config.config?.bearer_token || "")}
-							onChange={(e) => {
-								setConfig((current) => ({
-									...current,
-									bearer_token: e.target.value,
-									config: { ...current.config, bearer_token: e.target.value },
-								}));
-							}}
-							placeholder="Auto-generated on save when empty"
-						/>
+						<div className="flex gap-2">
+							<Input
+								type={showToken ? "text" : "password"}
+								autoComplete="new-password"
+								data-1p-ignore="true"
+								data-lpignore="true"
+								value={bearerToken}
+								onChange={(e) => {
+									setConfig((current) => ({
+										...current,
+										bearer_token: e.target.value,
+										config: { ...current.config, bearer_token: e.target.value },
+									}));
+								}}
+								placeholder="Auto-generated on save when empty"
+							/>
+							{bearerToken && bearerToken !== "********" && (
+								<>
+									<Button
+										type="button"
+										variant="outline"
+										size="icon"
+										onClick={() => setShowToken((v) => !v)}
+										aria-label={showToken ? "Hide token" : "Show token"}
+										data-testid="scim-token-toggle"
+									>
+										{showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										size="icon"
+										onClick={() => copyToClipboard(bearerToken)}
+										aria-label="Copy token"
+										data-testid="scim-token-copy"
+									>
+										<Copy className="h-4 w-4" />
+									</Button>
+								</>
+							)}
+						</div>
 					</div>
 					<div className="flex justify-end">
 						<Button onClick={() => void save()} disabled={saving}>

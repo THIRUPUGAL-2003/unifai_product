@@ -488,12 +488,9 @@ func ConvertToUnifAIContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 		// in the allowlist can be forwarded directly without the x-uf-eh- prefix.
 		// This enables forwarding arbitrary headers like "anthropic-beta" directly.
 		// Only applies when allowlist is non-empty (backward compatible).
-		if matcher != nil && matcher.HasAllowlist() {
+		// Reserved x-uf-* headers are never forwarded and must fall through to their parsers below.
+		if matcher != nil && matcher.HasAllowlist() && !strings.HasPrefix(keyStr, "x-uf-") {
 			if matcher.MatchesAllow(keyStr) {
-				// Skip reserved x-uf-* headers (handled separately)
-				if strings.HasPrefix(keyStr, "x-uf-") {
-					return true
-				}
 				// Validate against security denylist (always enforced)
 				if securityDenylist[keyStr] {
 					return true

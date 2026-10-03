@@ -16,6 +16,32 @@ type PathRequirement struct {
 	Resource       string
 	Operation      string
 	AnyOfResources []string
+	// AllOfResources requires the Operation on every listed resource (takes precedence over AnyOf).
+	AllOfResources []string
+}
+
+// Allowed reports whether perms satisfy the requirement.
+func (r *PathRequirement) Allowed(perms PermissionSet) bool {
+	if r == nil {
+		return true
+	}
+	if len(r.AllOfResources) > 0 {
+		for _, resource := range r.AllOfResources {
+			if !HasPermission(perms, resource, r.Operation) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(r.AnyOfResources) > 0 {
+		for _, resource := range r.AnyOfResources {
+			if HasPermission(perms, resource, r.Operation) {
+				return true
+			}
+		}
+		return false
+	}
+	return HasPermission(perms, r.Resource, r.Operation)
 }
 
 // ResolvePermissions loads the permission set for a role name.
@@ -118,6 +144,8 @@ func readRequirement(path string) *PathRequirement {
 	switch {
 	case isDashboardAggregatePath(path):
 		return &PathRequirement{Resource: "Logs", Operation: "Read", AnyOfResources: []string{"Logs", "Dashboard"}}
+	case isDashboardMCPAggregatePath(path):
+		return &PathRequirement{Resource: "MCPLogs", Operation: "Read", AnyOfResources: []string{"MCPLogs", "Logs", "Dashboard"}}
 	case strings.HasPrefix(path, "/api/mcp-logs"):
 		return &PathRequirement{Resource: "MCPLogs", Operation: "Read", AnyOfResources: []string{"MCPLogs", "Logs"}}
 	case strings.HasPrefix(path, "/api/logs"):
@@ -190,8 +218,18 @@ func readRequirement(path string) *PathRequirement {
 // Raw request rows (/api/logs, /api/logs/sessions/...) still require Logs.
 func isDashboardAggregatePath(path string) bool {
 	return path == "/api/logs/stats" ||
+		path == "/api/logs/filterdata" ||
+		path == "/api/logs/dashboard" ||
 		strings.HasPrefix(path, "/api/logs/histogram") ||
 		strings.HasPrefix(path, "/api/logs/rankings")
+}
+
+// isDashboardMCPAggregatePath covers the Dashboard MCP tab's charts and filter options.
+// Raw MCP tool-call rows still require MCPLogs or Logs.
+func isDashboardMCPAggregatePath(path string) bool {
+	return path == "/api/mcp-logs/stats" ||
+		path == "/api/mcp-logs/filterdata" ||
+		strings.HasPrefix(path, "/api/mcp-logs/histogram")
 }
 
 // governanceRequirement lets the dedicated resource shown in the sidebar (Teams,
@@ -278,11 +316,16 @@ func writeRequirement(method, path string) *PathRequirement {
 		}
 	case strings.HasPrefix(path, "/api/governance"):
 		return governanceRequirement(path, op)
+	case path == "/api/guardrails/rules":
+		return &PathRequirement{Resource: "GuardrailsConfig", Operation: op}
+	case path == "/api/guardrails/providers":
+		return &PathRequirement{Resource: "GuardrailsProviders", Operation: op}
 	case strings.HasPrefix(path, "/api/guardrails"):
+		// The combined config blob carries both rules and providers.
 		return &PathRequirement{
 			Resource:       "GuardrailsConfig",
 			Operation:      op,
-			AnyOfResources: []string{"GuardrailsConfig", "GuardrailsProviders"},
+			AllOfResources: []string{"GuardrailsConfig", "GuardrailsProviders"},
 		}
 	case strings.HasPrefix(path, "/api/prompt-repo"):
 		return &PathRequirement{Resource: "PromptRepository", Operation: op}

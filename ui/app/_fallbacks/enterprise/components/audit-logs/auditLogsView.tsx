@@ -5,8 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { getErrorMessage } from "@/lib/store";
 import { useGetAuditLogsQuery, useLazyExportAuditLogsQuery } from "@enterprise/lib/store/apis/auditLogsApi";
 import { ScrollText } from "lucide-react";
-import { useCallback, useState } from "react";
-import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function formatAuditDate(ts: string) {
 	const d = new Date(ts);
@@ -20,59 +20,62 @@ function formatAuditTime(ts: string) {
 	return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
 }
 
+const PAGE_SIZE = 50;
+
 export default function AuditLogsView() {
 	const [search, setSearch] = useState("");
 	const [action, setAction] = useState("");
 	const [outcome, setOutcome] = useState("");
-	const { data, isLoading: loading } = useGetAuditLogsQuery({
-		search: search || undefined,
-		action: action || undefined,
-		outcome: outcome || undefined,
-	});
+	const [page, setPage] = useState(0);
+	const filters = useMemo(
+		() => ({ search: search.trim() || undefined, action: action || undefined, outcome: outcome || undefined }),
+		[search, action, outcome],
+	);
+	useEffect(() => setPage(0), [filters]);
+	const { data, isLoading: loading, isFetching } = useGetAuditLogsQuery({ ...filters, limit: PAGE_SIZE, offset: page * PAGE_SIZE });
 	const [exportAuditLogs] = useLazyExportAuditLogsQuery();
 	const logs = data?.logs || [];
+	const total = data?.total_count ?? 0;
+	const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
 	const getExportPayload = useCallback(async () => {
+		let rows;
 		try {
-			const result = await exportAuditLogs().unwrap();
-			const rows = result.logs || [];
-			return {
-				filename: "audit-logs",
-				title: "Audit Logs",
-				subtitle: `${rows.length} entries`,
-				columns: [
-					{ key: "date", header: "Date" },
-					{ key: "time", header: "Time" },
-					{ key: "action", header: "Action" },
-					{ key: "outcome", header: "Outcome" },
-					{ key: "initiator", header: "Initiator" },
-					{ key: "path", header: "Path" },
-					{ key: "ip", header: "IP" },
-					{ key: "duration", header: "Duration" },
-				],
-				rows: rows.map((log) => ({
-					date: formatAuditDate(log.created_at),
-					time: formatAuditTime(log.created_at),
-					action: log.action || "",
-					outcome: log.outcome || "",
-					initiator: log.initiator || "",
-					path: `${log.method || ""} ${log.path || ""}`.trim(),
-					ip: log.ip || "",
-					duration: `${log.duration_ms ?? 0}ms`,
-				})),
-				json: rows,
-			};
+			rows = (await exportAuditLogs(filters).unwrap()).logs || [];
 		} catch (err) {
-			toast.error(getErrorMessage(err));
-			return {
-				filename: "audit-logs",
-				title: "Audit Logs",
-				columns: [],
-				rows: [],
-				json: [],
-			};
+			throw new Error(getErrorMessage(err));
 		}
-	}, [exportAuditLogs]);
+		return {
+			filename: "audit-logs",
+			title: "Audit Logs",
+			subtitle: `${rows.length} entries`,
+			columns: [
+				{ key: "date", header: "Date" },
+				{ key: "time", header: "Time" },
+				{ key: "action", header: "Action" },
+				{ key: "outcome", header: "Outcome" },
+				{ key: "initiator", header: "Initiator" },
+				{ key: "target", header: "Target" },
+				{ key: "path", header: "Path" },
+				{ key: "ip", header: "IP" },
+				{ key: "duration", header: "Duration" },
+				{ key: "detail", header: "Detail" },
+			],
+			rows: rows.map((log) => ({
+				date: formatAuditDate(log.created_at),
+				time: formatAuditTime(log.created_at),
+				action: log.action || "",
+				outcome: log.outcome || "",
+				initiator: log.initiator || "",
+				target: log.target || "",
+				path: `${log.method || ""} ${log.path || ""}`.trim(),
+				ip: log.ip || "",
+				duration: `${log.duration_ms ?? 0}ms`,
+				detail: log.detail || "",
+			})),
+			json: rows,
+		};
+	}, [exportAuditLogs, filters]);
 
 	return (
 		<div className="flex h-full w-full flex-col gap-4 p-4">
@@ -155,6 +158,24 @@ export default function AuditLogsView() {
 					</Table>
 				)}
 			</div>
+			{total > PAGE_SIZE ? (
+				<div className="text-muted-foreground flex items-center justify-end gap-3 text-sm" data-testid="audit-logs-pagination">
+					<span>
+						{page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} of {total}
+					</span>
+					<Button variant="outline" size="sm" disabled={page === 0 || isFetching} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+						Previous
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={page + 1 >= pageCount || isFetching}
+						onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+					>
+						Next
+					</Button>
+				</div>
+			) : null}
 		</div>
 	);
 }

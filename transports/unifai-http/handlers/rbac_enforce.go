@@ -75,18 +75,7 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				SendError(ctx, fasthttp.StatusInternalServerError, "failed to resolve permissions")
 				return
 			}
-			allowed := false
-			if len(req.AnyOfResources) > 0 {
-				for _, resource := range req.AnyOfResources {
-					if rbac.HasPermission(perms, resource, req.Operation) {
-						allowed = true
-						break
-					}
-				}
-			} else {
-				allowed = rbac.HasPermission(perms, req.Resource, req.Operation)
-			}
-			if !allowed {
+			if !req.Allowed(perms) {
 				SendError(ctx, fasthttp.StatusForbidden, "insufficient permissions")
 				return
 			}
