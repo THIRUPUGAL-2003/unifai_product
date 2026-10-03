@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/store";
 import {
 	useGetGuardrailsConfigQuery,
-	useUpdateGuardrailsConfigMutation,
+	useUpdateGuardrailProvidersMutation,
 	GuardrailProvider,
 } from "@/lib/store/apis/guardrailsApi";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ function validateProviderForm(provider: Partial<GuardrailProvider> | null, patte
 
 export default function GuardrailsProviderView() {
 	const { data: config, isLoading, isError, error, refetch } = useGetGuardrailsConfigQuery();
-	const [updateConfig] = useUpdateGuardrailsConfigMutation();
+	const [updateProviders] = useUpdateGuardrailProvidersMutation();
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [editingProvider, setEditingProvider] = useState<Partial<GuardrailProvider> | null>(null);
@@ -76,7 +76,7 @@ export default function GuardrailsProviderView() {
 
 		const updatedProviders = providers.filter((p) => p.id !== providerId);
 		try {
-			await updateConfig({ ...config, guardrail_providers: updatedProviders }).unwrap();
+			await updateProviders({ guardrail_providers: updatedProviders }).unwrap();
 			toast.success("Provider deleted");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -110,7 +110,7 @@ export default function GuardrailsProviderView() {
 		}
 
 		try {
-			await updateConfig({ ...config, guardrail_providers: updatedProviders }).unwrap();
+			await updateProviders({ guardrail_providers: updatedProviders }).unwrap();
 			toast.success(existingIndex >= 0 ? "Provider updated" : "Provider created");
 			setIsModalOpen(false);
 			setEditingProvider(null);

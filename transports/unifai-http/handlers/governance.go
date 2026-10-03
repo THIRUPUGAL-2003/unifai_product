@@ -1229,25 +1229,34 @@ func (h *GovernanceHandler) reloadComplexityAnalyzerConfig(ctx context.Context, 
 // allowedVKIDsForCaller returns (nil, false) for admins (no filter), or the set of
 // assigned VK IDs for non-admin members. Empty map = member sees no keys.
 func (h *GovernanceHandler) allowedVKIDsForCaller(ctx *fasthttp.RequestCtx) (map[string]bool, bool) {
-	if h == nil || h.configStore == nil {
+	if h == nil {
+		return nil, false
+	}
+	return allowedVKIDsForRequest(ctx, h.configStore)
+}
+
+// allowedVKIDsForRequest returns (nil, false) for workspace admins and requests without a
+// dashboard session, or the VK IDs a non-admin session may see. Empty map = no keys.
+func allowedVKIDsForRequest(ctx *fasthttp.RequestCtx, store configstore.ConfigStore) (map[string]bool, bool) {
+	if store == nil {
 		return nil, false
 	}
 	token, _ := ctx.UserValue(schemas.UnifAIContextKeySessionToken).(string)
 	if token == "" {
-		token = string(ctx.Request.Header.Cookie("token"))
+		token = sessionToken(ctx)
 	}
 	if token == "" {
 		return nil, false
 	}
-	session, err := h.configStore.GetSession(ctx, token)
+	session, err := store.GetSession(ctx, token)
 	if err != nil || session == nil || isWorkspaceAdminRole(session.Role) {
 		return nil, false
 	}
-	dbUser, err := h.configStore.GetUserByUsername(ctx, session.Username)
+	dbUser, err := store.GetUserByUsername(ctx, session.Username)
 	if err != nil || dbUser == nil {
 		return map[string]bool{}, true
 	}
-	allowed, err := ResolveAllowedVirtualKeyIDsForUser(ctx, h.configStore, dbUser.ID)
+	allowed, err := ResolveAllowedVirtualKeyIDsForUser(ctx, store, dbUser.ID)
 	if err != nil {
 		return map[string]bool{}, true
 	}

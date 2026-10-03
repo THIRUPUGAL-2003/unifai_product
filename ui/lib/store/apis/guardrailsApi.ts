@@ -40,7 +40,28 @@ export const guardrailsApi = baseApi.injectEndpoints({
 			}),
 			invalidatesTags: ["Guardrails"],
 		}),
+		updateGuardrailRules: builder.mutation<null, Pick<GuardrailsConfig, "guardrail_rules">>({
+			query: (data) => ({
+				url: "/guardrails/rules",
+				method: "PUT",
+				body: data,
+			}),
+			invalidatesTags: ["Guardrails"],
+		}),
+		updateGuardrailProviders: builder.mutation<null, Pick<GuardrailsConfig, "guardrail_providers">>({
+			query: (data) => ({
+				url: "/guardrails/providers",
+				method: "PUT",
+				body: data,
+			}),
+			invalidatesTags: ["Guardrails"],
+		}),
 	}),
 });
 
-export const { useGetGuardrailsConfigQuery, useUpdateGuardrailsConfigMutation } = guardrailsApi;
+export const {
+	useGetGuardrailsConfigQuery,
+	useUpdateGuardrailsConfigMutation,
+	useUpdateGuardrailRulesMutation,
+	useUpdateGuardrailProvidersMutation,
+} = guardrailsApi;

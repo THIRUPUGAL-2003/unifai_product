@@ -78,3 +78,36 @@ func TestRBACScopeGrants_SavedAndInheritedByMembers(t *testing.T) {
 		t.Fatalf("expected customer grant to be removed on delete")
 	}
 }
+
+func TestSessionSectionsAllow_UsesOwnAndInheritedSections(t *testing.T) {
+	store := newSCIMTestStore()
+	_ = store.CreateTeam(nil, &tables.TableTeam{ID: "team-a", Name: "Team A"})
+	viewer := &tables.TableUser{ID: "u-view", Username: "viewer", Role: "auditor", AllowedSections: "observability/dashboard", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	_ = store.CreateUser(nil, viewer)
+	_ = store.AddTeamMember(nil, "team-a", viewer.ID)
+
+	rawLogs := []string{"observability/llm-logs"}
+	charts := []string{"observability/llm-logs", "observability/dashboard"}
+
+	if !sessionSectionsAllow(nil, store, "auditor", "viewer", charts) {
+		t.Fatalf("dashboard section must reach dashboard charts")
+	}
+	if sessionSectionsAllow(nil, store, "auditor", "viewer", rawLogs) {
+		t.Fatalf("dashboard section must not reach raw logs")
+	}
+	if !sessionSectionsAllow(nil, store, "admin", "viewer", rawLogs) || !sessionSectionsAllow(nil, store, "user", "viewer", rawLogs) {
+		t.Fatalf("admin and the built-in user role are not section-scoped")
+	}
+	if sessionSectionsAllow(nil, store, "auditor", "ghost", charts) {
+		t.Fatalf("an unknown user must not pass the section check")
+	}
+
+	grants, _ := loadRBACScopeGrants(nil, store)
+	grants.Teams["team-a"] = &rbacScopeGrant{PermissionIDs: []uint{1}, AllowedSections: "observability/llm-logs"}
+	if err := saveRBACScopeGrants(nil, store, grants); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if !sessionSectionsAllow(nil, store, "auditor", "viewer", rawLogs) {
+		t.Fatalf("a team scope grant must unlock raw logs for its members")
+	}
+}

@@ -81,7 +81,7 @@ func TestOnUserCreated_ReusesPromptCaseInsensitively(t *testing.T) {
 	users := usersTestRoot(t, lifecycle, "Users", "system_users_root")
 	user := syncTestUser(t, store)
 
-	existing := &tables.TablePrompt{ID: syncTestID("prompt"), Name: strings.ToUpper(user.Email), FolderID: &users.ID}
+	existing := &tables.TablePrompt{ID: syncTestID("prompt"), Name: strings.ToUpper(user.Email), FolderID: &users.ID, OwnerUserID: &user.ID}
 	if err := store.CreatePrompt(ctx, existing); err != nil {
 		t.Fatalf("create prompt: %v", err)
 	}
@@ -94,6 +94,50 @@ func TestOnUserCreated_ReusesPromptCaseInsensitively(t *testing.T) {
 	}
 	if !syncTestHasPrompt(t, store, user.ID, existing.ID) {
 		t.Fatalf("user must get access to the existing prompt")
+	}
+}
+
+func TestUserPromptFollowsOwnerNotName(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+	usersTestRoot(t, lifecycle, "Users", "system_users_root")
+	removed := usersTestRoot(t, lifecycle, "Removed Users", "system_removed_users_root")
+	user := syncTestUser(t, store)
+	if err := lifecycle.OnUserCreated(ctx, user, true); err != nil {
+		t.Fatalf("OnUserCreated: %v", err)
+	}
+	own := usersTestPrompt(t, store, user.Email)
+
+	// Someone else's prompt that happens to carry the user's email as its name.
+	lookalike := &tables.TablePrompt{ID: syncTestID("prompt"), Name: strings.ToUpper(user.Email)}
+	if err := store.CreatePrompt(ctx, lookalike); err != nil {
+		t.Fatalf("create prompt: %v", err)
+	}
+	// The user's own prompt is renamed manually.
+	_ = store.DB().Model(&tables.TablePrompt{}).Where("id = ?", own.ID).Update("name", "My work prompt").Error
+
+	if err := lifecycle.OnUserCreated(ctx, user, true); err != nil {
+		t.Fatalf("OnUserCreated again: %v", err)
+	}
+	var owned int64
+	store.DB().Model(&tables.TablePrompt{}).Where("owner_user_id = ?", user.ID).Count(&owned)
+	if owned != 1 {
+		t.Fatalf("renamed prompt must still be found by owner, got %d owned prompts", owned)
+	}
+
+	if err := lifecycle.OnUserDeleted(ctx, user); err != nil {
+		t.Fatalf("OnUserDeleted: %v", err)
+	}
+	var after tables.TablePrompt
+	_ = store.DB().Where("id = ?", own.ID).First(&after).Error
+	if after.FolderID == nil || *after.FolderID != removed.ID {
+		t.Fatalf("user's renamed prompt must move to Removed Users")
+	}
+	var other tables.TablePrompt
+	_ = store.DB().Where("id = ?", lookalike.ID).First(&other).Error
+	if other.FolderID != nil && *other.FolderID == removed.ID {
+		t.Fatalf("a prompt that only shares the name must not be treated as the user's")
 	}
 }
 

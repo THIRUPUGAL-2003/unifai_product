@@ -27,6 +27,8 @@ const (
 	WorkspaceSettingPromptAutoCreateOptOut = "prompt_auto_create_opt_out"
 	// WorkspaceSettingGuardrailsConfig stores the guardrails rules + providers JSON.
 	WorkspaceSettingGuardrailsConfig = "guardrails_config"
+	// WorkspaceSettingAccessProfileGrants stores pre-profile provider/MCP snapshots per VK.
+	WorkspaceSettingAccessProfileGrants = "access_profile_grant_snapshots"
 )
 
 func (s *RDBConfigStore) customizedSystemRoles(ctx context.Context) map[string]bool {

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -241,11 +242,12 @@ func (m *PromptLifecycleManager) OnUserCreated(ctx context.Context, user *tables
 	// Create prompt
 	now := time.Now()
 	prompt := &tables.TablePrompt{
-		ID:        uuid.New().String(),
-		Name:      promptName,
-		FolderID:  &home,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New().String(),
+		Name:        promptName,
+		FolderID:    &home,
+		OwnerUserID: &user.ID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	if err := m.store.CreatePrompt(ctx, prompt); err != nil {
@@ -289,15 +291,14 @@ func (m *PromptLifecycleManager) OnUserLogin(ctx context.Context, user *tables.T
 	}
 }
 
-// findUserPrompt returns the user's own prompt (named after the user's email or username,
-// case-insensitive), preferring one that is not archived.
+// findUserPrompt returns the user's own prompt (owner_user_id = user), preferring one that
+// is not archived. Prompt names are not used, so renaming a prompt never orphans it.
 func (m *PromptLifecycleManager) findUserPrompt(ctx context.Context, user *tables.TableUser) *tables.TablePrompt {
-	names := lowerNames(userPromptNames(user))
-	if len(names) == 0 {
+	if user == nil || user.ID == "" {
 		return nil
 	}
 	var prompts []tables.TablePrompt
-	if err := m.store.DB().WithContext(ctx).Where("LOWER(name) IN ?", names).Order("created_at asc").Find(&prompts).Error; err != nil || len(prompts) == 0 {
+	if err := ownPromptsQuery(m.store.DB().WithContext(ctx), user).Order("created_at asc").Find(&prompts).Error; err != nil || len(prompts) == 0 {
 		return nil
 	}
 	for i := range prompts {
@@ -346,14 +347,6 @@ func (m *PromptLifecycleManager) folderIsArchived(ctx context.Context, folderID 
 	return false
 }
 
-func lowerNames(names []string) []string {
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		out = append(out, strings.ToLower(n))
-	}
-	return out
-}
-
 // OnUserDeleted moves the user's prompt from "Users/" or any team folder to "Removed Users/" without destroying chat history.
 func (m *PromptLifecycleManager) OnUserDeleted(ctx context.Context, user *tables.TableUser) error {
 	if m == nil || m.store == nil || m.store.DB() == nil || user == nil {
@@ -368,12 +361,8 @@ func (m *PromptLifecycleManager) OnUserDeleted(ctx context.Context, user *tables
 
 	db := m.store.DB().WithContext(ctx)
 
-	names := lowerNames(userPromptNames(user))
-	if len(names) == 0 {
-		return nil
-	}
 	var prompts []tables.TablePrompt
-	_ = db.Where("LOWER(name) IN ?", names).Find(&prompts).Error
+	_ = ownPromptsQuery(db, user).Find(&prompts).Error
 	for _, p := range prompts {
 		// Teammates only had the prompt through its team folder; it must not stay visible to them.
 		if p.FolderID != nil && *p.FolderID != removedUsersFolder.ID {
@@ -410,18 +399,19 @@ func (m *PromptLifecycleManager) OnUserUpdated(ctx context.Context, user *tables
 		return nil
 	}
 
-	// The user's prompt already carries the new name (e.g. only the username changed while the
-	// prompt is named after the email): renaming another prompt would create a duplicate.
-	var already int64
-	db.Model(&tables.TablePrompt{}).Where("LOWER(name) = ?", newLower).Count(&already)
-	if already > 0 {
-		return nil
+	// Only rename owned prompts still named after the old email/username; a name someone
+	// chose manually is kept.
+	var owned []tables.TablePrompt
+	_ = ownPromptsQuery(db, user).Find(&owned).Error
+	for _, p := range owned {
+		if !slices.Contains(oldIdentifiers, strings.ToLower(strings.TrimSpace(p.Name))) {
+			continue
+		}
+		if err := db.Model(&tables.TablePrompt{}).Where("id = ?", p.ID).Update("name", newPromptName).Error; err != nil {
+			return err
+		}
 	}
-	var own tables.TablePrompt
-	if err := db.Where("LOWER(name) IN ?", oldIdentifiers).Order("created_at asc").First(&own).Error; err != nil {
-		return nil
-	}
-	return db.Model(&tables.TablePrompt{}).Where("id = ?", own.ID).Update("name", newPromptName).Error
+	return nil
 }
 
 // OnCustomerCreated creates a folder under "Customers/<customer_name>"
@@ -723,12 +713,10 @@ func (m *PromptLifecycleManager) resyncTeamCustomerChange(ctx context.Context, t
 					keep[id] = true
 				}
 			}
-			if names := lowerNames(userPromptNames(user)); len(names) > 0 {
-				var own []tables.TablePrompt
-				_ = db.Select("id").Where("LOWER(name) IN ?", names).Find(&own).Error
-				for _, p := range own {
-					keep[p.ID] = true
-				}
+			var own []tables.TablePrompt
+			_ = ownPromptsQuery(db.Select("id"), user).Find(&own).Error
+			for _, p := range own {
+				keep[p.ID] = true
 			}
 			var revoke []string
 			for _, id := range oldCustomerPrompts {
@@ -792,11 +780,12 @@ func (m *PromptLifecycleManager) OnTeamMemberAdded(ctx context.Context, teamID s
 		} else if !promptAutoCreateDisabled(ctx, m.store, user.ID) {
 			now := time.Now()
 			prompt := &tables.TablePrompt{
-				ID:        uuid.New().String(),
-				Name:      promptName,
-				FolderID:  &teamFolder.ID,
-				CreatedAt: now,
-				UpdatedAt: now,
+				ID:          uuid.New().String(),
+				Name:        promptName,
+				FolderID:    &teamFolder.ID,
+				OwnerUserID: &user.ID,
+				CreatedAt:   now,
+				UpdatedAt:   now,
 			}
 
 			if err := m.store.CreatePrompt(ctx, prompt); err != nil {
@@ -876,9 +865,9 @@ func (m *PromptLifecycleManager) memberLeftTeam(ctx context.Context, teamID stri
 		}
 	}
 
-	if ids := lowerNames(userPromptNames(user)); len(ids) > 0 && targetFolderID != "" {
+	if targetFolderID != "" {
 		var memberPrompts []tables.TablePrompt
-		_ = db.Where("LOWER(name) IN ? AND folder_id IN ?", ids, m.audienceFolderIDs(ctx, teamFolder.ID)).Find(&memberPrompts).Error
+		_ = ownPromptsQuery(db, user).Where("folder_id IN ?", m.audienceFolderIDs(ctx, teamFolder.ID)).Find(&memberPrompts).Error
 		for _, p := range memberPrompts {
 			_ = db.Model(&tables.TablePrompt{}).Where("id = ?", p.ID).Update("folder_id", targetFolderID).Error
 			m.revokePromptFromFolderAudience(ctx, p.ID, teamFolder.ID, targetFolderID)
@@ -1257,12 +1246,10 @@ func (m *PromptLifecycleManager) revokeTeamPrompts(ctx context.Context, user *ta
 			keep[id] = true
 		}
 	}
-	if names := lowerNames(userPromptNames(user)); len(names) > 0 {
-		var own []tables.TablePrompt
-		_ = db.Select("id").Where("LOWER(name) IN ?", names).Find(&own).Error
-		for _, p := range own {
-			keep[p.ID] = true
-		}
+	var own []tables.TablePrompt
+	_ = ownPromptsQuery(db.Select("id"), user).Find(&own).Error
+	for _, p := range own {
+		keep[p.ID] = true
 	}
 	filtered := revoke[:0]
 	for _, id := range revoke {
@@ -1411,18 +1398,9 @@ func findEntityFolder(db *gorm.DB, entityID, name string, folderTypes ...string)
 	return &folder, nil
 }
 
-func userPromptNames(user *tables.TableUser) []string {
-	if user == nil {
-		return nil
-	}
-	names := make([]string, 0, 2)
-	if e := strings.TrimSpace(user.Email); e != "" {
-		names = append(names, e)
-	}
-	if u := strings.TrimSpace(user.Username); u != "" && u != strings.TrimSpace(user.Email) {
-		names = append(names, u)
-	}
-	return names
+// ownPromptsQuery scopes db to the prompts owned by user (their auto-created prompt).
+func ownPromptsQuery(db *gorm.DB, user *tables.TableUser) *gorm.DB {
+	return db.Where("owner_user_id = ?", user.ID)
 }
 
 // addUserAllowedPrompts grants several prompts with a single user update.

@@ -3,7 +3,7 @@ import { Plus, Trash, Edit, ShieldAlert, Key } from "lucide-react";
 import { toast } from "sonner";
 import {
 	useGetGuardrailsConfigQuery,
-	useUpdateGuardrailsConfigMutation,
+	useUpdateGuardrailRulesMutation,
 	GuardrailRule,
 } from "@/lib/store/apis/guardrailsApi";
 import { getErrorMessage, useGetVirtualKeysQuery } from "@/lib/store";
@@ -54,7 +54,7 @@ export default function GuardrailsConfigurationView() {
 	const { data: config, isLoading, isError, error, refetch } = useGetGuardrailsConfigQuery();
 	const { data: promptsData } = useGetPromptsQuery();
 	const { data: virtualKeysData } = useGetVirtualKeysQuery();
-	const [updateConfig] = useUpdateGuardrailsConfigMutation();
+	const [updateRules] = useUpdateGuardrailRulesMutation();
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [editingRule, setEditingRule] = useState<Partial<GuardrailRule> | null>(null);
@@ -141,7 +141,7 @@ export default function GuardrailsConfigurationView() {
 		if (!config) return;
 		const updatedRules = rules.map((r) => ({ ...r, enabled: checked }));
 		try {
-			await updateConfig({ ...config, guardrail_rules: updatedRules }).unwrap();
+			await updateRules({ guardrail_rules: updatedRules }).unwrap();
 			toast.success(checked ? "All rules enabled" : "All rules disabled");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -152,7 +152,7 @@ export default function GuardrailsConfigurationView() {
 		if (!config) return;
 		const updatedRules = rules.filter((r) => r.id !== ruleId);
 		try {
-			await updateConfig({ ...config, guardrail_rules: updatedRules }).unwrap();
+			await updateRules({ guardrail_rules: updatedRules }).unwrap();
 			toast.success("Rule deleted");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -195,7 +195,7 @@ export default function GuardrailsConfigurationView() {
 		}
 
 		try {
-			await updateConfig({ ...config, guardrail_rules: updatedRules }).unwrap();
+			await updateRules({ guardrail_rules: updatedRules }).unwrap();
 			toast.success(editingRule.id ? "Rule updated" : "Rule created");
 			setIsModalOpen(false);
 			setEditingRule(null);
@@ -277,7 +277,7 @@ export default function GuardrailsConfigurationView() {
 													if (!config) return;
 													const updatedRules = rules.map((r) => (r.id === rule.id ? { ...r, enabled: checked } : r));
 													try {
-														await updateConfig({ ...config, guardrail_rules: updatedRules }).unwrap();
+														await updateRules({ guardrail_rules: updatedRules }).unwrap();
 														toast.success(checked ? "Rule enabled" : "Rule disabled");
 													} catch (err) {
 														toast.error(getErrorMessage(err));

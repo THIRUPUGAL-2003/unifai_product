@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/configstore/tables"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -571,9 +571,10 @@ func TestUserTeamChange_MovesPromptToNewTeamFolder(t *testing.T) {
 	_ = store.CreateUser(ctx, frank)
 
 	frankPrompt := &tables.TablePrompt{
-		ID:       "prompt_frank_" + uuid.New().String()[:8],
-		Name:     frank.Email,
-		FolderID: &usersFolder.ID,
+		ID:          "prompt_frank_" + uuid.New().String()[:8],
+		Name:        frank.Email,
+		FolderID:    &usersFolder.ID,
+		OwnerUserID: &frank.ID,
 	}
 	_ = store.CreatePrompt(ctx, frankPrompt)
 
@@ -738,6 +739,3 @@ func TestPromptLifecycle_SCIMUserAndGroupFlow(t *testing.T) {
 		t.Fatalf("expected Hank's prompt to return to Users folder %s, got %v", usersFolder.ID, promptAfterRemove.FolderID)
 	}
 }
-
-
-

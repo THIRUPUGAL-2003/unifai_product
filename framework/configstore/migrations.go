@@ -458,6 +458,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_governance_virtual_key_users_table"}, run: migrationAddGovernanceVirtualKeyUsersTable},
 	{IDs: []string{"add_governance_virtual_key_teams_and_customers_tables"}, run: migrationAddGovernanceVirtualKeyTeamsAndCustomersTables},
 	{IDs: []string{"enable_enforce_auth_on_inference_default"}, run: migrationEnableEnforceAuthOnInferenceDefault},
+	{IDs: []string{"add_owner_user_id_to_prompts"}, run: migrationAddOwnerUserIDToPrompts},
 }
 
 // quoteSQLiteIdentifier quotes a SQLite identifier, escaping any double quotes.
@@ -11168,6 +11169,73 @@ func migrationAddUserIDToPromptSessions(ctx context.Context, db *gorm.DB, logger
 	return nil
 }
 
+// migrationAddOwnerUserIDToPrompts adds prompts.owner_user_id and assigns each existing
+// user prompt (named after the user's email, else username, case-insensitive) to that user.
+func migrationAddOwnerUserIDToPrompts(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_owner_user_id_to_prompts"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &tables.TablePrompt{}, "OwnerUserID"); err != nil {
+				return fmt.Errorf("add owner_user_id to prompts: %w", err)
+			}
+			mg := tx.Migrator()
+			if !mg.HasIndex(&tables.TablePrompt{}, "OwnerUserID") {
+				if err := mg.CreateIndex(&tables.TablePrompt{}, "OwnerUserID"); err != nil {
+					return fmt.Errorf("index prompts.owner_user_id: %w", err)
+				}
+			}
+			return backfillPromptOwners(tx)
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			return dropColumnIfExists(tx, logger, &tables.TablePrompt{}, "owner_user_id")
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+func backfillPromptOwners(tx *gorm.DB) error {
+	var users []tables.TableUser
+	if err := tx.Select("id", "email", "username").Find(&users).Error; err != nil {
+		return err
+	}
+	byEmail := make(map[string]string, len(users))
+	byUsername := make(map[string]string, len(users))
+	for _, u := range users {
+		if e := strings.ToLower(strings.TrimSpace(u.Email)); e != "" {
+			byEmail[e] = u.ID
+		}
+		if n := strings.ToLower(strings.TrimSpace(u.Username)); n != "" {
+			byUsername[n] = u.ID
+		}
+	}
+	var prompts []tables.TablePrompt
+	if err := tx.Select("id", "name").Where("owner_user_id IS NULL").Find(&prompts).Error; err != nil {
+		return err
+	}
+	for _, p := range prompts {
+		name := strings.ToLower(strings.TrimSpace(p.Name))
+		owner, ok := byEmail[name]
+		if !ok {
+			owner, ok = byUsername[name]
+		}
+		if !ok {
+			continue
+		}
+		if err := tx.Model(&tables.TablePrompt{}).Where("id = ?", p.ID).Update("owner_user_id", owner).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func migrationAddGovernanceVirtualKeyUsersTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
 	migrationName := "add_governance_virtual_key_users_table"
 	logger.Info("[configstore] starting migration %s", migrationName)
@@ -11291,4 +11359,3 @@ func migrationAddGovernanceVirtualKeyTeamsAndCustomersTables(ctx context.Context
 	}
 	return nil
 }
-

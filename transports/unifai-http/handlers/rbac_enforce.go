@@ -51,8 +51,10 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				next(ctx)
 				return
 			}
-			req := rbac.PathRequirementFor(string(ctx.Method()), path)
-			if req == nil {
+			method := string(ctx.Method())
+			req := rbac.PathRequirementFor(method, path)
+			sections := rbac.SectionRequirementFor(method, path)
+			if req == nil && len(sections) == 0 {
 				next(ctx)
 				return
 			}
@@ -70,18 +72,41 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				next(ctx)
 				return
 			}
-			perms, err := rbac.ResolvePermissions(ctx, ws, session.Role)
-			if err != nil {
-				SendError(ctx, fasthttp.StatusInternalServerError, "failed to resolve permissions")
-				return
+			if req != nil {
+				perms, err := rbac.ResolvePermissions(ctx, ws, session.Role)
+				if err != nil {
+					SendError(ctx, fasthttp.StatusInternalServerError, "failed to resolve permissions")
+					return
+				}
+				if !req.Allowed(perms) {
+					SendError(ctx, fasthttp.StatusForbidden, "insufficient permissions")
+					return
+				}
 			}
-			if !req.Allowed(perms) {
-				SendError(ctx, fasthttp.StatusForbidden, "insufficient permissions")
+			if len(sections) > 0 && !sessionSectionsAllow(ctx, store, session.Role, session.Username, sections) {
+				SendError(ctx, fasthttp.StatusForbidden, "this section is not enabled for your account")
 				return
 			}
 			next(ctx)
 		}
 	}
+}
+
+// sessionSectionsAllow applies the sidebar section grants to the API for the roles the UI
+// scopes (sub_admin and custom roles). Admin and the built-in "user" role are not scoped.
+func sessionSectionsAllow(ctx context.Context, store configstore.ConfigStore, role, username string, required []string) bool {
+	r := strings.ToLower(strings.TrimSpace(role))
+	if r == "" || r == "admin" || r == "user" {
+		return true
+	}
+	if username == "" {
+		return false
+	}
+	user, err := store.GetUserByUsername(ctx, username)
+	if err != nil || user == nil {
+		return false
+	}
+	return rbac.SectionsAllow(effectiveAllowedSections(ctx, store, user), required)
 }
 
 func sessionToken(ctx *fasthttp.RequestCtx) string {

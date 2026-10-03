@@ -28,6 +28,12 @@ func propagateAccessProfile(ctx context.Context, configStore configstore.ConfigS
 	rateLimitSpec := specMap(spec, "rate_limit")
 	budgets := specMapSlice(spec, "budgets")
 
+	if len(providerConfigs) > 0 || len(mcpServers) > 0 {
+		if err := snapshotAccessProfileGrants(ctx, configStore, profile.ID, vkIDs, providerConfigs, mcpServers); err != nil {
+			return fmt.Errorf("record pre-profile grants: %w", err)
+		}
+	}
+
 	for _, vkID := range vkIDs {
 		vk, err := configStore.GetVirtualKey(ctx, vkID)
 		if err != nil || vk == nil {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"sync"
 
 	"github.com/fasthttp/router"
 	"github.com/unifai/unifai/core/schemas"
@@ -132,4 +133,10 @@ func (h *GuardrailsHandler) saveConfig(ctx *fasthttp.RequestCtx, payload lib.Gua
 	// InstantiatePlugin(guardrails) reads unifaiConfig.GuardrailsConfig — reload so CEL/providers apply now.
 	if h.configManager != nil {
 		if err := h.configManager.ReloadPlugin(ctx, guardrails.PluginName, nil, nil, nil, nil); err != nil {
-			SendError(ctx, fasthttp.S
+			SendError(ctx, fasthttp.StatusInternalServerError, "Guardrails config saved but plugin reload failed: "+err.Error())
+			return
+		}
+	}
+
+	SendJSON(ctx, map[string]any{"success": true, "reloaded": true})
+}

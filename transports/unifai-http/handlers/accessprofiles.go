@@ -333,9 +333,9 @@ func (h *WorkspaceHandler) updateAccessProfile(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, map[string]any{"access_profile": accessProfileFromRow(row)})
 }
 
-// rollbackRemovedVirtualKeys revokes MCP grants the previous version of the profile applied
-// and the new version no longer gives: on virtual keys detached from the profile, servers
-// removed from the profile, or everything when the profile is no longer active.
+// rollbackRemovedVirtualKeys revokes limits, provider and MCP grants the previous version of
+// the profile applied and the new version no longer gives: on virtual keys detached from the
+// profile, providers/servers removed from it, or everything when it is no longer active.
 func (h *WorkspaceHandler) rollbackRemovedVirtualKeys(ctx context.Context, before, after tables.TableAccessProfile) error {
 	if h.store == nil || h.store.ConfigStore == nil || !before.IsActive {
 		return nil
@@ -348,6 +348,15 @@ func (h *WorkspaceHandler) rollbackRemovedVirtualKeys(ctx context.Context, befor
 		}
 	}
 	if err != nil {
+		return err
+	}
+	if profileHasGrantSnapshots(ctx, cs, before.ID) {
+		grantVKs, err := rollbackAccessProfileGrants(ctx, cs, before, &after)
+		if h.governanceManager != nil {
+			for _, vkID := range grantVKs {
+				_, _ = h.governanceManager.ReloadVirtualKey(ctx, vkID)
+			}
+		}
 		return err
 	}
 	beforeServers := specMapSlice(before.Spec(), "mcp_servers")
@@ -428,7 +437,12 @@ func (h *WorkspaceHandler) deleteAccessProfile(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadGateway, "profile deleted but failed to roll back budgets/rate limits: "+err.Error())
 			return
 		}
-		if err := rollbackAccessProfileMCP(ctx, h.store.ConfigStore, *row); err != nil {
+		if row.IsActive && profileHasGrantSnapshots(ctx, h.store.ConfigStore, row.ID) {
+			if _, err := rollbackAccessProfileGrants(ctx, h.store.ConfigStore, *row, nil); err != nil {
+				SendError(ctx, fasthttp.StatusBadGateway, "profile deleted but failed to roll back provider/MCP grants: "+err.Error())
+				return
+			}
+		} else if err := rollbackAccessProfileMCP(ctx, h.store.ConfigStore, *row); err != nil {
 			SendError(ctx, fasthttp.StatusBadGateway, "profile deleted but failed to roll back MCP grants: "+err.Error())
 			return
 		}
