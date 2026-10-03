@@ -3,6 +3,7 @@ package governance
 import (
 	"context"
 	"testing"
+	"time"
 
 	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
 )
@@ -53,6 +54,40 @@ func TestCustomerKeyBillsUsersTeamAndCustomer(t *testing.T) {
 	}
 	if len(customers) != 1 || customers[0] != "cust-bank" {
 		t.Fatalf("billed customers = %v, want [cust-bank]", customers)
+	}
+}
+
+func TestCustomerKeyUsageChargesUserTeamCustomerAndKey(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user")})
+	gs.teams.Store("team-dev", &configstoreTables.TableTeam{
+		ID: "team-dev", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID:        "vk-cust",
+		Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}},
+		Budgets:   []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-cust", vk)
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-cust", UserID: "user-1", Success: true, Cost: 5,
+		UserTeamIDs: []string{"team-dev"},
+	})
+
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != 5 {
+			t.Errorf("budget %s usage = %v, want 5", id, got)
+		}
 	}
 }
 
