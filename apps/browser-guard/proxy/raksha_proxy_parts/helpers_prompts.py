@@ -5,6 +5,8 @@
 def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     """Detect Claude / Anthropic chat submit from request path or JSON body — not hostname."""
     path_l = (path or "").lower()
+    if "claudeai-rpc" in path_l or "streamtimeline" in path_l or "anthropic.bard.api" in path_l:
+        return False
     if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion")):
         return True
     if not body or not body.lstrip().startswith("{"):
@@ -442,6 +444,11 @@ def looks_like_user_prompt(text: str) -> bool:
     # Filter tokens and RPC IDs when text has no spaces.
     # Digit-only text is a valid user prompt (IDs, math, OTPs). Do not drop it.
     if " " not in t:
+        # UUIDs or React Server Action tokens (e.g. $a74604b4-54f3-43da-8962-990f7883a6ad or 74604b4-54f3-...)
+        if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.IGNORECASE):
+            return False
+        if t.startswith(("$a", "$@", "$F", "$L")) and len(t) >= 16:
+            return False
         # Gemini session / client tokens: _05Zravx, _a1B2c3d4
         if re.fullmatch(r"_[0-9A-Za-z]{4,24}", t):
             return False
@@ -776,6 +783,8 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
         if not got or not looks_like_user_prompt(got):
             continue
         if _is_opaque_wire_blob(got) or _is_internal_wire_text(got) or _is_chat_metadata_token(got):
+            continue
+        if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", got, re.I):
             continue
         score = len(got)
         if " " in got:

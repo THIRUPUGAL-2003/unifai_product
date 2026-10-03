@@ -599,6 +599,53 @@ func (s *RakshaHTTPServer) ResetBudgetUsageInMemory(ctx context.Context, budgetI
 	return nil
 }
 
+// SnapBudgetUsageToCalendarInMemory zeros the live usage of the given budgets and snaps
+// their LastReset to the current calendar period, ignoring each budget's in-memory
+// alignment flag (used right before the owner reload that flips it on). The caller is
+// responsible for persisting the same reset to the database.
+func (s *RakshaHTTPServer) SnapBudgetUsageToCalendarInMemory(ctx context.Context, budgetIDs []string) error {
+	governancePlugin, err := s.getGovernancePlugin()
+	if err != nil {
+		return err
+	}
+	store, ok := governancePlugin.GetGovernanceStore().(interface {
+		ForceResetBudgetUsage(context.Context, []string, func(*tables.TableBudget) time.Time)
+	})
+	if !ok {
+		return fmt.Errorf("governance store does not support budget usage reset")
+	}
+	now := time.Now()
+	store.ForceResetBudgetUsage(ctx, budgetIDs, func(b *tables.TableBudget) time.Time {
+		return tables.GetCalendarPeriodStart(b.ResetDuration, now)
+	})
+	return nil
+}
+
+// SnapRateLimitUsageToCalendarInMemory zeros the live calendar-alignable counters of the
+// given rate limits and snaps their LastReset to the current calendar period. The caller
+// is responsible for persisting the same reset to the database.
+func (s *RakshaHTTPServer) SnapRateLimitUsageToCalendarInMemory(ctx context.Context, rateLimitIDs []string) error {
+	governancePlugin, err := s.getGovernancePlugin()
+	if err != nil {
+		return err
+	}
+	store, ok := governancePlugin.GetGovernanceStore().(interface {
+		ForceResetRateLimitUsage(context.Context, []string, func(*string, bool) *time.Time)
+	})
+	if !ok {
+		return fmt.Errorf("governance store does not support rate limit usage reset")
+	}
+	now := time.Now()
+	store.ForceResetRateLimitUsage(ctx, rateLimitIDs, func(resetDuration *string, _ bool) *time.Time {
+		if resetDuration == nil || !tables.IsCalendarAlignableDuration(*resetDuration) {
+			return nil
+		}
+		t := tables.GetCalendarPeriodStart(*resetDuration, now)
+		return &t
+	})
+	return nil
+}
+
 // RemoveModelConfig removes a model config from the in-memory store
 func (s *RakshaHTTPServer) RemoveModelConfig(ctx context.Context, id string) error {
 	governancePlugin, err := s.getGovernancePlugin()
@@ -819,6 +866,20 @@ func (s *RakshaHTTPServer) DeleteUserGovernance(ctx context.Context, userID stri
 		return
 	}
 	governancePlugin.GetGovernanceStore().DeleteUserGovernanceInMemory(ctx, userID)
+}
+
+// DeleteUserModelConfigs evicts a deleted user's user-scoped model configs from memory.
+func (s *RakshaHTTPServer) DeleteUserModelConfigs(ctx context.Context, userID string) {
+	governancePlugin, err := s.getGovernancePlugin()
+	if err != nil {
+		return
+	}
+	store, ok := governancePlugin.GetGovernanceStore().(interface {
+		DeleteModelConfigsForScopeInMemory(ctx context.Context, scope, scopeID string)
+	})
+	if ok {
+		store.DeleteModelConfigsForScopeInMemory(ctx, tables.ModelConfigScopeUser, userID)
+	}
 }
 
 // GetBudgetUsage returns the live, real-time in-memory budget usage for a budget ID.

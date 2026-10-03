@@ -1743,6 +1743,9 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 	_ = h.configStore.DeleteSessionsByUsername(ctx, existing.Username)
 	if h.userGovernance != nil {
 		h.userGovernance.DeleteUserGovernance(ctx, id)
+		if evicter, ok := h.userGovernance.(userModelConfigEvicter); ok {
+			evicter.DeleteUserModelConfigs(ctx, id)
+		}
 	}
 
 	SendJSON(ctx, map[string]any{

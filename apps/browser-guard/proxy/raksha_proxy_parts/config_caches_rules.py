@@ -204,9 +204,10 @@ IGNORE_PATH_PATTERNS = [
     "/realtime/", "/realtime",
     # Datadog RUM / Telemetry endpoints
     "/rum", "/v2/rum", "/api/v2/rum", "/browser-intake", "/telemetry/datadog",
-    # Perplexity / Claude noise endpoints
+    # Perplexity / Claude noise endpoints & RPC streams
     "/search/v2/navigate", "/rest/rate_limits", "/api/event",
     "/api/telemetry", "/api/analytics", "/api/stats",
+    "/streamtimeline", "/claudeai-rpc", "anthropic.bard.api",
 ]
 
 # Only these path markers are treated as real submitted chat prompts
@@ -1367,6 +1368,9 @@ def _is_digit_heavy_user_text(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    # Hex UUIDs / action tokens are wire IDs, not user numbers
+    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.I):
+        return False
     digits = sum(1 for c in t if c.isdigit())
     if digits < 1:
         return False
@@ -1446,13 +1450,18 @@ def _is_opaque_wire_blob(text: str) -> bool:
         return True
     if t.startswith(("{", "[")):
         return False
+    # UUID or React Flight Action ID token e.g. $a74604b4-54f3-43da-8962-990f7883a6ad or 74604b4-54f3-...
+    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.I):
+        return True
+    if t.startswith(("$a", "$@", "$F", "$L")) and len(t) >= 16 and " " not in t:
+        return True
     if _is_typed_numeric_prompt(t) or _is_digit_heavy_user_text(t):
         return False
     if not t or len(t) < 8:
         return False
     # Single-token opaque blobs (no whitespace)
     if " " not in t and "\n" not in t and len(t) >= 20:
-        if re.fullmatch(r"[A-Za-z0-9_\-+/=]+", t):
+        if re.fullmatch(r"\$?[A-Za-z0-9_\-+/=]+", t):
             # Mostly-digit IDs / number+separator prompts are user text.
             if t.isdigit() or sum(1 for c in t if c.isdigit()) >= int(len(t) * 0.55):
                 return False

@@ -14,7 +14,7 @@ export function parseResetPeriod(duration: string): string {
 		d: { singular: "day", plural: "days" },
 		w: { singular: "week", plural: "weeks" },
 		M: { singular: "month", plural: "months" },
-		y: { singular: "year", plural: "years" },
+		Y: { singular: "year", plural: "years" },
 	};
 
 	const unit = unitMap[timeUnit];
@@ -109,6 +109,7 @@ const shortDurationLabels: Record<string, string> = {
 	"1d": "/day",
 	"1w": "/wk",
 	"1M": "/mo",
+	"1Y": "/yr",
 };
 
 /**

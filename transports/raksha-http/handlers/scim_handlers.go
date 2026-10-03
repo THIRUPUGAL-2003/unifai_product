@@ -610,6 +610,9 @@ func (h *WorkspaceHandler) scimDeleteUser(ctx *fasthttp.RequestCtx) {
 	if syncer, ok := h.governanceManager.(UserGovernanceSyncer); ok && syncer != nil {
 		syncer.DeleteUserGovernance(ctx, id)
 	}
+	if evicter, ok := h.governanceManager.(userModelConfigEvicter); ok && evicter != nil {
+		evicter.DeleteUserModelConfigs(ctx, id)
+	}
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }
 

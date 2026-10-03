@@ -851,7 +851,7 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 			continue
 		}
 		assignedKeys++
-		if gerr != nil || vk == nil || !vk.IsActiveValue() {
+		if gerr != nil || vk == nil || !vk.IsActiveValue() || vk.IsExpiredAt(time.Now().UTC()) {
 			continue
 		}
 		val := strings.TrimSpace(vk.Value.GetValue())

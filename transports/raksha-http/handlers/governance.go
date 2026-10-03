@@ -44,7 +44,7 @@ func dbForUpdate(db *gorm.DB) *gorm.DB {
 }
 
 // resolveVKProviderAllowAllKeys decides whether a VK provider config may use any
-// provider API key. key_ids=["*"] or omitted/empty key_ids → allow all keys.
+// provider API key. key_ids=["*"] or omitted/empty key_ids â†’ allow all keys.
 // A non-empty concrete key_ids list pins those keys only.
 func resolveVKProviderAllowAllKeys(keyIDs schemas.WhiteList) bool {
 	return keyIDs.IsEmpty() || keyIDs.IsUnrestricted()
@@ -355,6 +355,35 @@ type budgetUsageResetter interface {
 	ResetBudgetUsageInMemory(ctx context.Context, budgetIDs []string) error
 }
 
+// calendarUsageSnapper is implemented by governance managers that can zero live counters
+// and snap them to the current calendar period.
+type calendarUsageSnapper interface {
+	SnapBudgetUsageToCalendarInMemory(ctx context.Context, budgetIDs []string) error
+	SnapRateLimitUsageToCalendarInMemory(ctx context.Context, rateLimitIDs []string) error
+}
+
+// snapLiveUsageToCalendar mirrors a calendar-align snap already written to the database
+// onto the live counters. Must run before the owner reload, which keeps live usage.
+func (h *GovernanceHandler) snapLiveUsageToCalendar(ctx context.Context, budgetIDs, rateLimitIDs []string) {
+	if len(budgetIDs) == 0 && len(rateLimitIDs) == 0 {
+		return
+	}
+	snapper, ok := h.governanceManager.(calendarUsageSnapper)
+	if !ok {
+		return
+	}
+	if len(budgetIDs) > 0 {
+		if err := snapper.SnapBudgetUsageToCalendarInMemory(ctx, budgetIDs); err != nil {
+			logger.Error("failed to snap in-memory budget usage: %v", err)
+		}
+	}
+	if len(rateLimitIDs) > 0 {
+		if err := snapper.SnapRateLimitUsageToCalendarInMemory(ctx, rateLimitIDs); err != nil {
+			logger.Error("failed to snap in-memory rate limit usage: %v", err)
+		}
+	}
+}
+
 // resetVKBudgetUsageInTx zeros every budget owned by the virtual key (direct rows and the
 // VK-scoped model configs that hold its top-level and per-provider budgets).
 func resetVKBudgetUsageInTx(tx *gorm.DB, vk *configstoreTables.TableVirtualKey) ([]string, error) {
@@ -430,7 +459,7 @@ func inheritUsageFromClosestShorterBudget(budget *configstoreTables.TableBudget,
 // the reconciliation pass. Rows whose ID is explicitly claimed by an
 // ID-specified entry in requests are omitted from byDuration so a
 // duration-only entry that sorts earlier cannot steal the row reserved for an
-// ID-based rename (e.g. payload [{new 1d}, {ID:X→1w}] against existing
+// ID-based rename (e.g. payload [{new 1d}, {ID:Xâ†’1w}] against existing
 // {ID:X, "1d"}).
 func buildBudgetLookup(existing []configstoreTables.TableBudget, requests []CreateBudgetRequest) (map[string]configstoreTables.TableBudget, map[string]configstoreTables.TableBudget) {
 	claimedIDs := make(map[string]struct{}, len(requests))
@@ -787,7 +816,7 @@ func (h *GovernanceHandler) reconcileVKModelConfig(ctx context.Context, tx *gorm
 	hasGovernance := mc.RateLimitID != nil || finalBudgetCount > 0
 
 	if !hasGovernance {
-		// No governance left → drop the model config (and its budgets) if it existed.
+		// No governance left â†’ drop the model config (and its budgets) if it existed.
 		if !isNew {
 			for i := range mc.Budgets {
 				if err := h.configStore.DeleteBudget(ctx, mc.Budgets[i].ID, tx); err != nil {
@@ -872,7 +901,7 @@ func vkModelConfigIndexKey(scopeID string, provider *string) string {
 }
 
 // applyVKGovernanceFromModelConfigs repopulates a VK's (and each provider config's) budgets and
-// rate-limit from the VK-scoped model configs that own them — for serialization only (so the VK
+// rate-limit from the VK-scoped model configs that own them â€” for serialization only (so the VK
 // sheet still renders the governance it edits). byKey is keyed by vkModelConfigIndexKey.
 // The reverse of syncVKGovernanceToModelConfigs.
 func applyVKGovernanceFromModelConfigs(vk *configstoreTables.TableVirtualKey, byKey map[string]*configstoreTables.TableModelConfig) {
@@ -916,6 +945,44 @@ func (h *GovernanceHandler) hydrateVKGovernance(ctx context.Context, vk *configs
 	}
 	applyVKGovernanceFromModelConfigs(vk, byKey)
 	populateVKEntityIDs(vk)
+}
+
+// validateVKEntityAssignment rejects unknown team/customer IDs, and teams whose customer is
+// not among the key's customers (billing would charge the team under a foreign customer).
+func (h *GovernanceHandler) validateVKEntityAssignment(ctx context.Context, teamIDs, customerIDs []string) error {
+	customerSet := make(map[string]bool, len(customerIDs))
+	for _, id := range customerIDs {
+		if _, err := h.configStore.GetCustomer(ctx, id); err != nil {
+			if errors.Is(err, configstore.ErrNotFound) {
+				return &badRequestError{err: fmt.Errorf("customer %s not found", id)}
+			}
+			return err
+		}
+		customerSet[id] = true
+	}
+	for _, id := range teamIDs {
+		team, err := h.configStore.GetTeam(ctx, id)
+		if err != nil {
+			if errors.Is(err, configstore.ErrNotFound) {
+				return &badRequestError{err: fmt.Errorf("team %s not found", id)}
+			}
+			return err
+		}
+		if len(customerSet) > 0 && (team.CustomerID == nil || !customerSet[*team.CustomerID]) {
+			return &badRequestError{err: fmt.Errorf("team %q does not belong to any of the selected customers", team.Name)}
+		}
+	}
+	return nil
+}
+
+// sendEntityAssignmentError writes the HTTP error for a validateVKEntityAssignment failure.
+func sendEntityAssignmentError(ctx *fasthttp.RequestCtx, err error) {
+	var badReqErr *badRequestError
+	if errors.As(err, &badReqErr) {
+		SendError(ctx, 400, err.Error())
+		return
+	}
+	SendError(ctx, 500, fmt.Sprintf("Failed to validate team/customer assignment: %v", err))
 }
 
 // populateVKEntityIDs populates TeamIDs, CustomerIDs, and UserIDs slices from relations
@@ -1053,7 +1120,7 @@ type CreateModelConfigRequest struct {
 
 // UpdateModelConfigRequest represents the request body for updating a model config.
 // Scope and scope_id are part of a config's identity and are intentionally not
-// editable here (mirroring model_name/provider) — change them by recreating the config.
+// editable here (mirroring model_name/provider) â€” change them by recreating the config.
 type UpdateModelConfigRequest struct {
 	ModelName *string                 `json:"model_name,omitempty"`
 	Provider  *string                 `json:"provider,omitempty"` // Optional provider, nil means no change
@@ -1137,7 +1204,7 @@ func (h *GovernanceHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.PUT("/api/governance/pricing-overrides/{id}", lib.ChainMiddlewares(h.updatePricingOverride, middlewares...))
 	r.DELETE("/api/governance/pricing-overrides/{id}", lib.ChainMiddlewares(h.deletePricingOverride, middlewares...))
 
-	// Self-service endpoint — no admin auth, VK in header is the credential.
+	// Self-service endpoint â€” no admin auth, VK in header is the credential.
 	// Registered without admin middlewares; only common middlewares (telemetry) are applied.
 	r.GET("/api/governance/virtual-keys/quota", h.getVirtualKeyQuota)
 }
@@ -1275,6 +1342,71 @@ func (h *GovernanceHandler) callerCanAccessVK(ctx *fasthttp.RequestCtx, vkID str
 		return false
 	}
 	return true
+}
+
+// callerCanModifyVK is the write-side check: non-admin members may only change keys
+// assigned to them directly or created by them. Seeing a key through a team or customer
+// is not enough, since that key is shared with everyone else in the team/customer.
+func (h *GovernanceHandler) callerCanModifyVK(ctx *fasthttp.RequestCtx, vkID string) bool {
+	if !h.callerCanAccessVK(ctx, vkID) {
+		return false
+	}
+	if _, filter := h.allowedVKIDsForCaller(ctx); !filter {
+		return true
+	}
+	userID := requestSessionUserID(ctx, h.configStore)
+	if userID != "" && userOwnsVirtualKey(ctx, h.configStore, userID, vkID) {
+		return true
+	}
+	SendError(ctx, fasthttp.StatusForbidden, "Only an admin, the key's creator or its directly assigned user can modify this virtual key")
+	return false
+}
+
+// requestSessionUserID returns the user ID behind the request's dashboard session, or ""
+// when there is no session or the session user has no user record.
+func requestSessionUserID(ctx *fasthttp.RequestCtx, store configstore.ConfigStore) string {
+	if store == nil {
+		return ""
+	}
+	token, _ := ctx.UserValue(schemas.RakshaContextKeySessionToken).(string)
+	if token == "" {
+		token = sessionToken(ctx)
+	}
+	if token == "" {
+		return ""
+	}
+	session, err := store.GetSession(ctx, token)
+	if err != nil || session == nil {
+		return ""
+	}
+	dbUser, err := store.GetUserByUsername(ctx, session.Username)
+	if err != nil || dbUser == nil {
+		return ""
+	}
+	return dbUser.ID
+}
+
+// userOwnsVirtualKey reports whether the key is assigned directly to the user or was
+// created by them.
+func userOwnsVirtualKey(ctx context.Context, store configstore.ConfigStore, userID, vkID string) bool {
+	if ws, ok := configstore.AsWorkspaceStore(store); ok && ws != nil {
+		if links, err := ws.ListVirtualKeysForUser(ctx, userID); err == nil {
+			for _, l := range links {
+				if l.VirtualKeyID == vkID {
+					return true
+				}
+			}
+		}
+	}
+	if store.DB() == nil {
+		return false
+	}
+	var count int64
+	if err := store.DB().WithContext(ctx).Model(&configstoreTables.TableVirtualKey{}).
+		Where("id = ? AND created_by_user_id = ?", vkID, userID).Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
 }
 
 // getVirtualKeys handles GET /api/governance/virtual-keys - Get all virtual keys with relationships
@@ -1468,6 +1600,10 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 	} else if req.CustomerID != nil && len(req.CustomerIDs) == 0 {
 		req.CustomerIDs = []string{*req.CustomerID}
 	}
+	if err := h.validateVKEntityAssignment(ctx, req.TeamIDs, req.CustomerIDs); err != nil {
+		sendEntityAssignmentError(ctx, err)
+		return
+	}
 	// Validate budgets if provided
 	if len(req.Budgets) > 0 {
 		seenDurations := make(map[string]bool)
@@ -1510,6 +1646,10 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 			return
 		}
 	}
+	var createdBy *string
+	if userID := requestSessionUserID(ctx, h.configStore); userID != "" {
+		createdBy = &userID
+	}
 	var vk configstoreTables.TableVirtualKey
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
 		vk = configstoreTables.TableVirtualKey{
@@ -1522,6 +1662,7 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 			IsActive:        isActive,
 			CalendarAligned: req.CalendarAligned,
 			ExpiresAt:       req.ExpiresAt,
+			CreatedByUserID: createdBy,
 		}
 		if err := h.configStore.CreateVirtualKey(ctx, &vk, tx); err != nil {
 			return err
@@ -1733,7 +1874,7 @@ func (h *GovernanceHandler) getVirtualKey(ctx *fasthttp.RequestCtx) {
 // updateVirtualKey handles PUT /api/governance/virtual-keys/{vk_id} - Update a virtual key
 func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 	vkID := ctx.UserValue("vk_id").(string)
-	if !h.callerCanAccessVK(ctx, vkID) {
+	if !h.callerCanModifyVK(ctx, vkID) {
 		return
 	}
 	var req UpdateVirtualKeyRequest
@@ -1763,6 +1904,30 @@ func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 		}
 		SendError(ctx, 500, "Failed to retrieve virtual key")
 		return
+	}
+	if req.TeamIDs != nil || req.TeamID.Set || req.CustomerIDs != nil || req.CustomerID.Set {
+		populateVKEntityIDs(vk)
+		nextTeamIDs, nextCustomerIDs := vk.TeamIDs, vk.CustomerIDs
+		if ids := uniqueIDsPtr(req.TeamIDs); ids != nil {
+			nextTeamIDs = *ids
+		} else if req.TeamID.Set {
+			nextTeamIDs = nil
+			if !req.TeamID.Null && req.TeamID.Value != "" {
+				nextTeamIDs = []string{req.TeamID.Value}
+			}
+		}
+		if ids := uniqueIDsPtr(req.CustomerIDs); ids != nil {
+			nextCustomerIDs = *ids
+		} else if req.CustomerID.Set {
+			nextCustomerIDs = nil
+			if !req.CustomerID.Null && req.CustomerID.Value != "" {
+				nextCustomerIDs = []string{req.CustomerID.Value}
+			}
+		}
+		if err := h.validateVKEntityAssignment(ctx, nextTeamIDs, nextCustomerIDs); err != nil {
+			sendEntityAssignmentError(ctx, err)
+			return
+		}
 	}
 	providerSet := map[schemas.ModelProvider]struct{}{}
 	if len(req.ProviderConfigs) > 0 {
@@ -2204,7 +2369,7 @@ func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 	// changed. Mirrors the AP-propagation path: enterprise orphans /
 	// reactivates credentials keyed to this VK (vk-keyed creds) and to the
 	// VK's owner (user-keyed creds) against the new effective allowlist
-	// (explicit rows ∪ MCPs with AllowOnAllVirtualKeys=true). OSS no-ops.
+	// (explicit rows âˆª MCPs with AllowOnAllVirtualKeys=true). OSS no-ops.
 	if req.MCPConfigs != nil && h.configStore != nil {
 		if err := h.configStore.ReconcileOauthAfterVKChange(ctx, vk.ID); err != nil {
 			logger.Error("reconcile OAuth credentials after VK %s update failed: %v", vk.ID, err)
@@ -2248,7 +2413,7 @@ func (h *GovernanceHandler) rotateVirtualKeyByID(ctx context.Context, vkID strin
 // rotateVirtualKey handles POST /api/governance/virtual-keys/{vk_id}/rotate - Rotate only the virtual key value
 func (h *GovernanceHandler) rotateVirtualKey(ctx *fasthttp.RequestCtx) {
 	vkID := ctx.UserValue("vk_id").(string)
-	if !h.callerCanAccessVK(ctx, vkID) {
+	if !h.callerCanModifyVK(ctx, vkID) {
 		return
 	}
 	preloadedVk, err := h.rotateVirtualKeyByID(ctx, vkID)
@@ -2333,7 +2498,7 @@ func (h *GovernanceHandler) rotateVirtualKeys(ctx *fasthttp.RequestCtx) {
 // deleteVirtualKey handles DELETE /api/governance/virtual-keys/{vk_id} - Delete a virtual key
 func (h *GovernanceHandler) deleteVirtualKey(ctx *fasthttp.RequestCtx) {
 	vkID := ctx.UserValue("vk_id").(string)
-	if !h.callerCanAccessVK(ctx, vkID) {
+	if !h.callerCanModifyVK(ctx, vkID) {
 		return
 	}
 	// Fetch the virtual key from the database to get the budget and rate limit
@@ -2588,6 +2753,7 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 
 	oldTeamName := team.Name
 	oldCustomerID := team.CustomerID
+	var snappedBudgetIDs, snappedRateLimitIDs []string
 
 	// Updating team in database
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
@@ -2751,6 +2917,7 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 				if err := h.configStore.UpdateBudget(ctx, b, tx); err != nil {
 					return fmt.Errorf("failed to snap team budget %s on calendar-align enable: %w", b.ID, err)
 				}
+				snappedBudgetIDs = append(snappedBudgetIDs, b.ID)
 			}
 			if team.RateLimit != nil {
 				rl := team.RateLimit
@@ -2769,6 +2936,7 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 					if err := h.configStore.UpdateRateLimit(ctx, rl, tx); err != nil {
 						return fmt.Errorf("failed to snap team rate limit on calendar-align enable: %w", err)
 					}
+					snappedRateLimitIDs = append(snappedRateLimitIDs, rl.ID)
 				}
 			}
 		}
@@ -2800,6 +2968,7 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 500, "Failed to update team")
 		return
 	}
+	h.snapLiveUsageToCalendar(ctx, snappedBudgetIDs, snappedRateLimitIDs)
 	// Reloading team from in-memory store
 	preloadedTeam, err := h.governanceManager.ReloadTeam(ctx, team.ID)
 	if err != nil {
@@ -2834,14 +3003,10 @@ func (h *GovernanceHandler) deleteTeam(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	// Removing team from in-memory store
-	err = h.governanceManager.RemoveTeam(ctx, team.ID)
-	if err != nil {
-		// But we ignore this error because its not
-		logger.Error("failed to remove team: %v", err)
-	}
 	if h.promptLifecycle != nil {
 		_ = h.promptLifecycle.OnTeamDeleted(ctx, team)
 	}
+	// Database first: if it fails the team keeps being enforced from memory.
 	if err := h.configStore.DeleteTeam(ctx, teamID); err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {
 			SendError(ctx, 404, "Team not found")
@@ -2849,6 +3014,9 @@ func (h *GovernanceHandler) deleteTeam(ctx *fasthttp.RequestCtx) {
 		}
 		SendError(ctx, 500, "Failed to delete team")
 		return
+	}
+	if err := h.governanceManager.RemoveTeam(ctx, team.ID); err != nil {
+		logger.Error("failed to remove team: %v", err)
 	}
 	removeRBACScopeGrant(ctx, h.configStore, rbacScopeTeam, teamID)
 	if reloader, ok := h.governanceManager.(interface{ ReloadBusinessUnitTeamIndex(context.Context) }); ok {
@@ -3051,6 +3219,7 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 	}
 
 	oldCustomerName := customer.Name
+	var snappedBudgetIDs, snappedRateLimitIDs []string
 
 	// Updating customer in database
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
@@ -3135,7 +3304,7 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 			}
 		}
 		// Snap budgets and rate limit to the current calendar period when calendar
-		// alignment transitions false → true. Runs after reconciliation so combined
+		// alignment transitions false â†’ true. Runs after reconciliation so combined
 		// "toggle + budgets" requests see the final reconciled state.
 		if calendarAlignmentJustEnabled {
 			now := time.Now()
@@ -3149,6 +3318,7 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 				if err := h.configStore.UpdateBudget(ctx, b, tx); err != nil {
 					return fmt.Errorf("failed to snap customer budget %s on calendar-align enable: %w", b.ID, err)
 				}
+				snappedBudgetIDs = append(snappedBudgetIDs, b.ID)
 			}
 			if customer.RateLimit != nil {
 				rl := customer.RateLimit
@@ -3167,6 +3337,7 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 					if err := h.configStore.UpdateRateLimit(ctx, rl, tx); err != nil {
 						return fmt.Errorf("failed to snap customer rate limit on calendar-align enable: %w", err)
 					}
+					snappedRateLimitIDs = append(snappedRateLimitIDs, rl.ID)
 				}
 			}
 		}
@@ -3196,6 +3367,7 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	h.snapLiveUsageToCalendar(ctx, snappedBudgetIDs, snappedRateLimitIDs)
 	preloadedCustomer, err := h.governanceManager.ReloadCustomer(ctx, customer.ID)
 	if err != nil {
 		logger.Error("failed to reload customer: %v", err)
@@ -3224,14 +3396,10 @@ func (h *GovernanceHandler) deleteCustomer(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 500, "Failed to retrieve customer")
 		return
 	}
-	err = h.governanceManager.RemoveCustomer(ctx, customer.ID)
-	if err != nil {
-		// But we ignore this error because its not
-		logger.Error("failed to remove customer: %v", err)
-	}
 	if h.promptLifecycle != nil {
 		_ = h.promptLifecycle.OnCustomerDeleted(ctx, customer)
 	}
+	// Database first: if it fails the customer keeps being enforced from memory.
 	if err := h.configStore.DeleteCustomer(ctx, customerID); err != nil {
 		if errors.Is(err, configstore.ErrNotFound) {
 			SendError(ctx, 404, "Customer not found")
@@ -3239,6 +3407,9 @@ func (h *GovernanceHandler) deleteCustomer(ctx *fasthttp.RequestCtx) {
 		}
 		SendError(ctx, 500, "Failed to delete customer")
 		return
+	}
+	if err := h.governanceManager.RemoveCustomer(ctx, customer.ID); err != nil {
+		logger.Error("failed to remove customer: %v", err)
 	}
 	removeRBACScopeGrant(ctx, h.configStore, rbacScopeCustomer, customerID)
 	SendJSON(ctx, map[string]interface{}{
@@ -3276,8 +3447,15 @@ func (h *GovernanceHandler) getRateLimits(ctx *fasthttp.RequestCtx) {
 	})
 }
 
-// validateRateLimit validates the rate limit
+// validateRateLimit validates the rate limit; failures are client errors (HTTP 400).
 func validateRateLimit(rateLimit *configstoreTables.TableRateLimit) error {
+	if err := rateLimitValidationError(rateLimit); err != nil {
+		return &badRequestError{err: err}
+	}
+	return nil
+}
+
+func rateLimitValidationError(rateLimit *configstoreTables.TableRateLimit) error {
 	if rateLimit.TokenMaxLimit != nil && (*rateLimit.TokenMaxLimit < 0 || *rateLimit.TokenMaxLimit == 0) {
 		return fmt.Errorf("rate limit token max limit cannot be negative or zero: %d", *rateLimit.TokenMaxLimit)
 	}
@@ -3321,8 +3499,15 @@ func (h *GovernanceHandler) getConfiguredProviderSet(ctx context.Context) (map[s
 	return providerSet, nil
 }
 
-// validateBudget validates the budget
+// validateBudget validates the budget; failures are client errors (HTTP 400).
 func validateBudget(budget *configstoreTables.TableBudget) error {
+	if err := budgetValidationError(budget); err != nil {
+		return &badRequestError{err: err}
+	}
+	return nil
+}
+
+func budgetValidationError(budget *configstoreTables.TableBudget) error {
 	if budget.MaxLimit < 0 || budget.MaxLimit == 0 {
 		return fmt.Errorf("budget max limit cannot be negative or zero: %.2f", budget.MaxLimit)
 	}
@@ -3512,7 +3697,7 @@ func (h *GovernanceHandler) getModelConfig(ctx *fasthttp.RequestCtx) {
 
 // resolveModelConfigScopeName populates the transient ScopeName for a single non-global
 // model config by dispatching to the resolver registered for mc.Scope. Unknown scopes
-// (no resolver registered) and resolution failures are non-fatal — ScopeName stays empty
+// (no resolver registered) and resolution failures are non-fatal â€” ScopeName stays empty
 // and the UI falls back to rendering the scope_id. The cache lets callers dedupe lookups
 // across many configs; it is keyed by (scope, scope_id) so distinct scopes never collide.
 func (h *GovernanceHandler) resolveModelConfigScopeName(ctx context.Context, mc *configstoreTables.TableModelConfig, cache map[string]string) {
@@ -3978,6 +4163,7 @@ func (h *GovernanceHandler) updateProviderGovernance(ctx *fasthttp.RequestCtx) {
 	}
 
 	deleted := false
+	var snappedBudgetIDs, snappedRateLimitIDs []string
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
 		var rateLimitIDToDelete string
 
@@ -4058,7 +4244,7 @@ func (h *GovernanceHandler) updateProviderGovernance(ctx *fasthttp.RequestCtx) {
 			// Nothing to persist (removal request on a provider with no governance).
 			return nil
 		case !hasGovernance && !isNew:
-			// All governance removed → delete the model config and its owned budgets.
+			// All governance removed â†’ delete the model config and its owned budgets.
 			for _, b := range mc.Budgets {
 				if err := tx.Delete(&configstoreTables.TableBudget{}, "id = ?", b.ID).Error; err != nil {
 					return err
@@ -4087,7 +4273,7 @@ func (h *GovernanceHandler) updateProviderGovernance(ctx *fasthttp.RequestCtx) {
 		}
 
 		// Snap budgets and rate limit to the current calendar period when calendar
-		// alignment transitions false → true. Runs after reconciliation so combined
+		// alignment transitions false â†’ true. Runs after reconciliation so combined
 		// "toggle + budgets" requests see the final reconciled state.
 		if !deleted && calendarAlignmentJustEnabled {
 			now := time.Now()
@@ -4101,6 +4287,7 @@ func (h *GovernanceHandler) updateProviderGovernance(ctx *fasthttp.RequestCtx) {
 				if err := h.configStore.UpdateBudget(ctx, b, tx); err != nil {
 					return fmt.Errorf("failed to snap provider budget %s on calendar-align enable: %w", b.ID, err)
 				}
+				snappedBudgetIDs = append(snappedBudgetIDs, b.ID)
 			}
 			if mc.RateLimit != nil {
 				rl := mc.RateLimit
@@ -4119,6 +4306,7 @@ func (h *GovernanceHandler) updateProviderGovernance(ctx *fasthttp.RequestCtx) {
 					if err := h.configStore.UpdateRateLimit(ctx, rl, tx); err != nil {
 						return fmt.Errorf("failed to snap provider rate limit on calendar-align enable: %w", err)
 					}
+					snappedRateLimitIDs = append(snappedRateLimitIDs, rl.ID)
 				}
 			}
 		}
@@ -4148,6 +4336,7 @@ func (h *GovernanceHandler) updateProviderGovernance(ctx *fasthttp.RequestCtx) {
 			logger.Error("failed to remove provider governance from memory: %v", err)
 		}
 	} else if len(mc.Budgets) > 0 || mc.RateLimitID != nil {
+		h.snapLiveUsageToCalendar(ctx, snappedBudgetIDs, snappedRateLimitIDs)
 		if reloaded, err := h.governanceManager.ReloadModelConfig(ctx, mc.ID); err != nil {
 			logger.Error("failed to reload provider governance in memory: %v", err)
 			if r, ok := modelConfigToProviderGovernance(&mc); ok {
@@ -4174,7 +4363,7 @@ func (h *GovernanceHandler) deleteProviderGovernance(ctx *fasthttp.RequestCtx) {
 	mc, err := h.configStore.GetModelConfig(ctx, configstoreTables.ModelConfigScopeGlobal, nil, configstoreTables.ModelConfigAllModels, &providerName)
 	if err != nil {
 		if err == configstore.ErrNotFound {
-			// No provider-level governance to remove — treat as success (idempotent).
+			// No provider-level governance to remove â€” treat as success (idempotent).
 			SendJSON(ctx, map[string]interface{}{"message": "Provider governance deleted successfully"})
 			return
 		}
@@ -4597,7 +4786,7 @@ func (n *nullableString) UnmarshalJSON(b []byte) error {
 }
 
 // UpdatePricingOverrideRequest is the request payload for updating a governance
-// pricing override. All fields except Patch are optional — omitted fields are
+// pricing override. All fields except Patch are optional â€” omitted fields are
 // merged from the existing record. Patch is always replaced in full.
 type UpdatePricingOverrideRequest struct {
 	Name          *string                      `json:"name,omitempty"`
@@ -5028,12 +5217,12 @@ type quotaModelUsage struct {
 }
 
 // collectVKModelUsage loads the VK-scoped model configs for vk in a single query, then
-// (1) reverse-maps the wildcard ("*") configs onto the VK and its provider configs — the
-// same hydration hydrateVKGovernance performs — and (2) returns a per-model usage list
+// (1) reverse-maps the wildcard ("*") configs onto the VK and its provider configs â€” the
+// same hydration hydrateVKGovernance performs â€” and (2) returns a per-model usage list
 // built from the specific-model configs. Surfacing only VK-scoped governance keeps this
 // self-service endpoint reporting the key's own usage (global/shared per-model limits are
 // intentionally not exposed here). Returns an error on load failure so the endpoint fails
-// closed (500) rather than silently returning empty governance — an empty result here is
+// closed (500) rather than silently returning empty governance â€” an empty result here is
 // indistinguishable from a key that legitimately has no model configs.
 func (h *GovernanceHandler) collectVKModelUsage(ctx context.Context, vk *configstoreTables.TableVirtualKey) ([]quotaModelUsage, error) {
 	mcs, err := h.configStore.GetModelConfigsByScopeAndScopeIDs(ctx, configstoreTables.ModelConfigScopeVirtualKey, []string{vk.ID})
@@ -5076,8 +5265,8 @@ type quotaModelSpend struct {
 
 // quotaBudget is a VK budget plus the actual per-model spend (from request logs) accumulated
 // in its current cycle [last_reset, now]. The TableBudget is embedded so the budget's own
-// fields (id, max_limit, reset_duration, last_reset, current_usage, …) render flat alongside
-// the breakdown — no field is duplicated. The per-model totals reconcile with current_usage
+// fields (id, max_limit, reset_duration, last_reset, current_usage, â€¦) render flat alongside
+// the breakdown â€” no field is duplicated. The per-model totals reconcile with current_usage
 // (both measured since last_reset). models is empty when logging is disabled.
 type quotaBudget struct {
 	configstoreTables.TableBudget
@@ -5088,7 +5277,7 @@ type quotaBudget struct {
 // queried from request logs over that budget's current cycle [last_reset, now]. Per-budget
 // because a VK's budgets can have independent reset cycles (e.g. daily + monthly). When
 // logging is disabled (logManager == nil) the budgets are returned with an empty models list
-// — that is the only case where per_model_usage is empty. A log-store query failure instead
+// â€” that is the only case where per_model_usage is empty. A log-store query failure instead
 // returns an error so the endpoint fails closed (500) rather than reporting empty usage that
 // callers cannot distinguish from "logging disabled". Callers must hydrate vk.Budgets (via
 // collectVKModelUsage) before calling this.
@@ -5129,7 +5318,7 @@ func (h *GovernanceHandler) buildVKBudgetsWithUsage(ctx context.Context, vk *con
 }
 
 // getVirtualKeyQuota handles GET /api/governance/virtual-keys/quota
-// This is a self-service endpoint — no admin auth required. The VK value in the header is the credential.
+// This is a self-service endpoint â€” no admin auth required. The VK value in the header is the credential.
 func (h *GovernanceHandler) getVirtualKeyQuota(ctx *fasthttp.RequestCtx) {
 	// Extract virtual key using the same logic as the inference path (lib/ctx.go):
 	// x-uf-vk accepts any value; other headers require the sk-uf- prefix.
@@ -5155,7 +5344,7 @@ func (h *GovernanceHandler) getVirtualKeyQuota(ctx *fasthttp.RequestCtx) {
 	}
 
 	// collectVKModelUsage hydrates the wildcard VK/provider governance (in place) and
-	// returns the configured per-model limits — both from a single VK-scoped model-config load.
+	// returns the configured per-model limits â€” both from a single VK-scoped model-config load.
 	// Fail closed: a load error must not degrade to empty governance (it would leave vk.Budgets
 	// un-hydrated and report "budgets": [], silently hiding configured limits).
 	models, err := h.collectVKModelUsage(ctx, vk)

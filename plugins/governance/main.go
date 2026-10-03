@@ -1063,6 +1063,18 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 	// Step 2: Customer-level budget (only for keys assigned directly to a customer).
 	// Fall back to the loaded relation IDs so VKs populated via joins without FK
 	// pointer columns still participate in customer-level enforcement.
+	// Paths that skip PreRequestHook stamping (passthrough, MCP) would otherwise be checked
+	// without the key's user and team memberships, yet charged for them after Allow.
+	if ctx != nil && hierarchyVK != nil && result.Decision == DecisionAllow {
+		p.stampUserFromVKAssignment(ctx, hierarchyVK)
+		if _, stamped := ctx.Value(governanceUserTeamIDsContextKey).([]string); !stamped {
+			p.stampUserOrgMembership(ctx)
+		}
+		if evaluationRequest.UserID == "" {
+			evaluationRequest.UserID = raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+		}
+	}
+
 	local, hasLocalStore := p.store.(*LocalGovernanceStore)
 	var billedTeam string
 	var billedCustomers []string

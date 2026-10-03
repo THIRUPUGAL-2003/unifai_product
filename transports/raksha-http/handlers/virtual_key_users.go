@@ -155,7 +155,7 @@ func (h *GovernanceHandler) setVirtualKeyUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid virtual key id")
 		return
 	}
-	if !h.callerCanAccessVK(ctx, vkID) {
+	if !h.callerCanModifyVK(ctx, vkID) {
 		return
 	}
 	var body struct {
@@ -207,7 +207,7 @@ func (h *GovernanceHandler) deleteVirtualKeyUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid virtual key id")
 		return
 	}
-	if !h.callerCanAccessVK(ctx, vkID) {
+	if !h.callerCanModifyVK(ctx, vkID) {
 		return
 	}
 	ws, ok := configstore.AsWorkspaceStore(h.configStore)

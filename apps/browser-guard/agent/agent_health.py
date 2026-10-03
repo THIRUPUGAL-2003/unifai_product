@@ -158,9 +158,14 @@ def run_health_check(proxy_port: int | None = None) -> dict:
     if not checks["ca_trusted"]:
         details.append("CA trust missing or not OK")
 
-    addon = get_resource_path("browser_ai_proxy.py")
+    code_dir = os.environ.get("RAKSHA_GUARD_CODE_DIR", "")
+    addon = os.path.join(code_dir, "browser_ai_proxy.py") if code_dir else ""
+    if not addon or not os.path.isfile(addon):
+        addon = get_resource_path("browser_ai_proxy.py")
     if not os.path.exists(addon):
         addon = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy", "browser_ai_proxy.py"))
+    if not os.path.exists(addon):
+        addon = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "browser_ai_proxy.py"))
     checks["proxy_script"] = os.path.isfile(addon)
     if not checks["proxy_script"]:
         details.append("browser_ai_proxy.py missing")

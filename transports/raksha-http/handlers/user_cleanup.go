@@ -9,6 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// userModelConfigEvicter is implemented by governance managers that cache user-scoped
+// model configs; called after a user is deleted.
+type userModelConfigEvicter interface {
+	DeleteUserModelConfigs(ctx context.Context, userID string)
+}
+
 // purgeUserRelations removes everything that references a user who is about to be deleted:
 // personal budget and rate limit, virtual-key links, team memberships, and the user's
 // prompt (moved to Removed Users and withdrawn from teammates). Used by the admin Users
@@ -31,6 +37,14 @@ func purgeUserRelations(ctx context.Context, cs configstore.ConfigStore, lifecyc
 		}
 		return tx.Where("user_id = ?", user.ID).Delete(&tables.TableBudget{}).Error
 	})
+	if err := cs.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
+		if tx == nil {
+			return nil
+		}
+		return cs.DeleteModelConfigsForScope(ctx, tx, tables.ModelConfigScopeUser, user.ID)
+	}); err != nil && logger != nil {
+		logger.Error("failed to delete user-scoped model configs user=%s: %v", user.ID, err)
+	}
 	if user.RateLimitID != nil && *user.RateLimitID != "" {
 		if err := cs.DeleteRateLimit(ctx, *user.RateLimitID); err != nil && !errors.Is(err, configstore.ErrNotFound) && logger != nil {
 			logger.Error("failed to delete user rate limit id=%s: %v", *user.RateLimitID, err)

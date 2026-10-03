@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -21,11 +22,12 @@ func IsCalendarAlignableDuration(duration string) bool {
 }
 
 // GetCalendarPeriodStart returns the start of the current calendar period for the given duration and time.
-// For calendar-scale durations (daily, weekly, monthly, yearly) it snaps to clean boundaries in UTC:
-//   - "Nd"  → midnight UTC on the current day
-//   - "Nw"  → midnight UTC on the most recent Monday
-//   - "NM"  → midnight UTC on the 1st of the current month
-//   - "NY"  → midnight UTC on Jan 1 of the current year
+// For calendar-scale durations (daily, weekly, monthly, yearly) it snaps to clean boundaries in UTC.
+// N > 1 groups N units into one period anchored to a fixed epoch, so a period only starts every N units:
+//   - "Nd"  → midnight UTC on the first day of the current N-day block (counted from 1970-01-01)
+//   - "Nw"  → midnight UTC on the Monday starting the current N-week block (counted from 1970-01-05)
+//   - "NM"  → midnight UTC on the 1st of the month starting the current N-month block ("3M" = quarters)
+//   - "NY"  → midnight UTC on Jan 1 of the year starting the current N-year block
 //
 // For all other durations (e.g. "1h", "30m") the original time t is returned unchanged,
 // since sub-day periods don't have a natural calendar boundary.
@@ -34,23 +36,42 @@ func GetCalendarPeriodStart(duration string, t time.Time) time.Time {
 		return t
 	}
 	t = t.UTC()
+	n := 1
+	if v, err := strconv.Atoi(duration[:len(duration)-1]); err == nil && v > 1 {
+		n = v
+	}
 	suffix := duration[len(duration)-1:]
 	switch suffix {
 	case "d":
-		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		days := int(day.Sub(time.Unix(0, 0).UTC()).Hours() / 24)
+		return day.AddDate(0, 0, -floorMod(days, n))
 	case "w":
 		weekday := int(t.Weekday())
 		// Sunday = 0, so shift to Monday = 0
 		daysFromMonday := (weekday + 6) % 7
 		monday := t.AddDate(0, 0, -daysFromMonday)
-		return time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, time.UTC)
+		monday = time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, time.UTC)
+		weeks := int(monday.Sub(time.Date(1970, time.January, 5, 0, 0, 0, 0, time.UTC)).Hours() / (24 * 7))
+		return monday.AddDate(0, 0, -7*floorMod(weeks, n))
 	case "M":
-		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+		months := t.Year()*12 + int(t.Month()) - 1
+		months -= floorMod(months, n)
+		return time.Date(months/12, time.Month(months%12+1), 1, 0, 0, 0, 0, time.UTC)
 	case "Y":
-		return time.Date(t.Year(), time.January, 1, 0, 0, 0, 0, time.UTC)
+		year := t.Year() - floorMod(t.Year(), n)
+		return time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 	default:
 		return t
 	}
+}
+
+func floorMod(a, n int) int {
+	m := a % n
+	if m < 0 {
+		m += n
+	}
+	return m
 }
 
 // ParseDuration function to parse duration strings
