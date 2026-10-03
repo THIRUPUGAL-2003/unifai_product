@@ -91,6 +91,40 @@ func TestCustomerKeyUsageChargesUserTeamCustomerAndKey(t *testing.T) {
 	}
 }
 
+func TestExhaustedBilledEntity(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	now := time.Now()
+	gs.budgets.Store("b-team", &configstoreTables.TableBudget{ID: "b-team", MaxLimit: 10, CurrentUsage: 10, ResetDuration: "1M", LastReset: now})
+	gs.budgets.Store("b-cust", &configstoreTables.TableBudget{ID: "b-cust", MaxLimit: 100, CurrentUsage: 5, ResetDuration: "1M", LastReset: now})
+	gs.teams.Store("team-dev", &configstoreTables.TableTeam{
+		ID: "team-dev", Name: "Developers", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.teams.Store("team-qa", &configstoreTables.TableTeam{ID: "team-qa", Name: "QA", CustomerID: strPtr("cust-bank")})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Name: "Bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	customerKey := &configstoreTables.TableVirtualKey{ID: "vk-cust", Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}}}
+
+	if scope, name := gs.ExhaustedBilledEntity(context.Background(), customerKey, []string{"team-dev"}); scope != "team" || name != "Developers" {
+		t.Fatalf("dev member on customer key = %q/%q, want team/Developers", scope, name)
+	}
+	if scope, _ := gs.ExhaustedBilledEntity(context.Background(), customerKey, []string{"team-qa"}); scope != "" {
+		t.Fatalf("QA member on customer key blocked by %q, want usable", scope)
+	}
+
+	gs.budgets.Store("b-cust", &configstoreTables.TableBudget{ID: "b-cust", MaxLimit: 100, CurrentUsage: 100, ResetDuration: "1M", LastReset: now})
+	if scope, name := gs.ExhaustedBilledEntity(context.Background(), customerKey, []string{"team-qa"}); scope != "customer" || name != "Bank" {
+		t.Fatalf("QA member with spent customer budget = %q/%q, want customer/Bank", scope, name)
+	}
+
+	gs.budgets.Store("b-team", &configstoreTables.TableBudget{ID: "b-team", MaxLimit: 10, CurrentUsage: 10, ResetDuration: "1M", LastReset: now.AddDate(0, -2, 0)})
+	directKey := &configstoreTables.TableVirtualKey{ID: "vk-direct"}
+	if scope, _ := gs.ExhaustedBilledEntity(context.Background(), directKey, []string{"team-dev"}); scope != "" {
+		t.Fatalf("direct key billed to no team/customer blocked by %q", scope)
+	}
+}
+
 func TestRoutingScopeChainFollowsBilledTeam(t *testing.T) {
 	gs := &LocalGovernanceStore{}
 	gs.teams.Store("team-dev", &configstoreTables.TableTeam{ID: "team-dev", Name: "Developers", CustomerID: strPtr("cust-bank")})

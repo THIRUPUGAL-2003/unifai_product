@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { Input } from "@/components/ui/input";
-import { useGetVirtualKeysQuery } from "@/lib/store";
+import { useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { ModelProviderName } from "@/lib/types/config";
@@ -142,15 +142,18 @@ export function SettingsPanel() {
 		});
 	}, [virtualKeysData, provider, isMemberOnly]);
 
-	// Auto-bind first assigned VK for members so usage hits the correct budget meter.
+	// Auto-bind first assigned VK for members so usage hits the correct budget meter,
+	// skipping keys whose team or customer budget is used up.
+	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { skip: !isMemberOnly });
 	useEffect(() => {
 		if (!isMemberOnly) return;
-		const first = providerVirtualKeys.find((vk) => typeof vk.value === "string" && vk.value.startsWith("sk-uf-"));
+		const assignable = providerVirtualKeys.filter((vk) => typeof vk.value === "string" && vk.value.startsWith("sk-uf-"));
+		const first = assignable.find((vk) => !billingBlocks?.blocks?.[vk.id]) ?? assignable[0];
 		if (!first?.value) return;
 		if (apiKeyId === "__auto__" || !providerVirtualKeys.some((vk) => vk.value === apiKeyId)) {
 			setApiKeyId(first.value);
 		}
-	}, [isMemberOnly, providerVirtualKeys, apiKeyId, setApiKeyId]);
+	}, [isMemberOnly, providerVirtualKeys, apiKeyId, setApiKeyId, billingBlocks]);
 
 	// Separate keys/vks to pass to model fetch for filtering.
 	const filterKeys = useMemo(() => {

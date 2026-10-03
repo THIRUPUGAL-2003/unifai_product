@@ -7,7 +7,7 @@ import {
 	type ToolCall,
 	type VariableMap,
 } from "@/lib/message";
-import { getErrorMessage, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
+import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
 import { useGetCoreConfigQuery } from "@/lib/store/apis/configApi";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -156,6 +156,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 	// Members prefer an assigned Virtual Key when present; otherwise Auto (provider keys).
 	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole });
+	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { skip: !isUserRole });
 	const assignedMemberVkValue = useMemo(() => {
 		if (!isUserRole) return "";
 		const vks = virtualKeysData?.virtual_keys ?? [];
@@ -166,11 +167,12 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			return typeof vk.value === "string" && vk.value.startsWith("sk-uf-");
 		});
 		const withBudget = validKeys.find((vk) => {
+			if (billingBlocks?.blocks?.[vk.id]) return false;
 			if (!vk.budgets || vk.budgets.length === 0) return true;
 			return !vk.budgets.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit);
 		});
 		return withBudget?.value ?? validKeys[0]?.value ?? "";
-	}, [isUserRole, virtualKeysData]);
+	}, [isUserRole, virtualKeysData, billingBlocks]);
 
 	// UI state — persisted in URL query params
 	const [{ promptId: selectedPromptId, sessionId: selectedSessionId, versionId: selectedVersionId }, setUrlState] = useQueryStates(

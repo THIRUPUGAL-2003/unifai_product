@@ -18,7 +18,15 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { resetDurationOptions, supportsCalendarAlignment } from "@/lib/constants/governance";
-import { getErrorMessage, useCreateTeamMutation, useUpdateTeamMutation, useGetTeamMembersQuery, useAddTeamMemberMutation, useRemoveTeamMemberMutation } from "@/lib/store";
+import {
+	getErrorMessage,
+	useCreateTeamMutation,
+	useUpdateTeamMutation,
+	useGetTeamMembersQuery,
+	useAddTeamMemberMutation,
+	useRemoveTeamMemberMutation,
+	useGetTeamsQuery,
+} from "@/lib/store";
 import { CreateTeamRequest, Customer, Team, UpdateTeamRequest } from "@/lib/types/governance";
 import { formatCurrency } from "@/lib/utils/governance";
 import { Validator } from "@/lib/utils/validation";
@@ -216,14 +224,43 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 	const tokenMaxLimitNum = formData.tokenMaxLimit;
 	const requestMaxLimitNum = formData.requestMaxLimit;
 
+	// Teams under one customer share its budget: per reset period, their total may not exceed it.
+	const { data: customerTeamsData } = useGetTeamsQuery(
+		{ customer_id: formData.customerId, limit: 500, offset: 0 },
+		{ skip: !formData.customerId },
+	);
+	const customerAllocation = useMemo(() => {
+		const byPeriod = new Map<string, { limit: number; available: number }>();
+		const customer = customers.find((c) => c.id === formData.customerId);
+		if (!customer) return byPeriod;
+		const otherTeams = (customerTeamsData?.teams ?? []).filter((t) => t.id !== teamId);
+		for (const cb of customer.budgets ?? []) {
+			const allotted = otherTeams
+				.flatMap((t) => t.budgets ?? [])
+				.filter((b) => b.reset_duration === cb.reset_duration)
+				.reduce((sum, b) => sum + b.max_limit, 0);
+			byPeriod.set(cb.reset_duration, { limit: cb.max_limit, available: Math.max(0, cb.max_limit - allotted) });
+		}
+		return byPeriod;
+	}, [customers, formData.customerId, customerTeamsData, teamId]);
+
 	// Validation
 	const validator = useMemo(() => {
 		// Per-row budget validation plus cross-row uniqueness on reset_duration.
 		const budgetValidators = formData.budgets.flatMap((row, idx) => {
 			if (row.maxLimit === undefined || row.maxLimit === null) return [];
+			const allocation = customerAllocation.get(row.resetDuration);
 			return [
 				Validator.minValue(row.maxLimit, 0.01, `Budget #${idx + 1} max limit must be greater than $0.01`),
 				Validator.required(row.resetDuration, `Budget #${idx + 1} reset duration is required`),
+				...(allocation
+					? [
+							Validator.custom(
+								row.maxLimit <= allocation.available + 1e-9,
+								`Budget #${idx + 1} exceeds the customer's remaining budget (${formatCurrency(allocation.available)} available)`,
+							),
+						]
+					: []),
 			];
 		});
 		const populatedDurations = formData.budgets.filter((r) => r.maxLimit !== undefined && r.maxLimit !== null).map((r) => r.resetDuration);
@@ -253,7 +290,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 					]
 				: []),
 		]);
-	}, [formData, tokenMaxLimitNum, requestMaxLimitNum]);
+	}, [formData, tokenMaxLimitNum, requestMaxLimitNum, customerAllocation]);
 
 	const updateField = <K extends keyof TeamFormData>(field: K, value: TeamFormData[K]) => {
 		if (field === "name") {
@@ -448,6 +485,12 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 											Remove
 										</button>
 									</div>
+									{customerAllocation.has(row.resetDuration) && (
+										<p className="text-muted-foreground text-xs" data-testid={`team-budget-customer-available-${idx}`}>
+											Customer budget {formatCurrency(customerAllocation.get(row.resetDuration)?.limit)} — available for this team:{" "}
+											{formatCurrency(customerAllocation.get(row.resetDuration)?.available)}
+										</p>
+									)}
 								</div>
 							))}
 						</div>

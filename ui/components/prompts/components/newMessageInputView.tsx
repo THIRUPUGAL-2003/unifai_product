@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Message, type MessageContent, extractVariablesFromMessages, mergeVariables } from "@/lib/message";
-import { useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
+import { useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
 import { AlertTriangle, Paperclip, Play, Plus, Square } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -35,6 +35,7 @@ export function NewMessageInputView() {
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const { data: virtualKeysData } = useGetVirtualKeysQuery();
+	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 30000 });
 
 	const budgetAlert = useMemo(() => {
 		// 1. Check User Personal Budget
@@ -60,6 +61,13 @@ export function NewMessageInputView() {
 		if (apiKeyId && apiKeyId !== "__auto__" && apiKeyId.startsWith("sk-uf-")) {
 			const vks = virtualKeysData?.virtual_keys ?? [];
 			const currentVk = vks.find((v) => v.value === apiKeyId);
+			const block = currentVk ? billingBlocks?.blocks?.[currentVk.id] : undefined;
+			if (currentVk && block) {
+				return {
+					isExhausted: true,
+					message: `${block.scope === "team" ? "Team" : "Customer"} budget for "${block.name}" is used up, so Virtual Key "${currentVk.name}" is blocked. Pick another key.`,
+				};
+			}
 			if (currentVk?.budgets && currentVk.budgets.length > 0) {
 				for (const b of currentVk.budgets) {
 					if (b.max_limit > 0) {
@@ -82,7 +90,7 @@ export function NewMessageInputView() {
 			}
 		}
 		return null;
-	}, [authStatus, apiKeyId, virtualKeysData]);
+	}, [authStatus, apiKeyId, virtualKeysData, billingBlocks]);
 
 	const missingRequiredHeaders = useMemo(
 		() => requiredHeaders.filter((name) => !(customHeaders[name] ?? "").trim()),

@@ -2961,6 +2961,53 @@ func (gs *LocalGovernanceStore) BilledEntities(ctx context.Context, vk *configst
 	return teamID, gs.billedCustomerIDs(ctx, vk, teamID)
 }
 
+// ExhaustedBilledEntity reports the billed team or customer whose budget is used up when a member
+// of userTeamIDs calls vk, as ("team"|"customer", name), or empty strings when the key is usable.
+// It mirrors the pre-request team/customer budget checks so the UI can steer users to another key.
+func (gs *LocalGovernanceStore) ExhaustedBilledEntity(ctx context.Context, vk *configstoreTables.TableVirtualKey, userTeamIDs []string) (string, string) {
+	if vk == nil {
+		return "", ""
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx = context.WithValue(ctx, governanceUserTeamIDsContextKey, userTeamIDs)
+	teamID, customers := gs.BilledEntities(ctx, vk)
+	if teamID != "" {
+		if v, ok := gs.teams.Load(teamID); ok && v != nil {
+			if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil && gs.anyBudgetExhausted(team.Budgets) {
+				return "team", team.Name
+			}
+		}
+	}
+	for _, customerID := range customers {
+		if v, ok := gs.customers.Load(customerID); ok && v != nil {
+			if customer, ok := v.(*configstoreTables.TableCustomer); ok && customer != nil && gs.anyBudgetExhausted(customer.Budgets) {
+				return "customer", customer.Name
+			}
+		}
+	}
+	return "", ""
+}
+
+func (gs *LocalGovernanceStore) anyBudgetExhausted(budgets []configstoreTables.TableBudget) bool {
+	now := time.Now()
+	for _, b := range budgets {
+		raw, ok := gs.budgets.Load(b.ID)
+		if !ok || raw == nil {
+			continue
+		}
+		budget, ok := raw.(*configstoreTables.TableBudget)
+		if !ok || budget == nil || gs.budgetResetTarget(budget, now) != nil {
+			continue
+		}
+		if budget.CurrentUsage >= budget.MaxLimit {
+			return true
+		}
+	}
+	return false
+}
+
 // billedIdentity resolves the billed team/customer with display names so routing rules see the
 // same team/customer the request is charged to.
 func (gs *LocalGovernanceStore) billedIdentity(ctx context.Context, vk *configstoreTables.TableVirtualKey) (teamID, teamName, customerID, customerName string) {

@@ -53,6 +53,10 @@ type PricingOverrideQueryArgs = {
 	search?: string;
 };
 
+export type VirtualKeyBillingBlock = { scope: "team" | "customer"; name: string };
+
+export type VirtualKeyBillingBlocksResponse = { blocks: Record<string, VirtualKeyBillingBlock> };
+
 export const governanceApi = baseApi.injectEndpoints({
 	endpoints: (builder) => ({
 		// Virtual Keys
@@ -79,6 +83,12 @@ export const governanceApi = baseApi.injectEndpoints({
 					...(params?.export && { export: "true" }),
 				},
 			}),
+			providesTags: ["VirtualKeys"],
+		}),
+
+		// Keys the signed-in user may pick but governance rejects: the team or customer they bill is out of budget.
+		getVirtualKeyBillingBlocks: builder.query<VirtualKeyBillingBlocksResponse, void>({
+			query: () => ({ url: "/governance/virtual-keys/billing-blocks" }),
 			providesTags: ["VirtualKeys"],
 		}),
 
@@ -913,6 +923,7 @@ export const governanceApi = baseApi.injectEndpoints({
 export const {
 	// Virtual Keys
 	useGetVirtualKeysQuery,
+	useGetVirtualKeyBillingBlocksQuery,
 	useGetVirtualKeyQuery,
 	useCreateVirtualKeyMutation,
 	useUpdateVirtualKeyMutation,

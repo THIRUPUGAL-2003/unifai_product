@@ -1146,6 +1146,7 @@ func (h *GovernanceHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.GET("/api/governance/virtual-keys", lib.ChainMiddlewares(h.getVirtualKeys, middlewares...))
 	r.POST("/api/governance/virtual-keys", lib.ChainMiddlewares(h.createVirtualKey, middlewares...))
 	r.POST("/api/governance/virtual-keys/rotate", lib.ChainMiddlewares(h.rotateVirtualKeys, middlewares...))
+	r.GET("/api/governance/virtual-keys/billing-blocks", lib.ChainMiddlewares(h.getVirtualKeyBillingBlocks, middlewares...))
 	r.GET("/api/governance/virtual-keys/{vk_id}", lib.ChainMiddlewares(h.getVirtualKey, middlewares...))
 	r.PUT("/api/governance/virtual-keys/{vk_id}", lib.ChainMiddlewares(h.updateVirtualKey, middlewares...))
 	r.POST("/api/governance/virtual-keys/{vk_id}/rotate", lib.ChainMiddlewares(h.rotateVirtualKey, middlewares...))
@@ -2615,6 +2616,12 @@ func (h *GovernanceHandler) createTeam(ctx *fasthttp.RequestCtx) {
 			return
 		}
 	}
+	if req.CustomerID != nil && *req.CustomerID != "" && len(req.Budgets) > 0 {
+		if err := h.checkCustomerBudgetAllocation(ctx, *req.CustomerID, "", requestedLimitsByPeriod(req.Budgets), nil); err != nil {
+			sendBudgetAllocationError(ctx, err)
+			return
+		}
+	}
 	// Creating team in database
 	var team configstoreTables.TableTeam
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
@@ -2754,6 +2761,25 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 	oldTeamName := team.Name
 	oldCustomerID := team.CustomerID
 	var snappedBudgetIDs, snappedRateLimitIDs []string
+
+	targetCustomerID := ""
+	if team.CustomerID != nil {
+		targetCustomerID = *team.CustomerID
+	}
+	if req.CustomerID != nil {
+		targetCustomerID = *req.CustomerID
+	}
+	customerChanged := oldCustomerID == nil && targetCustomerID != "" || oldCustomerID != nil && *oldCustomerID != targetCustomerID
+	if targetCustomerID != "" && (req.Budgets != nil || customerChanged) {
+		teamLimits := budgetLimitsByPeriod(team.Budgets)
+		if req.Budgets != nil {
+			teamLimits = requestedLimitsByPeriod(req.Budgets)
+		}
+		if err := h.checkCustomerBudgetAllocation(ctx, targetCustomerID, team.ID, teamLimits, nil); err != nil {
+			sendBudgetAllocationError(ctx, err)
+			return
+		}
+	}
 
 	// Updating team in database
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
@@ -3220,6 +3246,13 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 
 	oldCustomerName := customer.Name
 	var snappedBudgetIDs, snappedRateLimitIDs []string
+
+	if req.Budgets != nil {
+		if err := h.checkCustomerBudgetAllocation(ctx, customer.ID, "", nil, requestedLimitsByPeriod(*req.Budgets)); err != nil {
+			sendBudgetAllocationError(ctx, err)
+			return
+		}
+	}
 
 	// Updating customer in database
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {

@@ -56,6 +56,7 @@ import {
 } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { cn } from "@/lib/utils";
 import { describeTeamVirtualKey, virtualKeysForTeam } from "@/lib/utils/governance";
+import type { VirtualKey } from "@/lib/types/governance";
 
 function IndeterminateCheckbox({
 	checked,
@@ -113,25 +114,41 @@ function UserTeamCell({ userId }: { userId: string }) {
 }
 
 // Direct, team and customer keys: team/customer keys reach the user without a direct assignment.
-function UserVirtualKeysCell({ userId }: { userId: string }) {
+function UserVirtualKeysCell({ userId, allVirtualKeys }: { userId: string; allVirtualKeys: VirtualKey[] }) {
 	const { data } = useGetUserVirtualKeysQuery(userId);
 	const keys = (data?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
 	if (keys.length === 0) {
 		return <span className="text-muted-foreground text-xs italic">No key</span>;
 	}
 	return (
-		<div className="flex flex-col gap-0.5">
-			{keys.map((vk) => (
-				<span key={vk.id} className="text-sm">
-					{vk.name}
-					{vk.origin === "team" || vk.origin === "customer" ? (
-						<span className="text-muted-foreground text-xs">
-							{" "}
-							({vk.origin === "team" ? "Team" : "Customer"}: {vk.origin_name})
+		<div className="flex flex-col gap-1">
+			{keys.map((vk) => {
+				const budgets = (allVirtualKeys.find((k) => k.id === vk.id)?.budgets ?? []).filter((b) => b.max_limit > 0);
+				return (
+					<div key={vk.id} className="flex flex-col">
+						<span className="text-sm">
+							{vk.name}
+							{vk.origin === "team" || vk.origin === "customer" ? (
+								<span className="text-muted-foreground text-xs">
+									{" "}
+									({vk.origin === "team" ? "Team" : "Customer"}: {vk.origin_name})
+								</span>
+							) : null}
 						</span>
-					) : null}
-				</span>
-			))}
+						{budgets.map((b) => (
+							<span
+								key={b.id || b.reset_duration}
+								className={cn(
+									"font-mono text-[11px]",
+									(b.current_usage ?? 0) >= b.max_limit ? "text-rose-500" : "text-muted-foreground",
+								)}
+							>
+								${(b.current_usage ?? 0).toFixed(2)} / ${b.max_limit.toFixed(2)} ({b.reset_duration})
+							</span>
+						))}
+					</div>
+				);
+			})}
 		</div>
 	);
 }
@@ -1064,7 +1081,7 @@ export default function UsersView() {
 													{user.role === "admin" ? (
 														<span className="text-muted-foreground text-sm">—</span>
 													) : (
-														<UserVirtualKeysCell userId={user.id} />
+														<UserVirtualKeysCell userId={user.id} allVirtualKeys={virtualKeys} />
 													)}
 												</TableCell>
 												<TableCell className="font-mono text-xs">

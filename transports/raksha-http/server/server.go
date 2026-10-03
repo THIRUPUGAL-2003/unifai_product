@@ -849,6 +849,24 @@ func (s *RakshaHTTPServer) ReloadBusinessUnitTeamIndex(ctx context.Context) {
 	}
 }
 
+// ExhaustedBilledEntity reports the team or customer whose used-up budget blocks a member of
+// userTeamIDs from calling the virtual key vkID.
+func (s *RakshaHTTPServer) ExhaustedBilledEntity(ctx context.Context, vkID string, userTeamIDs []string) (string, string) {
+	governancePlugin, err := s.getGovernancePlugin()
+	if err != nil {
+		return "", ""
+	}
+	local, ok := governancePlugin.GetGovernanceStore().(*governance.LocalGovernanceStore)
+	if !ok {
+		return "", ""
+	}
+	vk, ok := local.GetVirtualKeyByID(ctx, vkID)
+	if !ok {
+		return "", ""
+	}
+	return local.ExhaustedBilledEntity(ctx, vk, userTeamIDs)
+}
+
 // SyncUserGovernance loads a user's materialized budget/rate-limit into memory.
 func (s *RakshaHTTPServer) SyncUserGovernance(ctx context.Context, userID string, budget *tables.TableBudget, rateLimit *tables.TableRateLimit) {
 	governancePlugin, err := s.getGovernancePlugin()

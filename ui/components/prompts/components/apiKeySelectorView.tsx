@@ -9,6 +9,7 @@ import {
 	ComboboxSeparator,
 } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
+import { useGetVirtualKeyBillingBlocksQuery } from "@/lib/store/apis/governanceApi";
 import { useIsAuthEnabledQuery } from "@/lib/store/apis/sessionApi";
 import type { DBKey, VirtualKey } from "@/lib/types/governance";
 import { AlertTriangle } from "lucide-react";
@@ -31,6 +32,8 @@ export function ApiKeySelectorView({
 }) {
 	const [query, setQuery] = useState("");
 	const { data: authStatus } = useIsAuthEnabledQuery();
+	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 30000 });
+	const blocks = billingBlocks?.blocks;
 
 	const allOptions = useMemo(() => {
 		const now = Date.now();
@@ -38,13 +41,15 @@ export function ApiKeySelectorView({
 		const vkOpts = virtualKeys.map((vk) => {
 			const isInactive = vk.is_active === false;
 			const isExpired = vk.expires_at ? new Date(vk.expires_at).getTime() < now : false;
+			const block = blocks?.[vk.id];
 			let suffix = "";
 			if (isInactive) suffix = " (Inactive)";
 			else if (isExpired) suffix = " (Expired)";
+			else if (block) suffix = ` (${block.scope === "team" ? "Team" : "Customer"} budget used up)`;
 			return { label: `${vk.name}${suffix}`, value: vk.value, group: "virtual" as const };
 		});
 		return [{ label: "Auto (default)", value: "__auto__", group: "api" as const }, ...apiKeyOpts, ...vkOpts];
-	}, [providerKeys, virtualKeys]);
+	}, [providerKeys, virtualKeys, blocks]);
 
 	const filtered = useMemo(() => {
 		if (!query) return allOptions;
@@ -58,6 +63,7 @@ export function ApiKeySelectorView({
 	const getLabel = useCallback((val: string | null) => allOptions.find((o) => o.value === val)?.label ?? val ?? "", [allOptions]);
 
 	const selectedVK = useMemo(() => virtualKeys.find((vk) => vk.value === value), [virtualKeys, value]);
+	const selectedBlock = selectedVK ? blocks?.[selectedVK.id] : undefined;
 	const fmt = (v?: number) => `$${(v ?? 0).toFixed(2)}`;
 
 	const isMember = authStatus?.role !== "admin";
@@ -168,6 +174,15 @@ export function ApiKeySelectorView({
 						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1">
 							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
 							<span>Virtual Key budget limit reached — calls will be blocked</span>
+						</div>
+					)}
+					{selectedBlock && (
+						<div className="flex items-center gap-1.5 text-rose-500 font-medium text-[11px] pt-1" data-testid="vk-billing-block">
+							<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+							<span>
+								{selectedBlock.scope === "team" ? "Team" : "Customer"} budget for &quot;{selectedBlock.name}&quot; is used up — this key is
+								blocked. Pick another key.
+							</span>
 						</div>
 					)}
 					{selectedVK.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) < b.max_limit && (b.current_usage ?? 0) / b.max_limit > 0.8) && (
