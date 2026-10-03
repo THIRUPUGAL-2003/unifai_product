@@ -1,3 +1,13 @@
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alertDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,6 +22,7 @@ import {
 	useGetBusinessUnitsQuery,
 	useRemoveBusinessUnitTeamMutation,
 } from "@enterprise/lib/store/apis/businessUnitsApi";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { BusinessUnit } from "@enterprise/lib/types/workspace";
 import { Building2, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -22,6 +33,10 @@ export function BusinessUnitsView() {
 	const [name, setName] = useState("");
 	const [open, setOpen] = useState(false);
 	const [teamId, setTeamId] = useState("");
+	const [unitToDelete, setUnitToDelete] = useState<BusinessUnit | null>(null);
+	const hasCreateAccess = useRbac(RbacResource.Teams, RbacOperation.Create);
+	const hasUpdateAccess = useRbac(RbacResource.Teams, RbacOperation.Update);
+	const hasDeleteAccess = useRbac(RbacResource.Teams, RbacOperation.Delete);
 	const { data: unitData } = useGetBusinessUnitsQuery();
 	const { data: teamData } = useGetTeamsQuery();
 	const { data: customersData } = useGetCustomersQuery();
@@ -102,7 +117,7 @@ export function BusinessUnitsView() {
 							business unit itself.
 						</p>
 					</div>
-					<Button onClick={() => setOpen(true)}>
+					<Button onClick={() => setOpen(true)} disabled={!hasCreateAccess}>
 						<Plus className="h-4 w-4" />
 						New unit
 					</Button>
@@ -124,9 +139,10 @@ export function BusinessUnitsView() {
 									<Button
 										size="icon"
 										variant="ghost"
+										disabled={!hasDeleteAccess}
 										onClick={(e) => {
 											e.stopPropagation();
-											void remove(unit.id);
+											setUnitToDelete(unit);
 										}}
 									>
 										<Trash2 className="h-4 w-4" />
@@ -160,7 +176,7 @@ export function BusinessUnitsView() {
 										</option>
 									))}
 							</select>
-							<Button onClick={() => void assign()} disabled={!teamId}>
+							<Button onClick={() => void assign()} disabled={!teamId || !hasUpdateAccess}>
 								Assign
 							</Button>
 						</div>
@@ -171,7 +187,7 @@ export function BusinessUnitsView() {
 								assigned.map((team) => (
 									<div key={team.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
 										<span>{teamLabel(team.id, team.name)}</span>
-										<Button size="icon" variant="ghost" onClick={() => void unassign(team.id)}>
+										<Button size="icon" variant="ghost" disabled={!hasUpdateAccess} onClick={() => void unassign(team.id)}>
 											<Trash2 className="h-4 w-4" />
 										</Button>
 									</div>
@@ -196,12 +212,34 @@ export function BusinessUnitsView() {
 						<Button variant="outline" onClick={() => setOpen(false)}>
 							Cancel
 						</Button>
-						<Button onClick={() => void create()} disabled={!name.trim()}>
+						<Button onClick={() => void create()} disabled={!name.trim() || !hasCreateAccess}>
 							Create
 						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			<AlertDialog open={!!unitToDelete} onOpenChange={(isOpen) => !isOpen && setUnitToDelete(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete business unit?</AlertDialogTitle>
+						<AlertDialogDescription>
+							&quot;{unitToDelete?.name}&quot; will be deleted and its teams unassigned. The teams themselves are not deleted.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								if (unitToDelete) void remove(unitToDelete.id);
+								setUnitToDelete(null);
+							}}
+						>
+							Delete
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }

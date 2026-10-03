@@ -92,13 +92,16 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 	});
 	const [nameError, setNameError] = useState<string | null>(null);
 
+	// Reset only when a different team is opened; refetches of the same team must not wipe in-progress edits.
+	const teamId = team?.id;
 	useEffect(() => {
 		const nextInitial = createInitialState(team);
 		setInitialState(nextInitial);
 		setFormData({ ...nextInitial, isDirty: false });
 		setNameError(null);
 		setShowCalendarAlignWarning(false);
-	}, [team]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [teamId]);
 
 	const hasCreateAccess = useRbac(RbacResource.Teams, RbacOperation.Create);
 	const hasUpdateAccess = useRbac(RbacResource.Teams, RbacOperation.Update);
@@ -236,6 +239,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 			...(formData.tokenMaxLimit !== undefined && formData.tokenMaxLimit !== null
 				? [
 						Validator.minValue(tokenMaxLimitNum || 0, 1, "Token max limit must be at least 1"),
+						Validator.custom(Number.isInteger(tokenMaxLimitNum), "Token max limit must be a whole number"),
 						Validator.required(formData.tokenResetDuration, "Token reset duration is required"),
 					]
 				: []),
@@ -244,6 +248,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 			...(formData.requestMaxLimit !== undefined && formData.requestMaxLimit !== null
 				? [
 						Validator.minValue(requestMaxLimitNum || 0, 1, "Request max limit must be at least 1"),
+						Validator.custom(Number.isInteger(requestMaxLimitNum), "Request max limit must be a whole number"),
 						Validator.required(formData.requestResetDuration, "Request reset duration is required"),
 					]
 				: []),

@@ -47,6 +47,7 @@ import {
 	useGetVirtualKeysQuery,
 	type SessionUser,
 } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useGetRolesQuery } from "@enterprise/lib/store/apis/rbacApi";
 import {
 	useDeleteVirtualKeyUserMutation,
@@ -124,6 +125,9 @@ export default function UsersView() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [roleFilter, setRoleFilter] = useState<"all" | "user" | "admin">("all");
 	const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+	const hasCreateAccess = useRbac(RbacResource.Users, RbacOperation.Create);
+	const hasUpdateAccess = useRbac(RbacResource.Users, RbacOperation.Update);
+	const hasDeleteAccess = useRbac(RbacResource.Users, RbacOperation.Delete);
 
 	const {
 		data: users = [],
@@ -202,6 +206,11 @@ export default function UsersView() {
 		setVirtualKeyId(current);
 		setInitialVirtualKeyId(current);
 	}, [isEditOpen, selectedUser?.id, editUserVKs]);
+
+	// The picker edits one direct key; any further direct keys are left untouched on save.
+	const otherDirectVirtualKeys = isEditOpen
+		? (editUserVKs?.virtual_keys ?? []).filter((vk) => (vk.origin ?? "direct") === "direct" && vk.id !== initialVirtualKeyId)
+		: [];
 
 	const toggleExpanded = (key: WorkspaceSectionKey) => {
 		setExpandedSections((prev) => {
@@ -340,6 +349,12 @@ export default function UsersView() {
 				{virtualKeys.length === 0 && (
 					<p className="text-muted-foreground text-xs">
 						No active Virtual Keys — create one under Governance → Virtual Keys first.
+					</p>
+				)}
+				{otherDirectVirtualKeys.length > 0 && (
+					<p className="text-muted-foreground text-xs">
+						Also directly assigned: {otherDirectVirtualKeys.map((vk) => vk.name).join(", ")}. These stay unchanged — manage them under
+						Governance → Virtual Keys.
 					</p>
 				)}
 			</div>
@@ -766,6 +781,7 @@ export default function UsersView() {
 					</h1>
 				</div>
 				<Button
+					disabled={!hasCreateAccess}
 					onClick={() => {
 						resetForm();
 						setIsCreateOpen(true);
@@ -907,7 +923,7 @@ export default function UsersView() {
 													<div className="flex justify-end gap-2">
 														<Button
 															size="sm"
-															disabled={actionBusyId === user.id}
+															disabled={actionBusyId === user.id || !hasUpdateAccess}
 															onClick={() => handleApprove(user)}
 															className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white"
 															data-testid="user-registration-accept"
@@ -918,7 +934,7 @@ export default function UsersView() {
 														<Button
 															size="sm"
 															variant="outline"
-															disabled={actionBusyId === user.id}
+															disabled={actionBusyId === user.id || !hasUpdateAccess}
 															onClick={() => handleReject(user)}
 															className="h-8 gap-1 border-red-500/40 text-red-400 hover:bg-red-950/40"
 															data-testid="user-registration-deny"
@@ -1050,6 +1066,7 @@ export default function UsersView() {
 														<Button
 															size="icon"
 															variant="ghost"
+															disabled={!hasUpdateAccess}
 															onClick={() => openEditModal(user)}
 															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-teal-400"
 														>
@@ -1058,6 +1075,7 @@ export default function UsersView() {
 														<Button
 															size="icon"
 															variant="ghost"
+															disabled={!hasDeleteAccess}
 															onClick={() => openDeleteModal(user)}
 															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-red-400"
 														>
@@ -1236,7 +1254,7 @@ export default function UsersView() {
 							</Button>
 							<Button
 								type="submit"
-								disabled={isCreating}
+								disabled={isCreating || !hasCreateAccess}
 								className="bg-teal-500 font-medium text-white hover:bg-teal-600 disabled:opacity-50"
 							>
 								{isCreating ? (
@@ -1400,7 +1418,7 @@ export default function UsersView() {
 							</Button>
 							<Button
 								type="submit"
-								disabled={isUpdating}
+								disabled={isUpdating || !hasUpdateAccess}
 								className="bg-teal-500 font-medium text-white hover:bg-teal-600 disabled:opacity-50"
 							>
 								{isUpdating ? (
@@ -1443,7 +1461,7 @@ export default function UsersView() {
 						</Button>
 						<Button
 							onClick={handleDeleteUser}
-							disabled={isDeleting}
+							disabled={isDeleting || !hasDeleteAccess}
 							className="bg-red-500 font-medium text-white hover:bg-red-600 disabled:opacity-50"
 						>
 							{isDeleting ? (

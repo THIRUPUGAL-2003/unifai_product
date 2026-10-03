@@ -78,6 +78,8 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 	const [updateCustomer, { isLoading: isUpdating }] = useUpdateCustomerMutation();
 	const loading = isCreating || isUpdating;
 
+	// Reset only when the sheet opens or a different customer is selected; refetches must not wipe in-progress edits.
+	const customerId = customer?.id;
 	useEffect(() => {
 		if (open) {
 			const init = createInitialState(customer);
@@ -85,7 +87,8 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 			setFormData({ ...init, isDirty: false });
 			setNameError(null);
 		}
-	}, [open, customer]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [open, customerId]);
 
 	const handleCalendarAlignedChange = (checked: boolean) => {
 		if (checked && isEditing && !initialState.calendarAligned) {
@@ -167,12 +170,14 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 				...(formData.tokenMaxLimit !== undefined && formData.tokenMaxLimit !== null
 					? [
 							Validator.minValue(tokenMaxLimitNum ?? 0, 1, "Token max limit must be at least 1"),
+							Validator.custom(Number.isInteger(tokenMaxLimitNum), "Token max limit must be a whole number"),
 							Validator.required(formData.tokenResetDuration, "Token reset duration is required"),
 						]
 					: []),
 				...(formData.requestMaxLimit !== undefined && formData.requestMaxLimit !== null
 					? [
 							Validator.minValue(requestMaxLimitNum ?? 0, 1, "Request max limit must be at least 1"),
+							Validator.custom(Number.isInteger(requestMaxLimitNum), "Request max limit must be a whole number"),
 							Validator.required(formData.requestResetDuration, "Request reset duration is required"),
 						]
 					: []),
