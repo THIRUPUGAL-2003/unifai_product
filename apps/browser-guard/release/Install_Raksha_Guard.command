@@ -16,8 +16,53 @@ if [[ ! -d "$APP_SRC" ]]; then
   exit 1
 fi
 
+# An earlier build shipped as UnifAI_Guard.app with its own LaunchAgent, browser policies and
+# data dir. Left running, both Guards fight over the PAC/proxy, so stop and remove it,
+# keeping its data dir (device identity) for this build.
+remove_previous_build() {
+  local OLD_PLIST="$HOME/Library/LaunchAgents/com.unifai.guard.plist"
+  if [[ -f "$OLD_PLIST" ]]; then
+    launchctl unload "$OLD_PLIST" 2>/dev/null || true
+    rm -f "$OLD_PLIST"
+  fi
+  pkill -f "UnifAI_Guard.app/Contents/MacOS/UnifAI_Guard" 2>/dev/null || true
+  pkill -f "/MacOS/UnifAI_Guard" 2>/dev/null || true
+
+  local SUPPORT="$HOME/Library/Application Support"
+  local ROOT
+  for ROOT in \
+    "$SUPPORT/Google/Chrome/policies/managed" \
+    "$SUPPORT/Google/Chrome Canary/policies/managed" \
+    "$SUPPORT/Microsoft Edge/policies/managed" \
+    "$SUPPORT/BraveSoftware/Brave-Browser/policies/managed" \
+    "$SUPPORT/Chromium/policies/managed"
+  do
+    rm -f "$ROOT/unifai_guard.json" 2>/dev/null || true
+  done
+
+  local OLD_DATA="$SUPPORT/UnifAI/Guard"
+  local NEW_DATA="$SUPPORT/Raksha/Guard"
+  if [[ -d "$OLD_DATA" ]]; then
+    # proxy_bundle targets the old app and must not be reused.
+    if [[ -d "$NEW_DATA" ]] || { mkdir -p "$NEW_DATA" && rsync -a --exclude proxy_bundle "$OLD_DATA/" "$NEW_DATA/"; }; then
+      rm -rf "$OLD_DATA"
+      rmdir "$SUPPORT/UnifAI" 2>/dev/null || true
+    fi
+  fi
+
+  local OLD_APP
+  for OLD_APP in "/Applications/UnifAI_Guard.app" "$HOME/Applications/UnifAI_Guard.app"; do
+    if [[ -d "$OLD_APP" ]]; then
+      echo "Removing previous build $OLD_APP"
+      rm -rf "$OLD_APP" 2>/dev/null || true
+    fi
+  done
+}
+
 # Clear quarantine so Gatekeeper does not block unsigned / first-run apps from ZIP
 xattr -dr com.apple.quarantine "$APP_SRC" 2>/dev/null || true
+
+remove_previous_build
 
 # Stop existing running Guard instances and unload LaunchAgent
 PLIST="$HOME/Library/LaunchAgents/com.raksha.guard.plist"

@@ -76,7 +76,8 @@ cp release/INSTALL_MACOS.txt "$STAGE/INSTALL_MACOS.txt"
 cp release/UNINSTALL_MACOS.txt "$STAGE/UNINSTALL_MACOS.txt"
 cp installer/Install_Raksha_Guard.command "$STAGE/Install_Raksha_Guard.command"
 cp installer/Uninstall_Raksha_Guard.command "$STAGE/Uninstall_Raksha_Guard.command"
-chmod +x "$STAGE/Install_Raksha_Guard.command" "$STAGE/Uninstall_Raksha_Guard.command"
+cp release/Update_Raksha_Guard_macOS.command "$STAGE/Update_Raksha_Guard_macOS.command"
+chmod +x "$STAGE/Install_Raksha_Guard.command" "$STAGE/Uninstall_Raksha_Guard.command" "$STAGE/Update_Raksha_Guard_macOS.command"
 rm -f "$ZIP"
 (
   cd "$STAGE"
@@ -87,7 +88,8 @@ rm -f "$ZIP"
     INSTALL_MACOS.txt \
     UNINSTALL_MACOS.txt \
     Install_Raksha_Guard.command \
-    Uninstall_Raksha_Guard.command
+    Uninstall_Raksha_Guard.command \
+    Update_Raksha_Guard_macOS.command
 )
 
 if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then

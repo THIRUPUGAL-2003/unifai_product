@@ -2,6 +2,8 @@
 set -euo pipefail
 pkill -f "Raksha_Guard.app/Contents/MacOS/Raksha_Guard" 2>/dev/null || true
 pkill -f "/MacOS/Raksha_Guard" 2>/dev/null || true
+pkill -f "UnifAI_Guard.app/Contents/MacOS/UnifAI_Guard" 2>/dev/null || true
+pkill -f "/MacOS/UnifAI_Guard" 2>/dev/null || true
 sleep 1
 
 APP="/Applications/Raksha_Guard.app"
@@ -10,9 +12,52 @@ if [[ -f "$APP/Contents/MacOS/Raksha_Guard" ]]; then
   chmod +x "$APP/Contents/MacOS/Raksha_Guard" 2>/dev/null || true
 fi
 
+# Browser AI → Setup → Build now ships a server-fresh config next to the .pkg; it wins over the compiled-in one.
+PKG_SRC="${PACKAGE_PATH:-${1:-}}"
+if [[ -n "$PKG_SRC" && -f "$(dirname "$PKG_SRC")/raksha_guard_config.json" ]]; then
+  mkdir -p "$APP/Contents/Resources"
+  cp -f "$(dirname "$PKG_SRC")/raksha_guard_config.json" "$APP/Contents/Resources/raksha_guard_config.json" 2>/dev/null || true
+fi
+rm -rf "/Applications/UnifAI_Guard.app" 2>/dev/null || true
+
 CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
 if [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != "root" ]]; then
-  USER_DATA="/Users/$CONSOLE_USER/Library/Application Support/Raksha/Guard"
+  USER_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+  USER_HOME="${USER_HOME:-/Users/$CONSOLE_USER}"
+  USER_UID=$(id -u "$CONSOLE_USER")
+
+  # An earlier build shipped as UnifAI_Guard.app with its own LaunchAgent, browser policies and
+  # data dir. Left running, both Guards fight over the PAC/proxy, so remove it, keeping its
+  # data dir (device identity) for this build.
+  OLD_PLIST="$USER_HOME/Library/LaunchAgents/com.unifai.guard.plist"
+  if [[ -f "$OLD_PLIST" ]]; then
+    launchctl bootout "gui/$USER_UID" "$OLD_PLIST" 2>/dev/null || true
+    rm -f "$OLD_PLIST"
+  fi
+  sudo -u "$CONSOLE_USER" HOME="$USER_HOME" /bin/bash <<'MIGRATE' || true
+SUPPORT="$HOME/Library/Application Support"
+for ROOT in \
+  "$SUPPORT/Google/Chrome/policies/managed" \
+  "$SUPPORT/Google/Chrome Canary/policies/managed" \
+  "$SUPPORT/Microsoft Edge/policies/managed" \
+  "$SUPPORT/BraveSoftware/Brave-Browser/policies/managed" \
+  "$SUPPORT/Chromium/policies/managed"
+do
+  rm -f "$ROOT/unifai_guard.json" 2>/dev/null || true
+done
+OLD_DATA="$SUPPORT/UnifAI/Guard"
+NEW_DATA="$SUPPORT/Raksha/Guard"
+if [[ -d "$OLD_DATA" ]]; then
+  # proxy_bundle targets the old app and must not be reused.
+  if [[ -d "$NEW_DATA" ]] || { mkdir -p "$NEW_DATA" && rsync -a --exclude proxy_bundle "$OLD_DATA/" "$NEW_DATA/"; }; then
+    rm -rf "$OLD_DATA"
+    rmdir "$SUPPORT/UnifAI" 2>/dev/null || true
+  fi
+fi
+rm -rf "$HOME/Applications/UnifAI_Guard.app" 2>/dev/null || true
+MIGRATE
+
+  USER_DATA="$USER_HOME/Library/Application Support/Raksha/Guard"
   mkdir -p "$USER_DATA" 2>/dev/null || true
   if [[ -f "$APP/Contents/Resources/raksha_guard_config.json" ]]; then
     cp -f "$APP/Contents/Resources/raksha_guard_config.json" "$USER_DATA/raksha_guard_config.json" 2>/dev/null || true
