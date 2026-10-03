@@ -349,6 +349,7 @@ func (h *BrowserAIHandler) remoteUninstallAgent(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
+	guardEvents.notify(id, guardEventUninstall)
 	SendJSON(ctx, map[string]any{"status": "success", "agent": agent, "command": "uninstall"})
 }
 

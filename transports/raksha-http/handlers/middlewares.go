@@ -1313,6 +1313,7 @@ func isPublicBrowserAIRoute(method, path string) bool {
 	case "/api/browser-ai/proxy.pac", "/api/browser-ai/pac":
 		return method == fasthttp.MethodGet
 	case "/api/browser-ai/agents/heartbeat",
+		"/api/browser-ai/agents/wait-command",
 		"/api/browser-ai/agents/uninstall-verify",
 		"/api/browser-ai/agents/uninstall",
 		"/api/browser-ai/agents/uninstall-ack",

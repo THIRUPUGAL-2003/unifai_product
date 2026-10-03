@@ -34,6 +34,7 @@ from agent_config import (
 from agent_health import free_proxy_port, health_loop, port_open
 from agent_heartbeat import (
     apply_admin_uninstall,
+    command_wait_loop,
     heartbeat_loop,
     heartbeat_wants_uninstall,
     send_heartbeat,
@@ -220,6 +221,7 @@ def main() -> None:
     # Cap AI Guard Bot hold so browsers do not drop the request (felt as connection cut).
     os.environ.setdefault("RAKSHA_EVAL_TIMEOUT", "18")
     threading.Thread(target=heartbeat_loop, args=(agent_id, stop_event), daemon=True).start()
+    threading.Thread(target=command_wait_loop, args=(agent_id, stop_event), daemon=True).start()
     threading.Thread(target=health_loop, args=(stop_event, port), daemon=True).start()
 
     def cleanup_and_exit(signum=None, frame=None):

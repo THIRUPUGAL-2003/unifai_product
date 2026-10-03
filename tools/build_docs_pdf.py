@@ -73,7 +73,7 @@ class NumberedCanvas(canvas.Canvas):
 
         self.setFont("Helvetica", 8)
         self.setFillColor(MUTED_TEXT)
-        self.drawString(54, 32, "Enterprise Confidential — For Internal & Authorized Use Only")
+        self.drawString(54, 32, "Enterprise Confidential - For Internal & Authorized Use Only")
         page_str = f"Page {self._pageNumber} of {page_count}"
         self.drawRightString(width - 54, 32, page_str)
 
@@ -235,8 +235,9 @@ def format_inline_markdown(text):
         styled_code = f'<font face="Courier" color="#b91c1c"><b>{escaped_token}</b></font>'
         text = text.replace(f"@@@CODE_TOKEN_{idx}@@@", styled_code)
 
-    # Clean up any raw LaTeX symbols like $\ge$
+    # Clean up any raw LaTeX symbols and unicode punctuation unsupported by standard Type 1 fonts
     text = text.replace('$\\ge', '>= ').replace('$', '')
+    text = text.replace('\u2014', ' - ').replace('\u2013', '-').replace('\u2018', "'").replace('\u2019', "'").replace('\u201c', '"').replace('\u201d', '"').replace('\u2192', '->')
 
     return text
 
@@ -307,6 +308,12 @@ def parse_markdown_to_flowables(md_content, styles):
 
         # Blank lines
         if not line.strip():
+            i += 1
+            continue
+
+        # Page Break
+        if line.strip().lower() in ['<!-- pagebreak -->', '<!-- page_break -->', '<!-- page-break -->', '<div style="page-break-after: always;"></div>', '<div style="page-break-after: always; break-after: page;"></div>', '\\newpage', '<!-- page break -->']:
+            flowables.append(PageBreak())
             i += 1
             continue
 
@@ -494,6 +501,7 @@ def main():
         ("04_USER_GUIDE.md", "04_User_Guide.pdf"),
         ("05_DATABASE_CONFIGURATION_GUIDE.md", "05_Database_Configuration_Guide.pdf"),
         ("06_DOCKER_AND_SSL_CONFIGURATION_GUIDE.md", "06_Docker_and_SSL_Configuration_Guide.pdf"),
+        ("Raksha_Technical_Documentation.md", "Raksha_Technical_Documentation.pdf"),
     ]
 
     generated_pdfs = []

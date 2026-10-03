@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
+import time
 
 import agent_config
 from agent_autoupdate import check_and_update_if_needed, nudge_update_check
@@ -118,3 +120,36 @@ def heartbeat_loop(agent_id: str, stop_event: threading.Event) -> None:
         check_and_update_if_needed()
         set_browser_quic(enable_quic=False)
         stop_event.wait(HEARTBEAT_SECONDS)
+
+
+COMMAND_WAIT_TIMEOUT = 40  # server holds the request ~25s
+
+
+def command_wait_loop(agent_id: str, stop_event: threading.Event) -> None:
+    """Long-poll the server so remote uninstall / Rebuild & Publish land in ~1s, not on the next heartbeat."""
+    url = f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/wait-command"
+    failures = 0
+    while not stop_event.is_set():
+        started = time.monotonic()
+        code, data = _http_json("POST", url, {"agent_id": agent_id}, timeout=COMMAND_WAIT_TIMEOUT)
+        if code == 200:
+            failures = 0
+            event = str((data or {}).get("event") or "").strip().lower() if isinstance(data, dict) else ""
+            if event:
+                print(f"[Raksha Guard] Server event: {event}")
+                if event == "rebuild":
+                    # Spread fleet-wide bundle downloads so the server is not hit by every Guard at once.
+                    stop_event.wait(random.uniform(0.0, 3.0))
+                hb = send_heartbeat(agent_id, status="active")
+                if heartbeat_wants_uninstall(hb) or (event == "uninstall" and hb is None):
+                    apply_admin_uninstall(agent_id)
+                    return
+            if time.monotonic() - started < 1.0:
+                stop_event.wait(2)
+            continue
+        if code == 404:
+            # Older server without wait-command — heartbeat still delivers commands.
+            stop_event.wait(600)
+            continue
+        failures += 1
+        stop_event.wait(min(60, 2 * failures))

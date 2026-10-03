@@ -22,6 +22,7 @@ func shouldSkipWorkspaceAudit(method, path string) bool {
 		// Guard records every search via POST; admin clears (DELETE) must stay audited.
 		return method == fasthttp.MethodPost
 	case p == "/api/browser-ai/agents/heartbeat",
+		p == "/api/browser-ai/agents/wait-command",
 		p == "/api/browser-ai/agents/uninstall-ack",
 		p == "/api/browser-ai/agents/uninstall-verify",
 		p == "/api/browser-ai/agents/uninstall-status",

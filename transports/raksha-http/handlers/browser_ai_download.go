@@ -362,13 +362,14 @@ func publishProxyBundleSummary() (map[string]any, string) {
 	if err != nil {
 		return map[string]any{"error": err.Error()}, "Guard code update NOT published: " + err.Error() + "."
 	}
+	guardEvents.broadcast(guardEventRebuild)
 	return map[string]any{
 		"sha256":         meta.SHA256,
 		"published_at":   meta.PublishedAt,
 		"files":          meta.Files,
 		"guard_versions": meta.GuardVersions,
-	}, "Guard code " + meta.SHA256[:8] + " published — installed Guards on v" +
-		strings.Join(meta.GuardVersions, " / v") + " switch to it within about a minute (no reinstall)."
+	}, "Guard code " + meta.SHA256[:8] + " published — online Guards on v" +
+		strings.Join(meta.GuardVersions, " / v") + " switch to it within seconds (no reinstall)."
 }
 
 func (h *BrowserAIHandler) getSetupInfo(ctx *fasthttp.RequestCtx) {
