@@ -70,7 +70,7 @@ const formatResetDuration = (duration: string) => resetDurationLabels[duration] 
 
 type ExportScope = "current_page" | "all";
 
-function virtualKeysToCSV(vks: VirtualKey[], accessProfileNames: Record<number, string> = {}): string {
+function virtualKeysToCSV(vks: VirtualKey[], userNames: Map<string, string>): string {
 	const headers = ["Name", "Status", "Assigned To", "Budget Limit", "Budget Spent", "Budget Reset", "Description", "Created At"];
 	const rows = vks.map((vk) => {
 		const isExhausted =
@@ -85,7 +85,8 @@ function virtualKeysToCSV(vks: VirtualKey[], accessProfileNames: Record<number, 
 		const status = !vk.is_active ? "Inactive" : isExpired ? "Expired" : isExhausted ? "Exhausted" : "Active";
 		const teamStr = vk.teams?.length ? `Teams: ${vk.teams.map((t) => t.name).join(", ")}` : vk.team ? `Team: ${vk.team.name}` : "";
 		const custStr = vk.customers?.length ? `Customers: ${vk.customers.map((c) => c.name).join(", ")}` : vk.customer ? `Customer: ${vk.customer.name}` : "";
-		const userStr = vk.users?.length ? `Users: ${vk.users.map((u) => getUserDisplayName(u)).join(", ")}` : "";
+		const userIds = vk.user_ids?.length ? vk.user_ids : (vk.users ?? []).map((u) => u.user_id);
+		const userStr = userIds.length ? `Users: ${userIds.map((id) => userNames.get(id) || id).join(", ")}` : "";
 		const assignedParts = [teamStr, custStr, userStr].filter(Boolean);
 		const assignedTo = assignedParts.join(" • ");
 		const budgetLimit = vk.budgets?.length ? vk.budgets.map((b) => formatCurrency(b.max_limit)).join("; ") : "";
@@ -111,12 +112,12 @@ function VKBudgetCell({ vk }: { vk: VirtualKey }) {
 	return <BudgetDisplay budgets={displayBudgets} calendarAligned={vk.calendar_aligned} />;
 }
 
-function getUserDisplayName(u: any): string {
-	return u?.name || u?.username || u?.email || "";
+function getUserDisplayName(u: { name?: string; username?: string; email?: string; id?: string } | undefined): string {
+	return u?.name || u?.username || u?.email || u?.id || "";
 }
 
 function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
-	const { assignedUsers } = useVirtualKeyUsage(vk);
+	const { directUsers } = useVirtualKeyUsage(vk);
 
 	const parts: string[] = [];
 	if (vk.teams && vk.teams.length > 0) {
@@ -139,11 +140,10 @@ function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
 		parts.push(`Customer: ${vk.customer.name}`);
 	}
 
-	const allUsers = vk.users && vk.users.length > 0 ? vk.users : assignedUsers;
-	if (allUsers.length > 1) {
-		parts.push(`Users (${allUsers.length}): ${allUsers.map((u) => getUserDisplayName(u)).join(", ")}`);
-	} else if (allUsers.length === 1) {
-		parts.push(`User: ${getUserDisplayName(allUsers[0])}`);
+	if (directUsers.length > 1) {
+		parts.push(`Users (${directUsers.length}): ${directUsers.map((u) => getUserDisplayName(u)).join(", ")}`);
+	} else if (directUsers.length === 1) {
+		parts.push(`User: ${getUserDisplayName(directUsers[0])}`);
 	}
 
 	if (parts.length === 0) {
@@ -352,6 +352,7 @@ export default function VirtualKeysTable({
 }: VirtualKeysTableProps) {
 	const [showVirtualKeySheet, setShowVirtualKeySheet] = useState(false);
 	const [editingVirtualKeyId, setEditingVirtualKeyId] = useState<string | null>(null);
+	const [editingVirtualKeySnapshot, setEditingVirtualKeySnapshot] = useState<VirtualKey | null>(null);
 	const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
 	const [showExportDialog, setShowExportDialog] = useState(false);
 	const [exportScope, setExportScope] = useState<ExportScope>("current_page");
@@ -362,9 +363,21 @@ export default function VirtualKeysTable({
 
 	// Derive objects from props so they stay in sync with RTK cache updates
 	const editingVirtualKey = useMemo(
-		() => (editingVirtualKeyId ? (virtualKeys.find((vk) => vk.id === editingVirtualKeyId) ?? null) : null),
-		[editingVirtualKeyId, virtualKeys],
+		() =>
+			editingVirtualKeyId
+				? (virtualKeys.find((vk) => vk.id === editingVirtualKeyId) ??
+					(editingVirtualKeySnapshot?.id === editingVirtualKeyId ? editingVirtualKeySnapshot : null))
+				: null,
+		[editingVirtualKeyId, editingVirtualKeySnapshot, virtualKeys],
 	);
+	const { data: sessionUsersData } = useGetSessionUsersQuery();
+	const userNames = useMemo(() => {
+		const names = new Map<string, string>();
+		for (const u of sessionUsersData?.users ?? []) {
+			names.set(u.id, getUserDisplayName(u));
+		}
+		return names;
+	}, [sessionUsersData]);
 	const selectedVkInList = useMemo(
 		() => (selectedVkId ? (virtualKeys.find((vk) => vk.id === selectedVkId) ?? null) : null),
 		[selectedVkId, virtualKeys],
@@ -480,17 +493,20 @@ export default function VirtualKeysTable({
 
 	const handleAddVirtualKey = () => {
 		setEditingVirtualKeyId(null);
+		setEditingVirtualKeySnapshot(null);
 		setShowVirtualKeySheet(true);
 	};
 
 	const handleEditVirtualKey = (vk: VirtualKey) => {
 		setEditingVirtualKeyId(vk.id);
+		setEditingVirtualKeySnapshot(vk);
 		setShowVirtualKeySheet(true);
 	};
 
 	const handleVirtualKeySaved = () => {
 		setShowVirtualKeySheet(false);
 		setEditingVirtualKeyId(null);
+		setEditingVirtualKeySnapshot(null);
 	};
 
 	const handleRowClick = (vk: VirtualKey) => {
@@ -591,7 +607,7 @@ export default function VirtualKeysTable({
 
 	const handleExportCSV = async () => {
 		if (exportScope === "current_page") {
-			downloadCSV(virtualKeysToCSV(virtualKeys));
+			downloadCSV(virtualKeysToCSV(virtualKeys, userNames));
 			toast.success(`Exported ${virtualKeys.length} virtual keys`);
 			setShowExportDialog(false);
 			return;
@@ -613,7 +629,7 @@ export default function VirtualKeysTable({
 				export: true,
 			}).unwrap();
 
-			downloadCSV(virtualKeysToCSV(result.virtual_keys));
+			downloadCSV(virtualKeysToCSV(result.virtual_keys, userNames));
 			toast.success(`Exported ${result.virtual_keys.length} virtual keys`);
 			setShowExportDialog(false);
 		} catch (error) {

@@ -54,7 +54,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
 import { Info, Lock, RotateCcw, Trash2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { FieldErrors, useForm } from "react-hook-form";
 import { components, MultiValueProps, OptionProps } from "react-select";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -413,14 +413,22 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 	// MultiSelect options for Teams, Customers, and Users
 	// Team-only assignment never involves the customer, so show the plain team name; the customer
 	// is appended only to tell apart teams that share a name.
+	// With customers selected, only their teams can be added (the backend rejects foreign teams);
+	// already-selected teams stay listed so they can be removed.
+	const watchedCustomerIds = form.watch("customerIds");
+	const watchedTeamIds = form.watch("teamIds");
 	const teamMultiSelectOptions = useMemo(() => {
 		const nameCounts = new Map<string, number>();
 		for (const team of teams || []) nameCounts.set(team.name, (nameCounts.get(team.name) ?? 0) + 1);
-		return (teams || []).map((team) => ({
-			value: team.id,
-			label: (nameCounts.get(team.name) ?? 0) > 1 && team.customer ? `${team.name} (${team.customer.name})` : team.name,
-		}));
-	}, [teams]);
+		const customerFilter = new Set(watchedCustomerIds ?? []);
+		const selected = new Set(watchedTeamIds ?? []);
+		return (teams || [])
+			.filter((team) => customerFilter.size === 0 || selected.has(team.id) || (!!team.customer_id && customerFilter.has(team.customer_id)))
+			.map((team) => ({
+				value: team.id,
+				label: (nameCounts.get(team.name) ?? 0) > 1 && team.customer ? `${team.name} (${team.customer.name})` : team.name,
+			}));
+	}, [teams, watchedCustomerIds, watchedTeamIds]);
 
 	const customerMultiSelectOptions = useMemo(
 		() =>
@@ -916,6 +924,19 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 		}
 	};
 
+	// Budget lines have no inline field errors, so surface why the submit was blocked.
+	const onInvalid = (errors: FieldErrors<z.input<typeof formSchema>>) => {
+		const providerErrors = Array.isArray(errors.providerConfigs) ? errors.providerConfigs : [];
+		const lineGroups = [errors.budgets, ...providerErrors.map((pc) => pc?.budgets)];
+		for (const line of lineGroups.flatMap((group) => (Array.isArray(group) ? group : []))) {
+			const message = line?.max_limit?.message || line?.reset_duration?.message;
+			if (message) {
+				toast.error(message);
+				return;
+			}
+		}
+	};
+
 	// Handle form submission
 	const onSubmit = async (data: FormData) => {
 		if (hasBudgetResetRelevantChanges(data)) {
@@ -968,7 +989,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 				</SheetHeader>
 
 				<Form {...form}>
-					<form onSubmit={form.handleSubmit(onSubmit)} className="flex h-full flex-col gap-6">
+					<form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="flex h-full flex-col gap-6">
 						<div className="grow space-y-4 px-8">
 							{isManagedByProfile && (
 								<Alert variant="info">

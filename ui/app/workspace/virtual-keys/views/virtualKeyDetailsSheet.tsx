@@ -114,14 +114,17 @@ export default function VirtualKeyDetailSheet({
 				<div className="space-y-6 px-8 py-4">
 					<ManagedVirtualKeyNotice managingProfile={managingProfile} />
 
-					{((virtualKey.users && virtualKey.users.length > 0) || assignedUsers.length > 0) ? (
+					{assignedUsers.length > 0 ? (
 						<div className="space-y-1">
 							<Label className="text-sm font-medium">Assigned Users</Label>
 							<div className="flex items-center gap-2">
 								<Users className="text-muted-foreground h-4 w-4" />
 								<span className="text-sm">
-									{((virtualKey.users && virtualKey.users.length > 0) ? virtualKey.users : assignedUsers)
-										.map((u: any) => u.name || u.username || u.email)
+									{assignedUsers
+										.map((u) => {
+											const name = u.name || u.email || u.id;
+											return u.origin && u.origin !== "direct" && u.origin_name ? `${name} (via ${u.origin_name})` : name;
+										})
 										.join(", ")}
 								</span>
 							</div>
