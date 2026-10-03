@@ -17,6 +17,7 @@ import { toast } from "sonner";
 // Security headers that cannot be configured in allowlist/denylist
 // These headers are always blocked for security reasons regardless of configuration
 const SECURITY_HEADERS = [
+	"authorization",
 	"proxy-authorization",
 	"cookie",
 	"host",
@@ -363,13 +364,14 @@ export default function ClientSettingsView() {
 							Async Job Result TTL (seconds)
 						</label>
 						<p className="text-muted-foreground text-sm">
-							Default time-to-live for async job results in seconds. Results are automatically cleaned up after expiry.
+							Default time-to-live for async job results in seconds. Results are automatically cleaned up after expiry. Set 0 to
+							reset to the default (3600).
 						</p>
 					</div>
 					<Input
 						id="async-job-result-ttl"
 						type="number"
-						min={1}
+						min={0}
 						className="w-32"
 						value={localConfig.async_job_result_ttl}
 						onChange={(e) => handleConfigChange("async_job_result_ttl", parseInt(e.target.value) || 0)}

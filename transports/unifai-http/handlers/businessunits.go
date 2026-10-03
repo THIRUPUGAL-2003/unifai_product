@@ -57,7 +57,7 @@ func (h *WorkspaceHandler) listBusinessUnits(ctx *fasthttp.RequestCtx) {
 		}
 		items = append(items, map[string]any{
 			"id": row.ID, "name": row.Name, "team_count": len(row.ParsedTeamIDs),
-			"team_ids": row.ParsedTeamIDs,
+			"team_ids":   row.ParsedTeamIDs,
 			"created_at": row.CreatedAt, "updated_at": row.UpdatedAt,
 		})
 	}
@@ -139,7 +139,7 @@ func (h *WorkspaceHandler) getBusinessUnit(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, map[string]any{
 		"id": row.ID, "name": row.Name, "team_count": len(row.ParsedTeamIDs),
 		"team_ids": row.ParsedTeamIDs,
-		"budget": row.ParsedBudget, "rate_limit": row.ParsedRateLimit,
+		"budget":   row.ParsedBudget, "rate_limit": row.ParsedRateLimit,
 		"created_at": row.CreatedAt, "updated_at": row.UpdatedAt,
 	})
 }
@@ -210,9 +210,21 @@ func (h *WorkspaceHandler) assignBusinessUnitTeam(ctx *fasthttp.RequestCtx) {
 	var body struct {
 		TeamID string `json:"team_id"`
 	}
-	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil || body.TeamID == "" {
+	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil || strings.TrimSpace(body.TeamID) == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "team_id is required")
 		return
+	}
+	body.TeamID = strings.TrimSpace(body.TeamID)
+	if h.store != nil && h.store.ConfigStore != nil {
+		team, err := h.store.ConfigStore.GetTeam(ctx, body.TeamID)
+		if err != nil || team == nil {
+			if err == nil || isStoreNotFound(err) {
+				SendError(ctx, fasthttp.StatusNotFound, "team not found")
+				return
+			}
+			SendError(ctx, fasthttp.StatusInternalServerError, "failed to load team")
+			return
+		}
 	}
 	for _, existing := range row.ParsedTeamIDs {
 		if existing == body.TeamID {
@@ -283,8 +295,13 @@ func (h *WorkspaceHandler) updateBusinessUnitGovernance(ctx *fasthttp.RequestCtx
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
-	row.ParsedBudget = body.Budget
-	row.ParsedRateLimit = body.RateLimit
+	// Governance never enforces business-unit limits; only clearing legacy values is allowed.
+	if len(body.Budget) > 0 || len(body.RateLimit) > 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "business units do not enforce budgets or rate limits; set them on the unit's teams, customers, virtual keys or users instead")
+		return
+	}
+	row.ParsedBudget = nil
+	row.ParsedRateLimit = nil
 	row.UpdatedAt = time.Now().UTC()
 	if err := store.UpdateBusinessUnit(ctx, row); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update governance")

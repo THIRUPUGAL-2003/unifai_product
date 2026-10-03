@@ -1139,9 +1139,11 @@ func initStores(ctx context.Context, config *Config, configData *ConfigData, con
 			logger.Warn("failed to load vector store config from db: %v", dbErr)
 		} else if dbVS != nil && dbVS.Enabled {
 			logger.Info("connecting to vectorstore from config store")
-			config.VectorStore, err = vectorstore.NewVectorStore(ctx, dbVS, logger)
-			if err != nil {
-				logger.Fatal("failed to connect to vector store from db: %v", err)
+			vs, vsErr := vectorstore.NewVectorStore(ctx, dbVS, logger)
+			if vsErr != nil {
+				logger.Warn("failed to connect to vector store from db, semantic cache stays off until it is reachable: %v", vsErr)
+			} else {
+				config.VectorStore = vs
 			}
 		}
 	}
@@ -1872,26 +1874,25 @@ func applyMCPGlobalSettingsToClientConfig(ctx context.Context, config *Config, m
 	)
 	mcpCfg.ToolManagerConfig.DisableAutoToolInject = config.ClientConfig.MCPDisableAutoToolInject
 
-	// ToolSyncInterval lives only in MCPConfig (not a ClientConfig field), so reconcile separately.
+	// ToolSyncInterval lives in MCPConfig as a duration; ClientConfig.MCPToolSyncInterval
+	// stores whole minutes (what the UI edits). An explicit file value wins; otherwise the
+	// saved DB value is applied so the UI setting survives restarts.
 	changed := false
-	if mcpCfg.ToolSyncInterval == 0 {
-		if config.ClientConfig.MCPToolSyncInterval != 0 {
-			config.ClientConfig.MCPToolSyncInterval = 0
-			changed = true
-		}
-	} else if mcpCfg.ToolSyncInterval > 0 {
-		if mcpCfg.ToolSyncInterval%time.Second != 0 {
+	if mcpCfg.ToolSyncInterval > 0 {
+		if mcpCfg.ToolSyncInterval%time.Minute != 0 {
 			logger.Warn(
-				"ignoring mcp.tool_sync_interval %q: must be a whole number of seconds",
+				"ignoring mcp.tool_sync_interval %q: must be a whole number of minutes",
 				mcpCfg.ToolSyncInterval.String(),
 			)
 		} else {
-			syncSeconds := int(mcpCfg.ToolSyncInterval / time.Second)
-			if config.ClientConfig.MCPToolSyncInterval != syncSeconds {
-				config.ClientConfig.MCPToolSyncInterval = syncSeconds
+			syncMinutes := int(mcpCfg.ToolSyncInterval / time.Minute)
+			if config.ClientConfig.MCPToolSyncInterval != syncMinutes {
+				config.ClientConfig.MCPToolSyncInterval = syncMinutes
 				changed = true
 			}
 		}
+	} else if config.ClientConfig.MCPToolSyncInterval > 0 {
+		mcpCfg.ToolSyncInterval = time.Duration(config.ClientConfig.MCPToolSyncInterval) * time.Minute
 	}
 
 	if changed && config.ConfigStore != nil {
@@ -6526,46 +6527,49 @@ func MergeVectorStoreSecrets(incoming, existing *vectorstore.Config) *vectorstor
 	return &merged
 }
 
-// PersistVectorStoreConfig writes vector_store to config.json when a config file path is configured.
-func (c *Config) PersistVectorStoreConfig(cfg *vectorstore.Config) error {
+// dropFileVectorStoreSection removes a stale vector_store section from config.json so the
+// UI-saved DB record is used on the next boot. Secrets are never written to the file.
+func (c *Config) dropFileVectorStoreSection() error {
 	if c.configPath == "" {
 		return nil
 	}
-
-	var root map[string]json.RawMessage
 	data, err := os.ReadFile(c.configPath)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("read config file: %w", err)
+		if os.IsNotExist(err) {
+			return nil
 		}
-		root = map[string]json.RawMessage{}
-	} else if err := json.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("read config file: %w", err)
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
 		return fmt.Errorf("parse config file: %w", err)
 	}
-
-	if cfg == nil || !cfg.Enabled {
-		delete(root, "vector_store")
-	} else {
-		section, err := json.Marshal(cfg)
-		if err != nil {
-			return fmt.Errorf("marshal vector store config: %w", err)
-		}
-		root["vector_store"] = section
+	if _, ok := root["vector_store"]; !ok {
+		return nil
 	}
-
+	delete(root, "vector_store")
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal config file: %w", err)
 	}
 	out = append(out, '\n')
-	if err := os.WriteFile(c.configPath, out, 0644); err != nil {
+	info, statErr := os.Stat(c.configPath)
+	mode := os.FileMode(0600)
+	if statErr == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := os.WriteFile(c.configPath, out, mode); err != nil {
 		return fmt.Errorf("write config file: %w", err)
 	}
 	return nil
 }
 
-// ApplyVectorStoreConfig connects (or disconnects) the live vector store, persists config, and updates memory.
-func (c *Config) ApplyVectorStoreConfig(ctx context.Context, cfg *vectorstore.Config) error {
+// ApplyVectorStoreConfig connects (or disconnects) the live vector store and persists it to the
+// config store. The previous store stays open until the caller invokes release, so plugins that
+// still hold it can be reloaded first. warning is non-empty when config.json could not be cleaned
+// up and its vector_store section will override the DB value on restart.
+func (c *Config) ApplyVectorStoreConfig(ctx context.Context, cfg *vectorstore.Config) (release func(), warning string, err error) {
+	release = func() {}
 	if cfg == nil {
 		cfg = &vectorstore.Config{Enabled: false}
 	}
@@ -6574,32 +6578,37 @@ func (c *Config) ApplyVectorStoreConfig(ctx context.Context, cfg *vectorstore.Co
 	if cfg.Enabled {
 		store, err := vectorstore.NewVectorStore(ctx, cfg, logger)
 		if err != nil {
-			return fmt.Errorf("connect vector store: %w", err)
+			return release, "", fmt.Errorf("connect vector store: %w", err)
 		}
 		pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		if err := store.Ping(pingCtx); err != nil {
 			_ = store.Close(ctx, "")
-			return fmt.Errorf("vector store ping failed: %w", err)
+			return release, "", fmt.Errorf("vector store ping failed: %w", err)
 		}
 		newStore = store
+	}
+
+	if c.ConfigStore != nil {
+		if err := c.ConfigStore.UpdateVectorStoreConfig(ctx, cfg); err != nil {
+			if newStore != nil {
+				_ = newStore.Close(ctx, "")
+			}
+			return release, "", fmt.Errorf("persist vector store to db: %w", err)
+		}
 	}
 
 	old := c.VectorStore
 	c.VectorStore = newStore
 	if old != nil {
-		_ = old.Close(ctx, "")
+		release = func() { _ = old.Close(context.Background(), "") }
 	}
 
-	if c.ConfigStore != nil {
-		if err := c.ConfigStore.UpdateVectorStoreConfig(ctx, cfg); err != nil {
-			return fmt.Errorf("persist vector store to db: %w", err)
-		}
+	if err := c.dropFileVectorStoreSection(); err != nil {
+		logger.Warn("vector store saved to db but config.json vector_store section could not be removed: %v", err)
+		warning = "Saved. config.json still has a vector_store section that will override this on restart — remove it from the file."
 	}
-	if err := c.PersistVectorStoreConfig(cfg); err != nil {
-		return fmt.Errorf("persist vector store to config file: %w", err)
-	}
-	return nil
+	return release, warning, nil
 }
 
 // ValidateCustomProvider validates the custom provider configuration

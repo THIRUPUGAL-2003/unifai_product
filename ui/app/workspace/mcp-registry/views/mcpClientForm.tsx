@@ -51,7 +51,7 @@ const emptyForm: CreateMCPClientRequest = {
 	name: "",
 	is_code_mode_client: false,
 	is_ping_available: true,
-	allow_on_all_virtual_keys: true,
+	allow_on_all_virtual_keys: false,
 	connection_type: "http",
 	connection_string: emptySecretVar,
 	stdio_config: emptyStdioConfig,
@@ -273,8 +273,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 					: undefined,
 			per_user_header_keys: authType === "per_user_headers" ? perUserHeaderKeys : undefined,
 			tools_to_execute: ["*"],
-			// Match library install: usable on every VK until access is tightened in the client sheet.
-			allow_on_all_virtual_keys: data.allow_on_all_virtual_keys ?? true,
+			allow_on_all_virtual_keys: data.allow_on_all_virtual_keys ?? false,
 		};
 
 		// Per-user-headers: stash the payload and open the headers test

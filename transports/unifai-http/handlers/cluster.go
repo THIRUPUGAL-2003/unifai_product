@@ -2,8 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/unifai/unifai/core/schemas"
+	"github.com/unifai/unifai/framework/cluster"
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/loadbalancer"
 	"github.com/valyala/fasthttp"
@@ -28,16 +32,79 @@ type clusterConfigPayload struct {
 	} `json:"grpc,omitempty"`
 }
 
+// normalizeClusterPeer accepts host:port or an http(s):// gateway URL and returns the trimmed form.
+func normalizeClusterPeer(peer string) (string, error) {
+	peer = strings.TrimSpace(peer)
+	if peer == "" {
+		return "", fmt.Errorf("empty peer")
+	}
+	raw := peer
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		if strings.Contains(raw, "://") {
+			return "", fmt.Errorf("peer %q: only http:// or https:// URLs are supported", peer)
+		}
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return "", fmt.Errorf("peer %q: use host:port or http(s)://host:port", peer)
+	}
+	if u.Path != "" && u.Path != "/" {
+		return "", fmt.Errorf("peer %q: give only the gateway address, without a path", peer)
+	}
+	if u.Port() == "" && !strings.HasPrefix(peer, "http") {
+		return "", fmt.Errorf("peer %q: port is required (host:port)", peer)
+	}
+	return strings.TrimRight(peer, "/"), nil
+}
+
+func (h *WorkspaceHandler) clusterWarnings(ctx *fasthttp.RequestCtx, cfg clusterConfigPayload) []string {
+	warnings := []string{}
+	if !cfg.Enabled {
+		return warnings
+	}
+	if cluster.ClusterReplicateSecret() == "" {
+		warnings = append(warnings, "CLUSTER_REPLICATE_SECRET is not set on this node, so nothing is replicated. Set the same value on every node and restart.")
+	}
+	if h.store == nil || h.store.KVStore == nil {
+		warnings = append(warnings, "No KV store is running on this node, so there is no state to replicate.")
+	}
+	if len(cfg.Peers) == 0 {
+		warnings = append(warnings, "Cluster mode is on but no peers are listed.")
+	}
+	gossipPort := "7946"
+	if cfg.Gossip != nil && cfg.Gossip.Port > 0 {
+		gossipPort = fmt.Sprint(cfg.Gossip.Port)
+	}
+	self := strings.ToLower(string(ctx.Host()))
+	for _, peer := range cfg.Peers {
+		hostPort := peer
+		if u, err := url.Parse(peer); err == nil && u.Host != "" {
+			hostPort = u.Host
+		}
+		if strings.EqualFold(hostPort, self) {
+			warnings = append(warnings, fmt.Sprintf("Peer %q is this node; list only the other nodes.", peer))
+		}
+		if strings.HasSuffix(hostPort, ":"+gossipPort) {
+			warnings = append(warnings, fmt.Sprintf("Peer %q uses the gossip port. Replication calls the gateway HTTP address (the port the dashboard/API listens on).", peer))
+		}
+	}
+	return warnings
+}
+
 func (h *WorkspaceHandler) getClusterConfig(ctx *fasthttp.RequestCtx) {
 	store := h.requireStore(ctx)
 	if store == nil {
 		return
 	}
+	secretConfigured := cluster.ClusterReplicateSecret() != ""
 	row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingCluster)
 	if isStoreNotFound(err) {
 		SendJSON(ctx, map[string]any{
 			"enabled": false, "type": "mesh", "region": "unknown", "peers": []string{},
-			"node": map[string]any{"address": string(ctx.Host()), "mode": "standalone"},
+			"node":                        map[string]any{"address": string(ctx.Host()), "mode": "standalone"},
+			"replicate_secret_configured": secretConfigured,
+			"warnings":                    []string{},
 		})
 		return
 	}
@@ -58,11 +125,14 @@ func (h *WorkspaceHandler) getClusterConfig(ctx *fasthttp.RequestCtx) {
 	if peers == nil {
 		peers = []string{}
 	}
+	cfg.Peers = peers
 	SendJSON(ctx, map[string]any{
 		"enabled": cfg.Enabled, "type": firstNonEmpty(cfg.Type, "mesh"),
 		"region": firstNonEmpty(cfg.Region, "unknown"), "peers": peers,
 		"gossip": cfg.Gossip, "grpc": cfg.GRPC,
-		"node": map[string]any{"address": string(ctx.Host()), "mode": mode},
+		"node":                        map[string]any{"address": string(ctx.Host()), "mode": mode},
+		"replicate_secret_configured": secretConfigured,
+		"warnings":                    h.clusterWarnings(ctx, cfg),
 	})
 }
 
@@ -83,8 +153,27 @@ func (h *WorkspaceHandler) updateClusterConfig(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "type must be mesh or broker")
 		return
 	}
-	if payload.Peers == nil {
-		payload.Peers = []string{}
+	peers := make([]string, 0, len(payload.Peers))
+	seen := map[string]bool{}
+	for _, peer := range payload.Peers {
+		if strings.TrimSpace(peer) == "" {
+			continue
+		}
+		normalized, err := normalizeClusterPeer(peer)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+			return
+		}
+		if seen[strings.ToLower(normalized)] {
+			continue
+		}
+		seen[strings.ToLower(normalized)] = true
+		peers = append(peers, normalized)
+	}
+	payload.Peers = peers
+	if payload.Enabled && len(payload.Peers) == 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "add at least one peer when cluster mode is enabled")
+		return
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -96,7 +185,17 @@ func (h *WorkspaceHandler) updateClusterConfig(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	ApplyClusterRuntime(ctx, store, h.store)
-	SendJSON(ctx, payload)
+	mode := "standalone"
+	if payload.Enabled {
+		mode = "cluster"
+	}
+	SendJSON(ctx, map[string]any{
+		"enabled": payload.Enabled, "type": payload.Type, "region": firstNonEmpty(payload.Region, "unknown"),
+		"peers": payload.Peers, "gossip": payload.Gossip, "grpc": payload.GRPC,
+		"node":                        map[string]any{"address": string(ctx.Host()), "mode": mode},
+		"replicate_secret_configured": cluster.ClusterReplicateSecret() != "",
+		"warnings":                    h.clusterWarnings(ctx, payload),
+	})
 }
 
 type loadBalancerConfigPayload struct {

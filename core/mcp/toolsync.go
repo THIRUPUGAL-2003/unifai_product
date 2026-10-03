@@ -27,6 +27,9 @@ type ClientToolSyncer struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	isSyncing  bool
+	// usesGlobal marks syncers whose interval comes from the global setting, so a global
+	// change can restart them; per-client overrides are left alone.
+	usesGlobal bool
 }
 
 // NewClientToolSyncer creates a new tool syncer for an MCP client
@@ -181,7 +184,33 @@ func NewToolSyncManager(globalInterval time.Duration) *ToolSyncManager {
 
 // GetGlobalInterval returns the global tool sync interval
 func (tsm *ToolSyncManager) GetGlobalInterval() time.Duration {
+	tsm.mu.RLock()
+	defer tsm.mu.RUnlock()
 	return tsm.globalInterval
+}
+
+// SetGlobalInterval changes the global interval and restarts every running syncer that follows
+// it. A non-positive interval resets to DefaultToolSyncInterval.
+func (tsm *ToolSyncManager) SetGlobalInterval(interval time.Duration) {
+	if interval <= 0 {
+		interval = DefaultToolSyncInterval
+	}
+	tsm.mu.Lock()
+	defer tsm.mu.Unlock()
+	if interval == tsm.globalInterval {
+		return
+	}
+	tsm.globalInterval = interval
+	for id, syncer := range tsm.syncers {
+		if !syncer.usesGlobal {
+			continue
+		}
+		syncer.Stop()
+		next := NewClientToolSyncer(syncer.manager, syncer.clientID, syncer.clientName, interval, syncer.logger)
+		next.usesGlobal = true
+		tsm.syncers[id] = next
+		next.Start()
+	}
 }
 
 // StartSyncing starts syncing for a specific client

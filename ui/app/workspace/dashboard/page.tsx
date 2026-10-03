@@ -74,6 +74,8 @@ export default function DashboardPage() {
 			customer_ids: parseAsSafeArrayOf.withDefault([]),
 			business_unit_ids: parseAsSafeArrayOf.withDefault([]),
 			aliases: parseAsSafeArrayOf.withDefault([]),
+			cache_hit_types: parseAsSafeArrayOf.withDefault([]),
+			content_search: parseAsString.withDefault(""),
 		},
 		{
 			history: "push",
@@ -131,8 +133,12 @@ export default function DashboardPage() {
 			...(urlState.customer_ids.length > 0 && { customer_ids: urlState.customer_ids }),
 			...(urlState.business_unit_ids.length > 0 && { business_unit_ids: urlState.business_unit_ids }),
 			...(urlState.aliases.length > 0 && { aliases: urlState.aliases }),
+			...(urlState.cache_hit_types.length > 0 && { cache_hit_types: urlState.cache_hit_types }),
+			...(urlState.content_search && { content_search: urlState.content_search }),
 		}),
 		[
+			urlState.cache_hit_types,
+			urlState.content_search,
 			urlState.period,
 			urlState.start_time,
 			urlState.end_time,
@@ -311,6 +317,8 @@ export default function DashboardPage() {
 				customer_ids: newFilters.customer_ids || [],
 				business_unit_ids: newFilters.business_unit_ids || [],
 				aliases: newFilters.aliases || [],
+				cache_hit_types: newFilters.cache_hit_types || [],
+				content_search: newFilters.content_search || "",
 			});
 		},
 		[setUrlState, urlState.start_time, urlState.end_time],

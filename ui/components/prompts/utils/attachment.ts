@@ -95,6 +95,85 @@ export function fileToBase64(file: File): Promise<string> {
 	});
 }
 
+/** Formats every vision provider (OpenAI, Anthropic, Gemini, Bedrock) accepts as inline images. */
+const MODEL_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+/** Anthropic rejects inline images above 5 MB; stay under it with base64 overhead in mind. */
+const MODEL_IMAGE_MAX_BYTES = 3.75 * 1024 * 1024;
+const MODEL_IMAGE_MAX_DIMENSION = 2048;
+
+function loadImageElement(file: File): Promise<HTMLImageElement> {
+	return new Promise((resolve, reject) => {
+		const url = URL.createObjectURL(file);
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(url);
+			resolve(img);
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(url);
+			reject(new Error(`Could not decode image "${file.name}"`));
+		};
+		img.src = url;
+	});
+}
+
+/**
+ * Returns a data URL a vision model will accept: supported format, at most
+ * MODEL_IMAGE_MAX_DIMENSION px per side and under MODEL_IMAGE_MAX_BYTES.
+ * Returns null when the browser cannot decode the image (e.g. HEIC outside Safari).
+ */
+export async function normalizeImageForModel(file: File, mimeType: string): Promise<string | null> {
+	const supported = MODEL_IMAGE_MIMES.has(mimeType);
+	if (supported && file.size <= MODEL_IMAGE_MAX_BYTES) {
+		if (mimeType === "image/gif") return fileToBase64(file);
+		try {
+			const img = await loadImageElement(file);
+			if (Math.max(img.naturalWidth, img.naturalHeight) <= MODEL_IMAGE_MAX_DIMENSION) {
+				return fileToBase64(file);
+			}
+		} catch {
+			return fileToBase64(file);
+		}
+	}
+
+	let img: HTMLImageElement;
+	try {
+		img = await loadImageElement(file);
+	} catch {
+		return null;
+	}
+	const width = img.naturalWidth || 1024;
+	const height = img.naturalHeight || 1024;
+	let scale = Math.min(1, MODEL_IMAGE_MAX_DIMENSION / Math.max(width, height));
+	const keepAlpha = mimeType === "image/png" || mimeType === "image/svg+xml" || mimeType === "image/x-icon" || mimeType === "image/webp";
+
+	for (let attempt = 0; attempt < 5; attempt++) {
+		const canvas = document.createElement("canvas");
+		canvas.width = Math.max(1, Math.round(width * scale));
+		canvas.height = Math.max(1, Math.round(height * scale));
+		const g = canvas.getContext("2d");
+		if (!g) return null;
+		const asPng = keepAlpha && attempt === 0;
+		if (!asPng) {
+			g.fillStyle = "#ffffff";
+			g.fillRect(0, 0, canvas.width, canvas.height);
+		}
+		g.drawImage(img, 0, 0, canvas.width, canvas.height);
+		const dataUrl = asPng ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", attempt <= 1 ? 0.9 : 0.8);
+		const bytes = Math.ceil(((dataUrl.length - dataUrl.indexOf(",") - 1) * 3) / 4);
+		if (bytes <= MODEL_IMAGE_MAX_BYTES) {
+			if (!supported || scale < 1) {
+				toast.message(`"${file.name}" converted for model compatibility`, {
+					description: `${canvas.width}×${canvas.height} ${dataUrl.startsWith("data:image/png") ? "PNG" : "JPEG"}`,
+				});
+			}
+			return dataUrl;
+		}
+		scale *= 0.75;
+	}
+	return null;
+}
+
 function isZipFile(file: File, mimeType: string): boolean {
 	const lower = file.name.toLowerCase();
 	return lower.endsWith(".zip") || mimeType === "application/zip" || mimeType === "application/x-zip-compressed";
@@ -213,13 +292,24 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 	}
 
 	if (isImageFile(file, mimeType)) {
-		const dataUrl = await fileToBase64(file);
-		// Native multimodal attachment like ChatGPT — preserves full visual content for vision models.
-		toast.success(`Image attached: ${file.name}`);
-		return {
-			type: "image_url",
-			image_url: { url: dataUrl, detail: "auto" },
-		};
+		const dataUrl = await normalizeImageForModel(file, mimeType);
+		if (dataUrl) {
+			toast.success(`Image attached: ${file.name}`);
+			return {
+				type: "image_url",
+				image_url: { url: dataUrl, detail: "auto" },
+			};
+		}
+		const raw = await fileToBase64(file);
+		const ocr = await ocrImageFile(raw);
+		if (ocr?.text) {
+			toast.message(`"${file.name}" could not be decoded by the browser — attached OCR text instead`);
+			return ocrTextAttachment(file.name, ocr.text);
+		}
+		toast.error(`Unsupported image "${file.name}"`, {
+			description: "Convert it to PNG or JPG and attach again.",
+		});
+		return null;
 	}
 
 	if (mimeType.startsWith("audio/")) {

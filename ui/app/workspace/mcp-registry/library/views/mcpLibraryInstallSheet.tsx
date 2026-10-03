@@ -388,8 +388,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 					: undefined,
 			per_user_header_keys: authType === "per_user_headers" ? perUserHeaderKeys : undefined,
 			tools_to_execute: ["*"],
-			// Library install should be usable immediately; Catalog can tighten VK access later.
-			allow_on_all_virtual_keys: true,
+			allow_on_all_virtual_keys: false,
 		};
 
 		// Per-user-headers: stash the payload and open the headers test dialog.
@@ -415,7 +414,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 
 			toast({
 				title: "Installed",
-				description: `${server.name} MCP server installed.`,
+				description: `${server.name} MCP server installed. Open it in MCP Catalog to assign virtual keys.`,
 			});
 			onInstalled();
 			onClose();

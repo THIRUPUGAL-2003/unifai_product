@@ -259,6 +259,11 @@ const (
 	HeaderUnifAIResolvedModel = "x-unifai-resolved-model"
 	HeaderUnifAIFallbackIndex = "x-unifai-fallback-index"
 	HeaderUnifAIRequestType   = "x-unifai-request-type"
+	// HeaderUnifAICircuitBreaker is set when an open circuit rerouted the request:
+	// "<policy>; <primary provider/model> -> <fallback provider/model>".
+	HeaderUnifAICircuitBreaker = "x-unifai-circuit-breaker"
+	// HeaderUnifAIRoutingRule names the routing rule that matched the request.
+	HeaderUnifAIRoutingRule = "x-unifai-routing-rule"
 )
 
 // applyUnifAIResponseHeaders writes both the upstream provider response
@@ -290,6 +295,12 @@ func applyUnifAIResponseHeaders(ctx *fasthttp.RequestCtx, unifaiCtx *schemas.Uni
 	if unifaiCtx != nil {
 		if idx, ok := unifaiCtx.Value(schemas.UnifAIContextKeyFallbackIndex).(int); ok && idx > 0 {
 			ctx.Response.Header.Set(HeaderUnifAIFallbackIndex, strconv.Itoa(idx))
+		}
+		if cb, ok := unifaiCtx.Value(schemas.UnifAIContextKeyCircuitBreakerFailover).(string); ok && cb != "" {
+			ctx.Response.Header.Set(HeaderUnifAICircuitBreaker, cb)
+		}
+		if rule, ok := unifaiCtx.Value(schemas.UnifAIContextKeyGovernanceRoutingRuleName).(string); ok && rule != "" {
+			ctx.Response.Header.Set(HeaderUnifAIRoutingRule, rule)
 		}
 	}
 }

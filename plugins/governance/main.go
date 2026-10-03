@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	unifai "github.com/unifai/unifai/core"
 	"github.com/unifai/unifai/core/schemas"
+	"github.com/unifai/unifai/framework/alerts"
 	"github.com/unifai/unifai/framework/configstore"
 	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/unifai/unifai/framework/loadbalancer"
@@ -626,7 +627,7 @@ func (p *GovernancePlugin) loadBalanceProvider(ctx *schemas.UnifAIContext, req *
 	req.SetProvider(selectedProvider)
 	req.SetModel(refinedModel)
 
-	if keyID, ok := loadbalancer.Default.SelectProviderKey(string(selectedProvider)); ok && keyID != "" {
+	if keyID, ok := loadbalancer.Default.SelectProviderKey(string(selectedProvider), refinedModel); ok && keyID != "" {
 		ctx.SetValue(schemas.UnifAIContextKeyRoutingPinnedAPIKeyID, keyID)
 		ctx.AppendRoutingEngineLog(schemas.RoutingEngineGovernance, schemas.LogLevelInfo, fmt.Sprintf("Adaptive routing pinned API key %s for provider %s", keyID, selectedProvider))
 	}
@@ -721,7 +722,9 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.UnifAIContext, req *sc
 		return nil, nil
 	}
 
-	requestType := string(req.RequestType)
+	// Rules are written against the base type ("chat_completion"); streaming variants
+	// ("chat_completion_stream") must match the same rules.
+	requestType := strings.TrimSuffix(string(req.RequestType), "_stream")
 	headers, _ := ctx.Value(schemas.UnifAIContextKeyRequestHeaders).(map[string]string)
 	queryParams, _ := ctx.Value(schemas.UnifAIContextKeyRequestQuery).(map[string]string)
 
@@ -1170,6 +1173,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.UnifAIContext,
 		}
 
 	case DecisionRateLimited, DecisionTokenLimited, DecisionRequestLimited:
+		emitGovernanceAlert(alerts.KindRateLimited, alerts.SeverityWarning, "Rate limit reached", result)
 		return result, &schemas.UnifAIError{
 			Type:       new(string(result.Decision)),
 			StatusCode: new(429),
@@ -1179,6 +1183,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.UnifAIContext,
 		}
 
 	case DecisionBudgetExceeded:
+		emitGovernanceAlert(alerts.KindBudgetExceeded, alerts.SeverityCritical, "Budget exhausted", result)
 		return result, &schemas.UnifAIError{
 			Type:       new(string(result.Decision)),
 			StatusCode: new(402),
@@ -1205,6 +1210,31 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.UnifAIContext,
 			},
 		}
 	}
+}
+
+// emitGovernanceAlert raises one alert per virtual key + reason; repeats are deduplicated
+// by the alerts package so a hot rejected path doesn't flood the channels.
+func emitGovernanceAlert(kind, severity, title string, result *EvaluationResult) {
+	if result == nil {
+		return
+	}
+	fields := map[string]string{"decision": string(result.Decision)}
+	subject := "request"
+	vkID := ""
+	if result.VirtualKey != nil {
+		vkID = result.VirtualKey.ID
+		subject = fmt.Sprintf("virtual key %q", result.VirtualKey.Name)
+		fields["virtual_key"] = result.VirtualKey.Name
+		fields["virtual_key_id"] = vkID
+	}
+	alerts.Emit(alerts.Event{
+		Kind:      kind,
+		Severity:  severity,
+		Title:     fmt.Sprintf("%s for %s", title, subject),
+		Message:   result.Reason,
+		Fields:    fields,
+		DedupeKey: kind + "|" + vkID + "|" + result.Reason,
+	})
 }
 
 // isMCPToolAllowedByVK checks whether a tool pattern (in "clientName-toolName" or "clientName-*"
@@ -1315,7 +1345,7 @@ func (p *GovernancePlugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schem
 		}
 	}
 
-	failedOver := p.applyCircuitBreakerFailover(ctx, req)
+	failedOver := p.applyCircuitBreakerFailover(ctx, req, virtualKey)
 
 	// Publish the VK provider allowlist for the (post routing-rules) model so downstream routing
 	// layers (load balancing, model-catalog resolution) and core enforcement intersect their
@@ -1329,7 +1359,7 @@ func (p *GovernancePlugin) PreRequestHook(ctx *schemas.UnifAIContext, req *schem
 		}
 		// Model-only requests have no provider until load balancing picks one, so the
 		// circuit breaker can only match its primary endpoint now.
-		if !failedOver && p.applyCircuitBreakerFailover(ctx, req) {
+		if !failedOver && p.applyCircuitBreakerFailover(ctx, req, virtualKey) {
 			_, failoverModel, _ := req.GetRequestFields()
 			p.publishRoutingAllowlist(ctx, virtualKey, failoverModel)
 		}

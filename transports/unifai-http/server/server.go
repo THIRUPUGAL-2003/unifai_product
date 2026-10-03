@@ -991,6 +991,14 @@ func (s *UnifAIHTTPServer) UpdateMCPToolManagerConfig(ctx context.Context, maxAg
 	return s.Client.UpdateToolManagerConfig(maxAgentDepth, toolExecutionTimeoutInSeconds, codeModeBindingLevel, disableAutoToolInject)
 }
 
+// SetMCPToolSyncInterval applies a new global MCP tool sync interval to running clients.
+func (s *UnifAIHTTPServer) SetMCPToolSyncInterval(ctx context.Context, interval time.Duration) error {
+	if s.Client == nil {
+		return fmt.Errorf("client not initialized")
+	}
+	return s.Client.SetMCPToolSyncInterval(interval)
+}
+
 // reloadObservabilityPlugins reloads all observability plugins in the tracing middleware
 func (s *UnifAIHTTPServer) reloadObservabilityPlugins() {
 	observabilityPlugins := s.CollectObservabilityPlugins()
@@ -1489,6 +1497,7 @@ func (s *UnifAIHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Serv
 		handlers.ReloadCircuitBreakerPoliciesFromStore(ws)
 		handlers.ReloadEnterpriseRuntimeFromStore(ws, s.Config)
 	}
+	handlers.StartAlertDispatcher(s.Config.ConfigStore)
 	// Going ahead with API handlers
 	oauth2DiscoveryHandler := handlers.NewOAuth2DiscoveryHandler(s.Config)
 	oauth2IssuanceHandler := handlers.NewOAuth2IssuanceHandler(s.Config, s.TempTokens, s.OAuth2IdentityResolver)

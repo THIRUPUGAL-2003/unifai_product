@@ -65,7 +65,7 @@ export function SettingsPanel() {
 	const { data: virtualKeysData } = useGetVirtualKeysQuery();
 	// Keys for the API Key selector (from /api/keys endpoint, provider-filtered)
 	const { data: allKeys, isSuccess: hasLoadedAllKeys } = useGetAllKeysQuery();
-	const { data: skillsData } = useListSkillsQuery({ limit: 200, offset: 0 });
+	const { data: skillsData } = useListSkillsQuery({ limit: 100, offset: 0 }, { skip: isMemberOnly });
 	const skillOptions = useMemo(
 		() => [
 			{ label: "None", value: "" },
@@ -325,7 +325,7 @@ export function SettingsPanel() {
 							</div>
 						</AccordionContent>
 					</AccordionItem>
-					{selectedPromptId && <PromptDeploymentsAccordionItem activeSection={openSection} />}
+					{selectedPromptId && !isMemberOnly && <PromptDeploymentsAccordionItem activeSection={openSection} />}
 				</Accordion>
 			</div>
 		</div>

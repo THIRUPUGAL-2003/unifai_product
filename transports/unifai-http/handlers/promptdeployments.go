@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/unifai/unifai/framework/configstore/tables"
@@ -54,11 +55,34 @@ func (h *WorkspaceHandler) createPromptDeployment(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
+	payload.PromptID = strings.TrimSpace(payload.PromptID)
+	payload.Environment = strings.TrimSpace(payload.Environment)
 	if payload.PromptID == "" || payload.Environment == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "prompt_id and environment are required")
 		return
 	}
 	now := time.Now().UTC()
+	// One deployment per prompt and environment: deploying again moves it to the new version.
+	if rows, err := store.ListPromptDeployments(ctx, payload.PromptID); err == nil {
+		for i := range rows {
+			existing := rows[i]
+			if !strings.EqualFold(strings.TrimSpace(existing.Environment), payload.Environment) {
+				continue
+			}
+			existing.VersionNumber = payload.VersionNumber
+			existing.Enabled = payload.Enabled
+			if payload.PromptName != "" {
+				existing.PromptName = payload.PromptName
+			}
+			existing.UpdatedAt = now
+			if err := store.UpdatePromptDeployment(ctx, &existing); err != nil {
+				SendError(ctx, fasthttp.StatusInternalServerError, "failed to save deployment")
+				return
+			}
+			SendJSON(ctx, promptDeploymentFromRow(existing))
+			return
+		}
+	}
 	row := tables.TablePromptDeployment{
 		PromptID: payload.PromptID, PromptName: payload.PromptName,
 		VersionNumber: payload.VersionNumber, Environment: payload.Environment,
@@ -95,6 +119,8 @@ func (h *WorkspaceHandler) updatePromptDeployment(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
+	var present map[string]json.RawMessage
+	_ = json.Unmarshal(ctx.PostBody(), &present)
 	if patch.Environment != "" {
 		existing.Environment = patch.Environment
 	}
@@ -107,7 +133,9 @@ func (h *WorkspaceHandler) updatePromptDeployment(ctx *fasthttp.RequestCtx) {
 	if patch.VersionNumber != 0 {
 		existing.VersionNumber = patch.VersionNumber
 	}
-	existing.Enabled = patch.Enabled
+	if _, ok := present["enabled"]; ok {
+		existing.Enabled = patch.Enabled
+	}
 	existing.UpdatedAt = time.Now().UTC()
 	if err := store.UpdatePromptDeployment(ctx, existing); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update deployment")

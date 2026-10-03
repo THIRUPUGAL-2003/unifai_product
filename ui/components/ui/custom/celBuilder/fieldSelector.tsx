@@ -14,18 +14,9 @@ import { ListFilter, PenLine } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FieldSelectorProps, RuleGroupType, RuleType } from "react-querybuilder";
 
-// Popular pre-configured Header suggestions
+// Client request header suggestions. Routing rules only see the incoming request's
+// headers — provider response headers (x-ratelimit-*, retry-after) belong to Circuit Breaker.
 const COMMON_HEADER_SUGGESTIONS: ComboboxSelectOption[] = [
-	// Rate Limit & Quota Headers
-	{ label: "x-ratelimit-remaining-requests (Remaining Calls)", value: "x-ratelimit-remaining-requests" },
-	{ label: "x-ratelimit-remaining-tokens (Remaining Tokens)", value: "x-ratelimit-remaining-tokens" },
-	{ label: "x-ratelimit-limit-requests (RPM Limit)", value: "x-ratelimit-limit-requests" },
-	{ label: "x-ratelimit-limit-tokens (TPM Limit)", value: "x-ratelimit-limit-tokens" },
-	{ label: "x-ratelimit-reset-requests (Reset Duration)", value: "x-ratelimit-reset-requests" },
-	{ label: "x-ratelimit-reset-tokens (Token Reset Duration)", value: "x-ratelimit-reset-tokens" },
-	{ label: "retry-after (Rate Limit Retry Seconds)", value: "retry-after" },
-
-	// Gateway & Auth Headers
 	{ label: "authorization (Bearer Token / Virtual Key)", value: "authorization" },
 	{ label: "x-uf-vk (Virtual Key Header)", value: "x-uf-vk" },
 	{ label: "x-uf-api-key-id (Specific Key Pinning)", value: "x-uf-api-key-id" },
@@ -142,8 +133,10 @@ export function FieldSelector({ value, handleOnChange, options, rule, path, sche
 	}, [isHeaderField, isParamField, headerOptions, headerKey]);
 
 	const handleKeyChange = useCallback(
-		(newKey: string) => {
+		(rawKey: string) => {
 			if (!schema || !path) return;
+			// The gateway lowercases request header and query names before rules run.
+			const newKey = rawKey.toLowerCase();
 			const currentValue = typeof rule?.value === "string" ? rule.value : "";
 			const colonIndex = currentValue.indexOf(":");
 			const valuePart = colonIndex > 0 ? currentValue.substring(colonIndex + 1).trim() : "";

@@ -88,6 +88,30 @@ func TestPromptMove_SharedPromptDoesNotChangeCreatorMembership(t *testing.T) {
 	}
 }
 
+// A shared prompt that merely carries a user's email as its name is not that user's prompt.
+func TestPromptMove_NameMatchWithoutOwnerDoesNotChangeMembership(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	teamA, folderA := syncTestTeamWithFolder(t, store, lifecycle, nil)
+	teamB, folderB := syncTestTeamWithFolder(t, store, lifecycle, nil)
+	user := syncTestUser(t, store)
+	syncTestJoin(t, store, teamA.ID, user.ID)
+
+	oldFolderID := folderA.ID
+	prompt := &tables.TablePrompt{ID: syncTestID("prompt"), Name: user.Email, FolderID: &oldFolderID}
+	_ = store.CreatePrompt(ctx, prompt)
+	lifecycle.OnPromptMoved(ctx, prompt.ID, &oldFolderID, folderB.ID)
+
+	if syncTestMemberCount(store, teamA.ID, user.ID) != 1 {
+		t.Fatalf("user must stay in team A: the prompt is not owned by them")
+	}
+	if syncTestMemberCount(store, teamB.ID, user.ID) != 0 {
+		t.Fatalf("user must not be added to team B: the prompt is not owned by them")
+	}
+}
+
 // A multi-team user's prompt moved from team A to team B leaves team C untouched.
 func TestPromptMove_KnownOriginKeepsOtherMemberships(t *testing.T) {
 	store := setupLifecycleTestStore(t)
@@ -103,7 +127,7 @@ func TestPromptMove_KnownOriginKeepsOtherMemberships(t *testing.T) {
 
 	oldFolderID := folderA.ID
 	startFolder := folderA.ID
-	prompt := &tables.TablePrompt{ID: syncTestID("prompt"), Name: user.Email, FolderID: &startFolder}
+	prompt := &tables.TablePrompt{ID: syncTestID("prompt"), Name: user.Email, FolderID: &startFolder, OwnerUserID: &user.ID}
 	_ = store.CreatePrompt(ctx, prompt)
 	_ = store.DB().Model(&tables.TablePrompt{}).Where("id = ?", prompt.ID).Update("folder_id", folderB.ID).Error
 	lifecycle.OnPromptMoved(ctx, prompt.ID, &oldFolderID, folderB.ID)

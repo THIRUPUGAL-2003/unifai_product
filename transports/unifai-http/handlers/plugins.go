@@ -445,6 +445,19 @@ func (h *PluginsHandler) updatePlugin(ctx *fasthttp.RequestCtx) {
 	if isBuiltin && request.Path != nil {
 		request.Path = nil
 	}
+	// The edit sheet and the enable toggle send only {enabled, config}: keep the stored
+	// path, placement and order, or a custom plugin turns into a broken "built-in" one.
+	if existingPlugin != nil {
+		if request.Path == nil && !isBuiltin {
+			request.Path = existingPlugin.Path
+		}
+		if request.Placement == nil {
+			request.Placement = existingPlugin.Placement
+		}
+		if request.Order == nil {
+			request.Order = existingPlugin.Order
+		}
+	}
 	// Merge incoming config over the existing DB config so fields unknown to the
 	// calling form (e.g. plugin_span_filter set by a separate UI sheet) are not wiped.
 	mergedConfig := request.Config
@@ -457,6 +470,12 @@ func (h *PluginsHandler) updatePlugin(ctx *fasthttp.RequestCtx) {
 			// replaced by "***" or similar client-side redaction markers.
 			incoming := restoreRedactedFromExisting(request.Config, existingCfg)
 			maps.Copy(mergedConfig, incoming)
+			// An explicit null clears the stored field (e.g. emptying a cache namespace).
+			for k, v := range request.Config {
+				if v == nil {
+					delete(mergedConfig, k)
+				}
+			}
 		}
 	}
 	// Normalize through the typed plugin config so custom MarshalJSON (e.g. SecretVar → string) runs.

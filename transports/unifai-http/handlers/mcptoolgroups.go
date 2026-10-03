@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
 
+	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/unifai/unifai/framework/mcptoolgroups"
 	"github.com/valyala/fasthttp"
@@ -202,4 +204,98 @@ func (h *WorkspaceHandler) deleteMCPToolGroup(ctx *fasthttp.RequestCtx) {
 	}
 	_ = mcptoolgroups.ReloadFromStore(ctx, store)
 	SendJSON(ctx, map[string]string{"message": "deleted"})
+}
+
+// renameClientInToolGroups rewrites tool group entries keyed by an MCP client's name
+// ("oldName-tool", "oldName-*", or {mcp_client_name: oldName}) after the client is renamed,
+// so existing groups keep granting the same tools.
+func renameClientInToolGroups(ctx context.Context, cs configstore.ConfigStore, oldName, newName string) {
+	ws, ok := configstore.AsWorkspaceStore(cs)
+	if !ok || ws == nil {
+		return
+	}
+	rows, err := ws.ListMCPToolGroups(ctx)
+	if err != nil {
+		return
+	}
+	changed := false
+	for i := range rows {
+		row := rows[i]
+		tools, ok := row.ParsedSpec["tools"]
+		if !ok {
+			continue
+		}
+		next, rowChanged := renameClientInToolList(tools, oldName, newName)
+		if !rowChanged {
+			continue
+		}
+		row.ParsedSpec["tools"] = next
+		if err := ws.UpdateMCPToolGroup(ctx, &row); err == nil {
+			changed = true
+		}
+	}
+	if changed {
+		_ = mcptoolgroups.ReloadFromStore(ctx, ws)
+	}
+}
+
+func renameClientInToolList(tools any, oldName, newName string) (any, bool) {
+	oldPrefix := oldName + "-"
+	renameID := func(v string) (string, bool) {
+		trimmed := strings.TrimSpace(v)
+		if strings.HasPrefix(trimmed, oldPrefix) {
+			return newName + "-" + strings.TrimPrefix(trimmed, oldPrefix), true
+		}
+		return v, false
+	}
+	renameMap := func(m map[string]any) bool {
+		changed := false
+		for _, key := range []string{"name", "tool_name", "id"} {
+			if s, ok := m[key].(string); ok {
+				if renamed, did := renameID(s); did {
+					m[key] = renamed
+					changed = true
+				}
+			}
+		}
+		if s, ok := m["mcp_client_name"].(string); ok && strings.TrimSpace(s) == oldName {
+			m["mcp_client_name"] = newName
+			changed = true
+		}
+		return changed
+	}
+	changed := false
+	switch list := tools.(type) {
+	case []any:
+		for i, item := range list {
+			switch v := item.(type) {
+			case string:
+				if renamed, did := renameID(v); did {
+					list[i] = renamed
+					changed = true
+				}
+			case map[string]any:
+				if renameMap(v) {
+					changed = true
+				}
+			}
+		}
+		return list, changed
+	case []map[string]any:
+		for _, m := range list {
+			if renameMap(m) {
+				changed = true
+			}
+		}
+		return list, changed
+	case []string:
+		for i, v := range list {
+			if renamed, did := renameID(v); did {
+				list[i] = renamed
+				changed = true
+			}
+		}
+		return list, changed
+	}
+	return tools, false
 }

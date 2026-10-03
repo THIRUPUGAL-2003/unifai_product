@@ -747,6 +747,7 @@ func (h *MCPHandler) addMCPClient(ctx *fasthttp.RequestCtx) {
 			Headers:               req.Headers,
 			AllowedExtraHeaders:   req.AllowedExtraHeaders,
 			AllowOnAllVirtualKeys: req.AllowOnAllVirtualKeys,
+			TLSConfig:             req.TLSConfig,
 		}
 
 		// Verify connection and discover tools using the admin's sample
@@ -1350,6 +1351,9 @@ func (h *MCPHandler) updateMCPClient(ctx *fasthttp.RequestCtx) {
 		if err := h.store.ConfigStore.UpdateMCPClientConfig(ctx, id, &dbUpdateRecord); err != nil {
 			SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("failed to update mcp client config in store: %v", err))
 			return
+		}
+		if oldDBConfig != nil && oldDBConfig.Name != "" && oldDBConfig.Name != name {
+			renameClientInToolGroups(ctx, h.store.ConfigStore, oldDBConfig.Name, name)
 		}
 	}
 

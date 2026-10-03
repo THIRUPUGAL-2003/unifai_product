@@ -86,6 +86,7 @@ export default function ObservabilityView() {
 							placeholder="teamId, projectId, environment"
 							value={localValues.prometheus_labels}
 							onChange={(e) => handlePrometheusLabelsChange(e.target.value)}
+							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
 					{needsRestart && <RestartWarning />}

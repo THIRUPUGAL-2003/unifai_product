@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/configstore"
 )
 
@@ -22,10 +23,23 @@ type Config struct {
 
 // ProviderKey is a weighted inference API key candidate.
 type ProviderKey struct {
-	ID       string
-	Provider string
-	Weight   float64
-	Enabled  bool
+	ID                string
+	Provider          string
+	Weight            float64
+	Enabled           bool
+	Models            schemas.WhiteList
+	BlacklistedModels schemas.BlackList
+}
+
+// servesModel reports whether the key may be used for model; an empty model skips the check.
+func (k ProviderKey) servesModel(model string) bool {
+	if strings.TrimSpace(model) == "" {
+		return true
+	}
+	if k.BlacklistedModels.IsBlocked(model) {
+		return false
+	}
+	return k.Models.IsAllowed(model)
 }
 
 // Runtime holds the live load balancer config.
@@ -79,7 +93,9 @@ func (r *Runtime) ConfigSnapshot() Config {
 }
 
 // SelectProviderKey picks a weighted provider key when adaptive route selection is enabled.
-func (r *Runtime) SelectProviderKey(provider string) (string, bool) {
+// Only keys allowed to serve model are candidates: pinning a key that cannot serve the model
+// makes the request fail outright instead of letting normal key selection pick one.
+func (r *Runtime) SelectProviderKey(provider, model string) (string, bool) {
 	r.mu.RLock()
 	cfg := r.cfg
 	keys := append([]ProviderKey(nil), r.keys...)
@@ -90,7 +106,7 @@ func (r *Runtime) SelectProviderKey(provider string) (string, bool) {
 	}
 	var candidates []ProviderKey
 	for _, key := range keys {
-		if key.Provider != provider || !key.Enabled || key.Weight <= 0 {
+		if key.Provider != provider || !key.Enabled || key.Weight <= 0 || !key.servesModel(model) {
 			continue
 		}
 		if cfg.PruneFailedFallbacks && failed[key.Provider] {
@@ -101,7 +117,7 @@ func (r *Runtime) SelectProviderKey(provider string) (string, bool) {
 	if len(candidates) == 0 && cfg.RerouteFailedDirections {
 		// Retry without prune so a previously-failed direction can be reused.
 		for _, key := range keys {
-			if key.Provider != provider || !key.Enabled || key.Weight <= 0 {
+			if key.Provider != provider || !key.Enabled || key.Weight <= 0 || !key.servesModel(model) {
 				continue
 			}
 			candidates = append(candidates, key)

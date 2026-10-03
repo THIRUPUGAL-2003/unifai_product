@@ -17,11 +17,11 @@ import (
 
 const (
 	// MCP defaults and identifiers
-	UnifAIMCPVersion                   = "1.0.0"           // Version identifier for UnifAI
-	UnifAIMCPClientName                = "UnifAIClient"   // Name for internal UnifAI MCP client
-	UnifAIMCPClientKey                 = "unifaiInternal" // Key for internal UnifAI client in clientMap
+	UnifAIMCPVersion                    = "1.0.0"          // Version identifier for UnifAI
+	UnifAIMCPClientName                 = "UnifAIClient"   // Name for internal UnifAI MCP client
+	UnifAIMCPClientKey                  = "unifaiInternal" // Key for internal UnifAI client in clientMap
 	MCPLogPrefix                        = "[UnifAI MCP]"   // Consistent logging prefix
-	MCPClientConnectionEstablishTimeout = 30 * time.Second  // Timeout for MCP client connection establishment
+	MCPClientConnectionEstablishTimeout = 30 * time.Second // Timeout for MCP client connection establishment
 )
 
 // ============================================================================
@@ -253,6 +253,11 @@ func (m *MCPManager) GetAvailableTools(ctx *schemas.UnifAIContext) []schemas.Cha
 //   - config: The new tool manager configuration to apply
 func (m *MCPManager) UpdateToolManagerConfig(config *schemas.MCPToolManagerConfig) {
 	m.toolsManager.UpdateConfig(config)
+}
+
+// SetToolSyncInterval applies a new global tool sync interval to running clients that use it.
+func (m *MCPManager) SetToolSyncInterval(interval time.Duration) {
+	m.toolSyncManager.SetGlobalInterval(interval)
 }
 
 // CheckAndExecuteAgentForChatRequest checks if the chat response contains tool calls,

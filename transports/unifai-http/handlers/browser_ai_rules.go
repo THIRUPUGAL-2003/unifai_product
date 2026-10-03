@@ -98,6 +98,10 @@ func (h *BrowserAIHandler) createRule(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadRequest, "Regex pattern is required for Regex rule")
 			return
 		}
+		if err := validateGuardRegexPattern(rule.Pattern); err != nil {
+			SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	if err := h.manager.CreateRule(ctx, &rule); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
@@ -193,12 +197,39 @@ func (h *BrowserAIHandler) updateRule(ctx *fasthttp.RequestCtx) {
 		updates["bot_reference_image_type"] = tmp.BotReferenceImageType
 	}
 
+	if raw, ok := updates["pattern"]; ok && ruleType != "ai_bot" {
+		pattern, _ := raw.(string)
+		if strings.TrimSpace(pattern) == "" {
+			SendError(ctx, fasthttp.StatusBadRequest, "Regex pattern is required for Regex rule")
+			return
+		}
+		if err := validateGuardRegexPattern(pattern); err != nil {
+			SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
 	if err := h.manager.UpdateRule(ctx, id, updates); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
 	h.invalidateRulesCache()
 	SendJSON(ctx, map[string]any{"status": "success"})
+}
+
+// validateGuardRegexPattern rejects patterns the gateway (Go RE2) cannot compile, and
+// RE2-only constructs the browser proxy's Python engine reads differently, so a saved
+// rule behaves the same at the gateway, in the proxy and in the extension.
+func validateGuardRegexPattern(pattern string) error {
+	if _, err := logstore.CompileGuardRegex(pattern); err != nil {
+		return fmt.Errorf("invalid regex (RE2 syntax — lookahead/lookbehind and backreferences are not supported): %v", err)
+	}
+	for _, construct := range []string{`\p{`, `\P{`, `[[:`} {
+		if strings.Contains(pattern, construct) {
+			return fmt.Errorf("pattern uses %q, which the browser proxy cannot evaluate; use explicit character classes such as [A-Za-z] or [0-9]", construct)
+		}
+	}
+	return nil
 }
 
 func (h *BrowserAIHandler) deleteRule(ctx *fasthttp.RequestCtx) {
@@ -376,9 +407,9 @@ func (h *BrowserAIHandler) importRules(ctx *fasthttp.RequestCtx) {
 			errorDetails = append(errorDetails, fmt.Sprintf("Row %d (%s): Missing regex pattern", i+1, name))
 			continue
 		}
-		if _, compileErr := regexp.Compile(pattern); compileErr != nil {
+		if compileErr := validateGuardRegexPattern(pattern); compileErr != nil {
 			skipped++
-			errorDetails = append(errorDetails, fmt.Sprintf("Row %d (%s): Invalid regex pattern: %v", i+1, name, compileErr))
+			errorDetails = append(errorDetails, fmt.Sprintf("Row %d (%s): %v", i+1, name, compileErr))
 			continue
 		}
 

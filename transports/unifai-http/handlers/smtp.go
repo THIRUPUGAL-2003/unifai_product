@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -212,6 +213,14 @@ func smtpToMailer(row *tables.TableSMTPConfig) mailer.Config {
 var authMailSend = mailer.Send
 
 func sendAuthEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, to, subject, body string) error {
+	err := sendSMTPEmail(ctx, store, to, subject, body)
+	recordEmailAudit(store, ctx, to, subject, err)
+	return err
+}
+
+// sendSMTPEmail sends through the saved SMTP config (or SMTP_* env fallback) without
+// needing an HTTP request, so background dispatchers can use it.
+func sendSMTPEmail(ctx context.Context, store configstore.ConfigStore, to, subject, body string) error {
 	if store == nil || strings.TrimSpace(to) == "" {
 		return fmt.Errorf("no recipient")
 	}
@@ -250,7 +259,6 @@ func sendAuthEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, to, 
 	if err == nil && row != nil && row.Enabled {
 		err = authMailSend(smtpToMailer(row), mailer.Message{To: to, Subject: subject, Body: body})
 	}
-	recordEmailAudit(store, ctx, to, subject, err)
 	return err
 }
 
@@ -387,6 +395,28 @@ func trySendRegistrationDecisionEmail(store configstore.ConfigStore, ctx *fastht
 
 func loginUsernameKey(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
+}
+
+// usernameCaseConflict reports whether another user's name differs from name only by case.
+// Login lockout is keyed on the lowercased name, so such pairs would share one counter.
+func usernameCaseConflict(ctx context.Context, store configstore.ConfigStore, name, excludeID string) bool {
+	name = strings.TrimSpace(name)
+	if store == nil || name == "" {
+		return false
+	}
+	users, err := store.GetUsers(ctx)
+	if err != nil {
+		return false
+	}
+	for _, u := range users {
+		if u == nil || u.ID == excludeID || u.Username == name {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(u.Username), name) {
+			return true
+		}
+	}
+	return false
 }
 
 func checkLoginLockout(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username string) (locked bool, retryAfter time.Duration, err error) {

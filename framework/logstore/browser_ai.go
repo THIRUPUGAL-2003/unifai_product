@@ -674,6 +674,46 @@ func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action
 	return logs, total, err
 }
 
+// BrowserAILogStats are whole-table aggregates for the Browser AI overview cards.
+type BrowserAILogStats struct {
+	Total    int64 `json:"total"`
+	Blocked  int64 `json:"blocked"`
+	Warned   int64 `json:"warned"` // Redacted + Warned
+	HighRisk int64 `json:"high_risk"`
+	AvgRisk  int   `json:"avg_risk"`
+}
+
+// GetLogStats aggregates every prompt log (not just the current page) for the overview.
+func (m *BrowserAIManager) GetLogStats(ctx context.Context) (BrowserAILogStats, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out BrowserAILogStats
+	if m.db == nil {
+		return out, nil
+	}
+	var row struct {
+		Total    int64
+		Blocked  int64
+		Warned   int64
+		HighRisk int64
+		AvgRisk  *float64
+	}
+	err := m.db.WithContext(ctx).Model(&BrowserAILog{}).Select(`
+		COUNT(*) AS total,
+		COALESCE(SUM(CASE WHEN LOWER(action) = 'blocked' THEN 1 ELSE 0 END), 0) AS blocked,
+		COALESCE(SUM(CASE WHEN LOWER(action) IN ('redacted', 'warned') THEN 1 ELSE 0 END), 0) AS warned,
+		COALESCE(SUM(CASE WHEN risk_score >= 70 OR UPPER(predictive_risk) IN ('HIGH', 'CRITICAL') THEN 1 ELSE 0 END), 0) AS high_risk,
+		AVG(CASE WHEN risk_score > 0 THEN risk_score ELSE 10 END) AS avg_risk`).Scan(&row).Error
+	if err != nil {
+		return out, err
+	}
+	out = BrowserAILogStats{Total: row.Total, Blocked: row.Blocked, Warned: row.Warned, HighRisk: row.HighRisk}
+	if row.AvgRisk != nil && row.Total > 0 {
+		out.AvgRisk = int(*row.AvgRisk + 0.5)
+	}
+	return out, nil
+}
+
 func (m *BrowserAIManager) ClearLogs(ctx context.Context) error {
 	return m.ClearLogsInRange(ctx, nil, nil)
 }

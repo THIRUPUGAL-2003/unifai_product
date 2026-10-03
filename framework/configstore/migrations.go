@@ -459,6 +459,44 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_governance_virtual_key_teams_and_customers_tables"}, run: migrationAddGovernanceVirtualKeyTeamsAndCustomersTables},
 	{IDs: []string{"enable_enforce_auth_on_inference_default"}, run: migrationEnableEnforceAuthOnInferenceDefault},
 	{IDs: []string{"add_owner_user_id_to_prompts"}, run: migrationAddOwnerUserIDToPrompts},
+	{IDs: []string{"widen_prompt_message_json_mysql"}, run: migrationWidenPromptMessageJSONMySQL},
+}
+
+// migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
+// where TEXT caps at 64 KB and silently rejects messages carrying images or file attachments.
+// SQLite and Postgres TEXT are already unbounded.
+func migrationWidenPromptMessageJSONMySQL(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "widen_prompt_message_json_mysql"
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if tx.Dialector.Name() != "mysql" {
+				return nil
+			}
+			for _, model := range []any{&tables.TablePromptSessionMessage{}, &tables.TablePromptVersionMessage{}} {
+				if !tx.Migrator().HasTable(model) {
+					continue
+				}
+				stmt := &gorm.Statement{DB: tx}
+				if err := stmt.Parse(model); err != nil {
+					return fmt.Errorf("parse %T: %w", model, err)
+				}
+				if err := tx.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY `message_json` LONGTEXT NOT NULL", stmt.Schema.Table)).Error; err != nil {
+					return fmt.Errorf("widen %s.message_json: %w", stmt.Schema.Table, err)
+				}
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return nil
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	logger.Info("[configstore] finished migration %s", migrationName)
+	return nil
 }
 
 // quoteSQLiteIdentifier quotes a SQLite identifier, escaping any double quotes.

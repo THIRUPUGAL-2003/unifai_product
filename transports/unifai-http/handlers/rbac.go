@@ -8,6 +8,7 @@ import (
 	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/configstore"
 	"github.com/unifai/unifai/framework/configstore/tables"
+	"github.com/unifai/unifai/framework/rbac"
 	"github.com/valyala/fasthttp"
 )
 
@@ -336,16 +337,38 @@ func (h *WorkspaceHandler) updateRolePermissions(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
-	known := map[uint]bool{}
+	known := map[uint]configstore.RBACPermission{}
 	for _, perm := range configstore.RBACPermissions() {
-		known[perm.ID] = true
+		known[perm.ID] = perm
 	}
 	ids := make([]uint, 0, len(body.PermissionIDs))
 	seen := map[uint]bool{}
 	for _, id := range body.PermissionIDs {
-		if known[id] && !seen[id] {
+		if _, ok := known[id]; ok && !seen[id] {
 			seen[id] = true
 			ids = append(ids, id)
+		}
+	}
+	// Only the super admin edits roles freely. Anyone else may not touch their own role or
+	// grant a permission they do not hold, or RBAC:Update becomes a path to full access.
+	if h.store != nil && h.store.ConfigStore != nil {
+		if session, scoped := callerIsScopedAdmin(ctx, h.store.ConfigStore); scoped {
+			if strings.EqualFold(strings.TrimSpace(role.Name), strings.TrimSpace(session.Role)) {
+				SendError(ctx, fasthttp.StatusForbidden, "You cannot change the permissions of your own role")
+				return
+			}
+			callerPerms, err := rbac.ResolvePermissions(ctx, store, session.Role)
+			if err != nil {
+				SendError(ctx, fasthttp.StatusInternalServerError, "failed to resolve your permissions")
+				return
+			}
+			for _, id := range ids {
+				perm := known[id]
+				if !rbac.HasPermission(callerPerms, perm.Resource, perm.Operation) {
+					SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
+					return
+				}
+			}
 		}
 	}
 	role.ParsedPermissionIDs = ids

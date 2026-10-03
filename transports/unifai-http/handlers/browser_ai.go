@@ -88,6 +88,7 @@ func (h *BrowserAIHandler) ensureDB(ctx *fasthttp.RequestCtx) {
 
 func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.UnifAIHTTPMiddleware) {
 	r.GET("/api/browser-ai/logs", lib.ChainMiddlewares(h.getLogs, middlewares...))
+	r.GET("/api/browser-ai/logs/stats", lib.ChainMiddlewares(h.getLogStats, middlewares...))
 	r.DELETE("/api/browser-ai/logs", lib.ChainMiddlewares(h.deleteLogs, middlewares...))
 	r.POST("/api/browser-ai/logs/bulk-delete", lib.ChainMiddlewares(h.bulkDeleteLogs, middlewares...))
 	r.DELETE("/api/browser-ai/logs/{id}", lib.ChainMiddlewares(h.deleteLog, middlewares...))
@@ -172,6 +173,12 @@ func (h *BrowserAIHandler) getLogs(ctx *fasthttp.RequestCtx) {
 	if limit <= 0 {
 		limit = 50
 	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	if offset < 0 {
+		offset = 0
+	}
 
 	logs, total, err := h.manager.GetLogs(ctx, platform, status, action, search, limit, offset)
 	if err != nil {
@@ -185,6 +192,20 @@ func (h *BrowserAIHandler) getLogs(ctx *fasthttp.RequestCtx) {
 		"limit":  limit,
 		"offset": offset,
 	})
+}
+
+func (h *BrowserAIHandler) getLogStats(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	if h.manager == nil {
+		SendJSON(ctx, logstore.BrowserAILogStats{})
+		return
+	}
+	stats, err := h.manager.GetLogStats(ctx)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	SendJSON(ctx, stats)
 }
 
 // logDeleteWindow resolves the delete range shared by prompt-log and search-log clears.

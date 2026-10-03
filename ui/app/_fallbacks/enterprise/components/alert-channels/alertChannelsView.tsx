@@ -80,7 +80,10 @@ export default function AlertChannelsView() {
 						<Bell className="h-6 w-6" />
 						Alert Channels
 					</h1>
-					<p className="text-muted-foreground mt-1 text-sm">Webhook, Slack, email, or PagerDuty destinations for workspace alerts.</p>
+					<p className="text-muted-foreground mt-1 text-sm">
+						Webhook, Slack, email, or PagerDuty destinations. Enabled channels receive circuit breaker trips, exhausted budgets and
+						rate-limit hits (each incident at most once per 10 minutes).
+					</p>
 				</div>
 				<Button onClick={() => setOpen(true)}>
 					<Plus className="h-4 w-4" />

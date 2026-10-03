@@ -432,12 +432,14 @@ func (h *WorkspaceHandler) deleteAccessProfile(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to delete access profile")
 		return
 	}
-	if h.store != nil && h.store.ConfigStore != nil {
+	// Deactivation already rolled this profile back; rolling back again would strip
+	// budgets and MCP grants the keys had before the profile existed.
+	if row.IsActive && h.store != nil && h.store.ConfigStore != nil {
 		if _, err := rollbackAccessProfileLimits(ctx, h.store.ConfigStore, *row, nil); err != nil {
 			SendError(ctx, fasthttp.StatusBadGateway, "profile deleted but failed to roll back budgets/rate limits: "+err.Error())
 			return
 		}
-		if row.IsActive && profileHasGrantSnapshots(ctx, h.store.ConfigStore, row.ID) {
+		if profileHasGrantSnapshots(ctx, h.store.ConfigStore, row.ID) {
 			if _, err := rollbackAccessProfileGrants(ctx, h.store.ConfigStore, *row, nil); err != nil {
 				SendError(ctx, fasthttp.StatusBadGateway, "profile deleted but failed to roll back provider/MCP grants: "+err.Error())
 				return

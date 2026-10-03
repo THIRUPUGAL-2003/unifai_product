@@ -21,10 +21,11 @@ import (
 	"github.com/unifai/unifai/framework/configstore"
 	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/unifai/unifai/framework/encrypt"
+	"github.com/unifai/unifai/framework/logstore"
 	"github.com/unifai/unifai/framework/modelcatalog"
+	"github.com/unifai/unifai/framework/vectorstore"
 	"github.com/unifai/unifai/plugins/compat"
 	"github.com/unifai/unifai/plugins/semanticcache"
-	"github.com/unifai/unifai/framework/vectorstore"
 	"github.com/unifai/unifai/transports/unifai-http/lib"
 	"github.com/valyala/fasthttp"
 )
@@ -303,16 +304,33 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("mcp_external_client_url %v", err))
 		return
 	}
+	if payload.ClientConfig.AsyncJobResultTTL < 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "async_job_result_ttl must be 0 (default) or a positive number of seconds")
+		return
+	}
 
-	// Validating framework config
-	if payload.FrameworkConfig.PricingURL != nil && *payload.FrameworkConfig.PricingURL != modelcatalog.DefaultPricingURL {
+	// Validating framework config. URLs are only re-checked when they differ from the stored
+	// value: every settings page PUTs the full config, so an unchanged custom URL that is slow
+	// or briefly unreachable must not block saving unrelated settings.
+	var storedFramework *configstoreTables.TableFrameworkConfig
+	if h.store.ConfigStore != nil {
+		if stored, ferr := h.store.ConfigStore.GetFrameworkConfig(ctx); ferr == nil {
+			storedFramework = stored
+		}
+	}
+	if payload.FrameworkConfig.PricingURL != nil && strings.TrimSpace(*payload.FrameworkConfig.PricingURL) == "" {
+		payload.FrameworkConfig.PricingURL = unifai.Ptr(modelcatalog.DefaultPricingURL)
+	}
+	if payload.FrameworkConfig.PricingURL != nil && *payload.FrameworkConfig.PricingURL != modelcatalog.DefaultPricingURL &&
+		(storedFramework == nil || storedFramework.PricingURL == nil || *storedFramework.PricingURL != *payload.FrameworkConfig.PricingURL) {
 		if err := checkURLAccessibility(*payload.FrameworkConfig.PricingURL); err != nil {
 			logger.Warn("failed to check the accessibility of the pricing URL: %v", err)
 			SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("failed to check the accessibility of the pricing URL: %v", err))
 			return
 		}
 	}
-	if payload.FrameworkConfig.ModelParametersURL != nil && *payload.FrameworkConfig.ModelParametersURL != "" && *payload.FrameworkConfig.ModelParametersURL != modelcatalog.DefaultModelParametersURL {
+	if payload.FrameworkConfig.ModelParametersURL != nil && *payload.FrameworkConfig.ModelParametersURL != "" && *payload.FrameworkConfig.ModelParametersURL != modelcatalog.DefaultModelParametersURL &&
+		(storedFramework == nil || storedFramework.ModelParametersURL == nil || *storedFramework.ModelParametersURL != *payload.FrameworkConfig.ModelParametersURL) {
 		if err := checkURLAccessibility(*payload.FrameworkConfig.ModelParametersURL); err != nil {
 			logger.Warn("failed to check the accessibility of the model parameters URL: %v", err)
 			SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("failed to check the accessibility of the model parameters URL: %v", err))
@@ -332,8 +350,8 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 	// the default instead of blocking unrelated settings saves (e.g. Logs).
 	if payload.FrameworkConfig.MCPLibraryURL != nil && *payload.FrameworkConfig.MCPLibraryURL != "" && *payload.FrameworkConfig.MCPLibraryURL != modelcatalog.DefaultMCPLibraryURL {
 		storedMCPLibraryURL := ""
-		if stored, ferr := h.store.ConfigStore.GetFrameworkConfig(ctx); ferr == nil && stored != nil && stored.MCPLibraryURL != nil {
-			storedMCPLibraryURL = *stored.MCPLibraryURL
+		if storedFramework != nil && storedFramework.MCPLibraryURL != nil {
+			storedMCPLibraryURL = *storedFramework.MCPLibraryURL
 		}
 		incomingMCPLibraryURL := *payload.FrameworkConfig.MCPLibraryURL
 		if err := checkURLAccessibility(incomingMCPLibraryURL); err != nil {
@@ -448,10 +466,17 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		updatedConfig.MCPDisableAutoToolInject = payload.ClientConfig.MCPDisableAutoToolInject
 		shouldReloadMCPToolManagerConfig = true
 	}
-	// MCPToolSyncInterval supports 0 (disabled), so compare against current value
+	// MCPToolSyncInterval supports 0 (default), so compare against current value
 	// instead of a > 0 guard used by other numeric fields.
 	if payload.ClientConfig.MCPToolSyncInterval != currentConfig.MCPToolSyncInterval {
 		updatedConfig.MCPToolSyncInterval = payload.ClientConfig.MCPToolSyncInterval
+		if setter, ok := h.configManager.(interface {
+			SetMCPToolSyncInterval(ctx context.Context, interval time.Duration) error
+		}); ok && h.store.MCPConfig != nil {
+			if err := setter.SetMCPToolSyncInterval(ctx, time.Duration(updatedConfig.MCPToolSyncInterval)*time.Minute); err != nil {
+				logger.Warn("failed to apply mcp tool sync interval live: %v", err)
+			}
+		}
 	}
 	updatedConfig.MCPEnableTempTokenAuth = payload.ClientConfig.MCPEnableTempTokenAuth
 
@@ -468,7 +493,7 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		if h.store.MCPConfig.ToolManagerConfig == nil {
 			h.store.MCPConfig.ToolManagerConfig = &schemas.MCPToolManagerConfig{}
 		}
-		h.store.MCPConfig.ToolSyncInterval = time.Duration(updatedConfig.MCPToolSyncInterval) * time.Second
+		h.store.MCPConfig.ToolSyncInterval = time.Duration(updatedConfig.MCPToolSyncInterval) * time.Minute
 		h.store.MCPConfig.ToolManagerConfig.MaxAgentDepth = updatedConfig.MCPAgentDepth
 		h.store.MCPConfig.ToolManagerConfig.ToolExecutionTimeout = schemas.Duration(time.Duration(updatedConfig.MCPToolExecutionTimeout) * time.Second)
 		h.store.MCPConfig.ToolManagerConfig.CodeModeBindingLevel = schemas.CodeModeBindingLevel(updatedConfig.MCPCodeModeBindingLevel)
@@ -560,7 +585,7 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 	if payload.ClientConfig.MCPToolExecutionTimeout > 0 {
 		updatedConfig.MCPToolExecutionTimeout = payload.ClientConfig.MCPToolExecutionTimeout
 	}
-	// 0 is a valid value (disabled), so persist it when changed.
+	// 0 is a valid value (use the default), so persist it when changed.
 	if payload.ClientConfig.MCPToolSyncInterval != currentConfig.MCPToolSyncInterval {
 		updatedConfig.MCPToolSyncInterval = payload.ClientConfig.MCPToolSyncInterval
 	}
@@ -569,9 +594,11 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		updatedConfig.MCPCodeModeBindingLevel = payload.ClientConfig.MCPCodeModeBindingLevel
 	}
 
-	// Only update AsyncJobResultTTL if explicitly provided (> 0) to avoid clearing stored value
+	// A missing field keeps the stored TTL; an explicit 0 resets it to the default.
 	if payload.ClientConfig.AsyncJobResultTTL > 0 {
 		updatedConfig.AsyncJobResultTTL = payload.ClientConfig.AsyncJobResultTTL
+	} else if clientConfigFieldPresent(ctx.PostBody(), "async_job_result_ttl") {
+		updatedConfig.AsyncJobResultTTL = logstore.DefaultAsyncJobResultTTL
 	}
 
 	// Handle RequiredHeaders changes (no restart needed - governance plugin reads via pointer)
@@ -778,6 +805,19 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 			}
 		}
 
+		// A secret-ref password (env./vault.) round-trips from GET unchanged on every save; treat
+		// it as "keep stored" when the ref matches and the resolved value still verifies against
+		// the stored hash, so unrelated saves don't rehash it and flush every session.
+		passwordRefUnchanged := false
+		if authConfig != nil && payload.AuthConfig.AdminPassword != nil && payload.AuthConfig.AdminPassword.IsFromSecret() &&
+			authConfig.AdminPassword != nil && authConfig.AdminPassword.IsFromSecret() &&
+			payload.AuthConfig.AdminPassword.GetRawRef() == authConfig.AdminPassword.GetRawRef() &&
+			payload.AuthConfig.AdminPassword.GetValue() != "" && authConfig.AdminPassword.GetValue() != "" {
+			if ok, err := encrypt.CompareHash(authConfig.AdminPassword.GetValue(), payload.AuthConfig.AdminPassword.GetValue()); err == nil && ok {
+				passwordRefUnchanged = true
+			}
+		}
+
 		// Check if auth config has changed
 		authChanged := false
 		if authConfig == nil {
@@ -790,7 +830,7 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 			// Password is considered changed when it was intentionally submitted —
 			// ShouldPreserveStored() returns false for both plain values and secret refs.
 			passwordChanged := payload.AuthConfig.AdminPassword != nil &&
-				!payload.AuthConfig.AdminPassword.ShouldPreserveStored()
+				!payload.AuthConfig.AdminPassword.ShouldPreserveStored() && !passwordRefUnchanged
 			usernameChanged := payload.AuthConfig.AdminUserName != nil &&
 				!payload.AuthConfig.AdminUserName.Equals(authConfig.AdminUserName)
 			if payload.AuthConfig.IsEnabled != authConfig.IsEnabled ||
@@ -825,7 +865,9 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 			}
 			// Fetching current Auth config
 			if payload.AuthConfig.AdminUserName.GetValue() != "" {
-				if payload.AuthConfig.AdminPassword.ShouldPreserveStored() {
+				if passwordRefUnchanged {
+					payload.AuthConfig.AdminPassword = authConfig.AdminPassword
+				} else if payload.AuthConfig.AdminPassword.ShouldPreserveStored() {
 					if authConfig == nil || authConfig.AdminPassword.GetValue() == "" {
 						SendError(ctx, fasthttp.StatusBadRequest, "auth password must be provided")
 						return
@@ -865,7 +907,7 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 			}
 		} else if authConfig != nil {
 			// Auth is being disabled but there's an existing config - preserve credentials and update disabled state
-			if payload.AuthConfig.AdminPassword.ShouldPreserveStored() {
+			if passwordRefUnchanged || payload.AuthConfig.AdminPassword.ShouldPreserveStored() {
 				payload.AuthConfig.AdminPassword = authConfig.AdminPassword
 			}
 			if payload.AuthConfig.AdminUserName == nil || payload.AuthConfig.AdminUserName.GetValue() == "" {
@@ -953,6 +995,17 @@ func (h *ConfigHandler) getVectorStoreConfig(ctx *fasthttp.RequestCtx) {
 	})
 }
 
+func clientConfigFieldPresent(body []byte, field string) bool {
+	var raw struct {
+		ClientConfig map[string]json.RawMessage `json:"client_config"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return false
+	}
+	_, ok := raw.ClientConfig[field]
+	return ok
+}
+
 // updateVectorStoreConfig handles PUT /api/vector-store-config — connect/save like provider keys.
 func (h *ConfigHandler) updateVectorStoreConfig(ctx *fasthttp.RequestCtx) {
 	var payload vectorstore.Config
@@ -985,33 +1038,49 @@ func (h *ConfigHandler) updateVectorStoreConfig(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	if err := h.store.ApplyVectorStoreConfig(ctx, merged); err != nil {
+	release, warning, err := h.store.ApplyVectorStoreConfig(ctx, merged)
+	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
+	defer release()
 
-	// semantic_cache holds the VectorStore from Init — reload so it picks up the new connection.
+	// semantic_cache holds the VectorStore from Init: reload it onto the new store, or pause it
+	// when no store is connected, before the old store is closed.
 	if h.configManager != nil && h.store.ConfigStore != nil {
-		pluginRow, err := h.store.ConfigStore.GetPlugin(ctx, semanticcache.PluginName)
-		if err == nil && pluginRow != nil && pluginRow.Enabled {
-			if err := h.configManager.ReloadPlugin(ctx, semanticcache.PluginName, pluginRow.Path, pluginRow.Config, pluginRow.Placement, pluginRow.Order); err != nil {
-				SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("vector store saved but cache plugin reload failed: %v", err))
-				return
+		_, loadedErr := lib.FindPluginAs[*semanticcache.Plugin](h.store, semanticcache.PluginName)
+		pluginLoaded := loadedErr == nil
+		if h.store.VectorStore == nil {
+			if pluginLoaded {
+				if err := h.configManager.RemovePlugin(ctx, semanticcache.PluginName); err != nil {
+					logger.Warn("failed to pause semantic cache after vector store disconnect: %v", err)
+				}
+				if warning == "" {
+					warning = "Semantic cache is paused until a vector store is connected."
+				}
 			}
-		} else if h.store.VectorStore == nil {
-			if _, findErr := lib.FindPluginAs[*semanticcache.Plugin](h.store, semanticcache.PluginName); findErr == nil {
-				_ = h.configManager.RemovePlugin(ctx, semanticcache.PluginName)
+		} else {
+			pluginRow, err := h.store.ConfigStore.GetPlugin(ctx, semanticcache.PluginName)
+			if err == nil && pluginRow != nil && pluginRow.Enabled {
+				if err := h.configManager.ReloadPlugin(ctx, semanticcache.PluginName, pluginRow.Path, pluginRow.Config, pluginRow.Placement, pluginRow.Order); err != nil {
+					SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("vector store saved but cache plugin reload failed: %v", err))
+					return
+				}
 			}
 		}
 	}
 
 	redacted := lib.RedactVectorStoreConfig(merged)
-	SendJSON(ctx, map[string]any{
+	resp := map[string]any{
 		"enabled":   redacted.Enabled,
 		"type":      redacted.Type,
 		"config":    redacted.Config,
 		"connected": h.store.VectorStore != nil,
-	})
+	}
+	if warning != "" {
+		resp["warning"] = warning
+	}
+	SendJSON(ctx, resp)
 }
 
 // getProxyConfig handles GET /api/proxy-config - Get the current proxy configuration

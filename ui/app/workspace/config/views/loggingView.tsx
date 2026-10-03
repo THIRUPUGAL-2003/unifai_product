@@ -99,7 +99,7 @@ export default function LoggingView() {
 							id="enable-logging"
 							size="md"
 							checked={localConfig.enable_logging && unifaiConfig?.is_logs_connected}
-							disabled={!unifaiConfig?.is_logs_connected}
+							disabled={!unifaiConfig?.is_logs_connected || !hasSettingsUpdateAccess}
 							onCheckedChange={(checked) => {
 								if (unifaiConfig?.is_logs_connected) {
 									handleConfigChange("enable_logging", checked);
@@ -130,6 +130,7 @@ export default function LoggingView() {
 								size="md"
 								checked={localConfig.disable_content_logging}
 								onCheckedChange={(checked) => handleConfigChange("disable_content_logging", checked)}
+								disabled={!hasSettingsUpdateAccess}
 							/>
 						</div>
 					</div>
@@ -158,6 +159,7 @@ export default function LoggingView() {
 							size="md"
 							checked={localConfig.allow_per_request_content_storage_override}
 							onCheckedChange={(checked) => handleConfigChange("allow_per_request_content_storage_override", checked)}
+							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
 				)}
@@ -181,6 +183,7 @@ export default function LoggingView() {
 						size="md"
 						checked={localConfig.allow_per_request_raw_override}
 						onCheckedChange={(checked) => handleConfigChange("allow_per_request_raw_override", checked)}
+						disabled={!hasSettingsUpdateAccess}
 					/>
 				</div>
 
@@ -205,6 +208,7 @@ export default function LoggingView() {
 								const value = parseInt(e.target.value) || 1;
 								handleConfigChange("log_retention_days", Math.max(1, value));
 							}}
+							disabled={!hasSettingsUpdateAccess}
 							className="w-24"
 						/>
 					</div>
@@ -225,6 +229,7 @@ export default function LoggingView() {
 						size="md"
 						checked={localConfig.hide_deleted_virtual_keys_in_filters}
 						onCheckedChange={(checked) => handleConfigChange("hide_deleted_virtual_keys_in_filters", checked)}
+						disabled={!hasSettingsUpdateAccess}
 					/>
 				</div>
 
@@ -248,6 +253,7 @@ export default function LoggingView() {
 							placeholder="X-Tenant-ID, X-Request-Source, x-custom-*"
 							value={loggingHeadersText}
 							onChange={(e) => handleLoggingHeadersChange(e.target.value)}
+							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
 				)}

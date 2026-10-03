@@ -305,7 +305,15 @@ func (s *RDBConfigStore) UpdateClientConfig(ctx context.Context, config *ClientC
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&tables.TableClientConfig{}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&dbConfig).Error
+		if err := tx.Create(&dbConfig).Error; err != nil {
+			return err
+		}
+		// GORM substitutes the column default for zero values on INSERT, so an explicit
+		// false / 0 for columns whose default is non-zero must be written separately.
+		return tx.Model(&tables.TableClientConfig{}).Where("id = ?", dbConfig.ID).UpdateColumns(map[string]any{
+			"enforce_auth_on_inference": config.EnforceAuthOnInference,
+			"mcp_tool_sync_interval":    config.MCPToolSyncInterval,
+		}).Error
 	})
 }
 
@@ -4403,6 +4411,11 @@ func (s *RDBConfigStore) UpdateTeam(ctx context.Context, team *tables.TableTeam,
 		txDB = tx[0]
 	} else {
 		txDB = s.DB()
+	}
+	// A preloaded Customer that no longer matches CustomerID would be saved first and
+	// reset CustomerID back to the old customer, silently undoing a move or unlink.
+	if team.Customer != nil && (team.CustomerID == nil || *team.CustomerID != team.Customer.ID) {
+		team.Customer = nil
 	}
 	if err := txDB.WithContext(ctx).Save(team).Error; err != nil {
 		return s.parseGormError(err)

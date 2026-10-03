@@ -29,6 +29,8 @@ const (
 	WorkspaceSettingGuardrailsConfig = "guardrails_config"
 	// WorkspaceSettingAccessProfileGrants stores pre-profile provider/MCP snapshots per VK.
 	WorkspaceSettingAccessProfileGrants = "access_profile_grant_snapshots"
+	// WorkspaceSettingAccessProfileLimits stores pre-profile budget/rate-limit values per VK.
+	WorkspaceSettingAccessProfileLimits = "access_profile_limit_snapshots"
 )
 
 func (s *RDBConfigStore) customizedSystemRoles(ctx context.Context) map[string]bool {

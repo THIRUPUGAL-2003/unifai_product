@@ -1890,8 +1890,10 @@ func (gs *LocalGovernanceStore) resetExpiredBudgetFromSnapshot(ctx context.Conte
 		return nil
 	}
 	oldUsage := budget.CurrentUsage
+	// Forget the flushed baseline so the next dump writes the new period's usage as an
+	// absolute value; a 0 baseline would add it on top of last period's DB total.
 	gs.LastDBUsagesBudgetsMu.Lock()
-	gs.LastDBUsagesBudgets[resetBudget.ID] = 0
+	delete(gs.LastDBUsagesBudgets, resetBudget.ID)
 	gs.LastDBUsagesBudgetsMu.Unlock()
 	if refreshReferences {
 		gs.updateBudgetReferences(ctx, resetBudget)

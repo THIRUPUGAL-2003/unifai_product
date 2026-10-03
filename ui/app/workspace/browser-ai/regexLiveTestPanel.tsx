@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { re2ToJsRegExp } from "@/lib/utils/re2";
 
 /** Live-test admin regex against a sample prompt before save (JS RegExp ≈ RE2 for common DLP). */
 export function RegexLiveTestPanel({ pattern }: { pattern: string }) {
@@ -10,9 +11,7 @@ export function RegexLiveTestPanel({ pattern }: { pattern: string }) {
 		const s = sample;
 		if (!p) return { ok: false as const, msg: "Enter a pattern to test." };
 		try {
-			let body = p;
-			if (body.toLowerCase().startsWith("(?i)")) body = body.slice(4);
-			const re = new RegExp(body, "i");
+			const re = re2ToJsRegExp(p);
 			const m = re.exec(s);
 			if (m) {
 				return { ok: true as const, msg: `MATCH — would trigger on: “${m[0]}”` };

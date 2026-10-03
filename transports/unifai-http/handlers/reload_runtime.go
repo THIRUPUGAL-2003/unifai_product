@@ -44,14 +44,27 @@ func ReloadLoadBalancerProviderKeys(ctx context.Context, store configstore.Confi
 		if err != nil {
 			continue
 		}
+		// Weight 0 means "drained" once any sibling key has a real weight; when no key
+		// has one (weights never set), every key counts equally.
+		anyWeighted := false
+		for _, key := range providerKeys {
+			if key.Weight > 0 {
+				anyWeighted = true
+				break
+			}
+		}
 		for _, key := range providerKeys {
 			enabled := key.Enabled == nil || *key.Enabled
 			weight := key.Weight
 			if weight <= 0 {
+				if anyWeighted {
+					continue
+				}
 				weight = 1
 			}
 			keys = append(keys, loadbalancer.ProviderKey{
 				ID: key.ID, Provider: provider.Name, Weight: float64(weight), Enabled: enabled,
+				Models: key.Models, BlacklistedModels: key.BlacklistedModels,
 			})
 		}
 	}

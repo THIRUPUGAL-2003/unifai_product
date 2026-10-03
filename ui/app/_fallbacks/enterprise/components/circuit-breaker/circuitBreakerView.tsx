@@ -136,7 +136,7 @@ export default function CircuitBreakerView() {
 					condition: {
 						...prev.condition,
 						operator: prev.condition.operator || "OR",
-						signals: [{ ...current, ...patch, source: "response_header" }],
+						signals: [{ ...current, ...patch, source: "response_header" }, ...prev.condition.signals.slice(1)],
 					},
 				};
 			});
@@ -160,18 +160,14 @@ export default function CircuitBreakerView() {
 			default_cooldown: (form.default_cooldown || "30s").trim(),
 			condition: {
 				operator: form.condition.operator || "OR",
-				signals: [
-					{
+				signals: form.condition.signals
+					.map((signal) => ({
 						source: "response_header",
-						header_name: form.condition.signals[0]?.header_name?.trim() || "",
-						...(form.condition.signals[0]?.header_value?.trim()
-							? { header_value: form.condition.signals[0]?.header_value?.trim() }
-							: {}),
-						...(form.condition.signals[0]?.header_contains?.trim()
-							? { header_contains: form.condition.signals[0]?.header_contains?.trim() }
-							: {}),
-					},
-				],
+						header_name: signal?.header_name?.trim() || "",
+						...(signal?.header_value?.trim() ? { header_value: signal.header_value.trim() } : {}),
+						...(signal?.header_contains?.trim() ? { header_contains: signal.header_contains.trim() } : {}),
+					}))
+					.filter((signal, index) => index === 0 || signal.header_name),
 			},
 		};
 		try {

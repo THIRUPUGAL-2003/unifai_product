@@ -150,6 +150,23 @@ func (h *WorkspaceHandler) updateSCIMConfig(ctx *fasthttp.RequestCtx) {
 		// The bearer token can create admin users over SCIM, so only admins may set secrets.
 		payload.BearerToken = stored.BearerToken
 		keepStoredSecretKeys(payload.Config, stored.Config)
+		// The default role is granted to every provisioned user without a role, so a
+		// non-admin may only pick roles it could assign by hand.
+		for _, key := range []string{"defaultRole", "default_role"} {
+			requested, _ := payload.Config[key].(string)
+			if strings.TrimSpace(requested) == "" {
+				continue
+			}
+			previous, _ := stored.Config[key].(string)
+			if strings.EqualFold(strings.TrimSpace(requested), strings.TrimSpace(previous)) {
+				continue
+			}
+			r := strings.ToLower(strings.TrimSpace(requested))
+			if r == "admin" || r == "sub_admin" || (h.store != nil && !callerMayManageRole(ctx, h.store.ConfigStore, r)) {
+				SendError(ctx, fasthttp.StatusForbidden, "Only the super admin can set the SCIM default role to "+requested)
+				return
+			}
+		}
 	}
 	ensureSCIMBearerToken(&payload)
 	raw, err := json.Marshal(payload)
@@ -185,6 +202,52 @@ func (h *WorkspaceHandler) listSCIMProviders(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, []map[string]any{{"provider": cfg.Provider, "enabled": cfg.Enabled}})
 }
 
+const connectorSecretPlaceholder = "<redacted>"
+
+func isConnectorSecretKey(key string) bool {
+	k := strings.ToLower(key)
+	switch k {
+	case "api_key", "password", "credentials_json":
+		return true
+	}
+	return strings.Contains(k, "secret") || strings.Contains(k, "token")
+}
+
+// redactConnectorPayload masks secret config values before a connector is returned to a client.
+func redactConnectorPayload(payload map[string]any) {
+	cfg, ok := payload["config"].(map[string]any)
+	if !ok {
+		return
+	}
+	redacted := make(map[string]any, len(cfg))
+	for k, v := range cfg {
+		if s, isStr := v.(string); isStr && s != "" && isConnectorSecretKey(k) {
+			redacted[k] = connectorSecretPlaceholder
+			continue
+		}
+		redacted[k] = v
+	}
+	payload["config"] = redacted
+}
+
+// restoreConnectorSecrets swaps redaction placeholders sent back by the UI for the stored values.
+func restoreConnectorSecrets(incoming map[string]any, stored map[string]any) {
+	inCfg, ok := incoming["config"].(map[string]any)
+	if !ok {
+		return
+	}
+	storedCfg, _ := stored["config"].(map[string]any)
+	for k, v := range inCfg {
+		if s, isStr := v.(string); isStr && s == connectorSecretPlaceholder {
+			if prev, ok := storedCfg[k]; ok {
+				inCfg[k] = prev
+			} else {
+				delete(inCfg, k)
+			}
+		}
+	}
+}
+
 func (h *WorkspaceHandler) listConnectors(ctx *fasthttp.RequestCtx) {
 	store := h.requireStore(ctx)
 	if store == nil {
@@ -206,6 +269,7 @@ func (h *WorkspaceHandler) listConnectors(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		payload["name"] = name
+		redactConnectorPayload(payload)
 		out = append(out, payload)
 	}
 	SendJSON(ctx, map[string]any{"connectors": out, "count": len(out)})
@@ -236,6 +300,7 @@ func (h *WorkspaceHandler) getConnector(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	payload["name"] = name
+	redactConnectorPayload(payload)
 	SendJSON(ctx, payload)
 }
 
@@ -278,6 +343,14 @@ func (h *WorkspaceHandler) updateConnector(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	payload["name"] = name
+	if row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingConnector(name)); err == nil && row != nil {
+		var stored map[string]any
+		if json.Unmarshal([]byte(row.Data), &stored) == nil {
+			restoreConnectorSecrets(payload, stored)
+		}
+	} else {
+		restoreConnectorSecrets(payload, nil)
+	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to save connector")
@@ -302,6 +375,7 @@ func (h *WorkspaceHandler) updateConnector(ctx *fasthttp.RequestCtx) {
 	connectors.Default.ApplySettings(settings)
 	test := connectors.Default.Test(ctx, name, settings)
 	payload["connection"] = test
+	redactConnectorPayload(payload)
 	// Always 200 after a successful save. A failed connectivity probe must not look like
 	// an HTTP failure to the UI — the form shows connection.ok / connection.error instead.
 	SendJSON(ctx, payload)

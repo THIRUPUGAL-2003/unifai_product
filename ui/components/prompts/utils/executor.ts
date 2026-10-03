@@ -41,7 +41,9 @@ function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "customHeaders"
 		headers["x-uf-skill-id"] = config.skillId.trim();
 	}
 	if (config.promptId?.trim()) {
+		// The playground already sends the whole conversation; only tag the request with the prompt.
 		headers["x-uf-prompt-id"] = config.promptId.trim();
+		headers["x-uf-prompt-inject"] = "false";
 	}
 	if (config.customHeaders) {
 		const reserved = new Set([
@@ -53,6 +55,7 @@ function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "customHeaders"
 			"x-uf-skill-id",
 			"x-uf-prompt-id",
 			"x-uf-prompt-version",
+			"x-uf-prompt-inject",
 		]);
 		for (const [name, value] of Object.entries(config.customHeaders)) {
 			const trimmedName = name.trim();
@@ -193,7 +196,7 @@ export async function executePrompt(
 		resolvedMessages = await enrichVoiceWithWhisper(resolvedMessages, config.apiKeyId, signal);
 		const headers = buildHeaders(config);
 
-		const { api_key_id: _, ...requestParams } = config.modelParams;
+		const { api_key_id: _, skill_id: _skill, ...requestParams } = config.modelParams;
 		const response = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
 			method: "POST",
 			headers,

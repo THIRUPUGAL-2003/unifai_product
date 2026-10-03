@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/unifai/unifai/framework/configstore"
+	"github.com/unifai/unifai/framework/configstore/tables"
 	"github.com/unifai/unifai/framework/rbac"
 	"github.com/valyala/fasthttp"
 )
@@ -56,6 +57,67 @@ func isBuiltinAdminIdentity(ctx context.Context, store configstore.ConfigStore, 
 // accounts more powerful than itself.
 func (h *SessionHandler) callerMayManageRole(ctx *fasthttp.RequestCtx, role string) bool {
 	return callerMayManageRole(ctx, h.configStore, role)
+}
+
+// callerSession returns the caller's live session, or nil when the request was admitted
+// without one (auth disabled, local admin) or the session is gone.
+func callerSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore) *tables.SessionsTable {
+	token := sessionToken(ctx)
+	if token == "" || store == nil {
+		return nil
+	}
+	session, err := store.GetSession(ctx, token)
+	if err != nil || session == nil || session.ExpiresAt.Before(time.Now()) {
+		return nil
+	}
+	return session
+}
+
+// callerIsScopedAdmin reports whether the caller manages users without being the super
+// admin (sub_admin or a custom role); such callers cannot exceed their own grants.
+func callerIsScopedAdmin(ctx *fasthttp.RequestCtx, store configstore.ConfigStore) (*tables.SessionsTable, bool) {
+	session := callerSession(ctx, store)
+	if session == nil {
+		return nil, false
+	}
+	return session, !strings.EqualFold(strings.TrimSpace(session.Role), "admin")
+}
+
+// callerSectionsCover reports whether every requested sidebar section is one the caller
+// itself holds, so a scoped admin can never hand out (or take) more access than it has.
+func callerSectionsCover(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, requested string) bool {
+	session, scoped := callerIsScopedAdmin(ctx, store)
+	if !scoped {
+		return true
+	}
+	caller, err := store.GetUserByUsername(ctx, session.Username)
+	if err != nil || caller == nil {
+		return false
+	}
+	have := effectiveAllowedSections(ctx, store, caller)
+	for _, part := range strings.Split(requested, ",") {
+		key := strings.ToLower(strings.TrimSpace(part))
+		if key == "" {
+			continue
+		}
+		if !rbac.SectionsAllow(have, []string{key}) {
+			return false
+		}
+	}
+	return true
+}
+
+// scopedAdminTargetGuard blocks a scoped admin from editing its own grants or managing
+// another sub_admin account. Returns an error message, or "" when allowed.
+func scopedAdminTargetGuard(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, targetUsername, targetRole string) string {
+	session, scoped := callerIsScopedAdmin(ctx, store)
+	if !scoped {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(targetRole), "sub_admin") && !strings.EqualFold(session.Username, targetUsername) {
+		return "Only the super admin can manage sub-admin accounts"
+	}
+	return ""
 }
 
 func callerMayManageRole(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, role string) bool {

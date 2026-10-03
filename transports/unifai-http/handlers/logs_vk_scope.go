@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/logstore"
+	"github.com/unifai/unifai/framework/queryscope"
 	"github.com/valyala/fasthttp"
+	"gorm.io/gorm"
 )
 
 // noVirtualKeyAccess is a VK ID filter value that matches no log row.
@@ -130,10 +133,29 @@ func (h *LoggingHandler) scopeSessionSummary(next fasthttp.RequestHandler) fasth
 	}
 }
 
-// scopeFilterData removes virtual keys the caller cannot access from filter dropdown data.
+// vkQueryScope restricts every log-store read on ctx (raw tables and filter matviews, which
+// all carry virtual_key_id) to the caller's virtual keys.
+func vkQueryScope(allowed map[string]bool) queryscope.QueryScope {
+	ids := make([]string, 0, len(allowed))
+	for id := range allowed {
+		ids = append(ids, id)
+	}
+	return func(db *gorm.DB) *gorm.DB {
+		if len(ids) == 0 {
+			return db.Where("1 = 0")
+		}
+		return db.Where("virtual_key_id IN ?", ids)
+	}
+}
+
+// scopeFilterData limits every filter dropdown (models, teams, users, metadata, ...) to values
+// seen on the caller's own virtual keys, so non-admins can't enumerate other tenants.
 func (h *LoggingHandler) scopeFilterData(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
 		allowed, filter := h.allowedVKs(ctx)
+		if filter {
+			ctx.SetUserValue(schemas.UnifAIContextKeyQueryScope, vkQueryScope(allowed))
+		}
 		next(ctx)
 		if !filter || ctx.Response.StatusCode() != fasthttp.StatusOK {
 			return

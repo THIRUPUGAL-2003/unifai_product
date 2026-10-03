@@ -279,7 +279,8 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 				// Update existing team
 				const updateData: UpdateTeamRequest = {
 					name: formData.name,
-					customer_id: formData.customerId || undefined,
+					// "" is how the backend unlinks the customer; undefined would leave it unchanged.
+					customer_id: formData.customerId || "",
 					// Always send: backend treats `budgets` as a full replacement.
 					budgets: submittableBudgets,
 					// Team-wide setting that governs both team budgets and the team rate limit.

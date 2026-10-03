@@ -71,17 +71,18 @@ function parseKeyValue(value: string): { key: string; value: string } | null {
 	}
 
 	// Handle "key" format for existence checks
+	// Keys are lowercased: the gateway lowercases request header and query names.
 	const colonIndex = value.indexOf(":");
 	if (colonIndex > 0) {
 		return {
-			key: value.substring(0, colonIndex).trim(),
+			key: value.substring(0, colonIndex).trim().toLowerCase(),
 			value: value.substring(colonIndex + 1).trim(),
 		};
 	}
 
 	// If no colon, treat entire string as key (for existence checks)
 	return {
-		key: value.trim(),
+		key: value.trim().toLowerCase(),
 		value: "",
 	};
 }

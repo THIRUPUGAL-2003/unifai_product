@@ -22,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useImportBrowserAiRulesMutation } from "@/lib/store/apis/browserAiApi";
+import { re2ToJsRegExp } from "@/lib/utils/re2";
 
 export interface ParsedImportRule {
 	name: string;
@@ -129,7 +130,7 @@ export function normalizePatternToRegex(rawPattern: string): string {
 	// $ ^ . are excluded: they appear in plain keywords (e.g. "$secret", "api.key").
 	if (/[\\[\]{}()*+?]/.test(trimmed)) {
 		try {
-			new RegExp(trimmed);
+			re2ToJsRegExp(trimmed);
 			return trimmed;
 		} catch {
 			// Not a valid regex (e.g. "c++, c#") — treat as keyword list below.
@@ -291,11 +292,9 @@ export function GuardRuleImportDialog({
 					errors.push("AI Guard Bot rules must be created in the UI (Excel import supports regex only)");
 				} else if (!pattern) {
 					errors.push("Missing regex pattern");
-				} else if (/\(\?<?[=!]|\\[1-9]/.test(pattern)) {
-					errors.push("Lookahead/lookbehind/backreferences are not supported by the gateway regex engine");
 				} else {
 					try {
-						new RegExp(pattern);
+						re2ToJsRegExp(pattern);
 					} catch (e: any) {
 						errors.push(`Invalid regex: ${e.message}`);
 					}

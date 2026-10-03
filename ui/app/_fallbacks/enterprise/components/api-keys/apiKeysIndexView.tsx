@@ -20,8 +20,15 @@ export default function APIKeysView() {
 	const isInferenceAuthDisabled = !(unifaiConfig?.client_config?.enforce_auth_on_inference ?? false);
 	const baseUrl = getExampleBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
 
-	const adminCurlExample = `curl --location '${baseUrl}/api/governance/virtual-keys' \\
-  --header 'Authorization: Basic <base64_username:password>'`;
+	const adminCurlExample = `# 1. Sign in once; the session cookie is stored in cookies.txt
+curl --location '${baseUrl}/api/session/login' \\
+  --cookie-jar cookies.txt \\
+  --header 'Content-Type: application/json' \\
+  --data '{ "username": "<username>", "password": "<password>" }'
+
+# 2. Call admin APIs with that session (sign out via /api/session/logout)
+curl --location '${baseUrl}/api/governance/virtual-keys' \\
+  --cookie cookies.txt`;
 
 	const inferenceCurlExample = (key: string) => `curl --location '${baseUrl}/v1/chat/completions' \\
   --header 'Content-Type: application/json' \\
@@ -62,7 +69,7 @@ export default function APIKeysView() {
 					API Keys
 				</h1>
 				<p className="text-muted-foreground mt-1 text-sm">
-					Admin Basic auth for dashboard APIs, and Virtual Keys for inference / MCP access.
+					Session sign-in for dashboard / admin APIs, and Virtual Keys for inference / MCP access.
 				</p>
 			</div>
 
@@ -80,11 +87,13 @@ export default function APIKeysView() {
 						<AlertDescription>
 							{isInferenceAuthDisabled ? (
 								<>
-									Inference auth is <strong>disabled</strong> — <code>/v1/*</code> calls work without a key. Admin APIs still require Basic auth.
+									Inference auth is <strong>disabled</strong> — <code>/v1/*</code> calls work without a key. Admin APIs still require a
+									signed-in session (cookie or <code>Authorization: Bearer &lt;session token&gt;</code>); Basic auth is rejected.
 								</>
 							) : (
 								<>
-									Inference auth is <strong>enabled</strong>. Use a Virtual Key (Bearer) for <code>/v1/*</code> calls. Admin APIs use Basic auth.
+									Inference auth is <strong>enabled</strong>. Use a Virtual Key (Bearer) for <code>/v1/*</code> calls. Admin APIs require
+									a signed-in session (cookie or <code>Authorization: Bearer &lt;session token&gt;</code>); Basic auth is rejected.
 								</>
 							)}
 						</AlertDescription>

@@ -1199,11 +1199,17 @@ func (h *PromptsHandler) getPromptSessions(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	// The playground auto-opens the first listed session and saves into it, so admins get their
+	// own chats by default. ?user_id=<id> shows one user's chats and ?user_id=* shows everyone's.
 	filterUserID := callerID
 	if isWorkspaceAdminRole(role) {
-		// Admins can see all user chat sessions for this prompt, or filter by specific ?user_id= query arg if provided
-		queryUser := string(ctx.QueryArgs().Peek("user_id"))
-		filterUserID = strings.TrimSpace(queryUser)
+		switch queryUser := strings.TrimSpace(string(ctx.QueryArgs().Peek("user_id"))); queryUser {
+		case "":
+		case "*":
+			filterUserID = ""
+		default:
+			filterUserID = queryUser
+		}
 	}
 
 	_, _ = h.applyPromptHistoryAutoDelete(ctx)
@@ -1770,4 +1776,3 @@ func (h *PromptsHandler) clearAllPromptHistory(ctx *fasthttp.RequestCtx) {
 		"deleted_count": count,
 	})
 }
-

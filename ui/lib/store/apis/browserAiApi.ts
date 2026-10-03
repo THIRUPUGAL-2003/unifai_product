@@ -232,6 +232,14 @@ export const browserAiApi = baseApi.injectEndpoints({
 			providesTags: ["BrowserAiLogs" as any],
 		}),
 
+		getBrowserAiLogStats: builder.query<
+			{ total: number; blocked: number; warned: number; high_risk: number; avg_risk: number },
+			void
+		>({
+			query: () => ({ url: "/browser-ai/logs/stats" }),
+			providesTags: ["BrowserAiLogs" as any],
+		}),
+
 		clearBrowserAiLogs: builder.mutation<
 			{ status?: string; message?: string } | void,
 			{ period?: "1d" | "7d" | "30d" | "all"; date?: string } | void
@@ -863,6 +871,7 @@ export const browserAiApi = baseApi.injectEndpoints({
 
 export const {
 	useGetBrowserAiLogsQuery,
+	useGetBrowserAiLogStatsQuery,
 	useClearBrowserAiLogsMutation,
 	useDeleteBrowserAiLogsMutation,
 	useGetBrowserAiSearchLogsQuery,

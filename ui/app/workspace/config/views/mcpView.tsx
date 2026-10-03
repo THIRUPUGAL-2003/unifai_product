@@ -330,7 +330,7 @@ export default function MCPView() {
 						<label htmlFor="mcp-tool-sync-interval" className="text-sm font-medium">
 							Tool Sync Interval (minutes)
 						</label>
-						<p className="text-muted-foreground text-sm">How often to refresh tool lists from MCP servers. Set to 0 to disable.</p>
+						<p className="text-muted-foreground text-sm">How often to refresh tool lists from MCP servers. 0 uses the default (10 minutes); to stop syncing a server, set its own interval to -1.</p>
 					</div>
 					<Input
 						id="mcp-tool-sync-interval"

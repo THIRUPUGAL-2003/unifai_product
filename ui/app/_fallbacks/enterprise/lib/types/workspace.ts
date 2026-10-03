@@ -127,6 +127,8 @@ export interface ClusterConfig {
 	gossip?: { port: number; config?: { timeout_seconds: number; success_threshold: number; failure_threshold: number } };
 	grpc?: { port: number; dial_timeout_seconds: number };
 	node?: { address: string; mode: string };
+	replicate_secret_configured?: boolean;
+	warnings?: string[];
 }
 
 export interface LoadBalancerConfig {

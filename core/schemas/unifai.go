@@ -69,71 +69,71 @@ const (
 	Runway        ModelProvider = "runway"
 	Runware       ModelProvider = "runware"
 	Fireworks     ModelProvider = "fireworks"
-	Together       ModelProvider = "together"
-	Siliconflow    ModelProvider = "siliconflow"
-	Moonshot       ModelProvider = "moonshot"
-	Minimax        ModelProvider = "minimax"
-	Sambanova      ModelProvider = "sambanova"
-	Deepinfra      ModelProvider = "deepinfra"
-	Novita         ModelProvider = "novita"
-	Nvidia         ModelProvider = "nvidia"
-	Hyperbolic     ModelProvider = "hyperbolic"
-	Portkey        ModelProvider = "portkey"
-	Dashscope      ModelProvider = "dashscope"
-	Zhipu          ModelProvider = "zhipu"
-	Baichuan       ModelProvider = "baichuan"
-	Stepfun        ModelProvider = "stepfun"
-	Upstage        ModelProvider = "upstage"
-	Ai21           ModelProvider = "ai21"
-	Sakana         ModelProvider = "sakana"
-	Baseten        ModelProvider = "baseten"
-	Anyscale       ModelProvider = "anyscale"
-	Lepton         ModelProvider = "lepton"
-	Friendli       ModelProvider = "friendli"
-	Modelscope     ModelProvider = "modelscope"
-	Hunyuan        ModelProvider = "hunyuan"
-	Qianfan        ModelProvider = "qianfan"
-	Ark            ModelProvider = "ark"
-	Sarvam         ModelProvider = "sarvam"
-	Krutrim        ModelProvider = "krutrim"
-	Sensenova      ModelProvider = "sensenova"
-	Spark          ModelProvider = "spark"
-	Reka           ModelProvider = "reka"
-	Featherless    ModelProvider = "featherless"
-	Scaleway       ModelProvider = "scaleway"
-	Voyage         ModelProvider = "voyage"
-	Jina           ModelProvider = "jina"
-	Nscale         ModelProvider = "nscale"
-	Publicai       ModelProvider = "publicai"
-	Inferencenet   ModelProvider = "inferencenet"
-	Kluster        ModelProvider = "kluster"
-	Lingyiwanwu    ModelProvider = "lingyiwanwu"
-	Inceptionlabs  ModelProvider = "inceptionlabs"
-	Arcee          ModelProvider = "arcee"
-	Nousresearch   ModelProvider = "nousresearch"
-	Morphllm       ModelProvider = "morphllm"
-	Nlpcloud       ModelProvider = "nlpcloud"
-	Monsterapi     ModelProvider = "monsterapi"
-	Aionlabs       ModelProvider = "aionlabs"
-	Totalgpt       ModelProvider = "totalgpt"
-	Mancer         ModelProvider = "mancer"
-	Dit            ModelProvider = "dit"
-	Opper          ModelProvider = "opper"
-	Relace         ModelProvider = "relace"
-	Openadapter    ModelProvider = "openadapter"
-	Nanogpt        ModelProvider = "nanogpt"
-	Nararouter     ModelProvider = "nararouter"
-	Navy           ModelProvider = "navy"
-	Freemodel      ModelProvider = "freemodel"
-	Freeai         ModelProvider = "freeai"
-	Freeinference  ModelProvider = "freeinference"
-	Fenay          ModelProvider = "fenay"
-	Empower        ModelProvider = "empower"
-	Fastinfra      ModelProvider = "fastinfra"
-	Wafer          ModelProvider = "wafer"
-	Gmiserving     ModelProvider = "gmiserving"
-	Cerebrium      ModelProvider = "cerebrium"
-	Dashscopecn    ModelProvider = "dashscopecn"
+	Together      ModelProvider = "together"
+	Siliconflow   ModelProvider = "siliconflow"
+	Moonshot      ModelProvider = "moonshot"
+	Minimax       ModelProvider = "minimax"
+	Sambanova     ModelProvider = "sambanova"
+	Deepinfra     ModelProvider = "deepinfra"
+	Novita        ModelProvider = "novita"
+	Nvidia        ModelProvider = "nvidia"
+	Hyperbolic    ModelProvider = "hyperbolic"
+	Portkey       ModelProvider = "portkey"
+	Dashscope     ModelProvider = "dashscope"
+	Zhipu         ModelProvider = "zhipu"
+	Baichuan      ModelProvider = "baichuan"
+	Stepfun       ModelProvider = "stepfun"
+	Upstage       ModelProvider = "upstage"
+	Ai21          ModelProvider = "ai21"
+	Sakana        ModelProvider = "sakana"
+	Baseten       ModelProvider = "baseten"
+	Anyscale      ModelProvider = "anyscale"
+	Lepton        ModelProvider = "lepton"
+	Friendli      ModelProvider = "friendli"
+	Modelscope    ModelProvider = "modelscope"
+	Hunyuan       ModelProvider = "hunyuan"
+	Qianfan       ModelProvider = "qianfan"
+	Ark           ModelProvider = "ark"
+	Sarvam        ModelProvider = "sarvam"
+	Krutrim       ModelProvider = "krutrim"
+	Sensenova     ModelProvider = "sensenova"
+	Spark         ModelProvider = "spark"
+	Reka          ModelProvider = "reka"
+	Featherless   ModelProvider = "featherless"
+	Scaleway      ModelProvider = "scaleway"
+	Voyage        ModelProvider = "voyage"
+	Jina          ModelProvider = "jina"
+	Nscale        ModelProvider = "nscale"
+	Publicai      ModelProvider = "publicai"
+	Inferencenet  ModelProvider = "inferencenet"
+	Kluster       ModelProvider = "kluster"
+	Lingyiwanwu   ModelProvider = "lingyiwanwu"
+	Inceptionlabs ModelProvider = "inceptionlabs"
+	Arcee         ModelProvider = "arcee"
+	Nousresearch  ModelProvider = "nousresearch"
+	Morphllm      ModelProvider = "morphllm"
+	Nlpcloud      ModelProvider = "nlpcloud"
+	Monsterapi    ModelProvider = "monsterapi"
+	Aionlabs      ModelProvider = "aionlabs"
+	Totalgpt      ModelProvider = "totalgpt"
+	Mancer        ModelProvider = "mancer"
+	Dit           ModelProvider = "dit"
+	Opper         ModelProvider = "opper"
+	Relace        ModelProvider = "relace"
+	Openadapter   ModelProvider = "openadapter"
+	Nanogpt       ModelProvider = "nanogpt"
+	Nararouter    ModelProvider = "nararouter"
+	Navy          ModelProvider = "navy"
+	Freemodel     ModelProvider = "freemodel"
+	Freeai        ModelProvider = "freeai"
+	Freeinference ModelProvider = "freeinference"
+	Fenay         ModelProvider = "fenay"
+	Empower       ModelProvider = "empower"
+	Fastinfra     ModelProvider = "fastinfra"
+	Wafer         ModelProvider = "wafer"
+	Gmiserving    ModelProvider = "gmiserving"
+	Cerebrium     ModelProvider = "cerebrium"
+	Dashscopecn   ModelProvider = "dashscopecn"
 )
 
 // SupportedBaseProviders is the list of base providers allowed for custom providers.
@@ -329,12 +329,12 @@ const (
 // UnifAIContextKeyRequestType is a context key for the request type.
 const (
 	UnifAIContextKeySessionToken      UnifAIContextKey = "unifai-session-token" // string (session token for authentication - set by auth middleware)
-	UnifAIContextKeyVirtualKey        UnifAIContextKey = "x-uf-vk"               // string
-	UnifAIContextKeyAPIKeyName        UnifAIContextKey = "x-uf-api-key"          // string (explicit key name selection)
-	UnifAIContextKeyAPIKeyID          UnifAIContextKey = "x-uf-api-key-id"       // string (explicit key ID selection, takes priority over name)
-	UnifAIContextKeyDirectKey         UnifAIContextKey = "x-uf-direct-key"       // schemas.Key (raw key supplied via x-uf-direct-key: true header; bypasses registered key pool)
-	UnifAIContextKeyRequestID         UnifAIContextKey = "request-id"            // string
-	UnifAIContextKeyFallbackRequestID UnifAIContextKey = "fallback-request-id"   // string
+	UnifAIContextKeyVirtualKey        UnifAIContextKey = "x-uf-vk"              // string
+	UnifAIContextKeyAPIKeyName        UnifAIContextKey = "x-uf-api-key"         // string (explicit key name selection)
+	UnifAIContextKeyAPIKeyID          UnifAIContextKey = "x-uf-api-key-id"      // string (explicit key ID selection, takes priority over name)
+	UnifAIContextKeyDirectKey         UnifAIContextKey = "x-uf-direct-key"      // schemas.Key (raw key supplied via x-uf-direct-key: true header; bypasses registered key pool)
+	UnifAIContextKeyRequestID         UnifAIContextKey = "request-id"           // string
+	UnifAIContextKeyFallbackRequestID UnifAIContextKey = "fallback-request-id"  // string
 
 	// NOTE: []string is used for both keys, and by default all clients/tools are included (when nil).
 	// If "*" is present, all clients/tools are included, and [] means no clients/tools are included.
@@ -361,6 +361,7 @@ const (
 	UnifAIContextKeyGovernanceScopedCustomerID          UnifAIContextKey = "unifai-governance-scoped-customer-id"  // string (resolved customer the request is scoped to via the x-uf-customer-id / x-uf-customer-name header on a team-VK path; set by the enterprise governance plugin - DO NOT SET THIS MANUALLY)
 	UnifAIContextKeyGovernanceRoutingRuleID             UnifAIContextKey = "unifai-governance-routing-rule-id"     // string (to store the routing rule ID (set by unifai governance plugin - DO NOT SET THIS MANUALLY))
 	UnifAIContextKeyGovernanceRoutingRuleName           UnifAIContextKey = "unifai-governance-routing-rule-name"   // string (to store the routing rule name (set by unifai governance plugin - DO NOT SET THIS MANUALLY))
+	UnifAIContextKeyCircuitBreakerFailover              UnifAIContextKey = "unifai-circuit-breaker-failover"       // string ("<policy>; <from> -> <to>" when an open circuit rerouted the request (set by unifai governance plugin - DO NOT SET THIS MANUALLY))
 	UnifAIContextKeyRoutingPinnedAPIKeyID               UnifAIContextKey = "unifai-routing-pinned-api-key-id"      // string (provider key ID pinned by a matched routing rule target; resolved against the configured key pool during key selection and takes precedence over a caller-supplied pin (set by unifai governance plugin - DO NOT SET THIS MANUALLY))
 	UnifAIContextKeySelectedPromptName                  UnifAIContextKey = "unifai-selected-prompt-name"           // string (display name of the selected prompt (set by prompts plugin - DO NOT SET THIS MANUALLY))
 	UnifAIContextKeySelectedPromptVersion               UnifAIContextKey = "unifai-selected-prompt-version"        // string (numeric version as string, e.g. "3" (set by prompts plugin - DO NOT SET THIS MANUALLY))
@@ -382,7 +383,7 @@ const (
 	UnifAIContextKeyIntegrationType                     UnifAIContextKey = "unifai-integration-type"                         // integration used in gateway (e.g. openai, anthropic, bedrock, etc.)
 	UnifAIContextKeyIsResponsesToChatCompletionFallback UnifAIContextKey = "unifai-is-responses-to-chat-completion-fallback" // bool (set by unifai - DO NOT SET THIS MANUALLY))
 	UnifAIMCPAgentOriginalRequestID                     UnifAIContextKey = "unifai-mcp-agent-original-request-id"            // string (to store the original request ID for MCP agent mode)
-	UnifAIContextKeyParentMCPRequestID                  UnifAIContextKey = "unifai-parent-mcp-request-id"                      // string (parent request ID for nested tool calls from executeCode)
+	UnifAIContextKeyParentMCPRequestID                  UnifAIContextKey = "unifai-parent-mcp-request-id"                    // string (parent request ID for nested tool calls from executeCode)
 	UnifAIContextKeyStructuredOutputToolName            UnifAIContextKey = "unifai-structured-output-tool-name"              // string (to store the name of the structured output tool (set by unifai))
 	UnifAIContextKeyUserAgent                           UnifAIContextKey = "unifai-user-agent"                               // string (set by unifai)
 	UnifAIContextKeySkipBudgetAndRateLimits             UnifAIContextKey = "unifai-skip-budget-and-rate-limits"              // bool (set by unifai for read-only requests like list models that don't consume quota)
@@ -400,13 +401,13 @@ const (
 	UnifAIContextKeyIsMCPGateway                        UnifAIContextKey = "unifai-is-mcp-gateway"                           // bool (true when request is being handled via the MCP gateway path)
 	UnifAIContextKeyHasEmittedMessageDelta              UnifAIContextKey = "unifai-has-emitted-message-delta"                // bool (tracks whether message_delta was already emitted during streaming - avoids duplicates)
 	UnifAIContextKeySkipDBUpdate                        UnifAIContextKey = "unifai-skip-db-update"                           // bool (set by unifai - DO NOT SET THIS MANUALLY))
-	UnifAIContextKeyGovernancePluginName                UnifAIContextKey = "governance-plugin-name"                           // string (name of the governance plugin that processed the request - set by unifai)
+	UnifAIContextKeyGovernancePluginName                UnifAIContextKey = "governance-plugin-name"                          // string (name of the governance plugin that processed the request - set by unifai)
 	UnifAIContextKeyClusterNodeID                       UnifAIContextKey = "unifai-cluster-node-id"                          // string (cluster node ID for log attribution - set by enterprise server)
 	UnifAIContextKeyGovernanceBudgetIDs                 UnifAIContextKey = "unifai-governance-budget-ids"                    // []string (budget IDs applicable to this request - set by governance plugin)
 	UnifAIContextKeyGovernanceRateLimitIDs              UnifAIContextKey = "unifai-governance-rate-limit-ids"                // []string (rate limit IDs applicable to this request - set by governance plugin)
-	UnifAIContextKeyPromptsPluginName                   UnifAIContextKey = "prompts-plugin-name"                              // string (name of the prompts plugin to use - set by unifai - DO NOT SET THIS MANUALLY))
-	UnifAIContextKeyIsEnterprise                        UnifAIContextKey = "is-enterprise"                                    // bool (set by unifai - DO NOT SET THIS MANUALLY))
-	UnifAIContextKeyAvailableProviders                  UnifAIContextKey = "available-providers"                              // []ModelProvider (set by internal unifai components - DO NOT SET THIS MANUALLY))
+	UnifAIContextKeyPromptsPluginName                   UnifAIContextKey = "prompts-plugin-name"                             // string (name of the prompts plugin to use - set by unifai - DO NOT SET THIS MANUALLY))
+	UnifAIContextKeyIsEnterprise                        UnifAIContextKey = "is-enterprise"                                   // bool (set by unifai - DO NOT SET THIS MANUALLY))
+	UnifAIContextKeyAvailableProviders                  UnifAIContextKey = "available-providers"                             // []ModelProvider (set by internal unifai components - DO NOT SET THIS MANUALLY))
 	UnifAIContextKeyStoreRawRequestResponse             UnifAIContextKey = "unifai-store-raw-request-response"               // bool (per-request override — read by unifai.go, never overwritten)
 	UnifAIContextKeyCaptureRawRequest                   UnifAIContextKey = "unifai-capture-raw-request"                      // bool (set by unifai - DO NOT SET THIS MANUALLY) — true when providers should capture raw request bytes
 	UnifAIContextKeyCaptureRawResponse                  UnifAIContextKey = "unifai-capture-raw-response"                     // bool (set by unifai - DO NOT SET THIS MANUALLY) — true when providers should capture raw response bytes
@@ -435,7 +436,7 @@ const (
 	UnifAIContextKeyRoutingAllowedProviders             UnifAIContextKey = "unifai-routing-allowed-providers"                // []ModelProvider; when set, downstream routing layers (enterprise LB, model-catalog-resolver) must intersect their candidate providers with this set. Plugins set this when they have an opinion about which providers are valid for the request — even if they couldn't pick one themselves. Empty slice means "no provider is permitted" (fail-closed).
 	UnifAIContextKeyAllowPerRequestStorageOverride      UnifAIContextKey = "unifai-allow-per-request-storage-override"       // bool (set by transport from config — gates whether x-uf-disable-content-logging and x-uf-store-raw-request-response per-request overrides are honored)
 	UnifAIContextKeyAllowPerRequestRawOverride          UnifAIContextKey = "unifai-allow-per-request-raw-override"           // bool (set by transport from config — gates whether x-uf-send-back-raw-request and x-uf-send-back-raw-response per-request overrides are honored)
-	UnifAIContextKeyDisableContentLogging               UnifAIContextKey = "x-uf-disable-content-logging"                     // bool (per-request override for content logging; only honored when UnifAIContextKeyAllowPerRequestStorageOverride is true)
+	UnifAIContextKeyDisableContentLogging               UnifAIContextKey = "x-uf-disable-content-logging"                    // bool (per-request override for content logging; only honored when UnifAIContextKeyAllowPerRequestStorageOverride is true)
 	UnifAIContextKeySkipListModelsGovernanceFiltering   UnifAIContextKey = "unifai-skip-list-models-governance-filtering"    // bool (set by unifai - DO NOT SET THIS MANUALLY))
 	UnifAIContextKeySCIMClaims                          UnifAIContextKey = "scim_claims"
 	UnifAIContextKeyUserID                              UnifAIContextKey = "unifai-user-id"                    // string (to store the user ID (set by enterprise auth middleware - DO NOT SET THIS MANUALLY))
@@ -480,8 +481,8 @@ const (
 	UnifAIContextKeySupportsAssistantPrefill            UnifAIContextKey = "unifai-supports-assistant-prefill"         // bool (set by compat plugin) - if model supports assistant prefill
 	UnifAIContextKeyAttemptTrail                        UnifAIContextKey = "unifai-attempt-trail"                      // []KeyAttemptRecord (set by unifai - DO NOT SET THIS MANUALLY) - per-attempt key selection history
 	UnifAIContextKeyDimensions                          UnifAIContextKey = "unifai-dimensions"                         // map[string]string (set by HTTP transport from x-uf-dim-* headers) UnifAIContextKeyDimensions holds per-request key/value dimensions supplied via x-uf-dim-<key> request headers. These dimensions are forwarded to internal logs (as metadata)
-	IsAPIKeyAuthContextKey                               UnifAIContextKey = "is_api_key_auth"
-	IsLocalAdminContextKey                               UnifAIContextKey = "is_local_admin"                // bool (set by auth middleware when password-based auth succeeds - local admin user bypasses RBAC)
+	IsAPIKeyAuthContextKey                              UnifAIContextKey = "is_api_key_auth"
+	IsLocalAdminContextKey                              UnifAIContextKey = "is_local_admin"                // bool (set by auth middleware when password-based auth succeeds - local admin user bypasses RBAC)
 	UnifAIContextKeyPassthroughOverridesPresent         UnifAIContextKey = "passthrough_overrides_present" // bool (set by HTTP transport) - passthrough raw request requested
 	UnifAIContextKeyConnectionClosed                    UnifAIContextKey = "connection_closed"
 	UnifAIContextKeyTempTokenScope                      UnifAIContextKey = "unifai-temp-token-scope"       // string (set by auth middleware when a temp token authorized the request - names the scope from the temptoken registry)
@@ -1757,17 +1758,17 @@ type UnifAIResponseExtraFields struct {
 	// matched (i.e. RoutingInfo.ResolvedKeyAlias != nil), otherwise
 	// RoutingInfo.Model. Still populated for backward compatibility; new
 	// consumers should read from RoutingInfo.
-	ResolvedModelUsed         string             `json:"resolved_model_used,omitempty"`
-	Latency                   int64              `json:"latency"`     // in milliseconds (for streaming responses this will be each chunk latency, and the last chunk latency will be the total latency)
-	ChunkIndex                int                `json:"chunk_index"` // used for streaming responses to identify the chunk index, will be 0 for non-streaming responses
-	RawRequest                interface{}        `json:"raw_request,omitempty"`
-	RawResponse               interface{}        `json:"raw_response,omitempty"`
+	ResolvedModelUsed         string            `json:"resolved_model_used,omitempty"`
+	Latency                   int64             `json:"latency"`     // in milliseconds (for streaming responses this will be each chunk latency, and the last chunk latency will be the total latency)
+	ChunkIndex                int               `json:"chunk_index"` // used for streaming responses to identify the chunk index, will be 0 for non-streaming responses
+	RawRequest                interface{}       `json:"raw_request,omitempty"`
+	RawResponse               interface{}       `json:"raw_response,omitempty"`
 	CacheDebug                *UnifAICacheDebug `json:"cache_debug,omitempty"`
-	ParseErrors               []BatchError       `json:"parse_errors,omitempty"` // errors encountered while parsing JSONL batch results
-	ConvertedRequestType      RequestType        `json:"converted_request_type,omitempty"`
-	DroppedCompatPluginParams []string           `json:"dropped_compat_plugin_params,omitempty"` // params dropped by the compat plugin based on model catalog
-	ProviderResponseHeaders   map[string]string  `json:"provider_response_headers,omitempty"`    // HTTP response headers from the provider (filtered to exclude transport-level headers)
-	PassthroughPath           string             `json:"passthrough_path,omitempty"`             // Stripped provider path for passthrough requests, e.g. "/v1/chat/completions"
+	ParseErrors               []BatchError      `json:"parse_errors,omitempty"` // errors encountered while parsing JSONL batch results
+	ConvertedRequestType      RequestType       `json:"converted_request_type,omitempty"`
+	DroppedCompatPluginParams []string          `json:"dropped_compat_plugin_params,omitempty"` // params dropped by the compat plugin based on model catalog
+	ProviderResponseHeaders   map[string]string `json:"provider_response_headers,omitempty"`    // HTTP response headers from the provider (filtered to exclude transport-level headers)
+	PassthroughPath           string            `json:"passthrough_path,omitempty"`             // Stripped provider path for passthrough requests, e.g. "/v1/chat/completions"
 }
 
 type RoutingInfo struct {
@@ -1873,13 +1874,13 @@ func (bs UnifAIStreamChunk) MarshalJSON() ([]byte, error) {
 // - AllowFallbacks = &false: UnifAI will return this error immediately, no fallbacks
 // - AllowFallbacks = nil: Treated as true by default (fallbacks allowed for resilience)
 type UnifAIError struct {
-	EventID        *string                 `json:"event_id,omitempty"`
-	Type           *string                 `json:"type,omitempty"`
-	IsUnifAIError bool                    `json:"is_unifai_error"`
-	StatusCode     *int                    `json:"status_code,omitempty"`
-	Error          *ErrorField             `json:"error"`
-	AllowFallbacks *bool                   `json:"-"` // Optional: Controls fallback behavior (nil = true by default)
-	StreamControl  *StreamControl          `json:"-"` // Optional: Controls stream behavior
+	EventID        *string                `json:"event_id,omitempty"`
+	Type           *string                `json:"type,omitempty"`
+	IsUnifAIError  bool                   `json:"is_unifai_error"`
+	StatusCode     *int                   `json:"status_code,omitempty"`
+	Error          *ErrorField            `json:"error"`
+	AllowFallbacks *bool                  `json:"-"` // Optional: Controls fallback behavior (nil = true by default)
+	StreamControl  *StreamControl         `json:"-"` // Optional: Controls stream behavior
 	ExtraFields    UnifAIErrorExtraFields `json:"extra_fields"`
 }
 

@@ -491,9 +491,10 @@ func TestPromptDrag_UpdatesUserTeamMembership(t *testing.T) {
 
 	// Create Eve's prompt inside Team A's folder
 	evePrompt := &tables.TablePrompt{
-		ID:       "prompt_eve_" + uuid.New().String()[:8],
-		Name:     eve.Email,
-		FolderID: &teamAFolder.ID,
+		ID:          "prompt_eve_" + uuid.New().String()[:8],
+		Name:        eve.Email,
+		FolderID:    &teamAFolder.ID,
+		OwnerUserID: &eve.ID,
 	}
 	_ = store.CreatePrompt(ctx, evePrompt)
 

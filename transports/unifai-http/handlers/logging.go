@@ -1073,6 +1073,11 @@ func (h *LoggingHandler) getLogsDimensionLatencyHistogram(ctx *fasthttp.RequestC
 
 // getDroppedRequests handles GET /api/logs/dropped - Get the number of dropped requests
 func (h *LoggingHandler) getDroppedRequests(ctx *fasthttp.RequestCtx) {
+	// Gateway-wide counter: VK-scoped callers can't be shown other tenants' drops.
+	if _, filter := h.allowedVKs(ctx); filter {
+		SendJSON(ctx, map[string]int64{"dropped_requests": 0})
+		return
+	}
 	droppedRequests := h.logManager.GetDroppedRequests(ctx)
 	SendJSON(ctx, map[string]int64{"dropped_requests": droppedRequests})
 }

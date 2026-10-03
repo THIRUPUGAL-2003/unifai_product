@@ -27,16 +27,22 @@ const (
 	PromptIDHeader      = "x-uf-prompt-id"
 	PromptVersionHeader = "x-uf-prompt-version"
 	// PromptEnvironmentHeader selects a Prompt Repository deployment by environment name
-	// (e.g. production / staging). Used when x-uf-prompt-id is not set.
+	// (e.g. production / staging). With x-uf-prompt-id it picks that prompt's deployed
+	// version; without it, the most recently updated enabled deployment for the environment.
 	PromptEnvironmentHeader = "x-uf-prompt-environment"
 	// SkillIDHeader injects a Skills Repository skill_md_body as a system message.
 	SkillIDHeader = "x-uf-skill-id"
+	// PromptInjectHeader set to "false" tags the request with the prompt (logs, guardrails)
+	// without prepending its template — for clients such as the playground that already
+	// send the full conversation.
+	PromptInjectHeader = "x-uf-prompt-inject"
 
 	// PromptIDKey and PromptVersionKey are context keys for the resolved header values.
 	PromptIDKey          schemas.UnifAIContextKey = PromptIDHeader
 	PromptVersionKey     schemas.UnifAIContextKey = PromptVersionHeader
 	PromptEnvironmentKey schemas.UnifAIContextKey = PromptEnvironmentHeader
 	SkillIDKey           schemas.UnifAIContextKey = SkillIDHeader
+	PromptInjectKey      schemas.UnifAIContextKey = PromptInjectHeader
 )
 
 // InMemoryStore is the data source for prompts and all versions. Implementations typically
@@ -85,7 +91,8 @@ func (r *headerResolver) Resolve(ctx *schemas.UnifAIContext, req *schemas.UnifAI
 }
 
 // deploymentAwareResolver prefers explicit prompt headers, then falls back to an enabled
-// Prompt Repository deployment for x-uf-prompt-environment (or x-uf-dim-environment).
+// Prompt Repository deployment for x-uf-prompt-environment (x-uf-dim-environment only
+// when a prompt id was given).
 type deploymentAwareResolver struct {
 	headers     *headerResolver
 	deployments PromptDeploymentStore
@@ -97,39 +104,47 @@ func (r *deploymentAwareResolver) Resolve(ctx *schemas.UnifAIContext, req *schem
 	if err != nil {
 		return "", 0, err
 	}
-	if promptID != "" {
+	// An explicit version always wins.
+	if promptID != "" && versionNumber > 0 {
 		return promptID, versionNumber, nil
 	}
 
 	env := strings.TrimSpace(unifai.GetStringFromContext(ctx, PromptEnvironmentKey))
-	if env == "" {
+	if env == "" && promptID != "" {
+		// The generic environment dimension only picks a version for a prompt the caller named;
+		// it never injects a prompt into traffic that did not ask for one.
 		if dims, ok := ctx.Value(schemas.UnifAIContextKeyDimensions).(map[string]string); ok {
 			env = strings.TrimSpace(dims["environment"])
 		}
 	}
 	if env == "" || r.deployments == nil {
-		return "", 0, nil
+		return promptID, versionNumber, nil
 	}
 
-	rows, err := r.deployments.ListPromptDeployments(ctx, "")
+	rows, err := r.deployments.ListPromptDeployments(ctx, promptID)
 	if err != nil {
 		return "", 0, fmt.Errorf("list prompt deployments: %w", err)
 	}
-	envLower := strings.ToLower(env)
+	var best *configstoreTables.TablePromptDeployment
 	for i := range rows {
 		row := &rows[i]
-		if !row.Enabled {
+		if !row.Enabled || row.PromptID == "" {
 			continue
 		}
-		if strings.ToLower(strings.TrimSpace(row.Environment)) != envLower {
+		if promptID != "" && row.PromptID != promptID {
 			continue
 		}
-		if row.PromptID == "" {
+		if !strings.EqualFold(strings.TrimSpace(row.Environment), env) {
 			continue
 		}
-		return row.PromptID, row.VersionNumber, nil
+		if best == nil || row.UpdatedAt.After(best.UpdatedAt) {
+			best = row
+		}
 	}
-	return "", 0, nil
+	if best == nil {
+		return promptID, versionNumber, nil
+	}
+	return best.PromptID, best.VersionNumber, nil
 }
 
 // Plugin implements schemas.LLMPlugin (and HTTP transport hooks) for server-side prompt injection.
@@ -270,6 +285,9 @@ func (p *Plugin) HTTPTransportPreHook(ctx *schemas.UnifAIContext, req *schemas.H
 	if skillID := strings.TrimSpace(req.CaseInsensitiveHeaderLookup(SkillIDHeader)); skillID != "" {
 		ctx.SetValue(SkillIDKey, skillID)
 	}
+	if inject := strings.TrimSpace(req.CaseInsensitiveHeaderLookup(PromptInjectHeader)); inject != "" {
+		ctx.SetValue(PromptInjectKey, inject)
+	}
 	return nil, nil
 }
 
@@ -337,6 +355,10 @@ func (p *Plugin) PreLLMHook(ctx *schemas.UnifAIContext, req *schemas.UnifAIReque
 		ctx.SetValue(schemas.UnifAIContextKeySelectedPromptName, prompt.Name)
 	}
 	ctx.SetValue(schemas.UnifAIContextKeySelectedPromptVersion, strconv.Itoa(version.VersionNumber))
+
+	if strings.EqualFold(strings.TrimSpace(unifai.GetStringFromContext(ctx, PromptInjectKey)), "false") {
+		return req, nil, nil
+	}
 
 	// Apply model params from the version (version params are defaults; request params win).
 	switch {
@@ -414,12 +436,22 @@ var knownSyntheticChatParamKeys = map[string]struct{}{
 	"reasoning_max_tokens": {},
 }
 
+// playgroundOnlyParamKeys are stored in version model_params by the playground UI
+// (selected virtual key, selected skill) and must never reach a provider.
+var playgroundOnlyParamKeys = map[string]struct{}{
+	"api_key_id": {},
+	"skill_id":   {},
+}
+
 // buildMergedParamsMap builds a merged map[string]interface{} where version params
 // serve as defaults and request params take priority. reqParamsBytes is the JSON of
 // the request's standard params (ExtraParams excluded); reqExtraParams is its ExtraParams map.
 func buildMergedParamsMap(versionParams configstoreTables.ModelParams, reqParamsBytes []byte, reqExtraParams map[string]interface{}) (map[string]interface{}, error) {
 	merged := make(map[string]interface{}, len(versionParams))
 	maps.Copy(merged, versionParams)
+	for k := range playgroundOnlyParamKeys {
+		delete(merged, k)
+	}
 	if len(reqParamsBytes) > 0 && string(reqParamsBytes) != "null" {
 		var reqMap map[string]interface{}
 		if err := schemas.Unmarshal(reqParamsBytes, &reqMap); err != nil {

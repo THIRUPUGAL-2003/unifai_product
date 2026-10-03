@@ -294,8 +294,9 @@ export function NewMessageInputView() {
 				)}
 			</div>
 			{canAttach && hasImageAttachment && !supportsVision && (
-				<p className="text-muted-foreground mb-2 text-xs">
-					Image attached. Select a vision-capable model if the provider should process images.
+				<p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+					{model ? `"${model}" is not marked as vision-capable` : "No model selected"} — the image may be rejected or ignored.
+					Pick a vision model (e.g. GPT-4o, Claude, Gemini) so it can answer questions about the image.
 				</p>
 			)}
 			{canAttach && hasAudioAttachment && (

@@ -2,6 +2,7 @@ package governance
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/unifai/unifai/core/schemas"
 	"github.com/unifai/unifai/framework/circuitbreaker"
 	"github.com/unifai/unifai/framework/configstore"
+	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
 )
 
 type circuitBreakerCtxKey string
@@ -55,7 +57,34 @@ func (p *GovernancePlugin) syncCircuitBreakerPoliciesFromStore() {
 	circuitbreaker.Default.LoadPolicies(rows)
 }
 
-func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest) bool {
+// vkAllowsEndpoint reports whether the virtual key may call provider/model, using the same
+// blacklist and allowed-models rules as provider selection. A nil key allows everything.
+func (p *GovernancePlugin) vkAllowsEndpoint(vk *configstoreTables.TableVirtualKey, provider, model string) bool {
+	if vk == nil {
+		return true
+	}
+	for _, cfg := range vk.ProviderConfigs {
+		if !strings.EqualFold(strings.TrimSpace(cfg.Provider), strings.TrimSpace(provider)) {
+			continue
+		}
+		if cfg.BlacklistedModels.IsBlocked(model) {
+			return false
+		}
+		if p.modelCatalog != nil && p.inMemoryStore != nil {
+			prov := schemas.ModelProvider(cfg.Provider)
+			providerConfig, ok := p.inMemoryStore.GetConfiguredProviders()[prov]
+			providerConfigPtr := &providerConfig
+			if !ok {
+				providerConfigPtr = nil
+			}
+			return p.modelCatalog.IsModelAllowedForProvider(prov, model, providerConfigPtr, cfg.AllowedModels)
+		}
+		return cfg.AllowedModels.IsAllowed(model)
+	}
+	return false
+}
+
+func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.UnifAIContext, req *schemas.UnifAIRequest, virtualKey *configstoreTables.TableVirtualKey) bool {
 	p.syncCircuitBreakerPoliciesFromStore()
 	provider, model, _ := req.GetRequestFields()
 	if model == "" {
@@ -65,6 +94,14 @@ func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.UnifAIContex
 	if !ok || decision == nil {
 		return false
 	}
+	if !p.vkAllowsEndpoint(virtualKey, decision.ToProv, decision.ToModel) {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCircuitBreaker, schemas.LogLevelWarn,
+			"Circuit open for "+decision.FromProv+"/"+decision.FromModel+" but fallback "+decision.ToProv+"/"+decision.ToModel+
+				" is not allowed for this virtual key — keeping the primary")
+		return false
+	}
+	ctx.SetValue(schemas.UnifAIContextKeyCircuitBreakerFailover,
+		decision.PolicyName+"; "+decision.FromProv+"/"+decision.FromModel+" -> "+decision.ToProv+"/"+decision.ToModel)
 	ctx.SetValue(circuitBreakerPrimaryProviderKey, decision.FromProv)
 	ctx.SetValue(circuitBreakerPrimaryModelKey, decision.FromModel)
 	req.SetProvider(schemas.ModelProvider(decision.ToProv))
@@ -100,7 +137,8 @@ func (p *GovernancePlugin) evaluateCircuitBreakerTrip(ctx *schemas.UnifAIContext
 	if len(headers) == 0 {
 		return
 	}
-	if name, tripped := circuitbreaker.Default.EvaluateTrip(provider, model, headers); tripped {
+	keyID, _ := ctx.Value(schemas.UnifAIContextKeySelectedKeyID).(string)
+	if name, tripped := circuitbreaker.Default.EvaluateTrip(provider, model, keyID, headers); tripped {
 		if p.logger != nil {
 			p.logger.Info("[Governance] Circuit breaker tripped policy=%s provider=%s model=%s", name, provider, model)
 		}

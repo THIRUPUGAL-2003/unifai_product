@@ -1124,17 +1124,15 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim group payload")
 		return
 	}
-	oldName := team.Name
-	if strings.TrimSpace(body.DisplayName) != "" {
-		team.Name = strings.TrimSpace(body.DisplayName)
-	}
 	if body.ExternalID != "" {
 		team.SourceID = &body.ExternalID
 	}
-	team.UpdatedAt = time.Now().UTC()
-	_ = h.store.ConfigStore.UpdateTeam(ctx, team)
-	if h.promptLifecycle != nil && oldName != team.Name {
-		_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+	newName := team.Name
+	if strings.TrimSpace(body.DisplayName) != "" {
+		newName = strings.TrimSpace(body.DisplayName)
+	}
+	if !h.scimRenameTeam(ctx, team, newName) {
+		return
 	}
 
 	ws := h.scimWorkspaceStore()
@@ -1148,6 +1146,24 @@ func (h *WorkspaceHandler) scimPutGroup(ctx *fasthttp.RequestCtx) {
 		members, _ = ws.ListTeamMembers(ctx, team.ID)
 	}
 	SendJSON(ctx, h.scimGroupResource(ctx, team, members))
+}
+
+// scimRenameTeam saves the team under newName and only then renames its prompt folder.
+// On failure (e.g. the name is taken) it restores the old name, answers the identity
+// provider with an error and returns false, so team and folder never disagree.
+func (h *WorkspaceHandler) scimRenameTeam(ctx *fasthttp.RequestCtx, team *tables.TableTeam, newName string) bool {
+	oldName := team.Name
+	team.Name = newName
+	team.UpdatedAt = time.Now().UTC()
+	if err := h.store.ConfigStore.UpdateTeam(ctx, team); err != nil {
+		team.Name = oldName
+		scimError(ctx, fasthttp.StatusConflict, "failed to update group: "+err.Error())
+		return false
+	}
+	if h.promptLifecycle != nil && oldName != team.Name {
+		_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+	}
+	return true
 }
 
 func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
@@ -1186,11 +1202,8 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 		case "add":
 			if strings.EqualFold(cleanPath, "displayname") {
 				if name, ok := op.Value.(string); ok && strings.TrimSpace(name) != "" {
-					oldName := team.Name
-					team.Name = strings.TrimSpace(name)
-					_ = h.store.ConfigStore.UpdateTeam(ctx, team)
-					if h.promptLifecycle != nil && oldName != team.Name {
-						_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+					if !h.scimRenameTeam(ctx, team, strings.TrimSpace(name)) {
+						return
 					}
 				}
 			}
@@ -1201,11 +1214,8 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 			} else if cleanPath == "" {
 				if m, ok := op.Value.(map[string]any); ok {
 					if name, ok := m["displayName"].(string); ok && strings.TrimSpace(name) != "" && strings.TrimSpace(name) != team.Name {
-						oldName := team.Name
-						team.Name = strings.TrimSpace(name)
-						_ = h.store.ConfigStore.UpdateTeam(ctx, team)
-						if h.promptLifecycle != nil {
-							_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+						if !h.scimRenameTeam(ctx, team, strings.TrimSpace(name)) {
+							return
 						}
 					}
 					if membersVal, ok := m["members"]; ok {
@@ -1236,11 +1246,8 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 		case "replace":
 			if strings.EqualFold(cleanPath, "displayname") {
 				if name, ok := op.Value.(string); ok && strings.TrimSpace(name) != "" {
-					oldName := team.Name
-					team.Name = strings.TrimSpace(name)
-					_ = h.store.ConfigStore.UpdateTeam(ctx, team)
-					if h.promptLifecycle != nil && oldName != team.Name {
-						_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+					if !h.scimRenameTeam(ctx, team, strings.TrimSpace(name)) {
+						return
 					}
 				}
 			} else if strings.EqualFold(cleanPath, "members") {
@@ -1248,11 +1255,8 @@ func (h *WorkspaceHandler) scimPatchGroup(ctx *fasthttp.RequestCtx) {
 			} else if cleanPath == "" {
 				if m, ok := op.Value.(map[string]any); ok {
 					if name, ok := m["displayName"].(string); ok && strings.TrimSpace(name) != "" {
-						oldName := team.Name
-						team.Name = strings.TrimSpace(name)
-						_ = h.store.ConfigStore.UpdateTeam(ctx, team)
-						if h.promptLifecycle != nil && oldName != team.Name {
-							_ = h.promptLifecycle.OnTeamUpdated(ctx, team, oldName, team.CustomerID)
+						if !h.scimRenameTeam(ctx, team, strings.TrimSpace(name)) {
+							return
 						}
 					}
 					if membersVal, ok := m["members"]; ok {

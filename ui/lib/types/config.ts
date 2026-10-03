@@ -558,6 +558,7 @@ export interface VectorStoreConfigResponse {
 	type: VectorStoreType;
 	config: Record<string, unknown>;
 	connected: boolean;
+	warning?: string;
 }
 
 export interface CompatConfig {

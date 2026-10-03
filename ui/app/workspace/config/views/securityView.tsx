@@ -275,6 +275,11 @@ export default function SecurityView() {
 			}
 			setPasswordError("");
 
+			if (showPasswordSection && authConfig.is_enabled && (!hasUsername || !hasPassword)) {
+				toast.error("Enter an admin username and password to enable dashboard authentication.");
+				return;
+			}
+
 			await updateCoreConfig({
 				...unifaiConfig!,
 				client_config: localConfig,
@@ -453,7 +458,12 @@ export default function SecurityView() {
 										admin API calls.
 									</p>
 								</div>
-								<Switch id="auth-enabled" checked={authConfig.is_enabled} onCheckedChange={handleAuthToggle} />
+								<Switch
+									id="auth-enabled"
+									checked={authConfig.is_enabled}
+									onCheckedChange={handleAuthToggle}
+									disabled={!hasSettingsUpdateAccess}
+								/>
 							</div>
 							<div className="space-y-4">
 								<div className="space-y-2">
@@ -463,7 +473,7 @@ export default function SecurityView() {
 										type="text"
 										placeholder="Enter admin username or env.VAR_NAME"
 										value={authConfig.admin_username}
-										disabled={!authConfig.is_enabled}
+										disabled={!authConfig.is_enabled || !hasSettingsUpdateAccess}
 										onChange={(value) => handleAuthFieldChange("admin_username", value)}
 									/>
 								</div>
@@ -477,7 +487,7 @@ export default function SecurityView() {
 										type="password"
 										placeholder="Enter admin password or env.VAR_NAME"
 										value={authConfig.admin_password}
-										disabled={!authConfig.is_enabled}
+										disabled={!authConfig.is_enabled || !hasSettingsUpdateAccess}
 										onChange={(value) => handleAuthFieldChange("admin_password", value)}
 									/>
 									<p className="text-muted-foreground text-xs">
@@ -510,6 +520,7 @@ export default function SecurityView() {
 						data-testid="enforce-auth-on-inference-switch"
 						checked={localConfig.enforce_auth_on_inference}
 						onCheckedChange={(checked) => handleConfigChange("enforce_auth_on_inference", checked)}
+						disabled={!hasSettingsUpdateAccess}
 					/>
 				</div>
 				{/* Allow Direct API Keys */}
@@ -529,6 +540,7 @@ export default function SecurityView() {
 						data-testid="security-allow-direct-keys-switch"
 						checked={localConfig.allow_direct_keys}
 						onCheckedChange={(checked) => handleConfigChange("allow_direct_keys", checked)}
+						disabled={!hasSettingsUpdateAccess}
 					/>
 				</div>
 				{/* Allowed Origins */}
@@ -550,6 +562,7 @@ export default function SecurityView() {
 							placeholder="https://app.example.com, https://*.example.com, *"
 							value={localValues.allowed_origins}
 							onChange={(e) => handleAllowedOriginsChange(e.target.value)}
+							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
 				</div>
@@ -568,6 +581,7 @@ export default function SecurityView() {
 							placeholder="X-Stainless-Timeout"
 							value={localValues.allowed_headers}
 							onChange={(e) => handleAllowedHeadersChange(e.target.value)}
+							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
 				</div>
@@ -590,6 +604,7 @@ export default function SecurityView() {
 							placeholder="X-Tenant-ID, X-Custom-Header"
 							value={localValues.required_headers}
 							onChange={(e) => handleRequiredHeadersChange(e.target.value)}
+							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
 				</div>
@@ -613,6 +628,7 @@ export default function SecurityView() {
 							placeholder="/api/custom-webhook, /api/public-endpoint"
 							value={localValues.whitelisted_routes}
 							onChange={(e) => handleWhitelistedRoutesChange(e.target.value)}
+							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
 				</div>

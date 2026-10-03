@@ -1602,6 +1602,7 @@ func (m *MCPManager) connectToMCPClient(requestCtx context.Context, config *sche
 		syncInterval := ResolveToolSyncInterval(config, m.toolSyncManager.GetGlobalInterval())
 		if syncInterval > 0 {
 			syncer := NewClientToolSyncer(m, config.ID, config.Name, syncInterval, m.logger)
+			syncer.usesGlobal = config.ToolSyncInterval == 0
 			m.toolSyncManager.StartSyncing(syncer)
 		}
 	}
@@ -1914,7 +1915,7 @@ func (m *MCPManager) createLocalMCPClient() (*schemas.MCPClientState, error) {
 		ExecutionConfig: &schemas.MCPClientConfig{
 			ID:             UnifAIMCPClientKey,
 			Name:           UnifAIMCPClientKey, // Use same value as ID for consistent prefixing
-			ToolsToExecute: []string{"*"},       // Allow all tools for internal client
+			ToolsToExecute: []string{"*"},      // Allow all tools for internal client
 		},
 		ToolMap:         make(map[string]schemas.ChatTool),
 		ToolNameMapping: make(map[string]string),

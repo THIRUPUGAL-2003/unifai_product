@@ -1058,9 +1058,8 @@ func (m *PromptLifecycleManager) OnPromptMoved(ctx context.Context, promptID str
 	}
 }
 
-// syncUserTeamOnPromptMove updates team membership when a user's own prompt (named after the
-// user's email/username) is moved. Only that naming identifies a user prompt: moving a shared
-// prompt must never change the membership of whoever created or uses it.
+// syncUserTeamOnPromptMove updates team membership when a user's own prompt (owner_user_id) is
+// moved. Moving a shared prompt must never change the membership of whoever created or uses it.
 func (m *PromptLifecycleManager) syncUserTeamOnPromptMove(ctx context.Context, promptID string, oldFolderID *string, newFolderID string) {
 	db := m.store.DB().WithContext(ctx)
 
@@ -1117,19 +1116,19 @@ func (m *PromptLifecycleManager) syncUserTeamOnPromptMove(ctx context.Context, p
 	}
 }
 
-// promptOwner returns the user whose own prompt this is (prompt named after their email/username).
+// promptOwner returns the user whose own prompt this is (prompts.owner_user_id). Names are not
+// used: a shared prompt that happens to be named after a user must not affect that user.
 func (m *PromptLifecycleManager) promptOwner(ctx context.Context, promptID string) *tables.TableUser {
 	db := m.store.DB().WithContext(ctx)
 	var prompt tables.TablePrompt
-	if err := db.Where("id = ?", promptID).First(&prompt).Error; err != nil {
+	if err := db.Select("id", "owner_user_id").Where("id = ?", promptID).First(&prompt).Error; err != nil {
 		return nil
 	}
-	name := strings.TrimSpace(prompt.Name)
-	if name == "" {
+	if prompt.OwnerUserID == nil || strings.TrimSpace(*prompt.OwnerUserID) == "" {
 		return nil
 	}
 	var user tables.TableUser
-	if err := db.Where("LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)", name, name).First(&user).Error; err != nil || user.ID == "" {
+	if err := db.Where("id = ?", *prompt.OwnerUserID).First(&user).Error; err != nil || user.ID == "" {
 		return nil
 	}
 	return &user

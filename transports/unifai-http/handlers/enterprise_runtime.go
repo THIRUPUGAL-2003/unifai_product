@@ -53,12 +53,12 @@ func propagateAccessProfile(ctx context.Context, configStore configstore.ConfigS
 			_ = configStore.ReconcileMCPHeadersAfterVKChange(ctx, vk.ID)
 		}
 		if rateLimitSpec != nil {
-			if err := applyAccessProfileRateLimit(ctx, configStore, vk, rateLimitSpec); err != nil {
+			if err := applyAccessProfileRateLimit(ctx, configStore, profile.ID, vk, rateLimitSpec); err != nil {
 				return fmt.Errorf("update virtual key %s rate limit: %w", vkID, err)
 			}
 		}
 		if len(budgets) > 0 {
-			if err := applyAccessProfileBudgets(ctx, configStore, vk.ID, budgets); err != nil {
+			if err := applyAccessProfileBudgets(ctx, configStore, profile.ID, vk.ID, budgets); err != nil {
 				return fmt.Errorf("update virtual key %s budgets: %w", vkID, err)
 			}
 			if vk.CalendarAligned != profile.CalendarAligned {
@@ -182,11 +182,14 @@ func resolveMCPClientID(ctx context.Context, store configstore.ConfigStore, item
 	return client.ID, nil
 }
 
-func applyAccessProfileRateLimit(ctx context.Context, store configstore.ConfigStore, vk *tables.TableVirtualKey, spec map[string]any) error {
+func applyAccessProfileRateLimit(ctx context.Context, store configstore.ConfigStore, profileID uint, vk *tables.TableVirtualKey, spec map[string]any) error {
 	rl := rateLimitFromSpec(spec, vk.RateLimitID)
 	if vk.RateLimitID != nil && *vk.RateLimitID != "" {
 		existing, err := store.GetRateLimit(ctx, *vk.RateLimitID)
 		if err == nil && existing != nil {
+			if err := recordLimitSnap(ctx, store, rateLimitSnapFrom(profileID, vk.ID, existing)); err != nil {
+				return err
+			}
 			// Merge only what the profile specifies: live counters, reset times and limits
 			// the profile does not model must survive every propagation.
 			if rl.RequestMaxLimit != nil {
@@ -219,7 +222,7 @@ func applyAccessProfileRateLimit(ctx context.Context, store configstore.ConfigSt
 	return store.UpdateVirtualKey(ctx, vk)
 }
 
-func applyAccessProfileBudgets(ctx context.Context, store configstore.ConfigStore, vkID string, items []map[string]any) error {
+func applyAccessProfileBudgets(ctx context.Context, store configstore.ConfigStore, profileID uint, vkID string, items []map[string]any) error {
 	desired := budgetsFromSpec(items, vkID)
 	vk, err := store.GetVirtualKey(ctx, vkID)
 	if err != nil || vk == nil {
@@ -231,6 +234,11 @@ func applyAccessProfileBudgets(ctx context.Context, store configstore.ConfigStor
 	}
 	for _, b := range desired {
 		if cur, ok := existingByDuration[b.ResetDuration]; ok {
+			if err := recordLimitSnap(ctx, store, accessProfileLimitSnap{
+				ProfileID: profileID, VKID: vkID, Kind: limitKindBudget, Key: b.ResetDuration, PrevMaxLimit: cur.MaxLimit,
+			}); err != nil {
+				return err
+			}
 			cur.MaxLimit = b.MaxLimit
 			if err := store.UpdateBudget(ctx, &cur); err != nil {
 				return err
@@ -317,9 +325,19 @@ func rollbackAccessProfileLimits(ctx context.Context, store configstore.ConfigSt
 			if kept && afterDurations[want.ResetDuration] {
 				continue
 			}
+			snap, err := takeLimitSnap(ctx, store, before.ID, vkID, limitKindBudget, want.ResetDuration)
+			if err != nil {
+				return touched, err
+			}
 			for _, b := range vk.Budgets {
 				if b.ResetDuration == want.ResetDuration && b.MaxLimit == want.MaxLimit {
-					if err := store.DeleteBudget(ctx, b.ID); err != nil && !errors.Is(err, configstore.ErrNotFound) {
+					if snap != nil {
+						// The key had this budget before the profile: put its limit back.
+						b.MaxLimit = snap.PrevMaxLimit
+						if err := store.UpdateBudget(ctx, &b); err != nil {
+							return touched, err
+						}
+					} else if err := store.DeleteBudget(ctx, b.ID); err != nil && !errors.Is(err, configstore.ErrNotFound) {
 						return touched, err
 					}
 					changed = true
@@ -327,7 +345,21 @@ func rollbackAccessProfileLimits(ctx context.Context, store configstore.ConfigSt
 			}
 		}
 		if beforeRL != nil && !(kept && afterHasRL) && vk.RateLimitID != nil && *vk.RateLimitID != "" {
-			if rl, err := store.GetRateLimit(ctx, *vk.RateLimitID); err == nil && rl != nil && rateLimitMatchesSpec(rl, beforeRL) {
+			snap, err := takeLimitSnap(ctx, store, before.ID, vkID, limitKindRateLimit, "")
+			if err != nil {
+				return touched, err
+			}
+			if rl, err := store.GetRateLimit(ctx, *vk.RateLimitID); err == nil && rl != nil && rateLimitMatchesSpec(rl, beforeRL) && snap != nil {
+				rl.RequestMaxLimit = snap.PrevRequestMaxLimit
+				rl.RequestResetDuration = snap.PrevRequestResetDuration
+				rl.TokenMaxLimit = snap.PrevTokenMaxLimit
+				rl.TokenResetDuration = snap.PrevTokenResetDuration
+				rl.UpdatedAt = time.Now().UTC()
+				if err := store.UpdateRateLimit(ctx, rl); err != nil {
+					return touched, err
+				}
+				changed = true
+			} else if err == nil && rl != nil && rateLimitMatchesSpec(rl, beforeRL) {
 				rlID := *vk.RateLimitID
 				vk.RateLimitID = nil
 				vk.RateLimit = nil

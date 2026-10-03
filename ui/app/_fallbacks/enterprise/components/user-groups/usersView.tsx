@@ -110,12 +110,28 @@ function UserTeamCell({ userId }: { userId: string }) {
 	);
 }
 
+function passwordPolicyFailures(password: string): string[] {
+	const fails: string[] = [];
+	if (password.length < 8) fails.push("at least 8 characters");
+	if (!/[A-Z]/.test(password)) fails.push("one uppercase letter");
+	if (!/[a-z]/.test(password)) fails.push("one lowercase letter");
+	if (!/\d/.test(password)) fails.push("one number");
+	if (!/[^A-Za-z0-9]/.test(password)) fails.push("one special character");
+	return fails;
+}
+
 export default function UsersView() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [roleFilter, setRoleFilter] = useState<"all" | "user" | "admin">("all");
 	const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
-	const { data: users = [], isLoading: loading } = useGetSessionUsersQuery();
+	const {
+		data: users = [],
+		isLoading: loading,
+		isError: usersError,
+		error: usersErrorDetail,
+		refetch: refetchUsers,
+	} = useGetSessionUsersQuery();
 	const { data: promptsData } = useGetPromptsQuery();
 	const { data: teamsData } = useGetTeamsQuery({ limit: 500, offset: 0 });
 	const teams = teamsData?.teams || [];
@@ -180,7 +196,9 @@ export default function UsersView() {
 
 	useEffect(() => {
 		if (!isEditOpen || !selectedUser?.id) return;
-		const current = editUserVKs?.virtual_keys?.[0]?.id || "";
+		// Team/customer keys are inherited, not assigned to the user — preselecting one would
+		// make "No Virtual Key" look like it removes a key it can't remove.
+		const current = editUserVKs?.virtual_keys?.find((vk) => (vk.origin ?? "direct") === "direct")?.id || "";
 		setVirtualKeyId(current);
 		setInitialVirtualKeyId(current);
 	}, [isEditOpen, selectedUser?.id, editUserVKs]);
@@ -484,12 +502,7 @@ export default function UsersView() {
 			toast.error("Please enter a valid email address");
 			return;
 		}
-		const policyFails: string[] = [];
-		if (password.length < 8) policyFails.push("at least 8 characters");
-		if (!/[A-Z]/.test(password)) policyFails.push("one uppercase letter");
-		if (!/[a-z]/.test(password)) policyFails.push("one lowercase letter");
-		if (!/\d/.test(password)) policyFails.push("one number");
-		if (!/[^A-Za-z0-9]/.test(password)) policyFails.push("one special character");
+		const policyFails = passwordPolicyFailures(password);
 		if (policyFails.length > 0) {
 			toast.error("Password must include " + policyFails.join(", "));
 			return;
@@ -548,6 +561,17 @@ export default function UsersView() {
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
 			toast.error("Please enter a valid email address");
 			return;
+		}
+		if (password) {
+			if (password !== confirmPassword) {
+				toast.error("Passwords do not match");
+				return;
+			}
+			const policyFails = passwordPolicyFailures(password);
+			if (policyFails.length > 0) {
+				toast.error("Password must include " + policyFails.join(", "));
+				return;
+			}
 		}
 		setIsUpdating(true);
 		try {
@@ -653,6 +677,7 @@ export default function UsersView() {
 		setUsername(user.username);
 		setEmail(user.email || "");
 		setPassword("");
+		setConfirmPassword("");
 		const nextRole = (user.role || "user").trim() || "user";
 		setRole(nextRole);
 		setTeamId("");
@@ -722,7 +747,10 @@ export default function UsersView() {
 		{ value: "admin", label: "Admin" },
 	];
 
-	const pendingUsers = users.filter((u) => (u.status || "approved") === "pending" && matchesSearch(u) && matchesRole(u));
+	// email_unverified sign-ups are listed too (badged) so admins can see and clean up stuck requests.
+	const pendingUsers = users.filter(
+		(u) => ["pending", "email_unverified"].includes(u.status || "approved") && matchesSearch(u) && matchesRole(u),
+	);
 	const activeUsers = approvedUsers.filter((u) => matchesSearch(u) && matchesRole(u));
 	const activeUsersTitle =
 		roleFilter === "admin" ? "Active admins" : roleFilter === "user" ? "Active users (role: User)" : "Active users";
@@ -809,6 +837,17 @@ export default function UsersView() {
 				<div className="flex items-center justify-center py-20">
 					<div className="h-8 w-8 animate-spin rounded-full border-t-2 border-b-2 border-teal-400"></div>
 				</div>
+			) : usersError ? (
+				<div
+					className="flex flex-col items-center justify-center gap-3 rounded-xl border border-red-500/30 bg-red-500/5 py-16 text-center"
+					data-testid="users-load-error"
+				>
+					<p className="text-base font-medium text-red-400">Could not load users</p>
+					<p className="text-muted-foreground max-w-md text-sm">{getErrorMessage(usersErrorDetail)}</p>
+					<Button variant="outline" size="sm" onClick={() => refetchUsers()}>
+						Retry
+					</Button>
+				</div>
 			) : (
 				<>
 					{/* Pending registrations */}
@@ -841,7 +880,14 @@ export default function UsersView() {
 													{user.id}
 												</TableCell>
 												<TableCell className="font-medium">{user.username}</TableCell>
-												<TableCell className="text-sm text-muted-foreground">{user.email || "—"}</TableCell>
+												<TableCell className="text-sm text-muted-foreground">
+													{user.email || "—"}
+													{user.status === "email_unverified" && (
+														<span className="ml-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+															Email not verified
+														</span>
+													)}
+												</TableCell>
 												<TableCell>
 													<span
 														className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
@@ -1247,6 +1293,18 @@ export default function UsersView() {
 								className="bg-muted/20 border-border/50 focus:border-teal-500/50"
 							/>
 						</div>
+						{password && (
+							<div className="space-y-2">
+								<label className="text-muted-foreground text-sm font-medium">Confirm New Password</label>
+								<Input
+									type="password"
+									value={confirmPassword}
+									onChange={(e) => setConfirmPassword(e.target.value)}
+									placeholder="Re-enter new password"
+									className="bg-muted/20 border-border/50 focus:border-teal-500/50"
+								/>
+							</div>
+						)}
 						<div className="space-y-2">
 							<label className="text-muted-foreground text-sm font-medium">Role</label>
 							<p className="text-muted-foreground text-xs">

@@ -6,7 +6,13 @@ export interface GetVirtualKeyUsersResponse {
 }
 
 export interface GetUserVirtualKeysResponse {
-	virtual_keys: Array<{ id: string; name: string; is_active?: boolean; created_at?: string }>;
+	virtual_keys: Array<{
+		id: string;
+		name: string;
+		is_active?: boolean;
+		created_at?: string;
+		origin?: "direct" | "team" | "customer";
+	}>;
 }
 
 export const virtualKeyUsersApi = baseApi.injectEndpoints({

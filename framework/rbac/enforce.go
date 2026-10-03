@@ -224,6 +224,20 @@ func isDashboardAggregatePath(path string) bool {
 		strings.HasPrefix(path, "/api/logs/rankings")
 }
 
+// isOwnPlaygroundSessionPath matches creating, saving, renaming and deleting a playground
+// session: POST /api/prompt-repo/prompts/{id}/sessions and /api/prompt-repo/sessions/{id}[/rename].
+func isOwnPlaygroundSessionPath(path string) bool {
+	if rest, ok := strings.CutPrefix(path, "/api/prompt-repo/prompts/"); ok {
+		id, tail, found := strings.Cut(rest, "/")
+		return found && id != "" && tail == "sessions"
+	}
+	if rest, ok := strings.CutPrefix(path, "/api/prompt-repo/sessions/"); ok {
+		id, tail, _ := strings.Cut(rest, "/")
+		return id != "" && (tail == "" || tail == "rename")
+	}
+	return false
+}
+
 // isDashboardMCPAggregatePath covers the Dashboard MCP tab's charts and filter options.
 // Raw MCP tool-call rows still require MCPLogs or Logs.
 func isDashboardMCPAggregatePath(path string) bool {
@@ -327,6 +341,10 @@ func writeRequirement(method, path string) *PathRequirement {
 			Operation:      op,
 			AllOfResources: []string{"GuardrailsConfig", "GuardrailsProviders"},
 		}
+	case isOwnPlaygroundSessionPath(path):
+		// Playground chats belong to the caller (handlers enforce ownership), so members with
+		// view access can keep their own history. Committing a session still needs write access.
+		return &PathRequirement{Resource: "PromptRepository", Operation: "View"}
 	case strings.HasPrefix(path, "/api/prompt-repo"):
 		return &PathRequirement{Resource: "PromptRepository", Operation: op}
 	case strings.HasPrefix(path, "/api/prompt-deployments"):

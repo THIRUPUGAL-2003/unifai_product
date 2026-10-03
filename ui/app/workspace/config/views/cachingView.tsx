@@ -22,6 +22,7 @@ import { CacheConfig, EditorCacheConfig, ModelProvider, ModelProviderName, Vecto
 import { SEMANTIC_CACHE_PLUGIN } from "@/lib/types/plugins";
 import { SecretVar } from "@/lib/types/schemas";
 import { cn } from "@/lib/utils";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -171,11 +172,12 @@ const buildPayload = (config: EditorCacheConfig, mode: CacheMode): CacheConfig =
 		exclude_system_prompt: config.exclude_system_prompt,
 		cache_by_model: config.cache_by_model,
 		cache_by_provider: config.cache_by_provider,
-		vector_store_namespace: config.vector_store_namespace?.trim() || undefined,
-		default_cache_key: config.default_cache_key?.trim() || undefined,
+		// null (not undefined) so the server's config merge actually clears a removed value.
+		vector_store_namespace: config.vector_store_namespace?.trim() || null,
+		default_cache_key: config.default_cache_key?.trim() || null,
 	};
 	if (mode === "direct") {
-		return { ...base, dimension: 1 } as CacheConfig;
+		return { ...base, dimension: 1, provider: null, embedding_model: null } as unknown as CacheConfig;
 	}
 	return {
 		...base,
@@ -211,6 +213,7 @@ export default function CachingView() {
 		fromDB: true,
 	});
 	const isVectorStoreEnabled = unifaiConfig?.is_cache_connected ?? false;
+	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
 
 	const { data: vectorStoreData, isLoading: vectorStoreLoading } = useGetVectorStoreConfigQuery();
 	const [updateVectorStore, { isLoading: isSavingVectorStore }] = useUpdateVectorStoreConfigMutation();
@@ -284,6 +287,9 @@ export default function CachingView() {
 			}).unwrap();
 			await refetchCoreConfig();
 			toast.success(result.connected ? "Vector store connected" : "Vector store disconnected");
+			if (result.warning) {
+				toast.warning(result.warning);
+			}
 		} catch (error) {
 			toast.error(`Failed to save vector store: ${getErrorMessage(error)}`);
 		}
@@ -397,7 +403,11 @@ export default function CachingView() {
 	const isLoading = configLoading || pluginsLoading || vectorStoreLoading;
 
 	return (
-		<div className="mx-auto w-full max-w-4xl space-y-6">
+		<fieldset
+			disabled={!hasSettingsUpdateAccess}
+			className="mx-auto w-full max-w-4xl min-w-0 space-y-6 border-0 p-0"
+			data-testid="caching-settings-fieldset"
+		>
 			<div>
 				<h2 className="text-lg font-semibold tracking-tight">Local Cache</h2>
 				<p className="text-muted-foreground text-sm">
@@ -990,6 +1000,6 @@ export default function CachingView() {
 					)}
 				</div>
 			)}
-		</div>
+		</fieldset>
 	);
 }

@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getErrorMessage } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useGetClusterConfigQuery, useUpdateClusterConfigMutation } from "@enterprise/lib/store/apis/clusterApi";
 import { ClusterConfig } from "@enterprise/lib/types/workspace";
-import { Network, Save } from "lucide-react";
+import { AlertTriangle, Network, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -23,12 +24,15 @@ export default function ClusterPage() {
 	const [peerText, setPeerText] = useState("");
 	const [peerErrors, setPeerErrors] = useState<string[]>([]);
 
+	const canEdit = useRbac(RbacResource.Cluster, RbacOperation.Update);
+
 	const validatePeers = (peers: string[]) => {
 		const errors: string[] = [];
 		const hostPort = /^[a-zA-Z0-9._-]+:\d+$/;
+		const gatewayUrl = /^https?:\/\/[a-zA-Z0-9._-]+(:\d+)?\/?$/;
 		peers.forEach((peer) => {
-			if (!hostPort.test(peer)) {
-				errors.push(`Invalid peer "${peer}" — use host:port (e.g. 10.0.0.12:7946)`);
+			if (!hostPort.test(peer) && !gatewayUrl.test(peer)) {
+				errors.push(`Invalid peer "${peer}" — use host:port or http(s)://host:port (e.g. 10.0.0.12:8080)`);
 			}
 		});
 		if (config.enabled && peers.length === 0) {
@@ -55,7 +59,8 @@ export default function ClusterPage() {
 		}
 		try {
 			const next = await updateCluster({ ...config, peers }).unwrap();
-			setConfig({ ...config, ...next, node: config.node });
+			setConfig({ ...config, ...next });
+			setPeerText((next.peers || peers).join("\n"));
 			toast.success("Cluster configuration saved");
 		} catch (err) {
 			toast.error(getErrorMessage(err));
@@ -74,7 +79,7 @@ export default function ClusterPage() {
 			setPeerErrors([]);
 			try {
 				const next = await updateCluster(nextConfig).unwrap();
-				setConfig({ ...config, ...next, node: config.node });
+				setConfig({ ...config, ...next });
 				toast.success("Cluster mode disabled and saved");
 			} catch (err) {
 				setConfig(config);
@@ -86,7 +91,7 @@ export default function ClusterPage() {
 		if (peers.length === 0) {
 			setConfig({ ...config, enabled: true });
 			setPeerErrors(["Add at least one peer when cluster mode is enabled."]);
-			toast.info("Cluster mode turned on. Add at least one peer (host:port) and click Save.");
+			toast.info("Cluster mode turned on. Add at least one peer gateway address and click Save.");
 			return;
 		}
 		if (!validatePeers(peers)) {
@@ -98,7 +103,7 @@ export default function ClusterPage() {
 		setConfig(nextConfig);
 		try {
 			const next = await updateCluster(nextConfig).unwrap();
-			setConfig({ ...config, ...next, node: config.node });
+			setConfig({ ...config, ...next });
 			toast.success("Cluster mode enabled and saved");
 		} catch (err) {
 			setConfig(config);
@@ -137,9 +142,28 @@ export default function ClusterPage() {
 				</CardContent>
 			</Card>
 
+			{(config.warnings?.length ?? 0) > 0 && (
+				<div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm" data-testid="cluster-warnings">
+					<div className="mb-2 flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+						<AlertTriangle className="h-4 w-4" />
+						Replication is not fully working
+					</div>
+					<ul className="list-disc space-y-1 pl-5">
+						{config.warnings?.map((warning) => (
+							<li key={warning}>{warning}</li>
+						))}
+					</ul>
+				</div>
+			)}
+
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-base">Cluster settings</CardTitle>
+					<CardDescription>
+						Nodes replicate shared state over each peer&apos;s gateway HTTP address (<code>/internal/cluster/kv</code>). Every node needs the
+						same <code>CLUSTER_REPLICATE_SECRET</code> environment variable
+						{config.replicate_secret_configured === false ? " — it is not set on this node." : "."}
+					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="flex items-center justify-between rounded-lg border p-3">
@@ -147,13 +171,18 @@ export default function ClusterPage() {
 							<Label>Enable cluster mode</Label>
 							<p className="text-muted-foreground text-xs">Persists cluster_config for this workspace.</p>
 						</div>
-						<Switch checked={config.enabled} disabled={saving} onCheckedChange={(enabled) => void handleToggleCluster(enabled)} />
+						<Switch
+							checked={config.enabled}
+							disabled={saving || !canEdit}
+							onCheckedChange={(enabled) => void handleToggleCluster(enabled)}
+						/>
 					</div>
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1">
 							<Label>Type</Label>
 							<select
 								value={config.type || "mesh"}
+								disabled={!canEdit}
 								onChange={(e) => setConfig({ ...config, type: e.target.value })}
 								className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
 							>
@@ -163,13 +192,18 @@ export default function ClusterPage() {
 						</div>
 						<div className="space-y-1">
 							<Label>Region</Label>
-							<Input value={config.region || ""} onChange={(e) => setConfig({ ...config, region: e.target.value })} />
+							<Input value={config.region || ""} disabled={!canEdit} onChange={(e) => setConfig({ ...config, region: e.target.value })} />
 						</div>
 					</div>
 					<div className="space-y-1">
-						<Label>Peers (host:port, one per line)</Label>
+						<Label>Peer gateway addresses (one per line)</Label>
+						<p className="text-muted-foreground text-xs">
+							The other nodes&apos; HTTP address — the same host:port the dashboard/API uses — e.g. <code>10.0.0.12:8080</code> or{" "}
+							<code>https://node-2.internal</code>. Not the gossip port.
+						</p>
 						<textarea
 							value={peerText}
+							disabled={!canEdit}
 							onChange={(e) => {
 								setPeerText(e.target.value);
 								const peers = e.target.value
@@ -179,7 +213,7 @@ export default function ClusterPage() {
 								validatePeers(peers);
 							}}
 							className="border-input bg-background min-h-28 w-full rounded-md border p-3 font-mono text-sm"
-							placeholder="10.0.0.12:7946"
+							placeholder={"10.0.0.12:8080\nhttps://node-3.internal"}
 						/>
 						{peerErrors.length > 0 && (
 							<ul className="text-destructive space-y-1 text-xs">
@@ -191,9 +225,10 @@ export default function ClusterPage() {
 					</div>
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1">
-							<Label>Gossip port</Label>
+							<Label>Gossip port (reserved)</Label>
 							<Input
 								type="number"
+								disabled={!canEdit}
 								value={config.gossip?.port || 7946}
 								onChange={(e) =>
 									setConfig({
@@ -207,16 +242,20 @@ export default function ClusterPage() {
 							/>
 						</div>
 						<div className="space-y-1">
-							<Label>gRPC port</Label>
+							<Label>gRPC port (reserved)</Label>
 							<Input
 								type="number"
+								disabled={!canEdit}
 								value={config.grpc?.port || 10102}
 								onChange={(e) => setConfig({ ...config, grpc: { port: Number(e.target.value), dial_timeout_seconds: config.grpc?.dial_timeout_seconds || 5 } })}
 							/>
 						</div>
 					</div>
+					<p className="text-muted-foreground text-xs">
+						Gossip and gRPC ports are stored for future transports; replication today uses the peer gateway addresses above.
+					</p>
 					<div className="flex justify-end">
-						<Button onClick={() => void save()} disabled={saving || peerErrors.length > 0}>
+						<Button onClick={() => void save()} disabled={saving || peerErrors.length > 0 || !canEdit}>
 							<Save className="h-4 w-4" />
 							{saving ? "Saving…" : "Save cluster config"}
 						</Button>

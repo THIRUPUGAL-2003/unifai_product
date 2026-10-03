@@ -26,7 +26,6 @@ import (
 	"github.com/unifai/unifai/core/providers/bedrock"
 	"github.com/unifai/unifai/core/providers/bedrockmantle"
 	"github.com/unifai/unifai/core/providers/cerebras"
-	"github.com/unifai/unifai/core/providers/openaicompat"
 	"github.com/unifai/unifai/core/providers/cohere"
 	"github.com/unifai/unifai/core/providers/deepseek"
 	"github.com/unifai/unifai/core/providers/elevenlabs"
@@ -38,6 +37,7 @@ import (
 	"github.com/unifai/unifai/core/providers/nebius"
 	"github.com/unifai/unifai/core/providers/ollama"
 	"github.com/unifai/unifai/core/providers/openai"
+	"github.com/unifai/unifai/core/providers/openaicompat"
 	"github.com/unifai/unifai/core/providers/opencode"
 	"github.com/unifai/unifai/core/providers/openrouter"
 	"github.com/unifai/unifai/core/providers/parasail"
@@ -84,7 +84,7 @@ type UnifAI struct {
 	errorChannelPool    sync.Pool                           // Pool for error channels, initial pool size is set in Init
 	responseStreamPool  sync.Pool                           // Pool for response stream channels, initial pool size is set in Init
 	pluginPipelinePool  sync.Pool                           // Pool for PluginPipeline objects
-	unifaiRequestPool  sync.Pool                           // Pool for UnifAIRequest objects
+	unifaiRequestPool   sync.Pool                           // Pool for UnifAIRequest objects
 	logger              schemas.Logger                      // logger instance, default logger is used if not provided
 	tracer              atomic.Value                        // tracer for distributed tracing (stores schemas.Tracer, NoOpTracer if not configured)
 	MCPManager          mcp.MCPManagerInterface             // MCP integration manager (nil if MCP not configured)
@@ -2728,8 +2728,8 @@ func (unifai *UnifAI) Passthrough(
 		sc := fasthttp.StatusBadRequest
 		return nil, &schemas.UnifAIError{
 			IsUnifAIError: false,
-			StatusCode:     &sc,
-			Error:          &schemas.ErrorField{Message: "passthrough request is nil"},
+			StatusCode:    &sc,
+			Error:         &schemas.ErrorField{Message: "passthrough request is nil"},
 		}
 	}
 
@@ -2747,8 +2747,8 @@ func (unifai *UnifAI) Passthrough(
 		sc := fasthttp.StatusBadGateway
 		return nil, &schemas.UnifAIError{
 			IsUnifAIError: false,
-			StatusCode:     &sc,
-			Error:          &schemas.ErrorField{Message: "provider returned nil passthrough response"},
+			StatusCode:    &sc,
+			Error:         &schemas.ErrorField{Message: "provider returned nil passthrough response"},
 		}
 	}
 	return resp.PassthroughResponse, nil
@@ -2763,8 +2763,8 @@ func (unifai *UnifAI) PassthroughStream(
 		sc := fasthttp.StatusBadRequest
 		return nil, &schemas.UnifAIError{
 			IsUnifAIError: false,
-			StatusCode:     &sc,
-			Error:          &schemas.ErrorField{Message: "passthrough request is nil"},
+			StatusCode:    &sc,
+			Error:         &schemas.ErrorField{Message: "passthrough request is nil"},
 		}
 	}
 
@@ -2818,8 +2818,8 @@ func (unifai *UnifAI) ExecuteChatMCPTool(ctx *schemas.UnifAIContext, toolCall *s
 	if unifai.MCPManager == nil {
 		return nil, &schemas.UnifAIError{
 			IsUnifAIError: false,
-			Error:          &schemas.ErrorField{Message: "mcp is not configured in this unifai instance"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
+			Error:         &schemas.ErrorField{Message: "mcp is not configured in this unifai instance"},
+			ExtraFields:   schemas.UnifAIErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
 		}
 	}
 	return unifai.MCPManager.ExecuteChatTool(ctx, toolCall)
@@ -2836,8 +2836,8 @@ func (unifai *UnifAI) ExecuteResponsesMCPTool(ctx *schemas.UnifAIContext, toolCa
 	if unifai.MCPManager == nil {
 		return nil, &schemas.UnifAIError{
 			IsUnifAIError: false,
-			Error:          &schemas.ErrorField{Message: "mcp is not configured in this unifai instance"},
-			ExtraFields:    schemas.UnifAIErrorExtraFields{RequestType: schemas.ResponsesRequest},
+			Error:         &schemas.ErrorField{Message: "mcp is not configured in this unifai instance"},
+			ExtraFields:   schemas.UnifAIErrorExtraFields{RequestType: schemas.ResponsesRequest},
 		}
 	}
 	return unifai.MCPManager.ExecuteResponsesTool(ctx, toolCall)
@@ -3738,7 +3738,7 @@ func (unifai *UnifAI) UpdateProvider(providerKey schemas.ModelProvider) error {
 					select {
 					case r.Err <- schemas.UnifAIError{
 						IsUnifAIError: false,
-						Error:          &schemas.ErrorField{Message: "request failed during provider concurrency update: queue full"},
+						Error:         &schemas.ErrorField{Message: "request failed during provider concurrency update: queue full"},
 						ExtraFields: schemas.UnifAIErrorExtraFields{
 							RequestType:            r.RequestType,
 							Provider:               prov,
@@ -4208,6 +4208,20 @@ func (unifai *UnifAI) UpdateToolManagerConfig(maxAgentDepth int, toolExecutionTi
 		CodeModeBindingLevel:  schemas.CodeModeBindingLevel(codeModeBindingLevel),
 		DisableAutoToolInject: disableAutoToolInject,
 	})
+	return nil
+}
+
+// SetMCPToolSyncInterval applies a new global MCP tool sync interval to running clients that
+// follow the global setting. A non-positive interval resets to the default.
+func (unifai *UnifAI) SetMCPToolSyncInterval(interval time.Duration) error {
+	if unifai.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this unifai instance")
+	}
+	setter, ok := unifai.MCPManager.(interface{ SetToolSyncInterval(time.Duration) })
+	if !ok {
+		return fmt.Errorf("mcp manager does not support live tool sync interval changes")
+	}
+	setter.SetToolSyncInterval(interval)
 	return nil
 }
 
@@ -5845,8 +5859,8 @@ func executeRequestWithRetries[T any](
 					errType := "no_eligible_keys"
 					return zero, &schemas.UnifAIError{
 						IsUnifAIError: false,
-						StatusCode:     &statusCode,
-						Type:           &errType,
+						StatusCode:    &statusCode,
+						Type:          &errType,
 						Error: &schemas.ErrorField{
 							Type:    &errType,
 							Message: err.Error(),
@@ -5858,8 +5872,8 @@ func executeRequestWithRetries[T any](
 					errType := "upstream_credentials_exhausted"
 					return zero, &schemas.UnifAIError{
 						IsUnifAIError: false,
-						StatusCode:     &statusCode,
-						Type:           &errType,
+						StatusCode:    &statusCode,
+						Type:          &errType,
 						Error: &schemas.ErrorField{
 							Type:    &errType,
 							Message: err.Error(),
@@ -7935,7 +7949,7 @@ func (unifai *UnifAI) drainQueueWithErrors(pq *ProviderQueue) {
 			select {
 			case r.Err <- schemas.UnifAIError{
 				IsUnifAIError: false,
-				Error:          &schemas.ErrorField{Message: "provider is shutting down"},
+				Error:         &schemas.ErrorField{Message: "provider is shutting down"},
 				ExtraFields: schemas.UnifAIErrorExtraFields{
 					RequestType:            r.RequestType,
 					Provider:               provKey,

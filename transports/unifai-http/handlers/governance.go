@@ -1249,6 +1249,10 @@ func allowedVKIDsForRequest(ctx *fasthttp.RequestCtx, store configstore.ConfigSt
 		return nil, false
 	}
 	session, err := store.GetSession(ctx, token)
+	if err != nil && !errors.Is(err, configstore.ErrNotFound) {
+		// A lookup failure must not lift the filter and expose every key's data.
+		return map[string]bool{}, true
+	}
 	if err != nil || session == nil || isWorkspaceAdminRole(session.Role) {
 		return nil, false
 	}
@@ -2788,6 +2792,10 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, 400, err.Error())
 			return
 		}
+		if errors.Is(err, configstore.ErrAlreadyExists) {
+			SendError(ctx, 409, "A team with this name already exists")
+			return
+		}
 		logger.Error("failed to update team: %v", err)
 		SendError(ctx, 500, "Failed to update team")
 		return
@@ -3179,6 +3187,11 @@ func (h *GovernanceHandler) updateCustomer(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, 400, err.Error())
 			return
 		}
+		if errors.Is(err, configstore.ErrAlreadyExists) {
+			SendError(ctx, 409, "A customer with this name already exists")
+			return
+		}
+		logger.Error("failed to update customer: %v", err)
 		SendError(ctx, 500, "Failed to update customer")
 		return
 	}
@@ -4705,6 +4718,11 @@ func (h *GovernanceHandler) createPricingOverride(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	// Blank IDs are stored as NULL, so validate the normalized form or a scope that needs an
+	// ID would pass with "" and then never apply.
+	req.VirtualKeyID = normalizeOptionalString(req.VirtualKeyID)
+	req.ProviderID = normalizeOptionalString(req.ProviderID)
+	req.ProviderKeyID = normalizeOptionalString(req.ProviderKeyID)
 	shape := modelcatalog.PricingOverride{
 		ScopeKind:     req.ScopeKind,
 		VirtualKeyID:  req.VirtualKeyID,
@@ -4818,6 +4836,9 @@ func (h *GovernanceHandler) updatePricingOverride(ctx *fasthttp.RequestCtx) {
 	if req.RequestTypes != nil {
 		merged.RequestTypes = req.RequestTypes
 	}
+	merged.VirtualKeyID = normalizeOptionalString(merged.VirtualKeyID)
+	merged.ProviderID = normalizeOptionalString(merged.ProviderID)
+	merged.ProviderKeyID = normalizeOptionalString(merged.ProviderKeyID)
 
 	if err := merged.IsValid(); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())

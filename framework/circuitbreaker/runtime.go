@@ -5,11 +5,15 @@ package circuitbreaker
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/unifai/unifai/core/schemas"
+	"github.com/unifai/unifai/framework/alerts"
 	configstoreTables "github.com/unifai/unifai/framework/configstore/tables"
 )
 
@@ -148,10 +152,12 @@ type FailoverDecision struct {
 }
 
 // ApplyFailover swaps a primary endpoint to its fallback when the circuit is open.
+// A request with no provider yet (plain model name, no virtual key) matches policies
+// that name that exact model, since the model alone identifies the primary.
 func (r *Runtime) ApplyFailover(provider schemas.ModelProvider, model string) (*FailoverDecision, bool) {
 	prov := strings.TrimSpace(string(provider))
 	mod := strings.TrimSpace(model)
-	if prov == "" || mod == "" {
+	if mod == "" {
 		return nil, false
 	}
 	r.mu.RLock()
@@ -163,7 +169,14 @@ func (r *Runtime) ApplyFailover(provider schemas.ModelProvider, model string) (*
 		if !policy.Enabled {
 			continue
 		}
-		if !endpointMatches(policy.PrimaryProvider, policy.PrimaryModel, prov, mod) {
+		matchProv := prov
+		if matchProv == "" {
+			if strings.TrimSpace(policy.PrimaryModel) == "" {
+				continue
+			}
+			matchProv = strings.TrimSpace(policy.PrimaryProvider)
+		}
+		if !endpointMatches(policy.PrimaryProvider, policy.PrimaryModel, matchProv, mod) {
 			continue
 		}
 		if !r.isOpen(policy.Name, now) {
@@ -171,7 +184,7 @@ func (r *Runtime) ApplyFailover(provider schemas.ModelProvider, model string) (*
 		}
 		return &FailoverDecision{
 			PolicyName: policy.Name,
-			FromProv:   prov,
+			FromProv:   matchProv,
 			FromModel:  mod,
 			ToProv:     strings.TrimSpace(policy.FallbackProvider),
 			ToModel:    strings.TrimSpace(policy.FallbackModel),
@@ -181,7 +194,9 @@ func (r *Runtime) ApplyFailover(provider schemas.ModelProvider, model string) (*
 }
 
 // EvaluateTrip opens the circuit when response headers match a policy signal for a primary call.
-func (r *Runtime) EvaluateTrip(provider schemas.ModelProvider, model string, headers map[string]string) (string, bool) {
+// keyID is the provider key that served the call; policies scoped to specific keys
+// (PrimaryKeyIDs) only trip on those keys.
+func (r *Runtime) EvaluateTrip(provider schemas.ModelProvider, model, keyID string, headers map[string]string) (string, bool) {
 	prov := strings.TrimSpace(string(provider))
 	mod := strings.TrimSpace(model)
 	if prov == "" || mod == "" {
@@ -200,6 +215,9 @@ func (r *Runtime) EvaluateTrip(provider schemas.ModelProvider, model string, hea
 		if !endpointMatches(policy.PrimaryProvider, policy.PrimaryModel, prov, mod) {
 			continue
 		}
+		if !keyMatches(policy.PrimaryKeyIDs, keyID) {
+			continue
+		}
 		if r.isOpen(policy.Name, now) {
 			continue
 		}
@@ -208,6 +226,15 @@ func (r *Runtime) EvaluateTrip(provider schemas.ModelProvider, model string, hea
 		}
 		cooldown := parseCooldown(policy.DefaultCooldown, policy.CooldownHeader, normalized)
 		r.trip(policy.Name, cooldown, now)
+		alerts.Emit(alerts.Event{
+			Kind:     alerts.KindCircuitBreakerOpen,
+			Severity: alerts.SeverityCritical,
+			Title:    fmt.Sprintf("Circuit breaker %q opened", policy.Name),
+			Message: fmt.Sprintf("%s/%s matched the policy signal; traffic fails over to %s/%s for %s.",
+				prov, mod, policy.FallbackProvider, policy.FallbackModel, cooldown.Round(time.Second)),
+			Fields:    map[string]string{"policy": policy.Name, "provider": prov, "model": mod, "key_id": keyID},
+			DedupeKey: alerts.KindCircuitBreakerOpen + "|" + policy.Name,
+		})
 		return policy.Name, true
 	}
 	return "", false
@@ -340,15 +367,50 @@ func signalsMatch(cond Condition, headers map[string]string) bool {
 	return false
 }
 
+func keyMatches(policyKeyIDs []string, keyID string) bool {
+	if len(policyKeyIDs) == 0 {
+		return true
+	}
+	keyID = strings.TrimSpace(keyID)
+	for _, id := range policyKeyIDs {
+		if strings.TrimSpace(id) != "" && strings.EqualFold(strings.TrimSpace(id), keyID) {
+			return true
+		}
+	}
+	return false
+}
+
+// ParseCooldownValue reads a cooldown as a Go duration ("30s", "6m0s"), whole or
+// fractional seconds ("20", "1.5" — the retry-after form), or an HTTP date.
+func ParseCooldownValue(raw string, now time.Time) (time.Duration, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		return d, true
+	}
+	if secs, err := strconv.ParseFloat(raw, 64); err == nil && secs > 0 {
+		return time.Duration(secs * float64(time.Second)), true
+	}
+	if at, err := http.ParseTime(raw); err == nil {
+		if d := at.Sub(now); d > 0 {
+			return d, true
+		}
+	}
+	return 0, false
+}
+
 func parseCooldown(defaultCooldown, cooldownHeader string, headers map[string]string) time.Duration {
+	now := time.Now()
 	if ch := strings.TrimSpace(cooldownHeader); ch != "" {
 		if raw, ok := headers[strings.ToLower(ch)]; ok {
-			if d, err := time.ParseDuration(strings.TrimSpace(raw)); err == nil && d > 0 {
+			if d, ok := ParseCooldownValue(raw, now); ok {
 				return d
 			}
 		}
 	}
-	if d, err := time.ParseDuration(strings.TrimSpace(defaultCooldown)); err == nil && d > 0 {
+	if d, ok := ParseCooldownValue(defaultCooldown, now); ok {
 		return d
 	}
 	return 30 * time.Second

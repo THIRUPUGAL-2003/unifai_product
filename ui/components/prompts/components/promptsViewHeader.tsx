@@ -26,6 +26,7 @@ export default function PromptsViewHeader() {
 		setCommitSheet,
 		setDeletePromptDialog,
 		apiKeyId,
+		skillId,
 		modelParams,
 		provider,
 		model,
@@ -36,6 +37,7 @@ export default function PromptsViewHeader() {
 		isStreaming,
 		canUpdate,
 		canDelete,
+		selectedSession: fullSelectedSession,
 	} = usePromptContext();
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
@@ -92,8 +94,11 @@ export default function PromptsViewHeader() {
 		if (apiKeyId && apiKeyId !== "__auto__") {
 			params.api_key_id = apiKeyId;
 		}
+		if (skillId.trim()) {
+			params.skill_id = skillId.trim();
+		}
 		return params;
-	}, [modelParams, apiKeyId]);
+	}, [modelParams, apiKeyId, skillId]);
 
 	const handleSaveSession = useCallback(async () => {
 		if (!selectedPrompt || !hasChanges || isStreaming) return;
@@ -153,9 +158,8 @@ export default function PromptsViewHeader() {
 	const handleCommitVersion = useCallback(async () => {
 		if (!selectedPrompt) return;
 		if (!hasChanges) {
-			const selectedSession = sessions.find((s) => s.id === selectedSessionId);
-			if (selectedSession) {
-				onSessionSaved(selectedSession);
+			if (fullSelectedSession && fullSelectedSession.id === selectedSessionId) {
+				onSessionSaved(fullSelectedSession);
 			}
 			return;
 		}
@@ -176,7 +180,20 @@ export default function PromptsViewHeader() {
 		} catch (err) {
 			toast.error("Failed to save session", { description: getErrorMessage(err) });
 		}
-	}, [selectedPrompt?.id, messages, buildSaveParams, provider, model, variables, createSession, setUrlState, onSessionSaved, hasChanges]);
+	}, [
+		selectedPrompt?.id,
+		messages,
+		buildSaveParams,
+		provider,
+		model,
+		variables,
+		createSession,
+		setUrlState,
+		onSessionSaved,
+		hasChanges,
+		fullSelectedSession,
+		selectedSessionId,
+	]);
 
 	const handleRenameSession = useCallback(
 		async (sessionId: number, name: string) => {

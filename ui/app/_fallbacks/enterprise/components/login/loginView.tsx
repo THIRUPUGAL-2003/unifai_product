@@ -55,6 +55,8 @@ export default function LoginView() {
 	const [isLoading, setIsLoading] = useState(false);
 	const [lockoutEndsAt, setLockoutEndsAt] = useState<number | null>(null);
 	const [lockoutReason, setLockoutReason] = useState("");
+	// Account lockouts belong to one username; network lockouts (per IP) apply to every username.
+	const [lockoutUsername, setLockoutUsername] = useState<string | null>(null);
 	const [now, setNow] = useState(() => Date.now());
 
 	const [login, { isLoading: isLoggingIn }] = useLoginMutation();
@@ -221,6 +223,7 @@ export default function LoginView() {
 			if (mode === "login" && retryAfterSeconds) {
 				setLockoutReason(message.split(/(?<=\.)\s/)[0]);
 				setLockoutEndsAt(Date.now() + retryAfterSeconds * 1000);
+				setLockoutUsername(/from this network/i.test(message) ? null : username.trim().toLowerCase());
 			}
 		} finally {
 			setIsLoading(false);
@@ -407,7 +410,9 @@ export default function LoginView() {
 													value={username}
 													onChange={(e) => {
 														setUsername(e.target.value);
-														setLockoutEndsAt(null);
+														if (lockoutUsername && e.target.value.trim().toLowerCase() !== lockoutUsername) {
+															setLockoutEndsAt(null);
+														}
 													}}
 													required
 													className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"

@@ -88,8 +88,12 @@ func validateCircuitBreakerPolicy(policy *circuitBreakerPolicyPayload) string {
 	if policy.Condition.Operator == "" {
 		policy.Condition.Operator = "OR"
 	}
+	policy.DefaultCooldown = strings.TrimSpace(policy.DefaultCooldown)
 	if policy.DefaultCooldown == "" {
 		policy.DefaultCooldown = "30s"
+	}
+	if _, ok := circuitbreaker.ParseCooldownValue(policy.DefaultCooldown, time.Now()); !ok {
+		return `default_cooldown must be a duration such as "30s", "5m" or a number of seconds`
 	}
 	return ""
 }

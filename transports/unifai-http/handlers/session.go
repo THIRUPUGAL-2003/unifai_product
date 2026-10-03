@@ -902,6 +902,14 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
 		return
 	}
+	if msg := scopedAdminTargetGuard(ctx, h.configStore, "", role); msg != "" {
+		SendError(ctx, fasthttp.StatusForbidden, msg)
+		return
+	}
+	if !callerSectionsCover(ctx, h.configStore, payload.AllowedSections) {
+		SendError(ctx, fasthttp.StatusForbidden, "You can only grant sections you have access to yourself")
+		return
+	}
 	payload.Role = role
 
 	hashedPassword, err := encrypt.Hash(payload.Password)
@@ -920,6 +928,10 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	if err != nil && !errors.Is(err, configstore.ErrNotFound) {
 		logger.Error("failed to lookup governance user username=%s: %v", payload.Username, err)
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to validate username — check database connection")
+		return
+	}
+	if usernameCaseConflict(ctx, h.configStore, payload.Username, "") {
+		SendError(ctx, fasthttp.StatusConflict, "Username is already registered (usernames are not case-sensitive)")
 		return
 	}
 	if existing != nil {
@@ -1376,37 +1388,37 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
+	// Every token/account failure returns the same message, and the "same as current
+	// password" check only runs after the token is proven valid, so this unauthenticated
+	// endpoint reveals neither which accounts exist nor whether a guessed password is right.
+	const invalidResetMsg = "Invalid or expired reset token. Please request a new verification code."
+	claims, err := verifyPasswordResetToken(payload.ResetToken)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
+		return
+	}
+	otpRow, err := h.configStore.GetPasswordResetOTPByID(ctx, claims.OTPID)
+	if err != nil || otpRow == nil || otpRow.Used || time.Now().After(otpRow.ExpiresAt) {
+		SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
+		return
+	}
+
 	if user != nil {
 		if !user.IsApproved() {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Invalid reset token or account")
+			SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
+			return
+		}
+		if !strings.EqualFold(claims.Username, user.Username) && (claims.Email == "" || !strings.EqualFold(claims.Email, user.Email)) {
+			SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
+			return
+		}
+		if !strings.EqualFold(otpRow.Username, user.Username) {
+			SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
 			return
 		}
 		sameAsCurrent, cmpErr := encrypt.CompareHash(user.Password, payload.NewPassword)
 		if cmpErr == nil && sameAsCurrent {
 			SendError(ctx, fasthttp.StatusBadRequest, "New password must be different from your current password")
-			return
-		}
-
-		claims, err := verifyPasswordResetToken(payload.ResetToken)
-		if err != nil {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Invalid or expired reset token. Please request a new verification code.")
-			return
-		}
-		if !strings.EqualFold(claims.Username, user.Username) && (claims.Email == "" || !strings.EqualFold(claims.Email, user.Email)) {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Reset token does not match this account")
-			return
-		}
-		otpRow, err := h.configStore.GetPasswordResetOTPByID(ctx, claims.OTPID)
-		if err != nil || otpRow == nil || otpRow.Used {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Reset token has already been consumed or expired. Please request a new code.")
-			return
-		}
-		if time.Now().After(otpRow.ExpiresAt) {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Reset token has expired. Please request a new code.")
-			return
-		}
-		if !strings.EqualFold(otpRow.Username, user.Username) {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Reset token does not match this account")
 			return
 		}
 		targetOTPID := otpRow.ID
@@ -1438,7 +1450,17 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 	adminName, adminEmail := h.getAdminCredentials(ctx)
 	isSuperAdmin := isMatchingAdminIdentity(payload.Username, adminName, adminEmail) || isMatchingAdminIdentity(payload.Email, adminName, adminEmail)
 	if !isSuperAdmin {
-		SendError(ctx, fasthttp.StatusUnauthorized, "Invalid reset token or account")
+		SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
+		return
+	}
+	if !isMatchingAdminIdentity(claims.Username, adminName, adminEmail) &&
+		(claims.Email == "" || !isMatchingAdminIdentity(claims.Email, adminName, adminEmail)) {
+		SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
+		return
+	}
+	if !isMatchingAdminIdentity(otpRow.Username, adminName, adminEmail) &&
+		(otpRow.Email == "" || !isMatchingAdminIdentity(otpRow.Email, adminName, adminEmail)) {
+		SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
 		return
 	}
 
@@ -1454,32 +1476,6 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadRequest, "New password must be different from your current password")
 			return
 		}
-	}
-
-	claims, err := verifyPasswordResetToken(payload.ResetToken)
-	if err != nil {
-		SendError(ctx, fasthttp.StatusUnauthorized, "Invalid or expired reset token. Please request a new verification code.")
-		return
-	}
-	if !isMatchingAdminIdentity(claims.Username, adminName, adminEmail) &&
-		(claims.Email == "" || !isMatchingAdminIdentity(claims.Email, adminName, adminEmail)) {
-		SendError(ctx, fasthttp.StatusUnauthorized, "Reset token does not match this account")
-		return
-	}
-
-	otpRow, err := h.configStore.GetPasswordResetOTPByID(ctx, claims.OTPID)
-	if err != nil || otpRow == nil || otpRow.Used {
-		SendError(ctx, fasthttp.StatusUnauthorized, "Reset token has already been consumed or expired. Please request a new code.")
-		return
-	}
-	if time.Now().After(otpRow.ExpiresAt) {
-		SendError(ctx, fasthttp.StatusUnauthorized, "Reset token has expired. Please request a new code.")
-		return
-	}
-	if !isMatchingAdminIdentity(otpRow.Username, adminName, adminEmail) &&
-		(otpRow.Email == "" || !isMatchingAdminIdentity(otpRow.Email, adminName, adminEmail)) {
-		SendError(ctx, fasthttp.StatusUnauthorized, "Reset token does not match this account")
-		return
 	}
 
 	newHashedPassword, err := encrypt.Hash(payload.NewPassword)
@@ -1502,7 +1498,9 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 	if adminEmail != "" && adminEmail != adminName {
 		_ = h.configStore.DeleteSessionsByUsername(ctx, adminEmail)
 	}
-	_ = h.configStore.FlushSessions(ctx)
+	if !strings.EqualFold(adminName, "admin") {
+		_ = h.configStore.DeleteSessionsByUsername(ctx, "admin")
+	}
 
 	clearAccountLockouts(h.configStore, ctx, adminName, adminEmail, "admin")
 	SendJSON(ctx, map[string]any{"message": "Password updated. You can sign in now."})
@@ -1554,6 +1552,26 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
 		return
 	}
+	if msg := scopedAdminTargetGuard(ctx, h.configStore, existingUser.Username, existingUser.Role); msg != "" {
+		SendError(ctx, fasthttp.StatusForbidden, msg)
+		return
+	}
+	if session, scoped := callerIsScopedAdmin(ctx, h.configStore); scoped && strings.EqualFold(session.Username, existingUser.Username) {
+		changesOwnGrants := (payload.AllowedSections != nil && *payload.AllowedSections != existingUser.AllowedSections) ||
+			(payload.Budget != nil && *payload.Budget != existingUser.Budget) ||
+			(payload.RateLimit != nil && *payload.RateLimit != existingUser.RateLimit) ||
+			(payload.Role != "" && !strings.EqualFold(payload.Role, existingUser.Role)) ||
+			(payload.Status != nil && *payload.Status != existingUser.Status)
+		if changesOwnGrants {
+			SendError(ctx, fasthttp.StatusForbidden, "You cannot change your own role, status, sections, budget or rate limit")
+			return
+		}
+	}
+	if payload.AllowedSections != nil && *payload.AllowedSections != existingUser.AllowedSections &&
+		!callerSectionsCover(ctx, h.configStore, *payload.AllowedSections) {
+		SendError(ctx, fasthttp.StatusForbidden, "You can only grant sections you have access to yourself")
+		return
+	}
 
 	if newName := strings.TrimSpace(payload.Username); newName != "" && newName != existingUser.Username {
 		if len(newName) > 128 {
@@ -1571,6 +1589,10 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		}
 		if other, err := h.configStore.GetUserByUsername(ctx, newName); err == nil && other != nil && other.ID != existingUser.ID {
 			SendError(ctx, fasthttp.StatusConflict, "Username is already taken")
+			return
+		}
+		if usernameCaseConflict(ctx, h.configStore, newName, existingUser.ID) {
+			SendError(ctx, fasthttp.StatusConflict, "Username is already taken (usernames are not case-sensitive)")
 			return
 		}
 		existingUser.Username = newName
@@ -1621,6 +1643,10 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		}
 		if !h.callerMayManageRole(ctx, role) {
 			SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
+			return
+		}
+		if msg := scopedAdminTargetGuard(ctx, h.configStore, existingUser.Username, role); msg != "" && role != prevRole {
+			SendError(ctx, fasthttp.StatusForbidden, msg)
 			return
 		}
 		existingUser.Role = role
@@ -1699,6 +1725,10 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 	}
 	if !h.callerMayManageRole(ctx, existing.Role) {
 		SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
+		return
+	}
+	if msg := scopedAdminTargetGuard(ctx, h.configStore, existing.Username, existing.Role); msg != "" {
+		SendError(ctx, fasthttp.StatusForbidden, msg)
 		return
 	}
 
@@ -1794,6 +1824,10 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 	}
 
 	now := time.Now()
+	if usernameCaseConflict(ctx, h.configStore, payload.Username, "") {
+		SendError(ctx, fasthttp.StatusConflict, "This username is already registered. Please choose a different username.")
+		return
+	}
 	if existing, err := h.configStore.GetUserByUsername(ctx, payload.Username); err == nil && existing != nil {
 		if existing.IsApproved() || existing.Status == tables.UserStatusPending {
 			SendError(ctx, fasthttp.StatusConflict, alreadyRegisteredMessage(existing))
@@ -1828,7 +1862,13 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 				return
 			}
 		}
-		// Denied or never-verified users may request access again.
+		// Denied or never-verified users may request access again — but never over an
+		// account the identity provider manages or one that still owns teams/keys, or the
+		// new sign-up would inherit a real employee's access once it is re-activated.
+		if !h.registrationMayReuse(ctx, existing) {
+			SendError(ctx, fasthttp.StatusConflict, "Username is already registered")
+			return
+		}
 		if !h.assertEmailAvailable(ctx, payload.Email, existing.ID) {
 			return
 		}
@@ -1878,6 +1918,50 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 	h.respondRegistered(ctx, user, verifyEmail, true)
 }
 
+// registrationMayReuse reports whether a public sign-up may overwrite an existing row.
+func (h *SessionHandler) registrationMayReuse(ctx *fasthttp.RequestCtx, existing *tables.TableUser) bool {
+	if existing.Status != tables.UserStatusRejected && existing.Status != tables.UserStatusEmailUnverified {
+		return false
+	}
+	if strings.TrimSpace(existing.ExternalID) != "" {
+		return false
+	}
+	if r := strings.ToLower(strings.TrimSpace(existing.Role)); r != "" && r != "user" {
+		return false
+	}
+	if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
+		if teams, err := ws.ListTeamsForUser(ctx, existing.ID); err != nil || len(teams) > 0 {
+			return false
+		}
+		if vks, err := ws.ListVirtualKeysForUser(ctx, existing.ID); err != nil || len(vks) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// reviewTargetGuard applies the same role guards as edit/delete to approve/reject and
+// limits both to sign-ups still awaiting review. Returns false after sending an error.
+func (h *SessionHandler) reviewTargetGuard(ctx *fasthttp.RequestCtx, user *tables.TableUser) bool {
+	if user.Status != tables.UserStatusPending && user.Status != tables.UserStatusEmailUnverified {
+		SendError(ctx, fasthttp.StatusConflict, "Only pending sign-ups can be approved or denied. Use Edit to change an existing account.")
+		return false
+	}
+	if user.Role == "admin" && !h.isSuperAdmin(ctx) {
+		SendError(ctx, fasthttp.StatusForbidden, "Cannot modify an admin account")
+		return false
+	}
+	if !h.callerMayManageRole(ctx, user.Role) {
+		SendError(ctx, fasthttp.StatusForbidden, roleBeyondCallerMessage)
+		return false
+	}
+	if msg := scopedAdminTargetGuard(ctx, h.configStore, user.Username, user.Role); msg != "" {
+		SendError(ctx, fasthttp.StatusForbidden, msg)
+		return false
+	}
+	return true
+}
+
 // approveUser handles POST /api/session/users/{id}/approve
 func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 	if !h.isAdmin(ctx) {
@@ -1895,6 +1979,9 @@ func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 	}
 	if user.Status == tables.UserStatusDisabled {
 		SendError(ctx, fasthttp.StatusConflict, "This account was disabled by the identity provider. Re-activate it there.")
+		return
+	}
+	if !h.reviewTargetGuard(ctx, user) {
 		return
 	}
 	now := time.Now()
@@ -1936,6 +2023,9 @@ func (h *SessionHandler) rejectUser(ctx *fasthttp.RequestCtx) {
 	user, err := h.configStore.GetUserByID(ctx, id)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
+		return
+	}
+	if !h.reviewTargetGuard(ctx, user) {
 		return
 	}
 	now := time.Now()

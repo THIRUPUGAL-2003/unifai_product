@@ -106,6 +106,7 @@ import type { ExportFormatsPayload } from "@/components/exportFormatsDropdown";
 import { useToast } from "@/hooks/use-toast";
 import {
 	useGetBrowserAiLogsQuery,
+	useGetBrowserAiLogStatsQuery,
 	useClearBrowserAiLogsMutation,
 	useDeleteBrowserAiLogsMutation,
 	useGetBrowserAiSearchLogsQuery,
@@ -366,6 +367,11 @@ export default function BrowserAiPage() {
 			skip: activeTab !== "logs" && activeTab !== "overview",
 		}
 	);
+	// Overview cards aggregate every log server-side, independent of the page/filters above.
+	const { data: overviewStats } = useGetBrowserAiLogStatsQuery(undefined, {
+		pollingInterval: activePolling,
+		skip: activeTab !== "overview",
+	});
 
 	const { data: rulesData, refetch: refetchRules } = useGetBrowserAiRulesQuery(undefined, { pollingInterval: activePolling });
 	const { data: targetsData, refetch: refetchTargets } = useGetBrowserAiTargetsQuery(undefined, { pollingInterval: activePolling });
@@ -1654,10 +1660,11 @@ export default function BrowserAiPage() {
 
 	const activeRulesCount = rules.filter((r) => r.active).length;
 	const monitoredTargetsCount = targets.filter((t) => t.monitored).length;
-	const blockedCount = logs.filter((l) => l.action === "Blocked").length;
-	const warnedCount = logs.filter((l) => l.action === "Redacted" || l.action === "Warned").length;
-	const highRiskCount = logs.filter((l) => (l.risk_score || 0) >= 70 || l.predictive_risk === "HIGH" || l.predictive_risk === "CRITICAL").length;
-	const avgRiskScore = logs.length > 0 ? Math.round(logs.reduce((acc, curr) => acc + (curr.risk_score || 10), 0) / logs.length) : 0;
+	const overviewTotal = overviewStats?.total ?? 0;
+	const blockedCount = overviewStats?.blocked ?? 0;
+	const warnedCount = overviewStats?.warned ?? 0;
+	const highRiskCount = overviewStats?.high_risk ?? 0;
+	const avgRiskScore = overviewStats?.avg_risk ?? 0;
 
 	const handleCopyPrompt = (text: string) => {
 		navigator.clipboard.writeText(text);
@@ -2381,7 +2388,7 @@ export default function BrowserAiPage() {
 								<CardDescription className="flex items-center gap-1.5">
 									<Globe className="h-3.5 w-3.5 text-muted-foreground" /> Total Prompts Intercepted
 								</CardDescription>
-								<CardTitle className="text-3xl font-bold">{totalLogs}</CardTitle>
+								<CardTitle className="text-3xl font-bold">{overviewTotal}</CardTitle>
 							</CardHeader>
 							<CardContent>
 								<p className="text-xs text-muted-foreground">Passing through HTTPS proxy</p>

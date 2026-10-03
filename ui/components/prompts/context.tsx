@@ -16,6 +16,7 @@ import {
 	useGetFoldersQuery,
 	useGetPromptsQuery,
 	useGetPromptVersionQuery,
+	useGetSessionQuery,
 	useGetSessionsQuery,
 	useUpdatePromptMutation,
 	useCreateSessionMutation,
@@ -248,14 +249,15 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		});
 	}, [requiredHeaders]);
 
-	// Fetch model datasheet for capabilities
-	const { data: datasheetData } = useGetModelParametersQuery(model, { skip: !model });
-	const supportsVision = datasheetData?.supports_vision ?? false;
-
 	// Derived data
 	const folders = useMemo(() => foldersData?.folders ?? [], [foldersData]);
 	const prompts = useMemo(() => promptsData?.prompts ?? [], [promptsData]);
 	const selectedPrompt = useMemo(() => prompts.find((p) => p.id === selectedPromptId), [prompts, selectedPromptId]);
+
+	// Members always run on the committed model, so capabilities come from that model.
+	const capabilityModel = (isUserRole && selectedPrompt?.latest_version?.model) || model;
+	const { data: datasheetData } = useGetModelParametersQuery(capabilityModel, { skip: !capabilityModel });
+	const supportsVision = datasheetData?.supports_vision ?? false;
 
 	// Fetch versions and sessions for selected prompt
 	const { data: sessionsData, isLoading: isSessionsLoading } = useGetSessionsQuery(selectedPromptId ?? "", { skip: !selectedPromptId });
@@ -266,7 +268,16 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		if (!selectedPromptId) return [];
 		return all.filter((s) => s.prompt_id === selectedPromptId);
 	}, [sessionsData, selectedPromptId]);
-	const selectedSession = useMemo(() => sessions.find((s) => s.id === selectedSessionId), [sessions, selectedSessionId]);
+	// The sessions list omits messages; the selected session is loaded in full on its own.
+	const selectedSessionListed = useMemo(() => sessions.some((s) => s.id === selectedSessionId), [sessions, selectedSessionId]);
+	const { data: selectedSessionData, isLoading: isSessionDetailLoading } = useGetSessionQuery(selectedSessionId ?? 0, {
+		skip: !selectedSessionId || !selectedSessionListed,
+	});
+	const selectedSession = useMemo(() => {
+		const session = selectedSessionData?.session;
+		if (!session || !selectedSessionListed || session.id !== selectedSessionId || session.prompt_id !== selectedPromptId) return undefined;
+		return session;
+	}, [selectedSessionData, selectedSessionListed, selectedSessionId, selectedPromptId]);
 
 	// Fetch full version data (with messages) when a version is selected
 	const {
@@ -282,6 +293,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const isLoadingPlayground = !!(
 		selectedPromptId &&
 		(isSessionsLoading ||
+			(selectedSessionId && isSessionDetailLoading) ||
 			(selectedVersionId && isVersionLoading) ||
 			// Sessions loaded but auto-select hasn't happened yet
 			(sessions.length > 0 && !selectedSessionId && !selectedVersionId))
@@ -302,9 +314,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					: "empty";
 
 		const loadFromParams = (params: ModelParams, prov: string, mod: string) => {
-			const { api_key_id, ...rest } = params || ({} as ModelParams);
+			const { api_key_id, skill_id, ...rest } = params || ({} as ModelParams);
 			setModelParams({ stream: true, ...rest });
 			setApiKeyId(api_key_id || "__auto__");
+			setSkillId(typeof skill_id === "string" ? skill_id : "");
 			setProvider(prov || "");
 			setModel(mod || "");
 		};
@@ -366,6 +379,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setModel("");
 			setModelParams({ stream: true });
 			setApiKeyId("__auto__");
+			setSkillId("");
 			loadedPlaygroundKeyRef.current = playgroundKey;
 		}
 	}, [
@@ -419,9 +433,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if (provider !== refProvider) return true;
 			if (model !== refModel) return true;
 
-			const { api_key_id: refApiKeyId, ...refParamsRest } = refParams || ({} as ModelParams);
+			const { api_key_id: refApiKeyId, skill_id: refSkillId, ...refParamsRest } = refParams || ({} as ModelParams);
 			const currentApiKeyId = apiKeyId !== "__auto__" ? apiKeyId : undefined;
 			if (currentApiKeyId !== (refApiKeyId || undefined)) return true;
+			if ((skillId || undefined) !== (refSkillId || undefined)) return true;
 
 			// Normalize: treat missing stream as stream: true so legacy params without stream don't appear changed
 			const normalizeParams = (p: ModelParams): ModelParams => {
@@ -441,7 +456,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			return false;
 		},
-		[provider, model, modelParams, apiKeyId, messages],
+		[provider, model, modelParams, apiKeyId, skillId, messages],
 	);
 
 	// Diff detection — compare current playground state against the loaded session/version
@@ -566,8 +581,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		if (apiKeyId && apiKeyId !== "__auto__") {
 			params.api_key_id = apiKeyId;
 		}
+		if (skillId.trim()) {
+			params.skill_id = skillId.trim();
+		}
 		return params;
-	}, [modelParams, apiKeyId]);
+	}, [modelParams, apiKeyId, skillId]);
 
 	const persistPlaygroundSession = useCallback(
 		async (finalMessages: Message[]) => {
@@ -594,7 +612,9 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					setUrlState({ sessionId: result.session.id, versionId: null });
 				}
 			} catch (e) {
-				console.error("Session persist failed:", e);
+				toast.error("Chat could not be saved", {
+					description: getErrorMessage(e) || "Your messages are still on screen. Use Save to retry.",
+				});
 			}
 		},
 		[selectedPrompt, selectedSessionId, buildPersistParams, provider, model, variables, updateSession, createSession, setUrlState],
