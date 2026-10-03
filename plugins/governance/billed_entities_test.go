@@ -142,6 +142,24 @@ func TestBudgetExhaustedReasonNamesTheSpentLevel(t *testing.T) {
 	}
 }
 
+func TestAlignUserBudgetResetsOnTheFirstOfTheMonth(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+
+	inWindow := &configstoreTables.TableBudget{ResetDuration: "1M", LastReset: time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC), CurrentUsage: 7}
+	alignUserBudget(inWindow, now)
+	if !inWindow.IsCalendarAligned || !inWindow.LastReset.Equal(start) || inWindow.CurrentUsage != 7 {
+		t.Fatalf("budget inside its rolling window = %+v, want aligned to %v with usage kept", inWindow, start)
+	}
+
+	expired := &configstoreTables.TableBudget{ResetDuration: "1M", LastReset: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), CurrentUsage: 7}
+	alignUserBudget(expired, now)
+	gs := &LocalGovernanceStore{}
+	if target := gs.budgetResetTarget(expired, now); target == nil || !target.Equal(start) {
+		t.Fatalf("expired budget reset target = %v, want %v", target, start)
+	}
+}
+
 func TestRoutingScopeChainFollowsBilledTeam(t *testing.T) {
 	gs := &LocalGovernanceStore{}
 	gs.teams.Store("team-dev", &configstoreTables.TableTeam{ID: "team-dev", Name: "Developers", CustomerID: strPtr("cust-bank")})

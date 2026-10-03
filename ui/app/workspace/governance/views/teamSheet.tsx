@@ -87,7 +87,7 @@ const createInitialState = (team?: Team | null): Omit<TeamFormData, "isDirty"> =
 		tokenResetDuration: team?.rate_limit?.token_reset_duration || "1h",
 		requestMaxLimit: team?.rate_limit?.request_max_limit ?? undefined,
 		requestResetDuration: team?.rate_limit?.request_reset_duration || "1h",
-		calendarAligned: team?.calendar_aligned ?? false,
+		calendarAligned: team ? (team.calendar_aligned ?? false) : true,
 	};
 };
 

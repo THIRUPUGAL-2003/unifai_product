@@ -55,7 +55,7 @@ const createInitialState = (customer?: Customer | null): Omit<CustomerFormData, 
 		tokenResetDuration: customer?.rate_limit?.token_reset_duration || "1h",
 		requestMaxLimit: customer?.rate_limit?.request_max_limit ?? undefined,
 		requestResetDuration: customer?.rate_limit?.request_reset_duration || "1h",
-		calendarAligned: customer?.calendar_aligned ?? false,
+		calendarAligned: customer ? (customer.calendar_aligned ?? false) : true,
 	};
 };
 
@@ -135,14 +135,8 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 		return hasAlignableBudget || hasAlignableRateLimit;
 	}, [formData.budgets, formData.tokenMaxLimit, formData.tokenResetDuration, formData.requestMaxLimit, formData.requestResetDuration]);
 
-	// Reset calendarAligned when no duration supports alignment,
-	// so a hidden toggle doesn't silently submit calendar_aligned: true.
-	useEffect(() => {
-		if (!formData.calendarAligned) return;
-		if (!canCalendarAlign) {
-			updateField("calendarAligned", false);
-		}
-	}, [canCalendarAlign, formData.calendarAligned]);
+	// The toggle is hidden while no duration supports alignment; submit it only when visible.
+	const submittedCalendarAligned = formData.calendarAligned && canCalendarAlign;
 
 	const tokenMaxLimitNum = formData.tokenMaxLimit;
 	const requestMaxLimitNum = formData.requestMaxLimit;
@@ -208,7 +202,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 			if (isEditing && customer) {
 				const updateData: UpdateCustomerRequest = {
 					name: formData.name,
-					calendar_aligned: formData.calendarAligned,
+					calendar_aligned: submittedCalendarAligned,
 					budgets: budgetRequests,
 				};
 
@@ -233,7 +227,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 			} else {
 				const createData: CreateCustomerRequest = {
 					name: formData.name,
-					calendar_aligned: formData.calendarAligned,
+					calendar_aligned: submittedCalendarAligned,
 					budgets: budgetRequests,
 				};
 

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/raksha/raksha/framework/configstore"
 	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
@@ -96,13 +97,27 @@ func (h *GovernanceHandler) addTeamMember(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusServiceUnavailable, "workspace store is not available")
 		return
 	}
-	if _, err := h.configStore.GetTeam(ctx, teamID); err != nil {
+	team, err := h.configStore.GetTeam(ctx, teamID)
+	if err != nil || team == nil {
 		SendError(ctx, fasthttp.StatusNotFound, "team not found")
 		return
 	}
 	if user, err := h.configStore.GetUserByID(ctx, body.UserID); err != nil || user == nil {
 		SendError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
+	}
+	if team.CustomerID != nil {
+		other, err := h.conflictingCustomerTeam(ctx, ws, body.UserID, *team.CustomerID, teamID)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "failed to check the user's teams")
+			return
+		}
+		if other != "" {
+			SendError(ctx, fasthttp.StatusConflict, fmt.Sprintf(
+				"This user is already in team %q under the same customer. A user can be in only one team per customer, so budgets are charged to one team — remove them from %q first.",
+				other, other))
+			return
+		}
 	}
 	if err := ws.AddTeamMember(ctx, teamID, body.UserID); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to add team member: "+err.Error())

@@ -2598,6 +2598,9 @@ func (gs *LocalGovernanceStore) rebuildInMemoryStructures(ctx context.Context, c
 	// Build budgets map
 	for i := range budgets {
 		budget := &budgets[i]
+		if budget.UserID != nil && *budget.UserID != "" {
+			alignUserBudget(budget, time.Now())
+		}
 		gs.budgets.Store(budget.ID, budget)
 		if budget.UserID != nil && *budget.UserID != "" {
 			uid := *budget.UserID
@@ -3900,6 +3903,23 @@ func (gs *LocalGovernanceStore) DeleteUserGovernanceInMemory(ctx context.Context
 	gs.users.Delete(userID)
 }
 
+// alignUserBudget makes a user's budget reset at calendar boundaries (1st of the month) like
+// team and customer budgets. A budget still inside its rolling window moves into the current
+// calendar period with its usage kept; an expired one is left for the normal reset.
+func alignUserBudget(budget *configstoreTables.TableBudget, now time.Time) {
+	budget.IsCalendarAligned = true
+	if !configstoreTables.IsCalendarAlignableDuration(budget.ResetDuration) {
+		return
+	}
+	start := configstoreTables.GetCalendarPeriodStart(budget.ResetDuration, now)
+	if !budget.LastReset.Before(start) {
+		return
+	}
+	if window, err := configstoreTables.ParseDuration(budget.ResetDuration); err == nil && now.Sub(budget.LastReset) < window {
+		budget.LastReset = start
+	}
+}
+
 func (gs *LocalGovernanceStore) upsertUserGovernanceInMemory(userID string, budget *configstoreTables.TableBudget, rateLimit *configstoreTables.TableRateLimit) {
 	if userID == "" {
 		return
@@ -3918,6 +3938,7 @@ func (gs *LocalGovernanceStore) upsertUserGovernanceInMemory(userID string, budg
 	if budget != nil && budget.ID != "" {
 		id := budget.ID
 		ug.BudgetID = &id
+		budget.IsCalendarAligned = true
 		if existingBudgetValue, exists := gs.budgets.Load(budget.ID); exists && existingBudgetValue != nil {
 			if eb, ok := existingBudgetValue.(*configstoreTables.TableBudget); ok && eb != nil {
 				budget.CurrentUsage = eb.CurrentUsage

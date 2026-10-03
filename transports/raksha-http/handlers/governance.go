@@ -2780,6 +2780,28 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 			return
 		}
 	}
+	if targetCustomerID != "" && customerChanged {
+		if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
+			members, err := ws.ListTeamMembers(ctx, team.ID)
+			if err != nil {
+				SendError(ctx, 500, "Failed to check team members")
+				return
+			}
+			for _, m := range members {
+				other, err := h.conflictingCustomerTeam(ctx, ws, m.UserID, targetCustomerID, team.ID)
+				if err != nil {
+					SendError(ctx, 500, "Failed to check team members")
+					return
+				}
+				if other != "" {
+					SendError(ctx, 409, fmt.Sprintf(
+						"A member of this team is already in team %q under that customer. A user can be in only one team per customer — fix the membership first.",
+						other))
+					return
+				}
+			}
+		}
+	}
 
 	// Updating team in database
 	if err := h.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {

@@ -61,7 +61,7 @@ func (h *SessionHandler) materializeUserGovernanceLimits(ctx context.Context, us
 				ID:            bid,
 				MaxLimit:      user.Budget,
 				ResetDuration: userBudgetResetDuration,
-				LastReset:     now,
+				LastReset:     tables.GetCalendarPeriodStart(userBudgetResetDuration, now),
 				CurrentUsage:  0,
 				UserID:        &uid,
 				CreatedAt:     now,

@@ -371,7 +371,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 							reset_duration: b.reset_duration ?? "1M",
 						}))
 					: [],
-			budgetCalendarAligned: virtualKey?.calendar_aligned ?? false,
+			budgetCalendarAligned: virtualKey ? (virtualKey.calendar_aligned ?? false) : true,
 			tokenMaxLimit: virtualKey?.rate_limit?.token_max_limit ?? undefined,
 			tokenResetDuration: virtualKey?.rate_limit?.token_reset_duration || "1h",
 			requestMaxLimit: virtualKey?.rate_limit?.request_max_limit ?? undefined,

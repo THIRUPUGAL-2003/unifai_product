@@ -26,6 +26,44 @@ func (s *allocationStore) GetTeams(ctx context.Context, customerID string) ([]ta
 	return s.teams, nil
 }
 
+func (s *allocationStore) GetTeam(ctx context.Context, id string) (*tables.TableTeam, error) {
+	for i := range s.teams {
+		if s.teams[i].ID == id {
+			return &s.teams[i], nil
+		}
+	}
+	return nil, configstore.ErrNotFound
+}
+
+type userTeamsWS struct {
+	configstore.WorkspaceStore
+	links []tables.TableTeamMember
+}
+
+func (w *userTeamsWS) ListTeamsForUser(ctx context.Context, userID string) ([]tables.TableTeamMember, error) {
+	return w.links, nil
+}
+
+func TestUserMayBeInOnlyOneTeamPerCustomer(t *testing.T) {
+	bank := "bank"
+	h := &GovernanceHandler{configStore: &allocationStore{teams: []tables.TableTeam{
+		{ID: "dev", Name: "Developers", CustomerID: &bank},
+		{ID: "qa", Name: "QA", CustomerID: &bank},
+		{ID: "solo", Name: "Solo"},
+	}}}
+	ws := &userTeamsWS{links: []tables.TableTeamMember{{TeamID: "dev", UserID: "ravi"}, {TeamID: "solo", UserID: "ravi"}}}
+
+	if other, err := h.conflictingCustomerTeam(context.Background(), ws, "ravi", bank, "qa"); err != nil || other != "Developers" {
+		t.Fatalf("adding ravi to QA under the same customer: conflict = %q, %v; want Developers", other, err)
+	}
+	if other, _ := h.conflictingCustomerTeam(context.Background(), ws, "ravi", bank, "dev"); other != "" {
+		t.Fatalf("re-adding ravi to his own team conflicts with %q", other)
+	}
+	if other, _ := h.conflictingCustomerTeam(context.Background(), ws, "ravi", "other-customer", "x"); other != "" {
+		t.Fatalf("a team under another customer conflicts with %q", other)
+	}
+}
+
 func monthly(limit float64) []tables.TableBudget {
 	return []tables.TableBudget{{MaxLimit: limit, ResetDuration: "1M"}}
 }

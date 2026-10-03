@@ -84,6 +84,31 @@ func (h *GovernanceHandler) checkCustomerBudgetAllocation(ctx context.Context, c
 	return nil
 }
 
+// conflictingCustomerTeam returns the name of another team under customerID that userID already
+// belongs to, or "". A user belongs to one team per customer so customer-key usage bills one team.
+func (h *GovernanceHandler) conflictingCustomerTeam(ctx context.Context, ws configstore.WorkspaceStore, userID, customerID, teamID string) (string, error) {
+	if customerID == "" {
+		return "", nil
+	}
+	links, err := ws.ListTeamsForUser(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	for _, link := range links {
+		if link.TeamID == "" || link.TeamID == teamID {
+			continue
+		}
+		other, err := h.configStore.GetTeam(ctx, link.TeamID)
+		if err != nil || other == nil {
+			continue
+		}
+		if other.CustomerID != nil && *other.CustomerID == customerID {
+			return other.Name, nil
+		}
+	}
+	return "", nil
+}
+
 func sendBudgetAllocationError(ctx *fasthttp.RequestCtx, err error) {
 	var badReqErr *badRequestError
 	if errors.As(err, &badReqErr) {
