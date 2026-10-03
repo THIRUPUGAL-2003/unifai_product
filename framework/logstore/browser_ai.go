@@ -1183,11 +1183,26 @@ func sanitizeProxyAddr(raw string) string {
 	return s
 }
 
+// searchEnginePACRule routes search-engine result hosts through Guard so Search Logs
+// can capture typed queries and result clicks. Guard runs no prompt/DLP rules on them.
+// Keep in sync with SEARCH_ENGINE_PAC_RULE in apps/browser-guard/agent/agent_pac_content.py.
+func searchEnginePACRule(proxyAddr string) string {
+	return `    if (shExpMatch(host, "google.*") || shExpMatch(host, "www.google.*") ||
+        host === "bing.com" || host === "www.bing.com" ||
+        host === "duckduckgo.com" || host === "html.duckduckgo.com" ||
+        dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {
+        return "PROXY ` + proxyAddr + `";
+    }
+
+`
+}
+
 func emptyPAC(proxyAddr string) string {
-	_ = proxyAddr
-	return `// Raksha Browser AI Guard — no Target Websites yet.
+	return `// Raksha Browser AI Guard — no Target Websites yet (search engines only, for Search Logs).
 function FindProxyForURL(url, host) {
-    return "DIRECT";
+    host = host.toLowerCase();
+
+` + searchEnginePACRule(proxyAddr) + `    return "DIRECT";
 }
 `
 }
@@ -1232,6 +1247,7 @@ func buildDomainPAC(hosts []string, proxyAddr string) string {
 	b.WriteString("// Parent domains only when children are covered by subdomain match. No hardcoded products.\n")
 	b.WriteString("function FindProxyForURL(url, host) {\n")
 	b.WriteString("    host = host.toLowerCase();\n\n")
+	b.WriteString(searchEnginePACRule(proxyAddr))
 	b.WriteString("    var aiHosts = [\n")
 	for _, d := range hosts {
 		b.WriteString("        \"")

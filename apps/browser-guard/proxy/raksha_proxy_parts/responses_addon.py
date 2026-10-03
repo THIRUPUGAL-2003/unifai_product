@@ -291,6 +291,15 @@ class BrowserAIInterceptor:
         return False
 
     @staticmethod
+    def _is_search_engine_host(h: str) -> bool:
+        """Search hosts the server PAC always routes to Guard (searchEnginePACRule) — Search Logs only."""
+        if h.startswith("google.") or h.startswith("www.google."):
+            return True
+        if h in ("bing.com", "www.bing.com", "duckduckgo.com", "html.duckduckgo.com", "search.brave.com"):
+            return True
+        return h == "search.yahoo.com" or h.endswith(".search.yahoo.com")
+
+    @staticmethod
     def _is_junk_search_query(q: str) -> bool:
         """Drop single-letter / page-scrap fragments that are not typed searches."""
         t = (q or "").strip()
@@ -317,7 +326,7 @@ class BrowserAIInterceptor:
             import urllib.parse
 
             h_lower = (host or "").lower().strip(".")
-            if not detect_target(h_lower)[0]:
+            if not (self._is_search_engine_host(h_lower) or detect_target(h_lower)[0]):
                 return
             engine = ""
             # Edge new-tab / MSN often fronts Bing — treat as Bing for Search Logs.

@@ -13,23 +13,23 @@ import (
 
 func TestNormalizeDomain_AdminInputForms(t *testing.T) {
 	cases := map[string]string{
-		"chatgpt.com":                        "chatgpt.com",
-		"  ChatGPT.COM  ":                    "chatgpt.com",
-		"https://www.chatgpt.com/c/abc?x=1":  "chatgpt.com",
-		"http://gemini.google.com:443/app":   "gemini.google.com",
-		"*.deepseek.com":                     "deepseek.com",
-		".claude.ai":                         "claude.ai",
-		"copilot.microsoft.com.":             "copilot.microsoft.com",
-		"*.www.grok.com/":                    "grok.com",
-		"chat.deepseek.com":                  "chat.deepseek.com",
-		"ai.acme-internal.io":                "ai.acme-internal.io",
-		"10.0.0.5":                           "10.0.0.5",
-		"bücher.example":                     "xn--bcher-kva.example",
-		"":                                   "",
-		"chat gpt.com":                       "",
-		"my_host.local":                      "",
-		"a..b.com":                           "",
-		"https://":                           "",
+		"chatgpt.com":                       "chatgpt.com",
+		"  ChatGPT.COM  ":                   "chatgpt.com",
+		"https://www.chatgpt.com/c/abc?x=1": "chatgpt.com",
+		"http://gemini.google.com:443/app":  "gemini.google.com",
+		"*.deepseek.com":                    "deepseek.com",
+		".claude.ai":                        "claude.ai",
+		"copilot.microsoft.com.":            "copilot.microsoft.com",
+		"*.www.grok.com/":                   "grok.com",
+		"chat.deepseek.com":                 "chat.deepseek.com",
+		"ai.acme-internal.io":               "ai.acme-internal.io",
+		"10.0.0.5":                          "10.0.0.5",
+		"bücher.example":                    "xn--bcher-kva.example",
+		"":                                  "",
+		"chat gpt.com":                      "",
+		"my_host.local":                     "",
+		"a..b.com":                          "",
+		"https://":                          "",
 	}
 	for in, want := range cases {
 		if got := NormalizeDomain(in); got != want {
@@ -121,10 +121,16 @@ func TestTargets_AnyDomainAndSubdomainReachPAC(t *testing.T) {
 	if strings.Contains(pac, "        \"*") {
 		t.Errorf("wildcard entries must not reach proxy.pac:\n%s", pac)
 	}
-	for _, notAdded := range []string{`"google.com"`, `"bing.com"`, `"msn.com"`, `"duckduckgo.com"`, `"search.yahoo.com"`, "shExpMatch(host, \"*google.*\")"} {
+	for _, notAdded := range []string{`"msn.com"`, `"google.com",`, `"bing.com",`, "shExpMatch(host, \"*google.*\")"} {
 		if strings.Contains(pac, notAdded) {
-			t.Errorf("only admin Target Websites may be routed; found %s", notAdded)
+			t.Errorf("only admin Target Websites and the search-engine rule may be routed; found %s", notAdded)
 		}
+	}
+	if !strings.Contains(pac, searchEnginePACRule("127.0.0.1:18103")) {
+		t.Errorf("proxy.pac must route search engines for Search Logs:\n%s", pac)
+	}
+	if empty := emptyPAC("127.0.0.1:18103"); !strings.Contains(empty, searchEnginePACRule("127.0.0.1:18103")) || !strings.Contains(empty, `return "DIRECT"`) {
+		t.Errorf("empty proxy.pac must still route search engines and default to DIRECT:\n%s", empty)
 	}
 
 	// Pausing the parent stops routing (and monitoring) for it.

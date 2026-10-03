@@ -261,7 +261,7 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_add_user_name_column"}, run: migrationAddUserNameColumn},
 	{IDs: []string{"logs_add_ocr_input_column"}, run: migrationAddOCRInputColumn},
 	{IDs: []string{"logs_add_stop_reason_column"}, run: migrationAddStopReasonColumn},
-	{IDs: []string{"logs_add_safe_jsonb_function"}, run: migrationAddSafeJsonbFunction},
+	{IDs: []string{"logs_add_raksha_safe_jsonb_function"}, run: migrationAddSafeJsonbFunction},
 	{IDs: []string{"mcp_tool_logs_add_dac_columns"}, run: migrationAddDACColumnsToMCPToolLogs},
 	{IDs: []string{"logs_add_cluster_governance_columns"}, run: migrationAddClusterGovernanceColumns},
 	{IDs: []string{"logs_add_inc_number_column"}, run: migrationAddLogIncNumberColumn},
@@ -3194,7 +3194,7 @@ func migrationAddStopReasonColumn(ctx context.Context, db *gorm.DB, logger schem
 //
 // Postgres-only; SQLite is guarded inline in listSelectColumns via json_valid().
 func migrationAddSafeJsonbFunction(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
-	migrationName := "logs_add_safe_jsonb_function"
+	migrationName := "logs_add_raksha_safe_jsonb_function"
 	logger.Info("[logstore] starting migration %s", migrationName)
 	defer logger.Info("[logstore] finished migration %s", migrationName)
 	opts := *migrator.DefaultOptions

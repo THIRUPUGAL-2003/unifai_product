@@ -57,6 +57,18 @@ def _normalize_domain(raw: str) -> str:
     return domain
 
 
+# Keep in sync with searchEnginePACRule in framework/logstore/browser_ai.go (Search Logs).
+SEARCH_ENGINE_PAC_RULE = [
+    '    if (shExpMatch(host, "google.*") || shExpMatch(host, "www.google.*") ||',
+    '        host === "bing.com" || host === "www.bing.com" ||',
+    '        host === "duckduckgo.com" || host === "html.duckduckgo.com" ||',
+    '        dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {',
+    '        return "PROXY {proxy}";',
+    "    }",
+    "",
+]
+
+
 def build_pac_from_targets(proxy_addr: str) -> str | None:
     body = _http_get_text(
         f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets?for=agent",
@@ -118,6 +130,7 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
         "function FindProxyForURL(url, host) {",
         "    host = host.toLowerCase();",
         "",
+        *(line.replace("{proxy}", proxy_addr) for line in SEARCH_ENGINE_PAC_RULE),
         "    var aiHosts = [",
     ]
     for d in hosts:
