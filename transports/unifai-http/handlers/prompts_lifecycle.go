@@ -42,6 +42,7 @@ func NewPromptLifecycleManager(store configstore.ConfigStore) *PromptLifecycleMa
 			ctx := context.Background()
 			_ = mgr.EnsureAllSystemRoots(ctx)
 			mgr.RepairDuplicateFolders(ctx)
+			mgr.RepairFolderCycles(ctx)
 		})
 	}
 	return mgr
@@ -78,6 +79,68 @@ func (m *PromptLifecycleManager) RepairDuplicateFolders(ctx context.Context) {
 	}
 }
 
+// RepairFolderCycles detaches folders whose parent chain loops back on itself (including a
+// folder that is its own parent). Such folders are unreachable from any root, so the UI
+// cannot show them and walking their ancestry never terminates. The first folder found on
+// each loop is moved to the top level.
+func (m *PromptLifecycleManager) RepairFolderCycles(ctx context.Context) {
+	if m == nil || m.store == nil || m.store.DB() == nil {
+		return
+	}
+	lifecycleFolderMu.Lock()
+	defer lifecycleFolderMu.Unlock()
+	db := m.store.DB().WithContext(ctx)
+
+	var folders []tables.TableFolder
+	if err := db.Select("id", "name", "parent_id").Order("created_at asc, id asc").Find(&folders).Error; err != nil {
+		return
+	}
+	for _, id := range folderCycleBreakPoints(folders) {
+		if err := db.Model(&tables.TableFolder{}).Where("id = ?", id).Update("parent_id", nil).Error; err != nil {
+			if logger != nil {
+				logger.Warn("PromptLifecycle: failed to detach folder %s from a parent cycle: %v", id, err)
+			}
+			continue
+		}
+		if logger != nil {
+			logger.Warn("PromptLifecycle: folder %s was part of a parent cycle; moved to top level", id)
+		}
+	}
+}
+
+// folderCycleBreakPoints returns one folder id per parent cycle.
+func folderCycleBreakPoints(folders []tables.TableFolder) []string {
+	parent := make(map[string]string, len(folders))
+	for _, f := range folders {
+		if f.ParentID != nil && *f.ParentID != "" {
+			parent[f.ID] = *f.ParentID
+		}
+	}
+	const (
+		visiting = 1
+		done     = 2
+	)
+	state := make(map[string]int, len(folders))
+	var breaks []string
+	for _, f := range folders {
+		var path []string
+		curr := f.ID
+		for curr != "" && state[curr] == 0 {
+			state[curr] = visiting
+			path = append(path, curr)
+			curr = parent[curr]
+		}
+		if curr != "" && state[curr] == visiting {
+			breaks = append(breaks, curr)
+			delete(parent, curr)
+		}
+		for _, id := range path {
+			state[id] = done
+		}
+	}
+	return breaks
+}
+
 func mergeDuplicateFolders(db *gorm.DB, folders []tables.TableFolder, key func(tables.TableFolder) string) {
 	keep := map[string]string{}
 	for _, f := range folders {
@@ -87,7 +150,7 @@ func mergeDuplicateFolders(db *gorm.DB, folders []tables.TableFolder, key func(t
 			keep[k] = f.ID
 			continue
 		}
-		if err := db.Model(&tables.TableFolder{}).Where("parent_id = ?", f.ID).Update("parent_id", keepID).Error; err != nil {
+		if err := db.Model(&tables.TableFolder{}).Where("parent_id = ? AND id <> ?", f.ID, keepID).Update("parent_id", keepID).Error; err != nil {
 			if logger != nil {
 				logger.Warn("PromptLifecycle: failed to merge duplicate folder %s: %v", f.ID, err)
 			}

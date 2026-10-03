@@ -36,6 +36,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePromptContext } from "../context";
 import { isPromptMemberRole } from "../utils/memberRole";
 
+/** Folder ids from startId up to its root. Stops on a parent cycle in stored data instead of looping forever. */
+function folderAncestry(startId: string | null | undefined, folderMap: Map<string, Folder>): string[] {
+	const chain: string[] = [];
+	const seen = new Set<string>();
+	let curr = startId ?? undefined;
+	while (curr && !seen.has(curr)) {
+		seen.add(curr);
+		chain.push(curr);
+		curr = folderMap.get(curr)?.parent_id ?? undefined;
+	}
+	return chain;
+}
+
 /**
  * Renders the prompt-manager sidebar including search, folder hierarchy, root prompts, and drag-and-drop reorganization.
  *
@@ -150,13 +163,7 @@ export function PromptSidebar() {
 		if (!selectedPromptId) return;
 		const prompt = prompts.find((p) => p.id === selectedPromptId);
 		if (prompt?.folder_id) {
-			const toExpand = new Set<string>();
-			let currentId: string | undefined = prompt.folder_id;
-			while (currentId) {
-				toExpand.add(currentId);
-				const parentFolderId: string | undefined = folderMap.get(currentId)?.parent_id;
-				currentId = parentFolderId;
-			}
+			const toExpand = new Set(folderAncestry(prompt.folder_id, folderMap));
 			setExpandedFolders((prev) => {
 				let changed = false;
 				const next = new Set(prev);
@@ -199,11 +206,7 @@ export function PromptSidebar() {
 				if (!prompt.folder_id) {
 					filteredRootPrompts.push(prompt);
 				} else {
-					let curr: string | undefined | null = prompt.folder_id;
-					while (curr) {
-						matchedFolderIds.add(curr);
-						curr = folderMap.get(curr)?.parent_id;
-					}
+					for (const id of folderAncestry(prompt.folder_id, folderMap)) matchedFolderIds.add(id);
 					const list = filteredPromptsByFolder.get(prompt.folder_id) || [];
 					list.push(prompt);
 					filteredPromptsByFolder.set(prompt.folder_id, list);
@@ -213,11 +216,7 @@ export function PromptSidebar() {
 
 		for (const folder of folders) {
 			if (folder.name.toLowerCase().includes(query)) {
-				let curr: string | undefined | null = folder.id;
-				while (curr) {
-					matchedFolderIds.add(curr);
-					curr = folderMap.get(curr)?.parent_id;
-				}
+				for (const id of folderAncestry(folder.id, folderMap)) matchedFolderIds.add(id);
 			}
 		}
 
