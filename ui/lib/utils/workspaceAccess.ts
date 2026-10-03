@@ -85,7 +85,10 @@ export function isPublicWorkspacePath(pathname: string): boolean {
 export function getScopedWorkspaceSections(
 	auth: Pick<SessionAuth, "role" | "allowed_sections"> | null | undefined,
 ): Set<string> | null {
-	if (!auth || !auth.role || auth.role === "admin" || auth.role === "user") {
+	if (!auth || !auth.role || auth.role === "admin") {
+		return null;
+	}
+	if (auth.role === "user" && !auth.allowed_sections) {
 		return null;
 	}
 	return parseAdminAllowedSections(auth.allowed_sections);

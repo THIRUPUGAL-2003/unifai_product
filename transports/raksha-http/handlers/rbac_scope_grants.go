@@ -117,7 +117,7 @@ func effectiveAllowedSections(ctx context.Context, store configstore.ConfigStore
 	}
 	own := user.AllowedSections
 	role := strings.ToLower(strings.TrimSpace(user.Role))
-	if role == "" || role == "admin" || role == "user" {
+	if role == "" || role == "admin" {
 		return own
 	}
 	ws, ok := configstore.AsWorkspaceStore(store)

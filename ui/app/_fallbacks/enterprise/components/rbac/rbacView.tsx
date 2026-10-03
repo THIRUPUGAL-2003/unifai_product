@@ -107,11 +107,10 @@ function sectionGranted(allowed: Set<string>, section: string): boolean {
 	return section === "guardrails/cluster-config" && allowed.has("cluster-config");
 }
 
-// allowed_sections only scopes sub_admin and custom roles: admin is unrestricted and the
-// built-in "user" role is server-locked to Prompt Repository.
+// allowed_sections scopes all non-admin roles: admin is unrestricted.
 function sectionScopeApplies(role?: string): boolean {
 	const r = (role || "user").toLowerCase();
-	return r !== "admin" && r !== "user";
+	return r !== "admin";
 }
 
 function isSubAdminRole(role?: string): boolean {
@@ -935,8 +934,8 @@ export default function RBACView() {
 
 									{scope && (
 										<span>
-											{target.type === "all_teams" && "Every sub admin / custom-role user who is in any team inherits these sections."}
-											{target.type === "team" && `Sub admin / custom-role members of ${target.team.name} inherit these sections.`}
+											{target.type === "all_teams" && "Every member who is in any team inherits these sections."}
+											{target.type === "team" && `Members of ${target.team.name} inherit these sections.`}
 											{target.type === "all_customers" &&
 												"Members of any team that belongs to a customer inherit these sections."}
 											{target.type === "customer" && `Members of teams under ${target.customer.name} inherit these sections.`}{" "}

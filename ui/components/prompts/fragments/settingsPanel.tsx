@@ -68,7 +68,7 @@ export function SettingsPanel() {
 	// Dynamic providers
 	const { data: providers, isLoading: isLoadingProviders } = useGetProvidersQuery();
 	// Keys for the API Key selector (from /api/keys endpoint, provider-filtered)
-	const { data: allKeys, isSuccess: hasLoadedAllKeys } = useGetAllKeysQuery();
+	const { data: allKeys, isSuccess: hasLoadedAllKeys } = useGetAllKeysQuery(undefined, { skip: isMemberOnly });
 	const { data: skillsData } = useListSkillsQuery({ limit: 100, offset: 0 }, { skip: isMemberOnly });
 	const skillOptions = useMemo(
 		() => [

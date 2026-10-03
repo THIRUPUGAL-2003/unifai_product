@@ -1075,8 +1075,8 @@ export default function AppSidebar() {
 				],
 			},
 		];
-		// The built-in "user" role is server-locked to Prompt Repository.
-		if (authStatus?.role === "user") {
+		// The built-in "user" role without custom or team sections is scoped to Prompt Repository.
+		if (authStatus?.role === "user" && (!scopedSidebarSections || scopedSidebarSections.size === 0)) {
 			return allItems.filter((item) => item.title === "Prompt Repository");
 		}
 		if (scopedSidebarSections) {
@@ -1201,7 +1201,7 @@ export default function AppSidebar() {
 		if (isPublicWorkspacePath(pathname)) {
 			return;
 		}
-		if (authStatus?.role === "user") {
+		if (authStatus?.role === "user" && (!scopedSidebarSections || scopedSidebarSections.size === 0)) {
 			if (!pathname.startsWith(USER_ROLE_HOME_PATH)) {
 				navigate(USER_ROLE_HOME_PATH);
 			}
