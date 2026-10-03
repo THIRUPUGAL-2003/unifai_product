@@ -5,9 +5,7 @@
 def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     """Detect Claude / Anthropic chat submit from request path or JSON body — not hostname."""
     path_l = (path or "").lower()
-    if "claudeai-rpc" in path_l or "streamtimeline" in path_l or "anthropic.bard.api" in path_l:
-        return False
-    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion")):
+    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion", "claudeai-rpc", "anthropic.")):
         return True
     if not body or not body.lstrip().startswith("{"):
         return False

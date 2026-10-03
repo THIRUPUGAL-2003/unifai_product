@@ -207,7 +207,7 @@ IGNORE_PATH_PATTERNS = [
     # Perplexity / Claude noise endpoints & RPC streams
     "/search/v2/navigate", "/rest/rate_limits", "/api/event",
     "/api/telemetry", "/api/analytics", "/api/stats",
-    "/streamtimeline", "/claudeai-rpc", "anthropic.bard.api",
+    "/streamtimeline",
 ]
 
 # Only these path markers are treated as real submitted chat prompts
@@ -245,6 +245,7 @@ CHAT_PATH_MARKERS = [
     "/chat_conversations", "/completion_messages",
     "/rest/chat", "/api/conversation", "/api/completions",
     "/api/v1/chat/completions", "/ask/stream", "/search/sse",
+    "/claudeai-rpc", "/anthropic.",
     # DeepSeek web + API (chat.deepseek.com)
     "/api/v0/chat/completion", "/api/v0/chat/completions",
     "/chat/completion", "/powerchat", "/create_chat_completion",
