@@ -98,10 +98,16 @@ export interface VirtualKey {
 	customer?: Customer;
 	teams?: Team[];
 	customers?: Customer[];
-	users?: TeamMember[];
+	users?: VirtualKeyUserLink[]; // Link rows only; resolve names via user_id
 	budgets?: Budget[];
 	rate_limit?: RateLimit;
 	config_hash?: string; // Present when config is synced from config.json
+}
+
+export interface VirtualKeyUserLink {
+	id: number;
+	virtual_key_id: string;
+	user_id: string;
 }
 
 export interface VirtualKeyProviderConfig {

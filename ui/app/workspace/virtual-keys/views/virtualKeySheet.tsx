@@ -49,7 +49,6 @@ import { useGetSessionUsersQuery } from "@/lib/store/apis/sessionUsersApi";
 import { KnownProvider } from "@/lib/types/config";
 import { CreateVirtualKeyRequest, Customer, Team, UpdateVirtualKeyRequest, VirtualKey } from "@/lib/types/governance";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { useSetVirtualKeyUserMutation, useDeleteVirtualKeyUserMutation } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
@@ -84,7 +83,7 @@ const providerConfigSchema = z.object({
 		.array(
 			z.object({
 				id: z.string().optional(),
-				max_limit: z.number().nonnegative().optional(),
+				max_limit: z.number().positive("Budget must be greater than 0").optional(),
 				reset_duration: z.string().optional(),
 			}),
 		)
@@ -127,11 +126,21 @@ const formSchema = z
 			.array(
 				z.object({
 					id: z.string().optional(),
-					max_limit: z.number().nonnegative().optional(),
+					max_limit: z.number().positive("Budget must be greater than 0").optional(),
 					reset_duration: z.string(),
 				}),
 			)
-			.optional(),
+			.optional()
+			.superRefine((budgets, ctx) => {
+				const seen = new Set<string>();
+				(budgets ?? []).forEach((b, i) => {
+					if (b.max_limit === undefined) return;
+					if (seen.has(b.reset_duration)) {
+						ctx.addIssue({ code: "custom", path: [i, "reset_duration"], message: "Each budget needs a different reset period" });
+					}
+					seen.add(b.reset_duration);
+				});
+			}),
 		// Token limits
 		tokenMaxLimit: z.number().int().nonnegative().optional(),
 		tokenResetDuration: z.string().optional(),
@@ -396,10 +405,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 		if (directUsers.length > 0 && !form.formState.dirtyFields.userIds) {
 			const current = form.getValues("userIds") || [];
 			if (current.length === 0) {
-				form.setValue(
-					"userIds",
-					directUsers.map((u) => u.id),
-				);
+				form.setValue("userIds", directUsers.map((u) => u.id));
 			}
 		}
 	}, [directUsers, form]);
@@ -789,6 +795,8 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 			const selectedTeamIds = data.teamIds?.length ? data.teamIds : data.teamId ? [data.teamId] : [];
 			const selectedCustomerIds = data.customerIds?.length ? data.customerIds : data.customerId ? [data.customerId] : [];
 			const selectedUserIds = data.userIds || [];
+			// Without assign rights the key's user links are left as they are.
+			const userIdsPayload = canAssignUser ? { user_ids: selectedUserIds } : {};
 
 			if (isEditing && virtualKey) {
 				// Update existing virtual key
@@ -814,7 +822,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					team_ids: selectedTeamIds,
 					customer_id: selectedCustomerIds.length > 0 ? selectedCustomerIds[0] : null,
 					customer_ids: selectedCustomerIds,
-					user_ids: selectedUserIds,
+					...userIdsPayload,
 					is_active: data.isActive,
 					calendar_aligned: data.budgetCalendarAligned,
 					reset_budget_usage: resetBudgetUsage,
@@ -853,31 +861,6 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					data: updateData,
 				}).unwrap();
 
-				// User assignment syncing
-				if (canAssignUser) {
-					const targetUserIds = new Set(selectedUserIds);
-					const currentAssignedIds = new Set(assignedUsers.map((u) => u.id));
-
-					for (const uid of selectedUserIds) {
-						if (!currentAssignedIds.has(uid)) {
-							try {
-								await setVirtualKeyUser({ vkId: virtualKey.id, user_id: uid }).unwrap();
-							} catch (e) {
-								console.error("Failed to assign user:", e);
-							}
-						}
-					}
-					for (const user of assignedUsers) {
-						if (!targetUserIds.has(user.id)) {
-							try {
-								await deleteVirtualKeyUser({ vkId: virtualKey.id, user_id: user.id }).unwrap();
-							} catch (e) {
-								console.error("Failed to unassign user:", e);
-							}
-						}
-					}
-				}
-
 				toast.success("Virtual key updated successfully");
 			} else {
 				// Create new virtual key
@@ -890,7 +873,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					team_ids: selectedTeamIds,
 					customer_id: selectedCustomerIds.length > 0 ? selectedCustomerIds[0] : undefined,
 					customer_ids: selectedCustomerIds,
-					user_ids: selectedUserIds,
+					...userIdsPayload,
 					is_active: data.isActive,
 					// VK-level setting that governs both budget and rate-limit calendar alignment.
 					calendar_aligned: data.budgetCalendarAligned,
@@ -918,18 +901,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					};
 				}
 
-				const res = await createVirtualKey(baseCreateData).unwrap();
-				const newVkId = res?.virtual_key?.id;
-
-				if (selectedUserIds.length > 0 && newVkId && canAssignUser) {
-					for (const uid of selectedUserIds) {
-						try {
-							await setVirtualKeyUser({ vkId: newVkId, user_id: uid }).unwrap();
-						} catch (e) {
-							console.error("Failed to assign user:", e);
-						}
-					}
-				}
+				await createVirtualKey(baseCreateData).unwrap();
 
 				toast.success("Virtual key created successfully");
 			}
@@ -1023,7 +995,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 								<div className="space-y-1">
 									<Label className="text-sm font-medium">Assigned User(s)</Label>
 									<p className="text-muted-foreground text-xs">
-										Managed by Access Profile: {assignedUsers.map((u) => u.name || u.email || u.id).join(", ")}
+										Managed by Access Profile: {directUsers.map((u) => u.name || u.email || u.id).join(", ")}
 									</p>
 								</div>
 							)}
