@@ -87,7 +87,7 @@ const protocolOptions: {
 
 // emptyProfile returns a fresh profile with the same defaults a newly created collector uses.
 const emptyProfile = (): ProfileForm => ({
-	enabled: true,
+	enabled: false,
 	service_name: "raksha",
 	collector_url: emptySecretVar(),
 	headers: {},
@@ -105,30 +105,37 @@ const emptyProfile = (): ProfileForm => ({
 });
 
 // toProfileForm normalizes a stored profile into the SecretVar-based form representation.
-const toProfileForm = (p?: StoredOtelProfile): ProfileForm => ({
-	enabled: p?.enabled ?? true,
-	service_name: p?.service_name ?? "raksha",
-	collector_url: toSecretVarFormValue(p?.collector_url),
-	headers: toSecretVarMapFormValue(p?.headers),
-	trace_type: p?.trace_type ?? "genai_extension",
-	protocol: p?.protocol ?? "http",
-	tls_ca_cert: p?.tls_ca_cert ?? "",
-	insecure: p?.insecure ?? true,
-	metrics_enabled: p?.metrics_enabled ?? false,
-	metrics_endpoint: toSecretVarFormValue(p?.metrics_endpoint),
-	metrics_push_interval: p?.metrics_push_interval ?? 15,
-	request_headers: p?.request_headers ?? [],
-	disable_content_logging: p?.disable_content_logging ?? false,
-	group_traces_by_session: p?.group_traces_by_session ?? false,
-	disable_root_span_content: p?.disable_root_span_content ?? false,
-});
+const toProfileForm = (p?: StoredOtelProfile): ProfileForm => {
+	const hasUrl = Boolean(
+		typeof p?.collector_url === "string"
+			? p.collector_url.trim()
+			: p?.collector_url?.value?.trim() || p?.collector_url?.ref?.trim()
+	);
+	return {
+		enabled: p?.enabled ?? hasUrl,
+		service_name: p?.service_name ?? "raksha",
+		collector_url: toSecretVarFormValue(p?.collector_url),
+		headers: toSecretVarMapFormValue(p?.headers),
+		trace_type: p?.trace_type ?? "genai_extension",
+		protocol: p?.protocol ?? "http",
+		tls_ca_cert: p?.tls_ca_cert ?? "",
+		insecure: p?.insecure ?? true,
+		metrics_enabled: p?.metrics_enabled ?? false,
+		metrics_endpoint: toSecretVarFormValue(p?.metrics_endpoint),
+		metrics_push_interval: p?.metrics_push_interval ?? 15,
+		request_headers: p?.request_headers ?? [],
+		disable_content_logging: p?.disable_content_logging ?? false,
+		group_traces_by_session: p?.group_traces_by_session ?? false,
+		disable_root_span_content: p?.disable_root_span_content ?? false,
+	};
+};
 
 // buildDefaults handles both stored shapes: the { profiles: [...] } wrapper and the legacy
 // single-object config. Always yields at least one profile.
 const buildDefaults = (initial?: OtelFormFragmentProps["currentConfig"]): OtelFormSchema => {
 	const cfg = initial?.config;
 	let profiles: ProfileForm[];
-	if (cfg && Array.isArray(cfg.profiles)) {
+	if (cfg && Array.isArray(cfg.profiles) && cfg.profiles.length > 0) {
 		profiles = cfg.profiles.map(toProfileForm);
 	} else if (cfg && (cfg.collector_url || cfg.service_name || cfg.protocol || cfg.trace_type)) {
 		// Legacy single-object config.
@@ -137,7 +144,7 @@ const buildDefaults = (initial?: OtelFormFragmentProps["currentConfig"]): OtelFo
 		profiles = [];
 	}
 	if (profiles.length === 0) profiles = [emptyProfile()];
-	return { enabled: initial?.enabled ?? true, profiles };
+	return { enabled: initial?.enabled ?? false, profiles };
 };
 
 export function OtelFormFragment({

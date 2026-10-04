@@ -505,16 +505,13 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	sessionExpiresAt := time.Now().Add(sessionDuration)
-	// Invalidate prior sessions for this user (stolen-cookie / fixation mitigation).
-	// Log errors — silently ignoring means old sessions could remain valid (security risk).
-	if err := h.configStore.DeleteSessionsByUsername(ctx, sessionUsername); err != nil {
-		logger.Warn("login: failed to invalidate prior sessions for %q: %v", sessionUsername, err)
-	}
-	if !strings.EqualFold(sessionUsername, payload.Username) {
-		if err := h.configStore.DeleteSessionsByUsername(ctx, strings.TrimSpace(payload.Username)); err != nil {
-			logger.Warn("login: failed to invalidate prior sessions for alias %q: %v", payload.Username, err)
-		}
-	}
+	// NOTE: We intentionally do NOT wipe prior sessions on new login.
+	// Deleting all sessions on every login caused automatic logouts when the same
+	// user had multiple browser tabs or devices open simultaneously — the new login
+	// would silently invalidate the other sessions, and those tabs would be redirected
+	// to /login on the next API call.
+	// Sessions are still revoked on password change/reset (CWE-613 still covered) and
+	// they expire naturally after SESSION_LIFETIME_HOURS (default 24 h).
 	token := uuid.New().String()
 	session := &tables.SessionsTable{
 		Token:     token,

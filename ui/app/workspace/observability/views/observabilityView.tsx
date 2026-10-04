@@ -187,8 +187,8 @@ export default function ObservabilityView() {
 				await createPlugin({
 					name: pluginName,
 					path: "",
-					enabled: pluginName === "telemetry",
-					config: pluginName === "otel" ? { profiles: [] } : { metrics_enabled: true },
+					enabled: false,
+					config: pluginName === "otel" ? { profiles: [] } : { metrics_enabled: false },
 				}).unwrap();
 			}
 			setSelectedPluginId(id);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import {
 	Globe,
@@ -378,7 +378,7 @@ export default function BrowserAiPage() {
 	const { data: targetsData, refetch: refetchTargets } = useGetBrowserAiTargetsQuery(undefined, { pollingInterval: activePolling });
 	const { data: controlsData } = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
 	const { data: providersData } = useGetProvidersQuery();
-	// Outsource = configured Model Providers (OpenRouter, OpenAI, …). Download = Ollama on server.
+	// Outsource = configured Model Providers (OpenRouter, OpenAI, ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦). Download = Ollama on server.
 	const outsourceProviderOptions = useMemo(() => {
 		const opts = (providersData || [])
 			.map((p) => String(p?.name || "").trim())
@@ -412,7 +412,7 @@ export default function BrowserAiPage() {
 	const latestWinVersion = agentsData?.latest_version || setupInfo?.version || "";
 	const latestMacVersion = agentsData?.latest_mac_version || setupInfo?.mac_version || "";
 
-	// Telemetry uses its own fleet-wide fetches — not Agents/Prompt-Logs pagination.
+	// Telemetry uses its own fleet-wide fetches ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â not Agents/Prompt-Logs pagination.
 	const TELEMETRY_AGENT_LIMIT = 2000;
 	const TELEMETRY_LOG_LIMIT = 5000;
 	const telemetryTabActive = activeTab === "telemetry";
@@ -745,10 +745,10 @@ export default function BrowserAiPage() {
 					? agent.username
 					: "") || ""
 		);
-		setWarningMailSubject(`[Security Alert] Raksha Browser Guard Policy Warning — ${agent.hostname || "Device"}`);
+		setWarningMailSubject(`[Security Alert] Raksha Browser Guard Policy Warning ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${agent.hostname || "Device"}`);
 		const host = agent.hostname || "unknown-device";
-		const user = agent.username || "—";
-		const ip = agent.ip_address || "—";
+		const user = agent.username || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â";
+		const ip = agent.ip_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â";
 		setWarningMailMessage(
 			`Dear Employee,\n\n` +
 				`This is an official Raksha Browser Guard security compliance report for your assigned workstation.\n\n` +
@@ -785,7 +785,7 @@ export default function BrowserAiPage() {
 		}
 		if (!smtpReady) {
 			setWarningMailError(
-				"SMTP is not enabled. Configure and enable SMTP in Settings → Security, then retry."
+				"SMTP is not enabled. Configure and enable SMTP in Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Security, then retry."
 			);
 			return;
 		}
@@ -810,7 +810,7 @@ export default function BrowserAiPage() {
 		} catch (err: unknown) {
 			setWarningMailError(
 				getErrorMessage(err) ||
-					"Failed to send warning email. Please ensure SMTP is configured and enabled in Settings → Security."
+					"Failed to send warning email. Please ensure SMTP is configured and enabled in Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Security."
 			);
 		}
 	};
@@ -868,7 +868,7 @@ export default function BrowserAiPage() {
 			// Show browser system notification
 			if (typeof window !== "undefined" && "Notification" in window && notifPermission.current === "granted") {
 				try {
-					new Notification("🚨 AI Guard: Security Violation Blocked!", {
+					new Notification("ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¨ AI Guard: Security Violation Blocked!", {
 						body: `[${platform}] ${reason}`,
 						icon: "/yes-panchi-logo.png",
 						tag: toastId,
@@ -1174,7 +1174,7 @@ export default function BrowserAiPage() {
 				setGuardKeyHint(`Today's auto-rotating daily uninstall key (rotates every 24h${rotTime}; company key also works).`);
 			}
 		} catch {
-			setGuardKeyHint("Could not load this Guard's key — enter today's Guard key or company uninstall key.");
+			setGuardKeyHint("Could not load this Guard's key ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â enter today's Guard key or company uninstall key.");
 		} finally {
 			setGuardKeyLoading(false);
 		}
@@ -1232,7 +1232,7 @@ export default function BrowserAiPage() {
 		try {
 			await remoteUninstallAgent({ id: targetAgentToUninstall.id, key }).unwrap();
 			setRemoteUninstallSuccess(
-				`Remote shutdown signal sent to ${targetAgentToUninstall.hostname || targetAgentToUninstall.id}. Guard will stop on next heartbeat (~15–30s).`
+				`Remote shutdown signal sent to ${targetAgentToUninstall.hostname || targetAgentToUninstall.id}. Guard will stop on next heartbeat (~15ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ30s).`
 			);
 			refetchAgents();
 			setTimeout(() => {
@@ -1501,15 +1501,15 @@ export default function BrowserAiPage() {
 				setResult(`EVAL FAILED: ${res.eval_error}`);
 				return;
 			}
-			let outcome = `OK — ${res.security_message || "no violation"}`;
+			let outcome = `OK ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${res.security_message || "no violation"}`;
 			if (res.would_block) {
-				outcome = `BLOCK — ${res.security_message || "policy violation"}`;
+				outcome = `BLOCK ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${res.security_message || "policy violation"}`;
 			} else if (res.would_warn) {
 				const act = which === "new" ? newRuleAction : editRuleAction;
 				outcome =
 					act === "WARN"
-						? `WARN — ${res.security_message || "policy match"}`
-						: `REDACT — ${res.security_message || "policy match"}`;
+						? `WARN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${res.security_message || "policy match"}`
+						: `REDACT ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${res.security_message || "policy match"}`;
 			}
 			if (res.model_raw?.trim()) {
 				outcome = `${outcome}\n\nmodel_raw: ${res.model_raw}`;
@@ -1706,7 +1706,7 @@ export default function BrowserAiPage() {
 			window.URL.revokeObjectURL(url);
 			if (build) {
 				void refetchSetupInfo();
-				toast({ title: `${platform === "mac" ? "macOS" : "Windows"} package built`, description: "Fresh server config and latest Guard code — download started." });
+				toast({ title: `${platform === "mac" ? "macOS" : "Windows"} package built`, description: "Fresh server config and latest Guard code ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â download started." });
 			}
 		} catch (error) {
 			setSetupPackageError(error instanceof Error ? error.message : `Failed to download ${platform} setup package`);
@@ -1834,7 +1834,7 @@ export default function BrowserAiPage() {
 								updates: { parent_id: parentId, host_role: extra.role || "" },
 							}).unwrap();
 						} catch {
-							// already in the list — skip
+							// already in the list ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â skip
 						}
 					}
 				}
@@ -1932,7 +1932,7 @@ export default function BrowserAiPage() {
 			// Column headers match Import Rules Excel template (round-trip safe).
 			return {
 				filename: "browser-ai-guard-rules",
-				title: "Browser AI — Guard Rules",
+				title: "Browser AI ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Guard Rules",
 				subtitle: `${filteredRules.length} rule(s)`,
 				columns: [
 					{ key: "name", header: "Rule Name" },
@@ -1972,7 +1972,7 @@ export default function BrowserAiPage() {
 		if (activeTab === "targets") {
 			return {
 				filename: "browser-ai-targets",
-				title: "Browser AI — Target Websites",
+				title: "Browser AI ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Target Websites",
 				subtitle: `${targets.length} target(s)`,
 				columns: [
 					{ key: "domain", header: "Domain" },
@@ -1991,11 +1991,16 @@ export default function BrowserAiPage() {
 		if (activeTab === "agents") {
 			return {
 				filename: "browser-ai-agents",
-				title: "Browser AI — Guard Agents",
+				title: "Browser AI ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Guard Agents",
 				subtitle: `${agents.length} agent(s)`,
 				columns: [
 					{ key: "hostname", header: "Hostname" },
 					{ key: "agent_id", header: "Agent ID" },
+					{ key: "user", header: "User" },
+					{ key: "ip", header: "IP Address" },
+					{ key: "mac", header: "Physical Address (MAC)" },
+					{ key: "transport", header: "Transport Name" },
+					{ key: "version", header: "Version" },
 					{ key: "agent_type", header: "Source" },
 					{ key: "status", header: "Status" },
 					{ key: "last_seen", header: "Last seen" },
@@ -2003,10 +2008,72 @@ export default function BrowserAiPage() {
 				rows: agents.map((a) => ({
 					hostname: a.hostname || "",
 					agent_id: a.id || "",
+					user: a.username || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+					ip: a.ip_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+					mac: a.mac_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+					transport: a.transport_name || (a.agent_type === "network" ? "Network Proxy" : "Raksha Guard"),
+					version: `v${a.agent_version || "1.0"}`,
 					agent_type: a.agent_type || "endpoint",
 					status: a.status || "",
-					last_seen: a.last_seen_at || "",
+					last_seen: a.last_seen_at ? new Date(a.last_seen_at).toLocaleString() : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
 				})),
+			};
+		}
+		if (activeTab === "telemetry") {
+			return {
+				filename: "browser-ai-guard-insights",
+				title: "Browser AI ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Guard Insights",
+				subtitle: `${filteredTelemetryAgents.length} agent(s)`,
+				columns: [
+					{ key: "host", header: "Host" },
+					{ key: "user", header: "User" },
+					{ key: "ip", header: "Host User IP" },
+					{ key: "mac", header: "Physical Address (MAC)" },
+					{ key: "transport", header: "Transport Name" },
+					{ key: "version", header: "Version" },
+					{ key: "allowed", header: "Allowed" },
+					{ key: "blocked", header: "Blocked" },
+					{ key: "warned", header: "Warned" },
+					{ key: "redacted", header: "Redacted" },
+					{ key: "status", header: "Status" },
+					{ key: "last_seen", header: "Last seen" },
+				],
+				rows: filteredTelemetryAgents.map(
+					({ agent, allowedCount, blockedCount, warnCount, redactCount, isOnline }) => ({
+						host: agent.hostname || "Unknown",
+						user: agent.username || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+						ip: agent.ip_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+						mac: agent.mac_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+						transport: agent.transport_name || (agent.agent_type === "network" ? "Network Proxy" : "Raksha Guard"),
+						version: `v${agent.agent_version || "1.0"}`,
+						allowed: allowedCount,
+						blocked: blockedCount,
+						warned: warnCount,
+						redacted: redactCount,
+						status: isOnline ? "Active" : "Offline",
+						last_seen: agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+					})
+				),
+			};
+		}
+		if (activeTab === "overview" && logs.length === 0) {
+			return {
+				filename: "browser-ai-overview",
+				title: "Browser AI ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Overview Summary",
+				subtitle: "Current Platform Status",
+				columns: [
+					{ key: "metric", header: "Security Metric" },
+					{ key: "value", header: "Value" },
+					{ key: "description", header: "Description" },
+				],
+				rows: [
+					{ metric: "Total Prompts Intercepted", value: overviewTotal, description: "Passing through HTTPS proxy" },
+					{ metric: "Redacted Prompts", value: warnedCount, description: "Prompt forwarded with redaction notice" },
+					{ metric: "Predictive High Risk", value: highRiskCount, description: `Avg Risk Score: ${avgRiskScore}%` },
+					{ metric: "Blocked Violations", value: blockedCount, description: "Security policy breaches blocked" },
+					{ metric: "Monitored Target Websites", value: targets.length, description: "AI websites configured for monitoring" },
+					{ metric: "Registered Guard Agents", value: agents.length, description: "Fleet devices connected" },
+				],
 			};
 		}
 		if (activeTab === "search-logs") {
@@ -2034,7 +2101,7 @@ export default function BrowserAiPage() {
 			}
 			return {
 				filename: "browser-ai-search-logs",
-				title: "Browser AI — Search Logs",
+				title: "Browser AI ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Search Logs",
 				subtitle: `${exportSearchLogs.length} of ${totalSearchLogs} search log(s)`,
 				columns: [
 					{ key: "date", header: "Date" },
@@ -2066,7 +2133,7 @@ export default function BrowserAiPage() {
 				})),
 			};
 		}
-		// overview + logs — same columns as Prompt Logs table
+		// overview + logs ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â same columns as Prompt Logs table
 		let exportLogs = logs;
 		if (totalLogs > logs.length) {
 			try {
@@ -2092,7 +2159,7 @@ export default function BrowserAiPage() {
 			if (isFileUploadLog(log)) {
 				const label = logAttachmentLabel(log);
 				const caption = logUserCaption(log);
-				return caption ? `${label} · ${caption}` : label;
+				return caption ? `${label} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${caption}` : label;
 			}
 			return (log.user_prompt_preview || log.user_prompt_full || "").slice(0, 500);
 		};
@@ -2105,11 +2172,11 @@ export default function BrowserAiPage() {
 			if (parts.length === 0) {
 				return log.action === "Blocked" ? "Blocked by security rule" : "Standard prompt";
 			}
-			return parts.join(" · ");
+			return parts.join(" ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ");
 		};
 		return {
 			filename: "browser-ai-prompt-logs",
-			title: "Browser AI — Prompt Logs",
+			title: "Browser AI ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Prompt Logs",
 			subtitle: `${exportLogs.length} of ${totalLogs} log(s)`,
 			columns: [
 				{ key: "date", header: "Date" },
@@ -2195,11 +2262,11 @@ export default function BrowserAiPage() {
 					<div className="flex items-center gap-3">
 						<Globe className="h-6 w-6 text-primary" />
 						<h1 className="text-2xl font-bold tracking-tight">
-							Browser AI · {BROWSER_AI_TAB_TITLES[activeTab]}
+							Browser AI ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {BROWSER_AI_TAB_TITLES[activeTab]}
 						</h1>
 					</div>
 					<p className="text-muted-foreground text-sm mt-1">
-						Monitor browser AI prompts, predict security threat levels, warn or block policy hits, and control DLP guardrails.
+						Monitor AI prompts, predict threats, and enforce DLP policies.
 					</p>
 				</div>
 				<div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
@@ -2283,16 +2350,6 @@ export default function BrowserAiPage() {
 									Delete selected ({selectedLogIds.size})
 								</Button>
 							) : null}
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setClearLogsDialogOpen(true)}
-								className="h-8 gap-2 text-xs border-border text-destructive hover:bg-destructive/10"
-								data-testid="browser-ai-clear-logs"
-							>
-								<Trash2 className="h-3.5 w-3.5" />
-								Clear logs
-							</Button>
 						</div>
 					) : null}
 
@@ -2344,28 +2401,6 @@ export default function BrowserAiPage() {
 									</Select>
 								) : null}
 							</div>
-							{selectedSearchLogIds.size > 0 ? (
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => setDeleteSelectedTarget("search-logs")}
-									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
-									data-testid="browser-ai-delete-selected-search-logs"
-								>
-									<Trash2 className="h-3.5 w-3.5" />
-									Delete selected ({selectedSearchLogIds.size})
-								</Button>
-							) : null}
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setClearSearchLogsDialogOpen(true)}
-								className="h-8 gap-2 text-xs border-border text-destructive hover:bg-destructive/10"
-								data-testid="browser-ai-clear-search-logs"
-							>
-								<Trash2 className="h-3.5 w-3.5" />
-								Clear logs
-							</Button>
 						</div>
 					) : null}
 
@@ -2387,7 +2422,7 @@ export default function BrowserAiPage() {
 				</div>
 			</div>
 
-			{/* Section content — nav is sidebar dropdown (Observability / Models style) */}
+			{/* Section content ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â nav is sidebar dropdown (Observability / Models style) */}
 			<Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
 				{/* TAB 1: OVERVIEW */}
 				<TabsContent value="overview" className="space-y-6">
@@ -2485,7 +2520,7 @@ export default function BrowserAiPage() {
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
 													<div className="truncate text-xs text-muted-foreground" title={log.agent_hostname || log.agent_id || ""}>
-														{log.agent_hostname || log.agent_id || "—"}
+														{log.agent_hostname || log.agent_id || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 													</div>
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
@@ -2527,13 +2562,8 @@ export default function BrowserAiPage() {
 										))}
 										{logs.length === 0 && (
 											<TableRow>
-												<TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
-													No prompts intercepted yet. Guard agent must be running,
-													Target site Monitoring ON and Block Website OFF, then fully quit and reopen
-													the browser so PAC hits the local Guard proxy (proxy_addr from Guard config /
-													RAKSHA_PROXY_ADDR). If the AI site opens but logs stay 0,
-													traffic is bypassing the proxy — check Guard Agents health / local
-													PAC status URL (from PAC_HTTP_PORT in .env / Guard config).
+												<TableCell colSpan={8} className="text-center py-8 text-muted-foreground text-sm">
+													No prompts intercepted yet.
 												</TableCell>
 											</TableRow>
 										)}
@@ -2659,7 +2689,7 @@ export default function BrowserAiPage() {
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
 													<div className="truncate text-xs text-muted-foreground" title={log.agent_hostname || log.agent_id || ""}>
-														{log.agent_hostname || log.agent_id || "—"}
+														{log.agent_hostname || log.agent_id || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 													</div>
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
@@ -2778,7 +2808,7 @@ export default function BrowserAiPage() {
 								<CardTitle className="text-3xl font-bold">{totalSearchLogs}</CardTitle>
 							</CardHeader>
 							<CardContent>
-								<p className="text-xs text-muted-foreground">Google, Bing, DDG, Yahoo — Chrome / Edge / Firefox / Brave / Safari</p>
+								<p className="text-xs text-muted-foreground">Google, Bing, DDG, Yahoo ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Chrome / Edge / Firefox / Brave / Safari</p>
 							</CardContent>
 						</Card>
 
@@ -2828,7 +2858,7 @@ export default function BrowserAiPage() {
 									Search Engine Activity &amp; Privacy Audit
 								</CardTitle>
 								<CardDescription>
-									Real-time search queries and clicked links from any Guard browser (Chrome, Edge, Firefox, Brave, Opera, Safari) — Google, Bing/MSN, DuckDuckGo, Yahoo — including Incognito/InPrivate. Saved to Postgres.
+									Search queries and clicked links from Guard browsers (Chrome, Edge, Firefox, Brave, Opera, Safari), including Incognito/InPrivate.
 								</CardDescription>
 							</div>
 
@@ -2911,15 +2941,6 @@ export default function BrowserAiPage() {
 								<Table className="w-full min-w-[980px]">
 									<TableHeader>
 										<TableRow className="border-border hover:bg-transparent">
-											<TableHead className="w-[40px]">
-												<Checkbox
-													aria-label="Select all search logs on this page"
-													checked={searchLogs.length > 0 && searchLogs.every((l) => selectedSearchLogIds.has(l.id))}
-													onCheckedChange={(on) =>
-														setSelectedSearchLogIds(on === true ? new Set(searchLogs.map((l) => l.id)) : new Set())
-													}
-												/>
-											</TableHead>
 											<TableHead className="w-[100px]">Date</TableHead>
 											<TableHead className="w-[100px]">Time</TableHead>
 											<TableHead className="w-[140px]">Desktop Name</TableHead>
@@ -2934,13 +2955,10 @@ export default function BrowserAiPage() {
 									<TableBody>
 										{searchLogs.length === 0 ? (
 											<TableRow>
-												<TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+												<TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
 													<div className="flex flex-col items-center justify-center gap-2">
 														<Search className="h-6 w-6 text-muted-foreground/50" />
 														<p>No search events logged yet.</p>
-														<p className="text-xs text-muted-foreground/70">
-															Searches in Google, Bing, DuckDuckGo, or Yahoo from Chrome/Edge/Firefox/Brave appear here in real-time.
-														</p>
 													</div>
 												</TableCell>
 											</TableRow>
@@ -2953,13 +2971,6 @@ export default function BrowserAiPage() {
 														className="border-border hover:bg-muted/30 cursor-pointer"
 														onClick={() => setSelectedSearchLog(log)}
 													>
-														<TableCell onClick={(ev) => ev.stopPropagation()}>
-															<Checkbox
-																aria-label="Select search log"
-																checked={selectedSearchLogIds.has(log.id)}
-																onCheckedChange={(on) => toggleId(setSelectedSearchLogIds, log.id, on === true)}
-															/>
-														</TableCell>
 														<TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
 															{formatLogDate(log.timestamp)}
 														</TableCell>
@@ -2967,7 +2978,7 @@ export default function BrowserAiPage() {
 															{formatLogTime(log.timestamp)}
 														</TableCell>
 														<TableCell className="font-mono text-xs">
-															<span className="font-medium text-foreground">{log.agent_hostname || "—"}</span>
+															<span className="font-medium text-foreground">{log.agent_hostname || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</span>
 															{log.client_ip && log.client_ip !== log.agent_hostname && (
 																<div className="text-[10px] text-muted-foreground">{log.client_ip}</div>
 															)}
@@ -3041,7 +3052,7 @@ export default function BrowserAiPage() {
 																	<span className="truncate">{log.clicked_title || log.clicked_url}</span>
 																</a>
 															) : (
-																<span className="text-xs text-muted-foreground">—</span>
+																<span className="text-xs text-muted-foreground">ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â</span>
 															)}
 														</TableCell>
 														<TableCell>
@@ -3282,14 +3293,14 @@ export default function BrowserAiPage() {
 									{uploadWarningEditing || !(controls.upload_warning || "").trim() ? (
 										<>
 											<Textarea
-												placeholder="e.g. UPLOAD BLOCK — shown in Prompt Logs and to employees..."
+												placeholder="e.g. UPLOAD BLOCK ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â shown in Prompt Logs and to employees..."
 												value={uploadWarningDraft}
 												onChange={(e) => setUploadWarningDraft(e.target.value)}
 												rows={3}
 											/>
 											<div className="flex items-center justify-between gap-2">
 												<p className="text-xs text-muted-foreground">
-													Block all uploads → this text in Prompt Logs. A Guard Rule hit inside a file → this text (or that rule&apos;s warning) plus &quot; -- policy name&quot;. Leave blank to use &quot;Upload block&quot;.
+													Block all uploads ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ this text in Prompt Logs. A Guard Rule hit inside a file ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ this text (or that rule&apos;s warning) plus &quot; -- policy name&quot;. Leave blank to use &quot;Upload block&quot;.
 												</p>
 												<div className="flex items-center gap-2 shrink-0">
 													{uploadWarningEditing && (controls.upload_warning || "").trim() ? (
@@ -3379,7 +3390,7 @@ export default function BrowserAiPage() {
 												Create Guard Rule
 											</DialogTitle>
 											<DialogDescription className="text-xs">
-												Add your own regex or AI policy. Raksha does not ship default guard patterns — only what you save here is enforced.
+												Add your own regex or AI policy. Raksha does not ship default guard patterns ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â only what you save here is enforced.
 											</DialogDescription>
 										</DialogHeader>
 
@@ -3615,7 +3626,7 @@ export default function BrowserAiPage() {
 													<div className="rounded-md border border-purple-300/70 bg-purple-50 px-3 py-2 space-y-1 dark:border-purple-900/40 dark:bg-purple-950/20">
 														{!rule.bot_prompt && !rule.bot_reference_image ? (
 															<p className="text-xs text-red-700 font-medium dark:text-red-300">
-																Incomplete — set the Security Policy prompt and/or reference template, then Save.
+																Incomplete ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â set the Security Policy prompt and/or reference template, then Save.
 															</p>
 														) : null}
 														<div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-purple-800 dark:text-purple-300/80">
@@ -3725,7 +3736,7 @@ export default function BrowserAiPage() {
 												</SelectContent>
 											</Select>
 											<span>
-												Showing {filteredRules.length ? rulesPageOffset + 1 : 0}–
+												Showing {filteredRules.length ? rulesPageOffset + 1 : 0}ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ
 												{Math.min(rulesPageOffset + rulesPageLimit, filteredRules.length)} of {filteredRules.length}
 											</span>
 										</div>
@@ -4135,21 +4146,6 @@ export default function BrowserAiPage() {
 												</TableCell>
 												<TableCell className="text-right">
 													<div className="flex items-center justify-end gap-1">
-														{!isChild ? (
-															<Button
-																variant="ghost"
-																size="icon"
-																onClick={() => {
-																	const el = document.getElementById(`subdomain-input-${tgt.id}`) as HTMLInputElement | null;
-																	el?.focus();
-																	el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-																}}
-																className="h-8 w-8 text-muted-foreground hover:text-foreground"
-																title="Add subdomain / related host"
-															>
-																<Plus className="h-4 w-4" />
-															</Button>
-														) : null}
 														<Button
 															variant="ghost"
 															size="icon"
@@ -4536,7 +4532,7 @@ export default function BrowserAiPage() {
 							<CardHeader className="pb-2">
 								<CardDescription>Uninstall key</CardDescription>
 								<CardTitle className="text-lg">
-									{agentSettings?.key_configured ? "Configured · Always required" : "Not set · Set key first"}
+									{agentSettings?.key_configured ? "Configured ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Always required" : "Not set ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Set key first"}
 								</CardTitle>
 							</CardHeader>
 						</Card>
@@ -4616,7 +4612,7 @@ export default function BrowserAiPage() {
 													className="font-medium text-sm truncate text-left hover:underline hover:text-primary transition-colors block w-full"
 													title={`Click to view device details & daily uninstall key for ${agent.hostname || agent.id}`}
 												>
-													{agent.hostname || "—"}
+													{agent.hostname || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 												</button>
 												<div className="text-[11px] text-muted-foreground font-mono truncate" title={agent.id}>
 													{agent.id}
@@ -4636,13 +4632,13 @@ export default function BrowserAiPage() {
 											<TableCell className="text-sm">
 												{(agent.agent_type || "endpoint") === "network" ? "Network" : "Laptop"}
 											</TableCell>
-											<TableCell className="text-sm truncate">{agent.username || "—"}</TableCell>
-											<TableCell className="text-xs font-mono truncate">{agent.ip_address || "—"}</TableCell>
+											<TableCell className="text-sm truncate">{agent.username || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</TableCell>
+											<TableCell className="text-xs font-mono truncate">{agent.ip_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</TableCell>
 											<TableCell className="text-xs font-mono truncate pr-4" data-testid="guard-agent-mac-cell" title={agent.mac_address || ""}>
-												{agent.mac_address || "—"}
+												{agent.mac_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 											</TableCell>
 											<TableCell className="text-[11px] font-mono text-muted-foreground truncate px-4" data-testid="guard-agent-transport-cell" title={nicGuidOnly(agent.transport_name) || ""}>
-												{nicGuidOnly(agent.transport_name) || "—"}
+												{nicGuidOnly(agent.transport_name) || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 											</TableCell>
 											<TableCell className="text-xs align-top whitespace-normal">
 												{(() => {
@@ -4652,14 +4648,14 @@ export default function BrowserAiPage() {
 													const outdated = !!current && !!latest && compareGuardVersions(current, latest) < 0;
 													return (
 														<>
-															<div className="font-medium font-mono">{current ? `v${current}` : "—"}</div>
+															<div className="font-medium font-mono">{current ? `v${current}` : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</div>
 															{current && latest ? (
 																<Badge
 																	variant="outline"
 																	className={`mt-0.5 px-1.5 py-0 text-[10px] ${outdated ? "border-amber-500/40 text-amber-400" : "border-emerald-500/40 text-emerald-400"}`}
 																	title={outdated ? `Server has v${latest}; Guard updates within a few minutes while online` : "Matches the server package"}
 																>
-																	{outdated ? `Update pending → v${latest}` : "Up to date"}
+																	{outdated ? `Update pending ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ v${latest}` : "Up to date"}
 																</Badge>
 															) : null}
 															{agent.version_updated_at ? (
@@ -4681,7 +4677,7 @@ export default function BrowserAiPage() {
 																				: "Guard downloads, self-tests and restarts on the new code at its next heartbeat while online"
 																		}
 																	>
-																		{running ? `Code ${bundle.sha256.slice(0, 8)} ✓` : `Code → ${bundle.sha256.slice(0, 8)} pending`}
+																		{running ? `Code ${bundle.sha256.slice(0, 8)} ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ` : `Code ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ${bundle.sha256.slice(0, 8)} pending`}
 																	</div>
 																);
 															})()}
@@ -4691,10 +4687,10 @@ export default function BrowserAiPage() {
 											</TableCell>
 											<TableCell>{getAgentStatusBadge(agent.status, agent.uninstall_requested)}</TableCell>
 											<TableCell className="text-xs text-muted-foreground truncate">
-												{agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : "—"}
+												{agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 											</TableCell>
 											<TableCell className="text-xs text-muted-foreground truncate">
-												{agent.installed_at ? new Date(agent.installed_at).toLocaleString() : "—"}
+												{agent.installed_at ? new Date(agent.installed_at).toLocaleString() : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 											</TableCell>
 											<TableCell className="text-right">
 												<DropdownMenu>
@@ -4768,7 +4764,7 @@ export default function BrowserAiPage() {
 						</CardContent>
 					</Card>
 
-					{/* Guard Agents pagination — always visible (Prompt Logs style) */}
+					{/* Guard Agents pagination ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â always visible (Prompt Logs style) */}
 					<div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-muted-foreground">
 						<div className="flex items-center gap-2">
 							<span>Rows per page</span>
@@ -4867,7 +4863,7 @@ export default function BrowserAiPage() {
 								<div>
 									<CardTitle className="text-lg">Uninstall Key</CardTitle>
 									<CardDescription>
-										Employees and admins can remove Guard only with this company key. Key is stored hashed.
+										Required to uninstall Guard. Stored hashed.
 									</CardDescription>
 								</div>
 							</div>
@@ -4875,9 +4871,6 @@ export default function BrowserAiPage() {
 						<CardContent className="space-y-4">
 							<div className="rounded-md border border-amber-800/50 bg-amber-950/20 p-3">
 								<p className="text-sm font-medium text-amber-200">Uninstall always requires this key</p>
-								<p className="text-xs text-muted-foreground mt-1">
-									Windows Settings / Start Menu / CLI / Mac uninstall / admin remote uninstall — all need the matching key. You cannot turn this off.
-								</p>
 							</div>
 							<div className="space-y-3">
 								{agentSettings?.key_configured && !uninstallKeyEditing ? (
@@ -4896,7 +4889,7 @@ export default function BrowserAiPage() {
 													value={
 														showUninstallKey
 															? (savedUninstallKeyDisplay || agentSettingsData?.uninstall_key || (typeof window !== "undefined" ? localStorage.getItem("raksha_company_uninstall_key") : "") || "12345678")
-															: "••••••••••••••••••••"
+															: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢"
 													}
 													className="pr-10 font-mono"
 												/>
@@ -4970,7 +4963,7 @@ export default function BrowserAiPage() {
 											<div className="relative min-w-0 flex-1">
 												<Input
 													type={showUninstallKey ? "text" : "password"}
-													placeholder={agentSettings?.key_configured ? "Enter new key to rotate…" : "Enter company uninstall key…"}
+													placeholder={agentSettings?.key_configured ? "Enter new key to rotateÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦" : "Enter company uninstall keyÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦"}
 													value={uninstallKeyInput}
 													onChange={(e) => setUninstallKeyInput(e.target.value)}
 													autoComplete="new-password"
@@ -4989,7 +4982,7 @@ export default function BrowserAiPage() {
 											</div>
 											<Button onClick={handleSaveUninstallKey} disabled={savingUninstallKey || !uninstallKeyInput.trim()} className="gap-2 shrink-0">
 												<Save className="h-4 w-4" />
-												{savingUninstallKey ? "Saving…" : "Save"}
+												{savingUninstallKey ? "SavingÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦" : "Save"}
 											</Button>
 											{agentSettings?.key_configured ? (
 												<Button
@@ -5023,7 +5016,7 @@ export default function BrowserAiPage() {
 									<div className="min-w-0">
 										<CardTitle className="text-lg">Employee Setup Packages</CardTitle>
 										<CardDescription>
-											Installers for employee laptops. After Rebuild &amp; Publish, online Guards switch to the latest Guard code within minutes — no reinstall.
+											Installers for employee laptops. Auto-updates after Rebuild and Publish.
 										</CardDescription>
 									</div>
 								</div>
@@ -5057,7 +5050,7 @@ export default function BrowserAiPage() {
 											<DropdownMenuItem onClick={() => handleDownloadSetupPackage("windows")}>
 												<div className="flex flex-col">
 													<span>Download existing</span>
-													<span className="text-muted-foreground text-xs">Already built package{latestWinVersion ? ` · v${latestWinVersion}` : ""}</span>
+													<span className="text-muted-foreground text-xs">Already built package{latestWinVersion ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· v${latestWinVersion}` : ""}</span>
 												</div>
 											</DropdownMenuItem>
 											<DropdownMenuSeparator />
@@ -5087,7 +5080,7 @@ export default function BrowserAiPage() {
 											<DropdownMenuItem onClick={() => handleDownloadSetupPackage("mac")}>
 												<div className="flex flex-col">
 													<span>Download existing</span>
-													<span className="text-muted-foreground text-xs">Already built package{latestMacVersion ? ` · v${latestMacVersion}` : ""}</span>
+													<span className="text-muted-foreground text-xs">Already built package{latestMacVersion ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· v${latestMacVersion}` : ""}</span>
 												</div>
 											</DropdownMenuItem>
 											<DropdownMenuSeparator />
@@ -5108,7 +5101,7 @@ export default function BrowserAiPage() {
 									{
 										label: "Windows",
 										file: "Raksha_Guard_Windows.zip",
-										contents: "Setup.exe · auto-start · proxy routing",
+										contents: "Setup.exe ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· auto-start ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· proxy routing",
 										dot: "bg-sky-500",
 										ready: setupInfo?.windows_ready,
 										version: latestWinVersion,
@@ -5117,7 +5110,7 @@ export default function BrowserAiPage() {
 									{
 										label: "macOS",
 										file: "Raksha_Guard_macOS.zip",
-										contents: "Raksha_Guard.app · Install .command",
+										contents: "Raksha_Guard.app ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Install .command",
 										dot: "bg-primary",
 										ready: setupInfo?.macos_ready,
 										version: latestMacVersion,
@@ -5133,7 +5126,7 @@ export default function BrowserAiPage() {
 											</div>
 											<p className="mt-1 truncate text-[11px] text-muted-foreground">
 												{pkg.contents}
-												{pkg.builtAt ? ` · built ${new Date(pkg.builtAt).toLocaleString()}` : ""}
+												{pkg.builtAt ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· built ${new Date(pkg.builtAt).toLocaleString()}` : ""}
 											</p>
 										</div>
 										{pkg.ready === false ? (
@@ -5142,7 +5135,7 @@ export default function BrowserAiPage() {
 											</Badge>
 										) : (
 											<Badge variant="outline" className="shrink-0 border-emerald-500/40 font-mono text-emerald-400">
-												{pkg.version ? `v${pkg.version}` : "—"}
+												{pkg.version ? `v${pkg.version}` : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 											</Badge>
 										)}
 									</div>
@@ -5156,10 +5149,10 @@ export default function BrowserAiPage() {
 									</div>
 									<p className="mt-1 truncate text-[11px] text-muted-foreground">
 										{setupInfo?.proxy_bundle
-											? `Published ${new Date(setupInfo.proxy_bundle.published_at).toLocaleString()} for Guard v${setupInfo.proxy_bundle.guard_versions.join(" / v")} · applied by installed Guards within about a minute`
+											? `Published ${new Date(setupInfo.proxy_bundle.published_at).toLocaleString()} for Guard v${setupInfo.proxy_bundle.guard_versions.join(" / v")} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· applied by installed Guards within about a minute`
 											: setupInfo?.proxy_source_available === false
-												? "Guard source not found on the server — mount apps/browser-guard/proxy and /agent at /app/guard-proxy and /app/guard-agent"
-												: "Not published yet — press Rebuild & Publish to push the current Guard code to installed Guards"}
+												? "Guard source not found on the server ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â mount apps/browser-guard/proxy and /agent at /app/guard-proxy and /app/guard-agent"
+												: "Not published yet ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â press Rebuild & Publish to push the current Guard code to installed Guards"}
 									</p>
 								</div>
 								{setupInfo?.proxy_bundle ? (
@@ -5182,7 +5175,7 @@ export default function BrowserAiPage() {
 							<details className="rounded-md border border-border bg-card px-3 py-2.5">
 								<summary className="cursor-pointer select-none text-xs font-medium text-foreground">
 									Rebuild history ({rebuildHistory.length}
-									{rebuildHistory.length >= 20 ? "+" : ""}) — saved in the database
+									{rebuildHistory.length >= 20 ? "+" : ""}) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â saved in the database
 								</summary>
 								{rebuildHistory.length === 0 ? (
 									<p className="mt-2 text-[11px] text-muted-foreground">No Rebuild &amp; Publish yet.</p>
@@ -5215,17 +5208,17 @@ export default function BrowserAiPage() {
 															</Badge>
 														</td>
 														<td className="py-1.5 pr-2 font-mono">
-															{row.bundle_sha ? row.bundle_sha.slice(0, 8) : "—"}
+															{row.bundle_sha ? row.bundle_sha.slice(0, 8) : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 															{row.guard_versions ? (
 																<span className="ml-1 font-sans text-muted-foreground">for v{row.guard_versions.split(",").join(" / v")}</span>
 															) : null}
 														</td>
 														<td className="py-1.5 pr-2 whitespace-nowrap">
 															{row.mode === "rebuilt" ? "Rebuilt" : "Served"}
-															{row.version ? ` · Win v${row.version}` : ""}
-															{row.mac_version ? ` · Mac v${row.mac_version}` : ""}
+															{row.version ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Win v${row.version}` : ""}
+															{row.mac_version ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Mac v${row.mac_version}` : ""}
 														</td>
-														<td className="py-1.5 pr-2 truncate max-w-[120px]">{row.requested_by || "—"}</td>
+														<td className="py-1.5 pr-2 truncate max-w-[120px]">{row.requested_by || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</td>
 													</tr>
 												))}
 											</tbody>
@@ -5262,8 +5255,8 @@ export default function BrowserAiPage() {
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
 										Raksha_Guard_Setup.exe
 									</code>
-									. Keep autostart enabled so Guard starts at Windows login. To turn OFF / uninstall: Windows Settings → Apps →
-									Raksha Guard → Uninstall (company uninstall key).
+									. Keep autostart enabled so Guard starts at Windows login. To turn OFF / uninstall: Windows Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Apps ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢
+									Raksha Guard ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Uninstall (company uninstall key).
 								</p>
 							</div>
 
@@ -5281,7 +5274,7 @@ export default function BrowserAiPage() {
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
 										Install_Raksha_Guard.command
 									</code>{" "}
-									(Right-click → Open if Gatekeeper blocks). See{" "}
+									(Right-click ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Open if Gatekeeper blocks). See{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">INSTALL_MACOS.txt</code>. To
 									turn OFF / uninstall: double-click{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
@@ -5310,7 +5303,7 @@ export default function BrowserAiPage() {
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
 											Raksha_Guard_Windows.zip
 										</code>{" "}
-										— Windows{" "}
+										ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Windows{" "}
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
 											Raksha_Guard_Setup.exe
 										</code>{" "}
@@ -5320,7 +5313,7 @@ export default function BrowserAiPage() {
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
 											Raksha_Guard_macOS.zip
 										</code>{" "}
-										— macOS{" "}
+										ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â macOS{" "}
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">Raksha_Guard.app</code> +
 										Install &amp; Uninstall scripts
 									</li>
@@ -5355,7 +5348,7 @@ export default function BrowserAiPage() {
 								<CardTitle className="text-2xl font-bold">{telemetryTotals.totalActive} / {telemetryAgentsRaw?.total ?? telemetryAgents.length}</CardTitle>
 							</CardHeader>
 							<CardContent className="p-3.5 pt-0">
-								<p className="text-[11px] text-muted-foreground">Online within 5m · click to filter</p>
+								<p className="text-[11px] text-muted-foreground">Online within 5m ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· click to filter</p>
 							</CardContent>
 						</Card>
 
@@ -5439,9 +5432,9 @@ export default function BrowserAiPage() {
 									<CardDescription className="text-xs mt-0.5">
 										Fleet-wide agents (independent of Agents tab page) with intercept hit counts from recent prompt logs
 										{(insightStatsRaw?.totals?.total || 0) > 0
-											? ` · counts from full database (${(insightStatsRaw?.totals?.total || 0).toLocaleString()} prompt logs)`
+											? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· counts from full database (${(insightStatsRaw?.totals?.total || 0).toLocaleString()} prompt logs)`
 											: (telemetryLogsRaw?.total || 0) > TELEMETRY_LOG_LIMIT
-												? ` · counts use latest ${TELEMETRY_LOG_LIMIT.toLocaleString()} of ${(telemetryLogsRaw?.total || 0).toLocaleString()} logs`
+												? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· counts use latest ${TELEMETRY_LOG_LIMIT.toLocaleString()} of ${(telemetryLogsRaw?.total || 0).toLocaleString()} logs`
 												: ""}
 									</CardDescription>
 								</div>
@@ -5542,21 +5535,21 @@ export default function BrowserAiPage() {
 												return (
 													<TableRow key={agent.id} className="border-border hover:bg-muted/40 transition-colors">
 														<TableCell className="font-mono py-3">
-															<div className="font-semibold text-foreground truncate max-w-[170px]" title={agent.hostname || "—"}>
+															<div className="font-semibold text-foreground truncate max-w-[170px]" title={agent.hostname || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}>
 																{agent.hostname || "Unknown Host"}
 															</div>
-															<div className="text-[11px] text-muted-foreground truncate" title={agent.username || "—"}>
-																{agent.username ? `user: ${agent.username}` : "—"}
+															<div className="text-[11px] text-muted-foreground truncate" title={agent.username || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}>
+																{agent.username ? `user: ${agent.username}` : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 															</div>
 														</TableCell>
-														<TableCell className="font-mono text-muted-foreground">{agent.ip_address || "—"}</TableCell>
+														<TableCell className="font-mono text-muted-foreground">{agent.ip_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</TableCell>
 														<TableCell className="font-mono text-xs">
 															{agent.mac_address ? (
 																<Badge variant="outline" className="font-mono text-[10px] bg-background border-border">
 																	{agent.mac_address}
 																</Badge>
 															) : (
-																<span className="text-muted-foreground">—</span>
+																<span className="text-muted-foreground">ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â</span>
 															)}
 														</TableCell>
 														<TableCell className="text-muted-foreground">
@@ -5615,7 +5608,7 @@ export default function BrowserAiPage() {
 																</span>
 															</div>
 															<div className="text-[10px] text-muted-foreground mt-0.5">
-																{agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleTimeString() : "—"}
+																{agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleTimeString() : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 															</div>
 														</TableCell>
 
@@ -5685,7 +5678,7 @@ export default function BrowserAiPage() {
 					<DialogHeader className="shrink-0">
 						<DialogTitle className="flex items-center gap-2 text-base font-semibold">
 							<Shield className="h-4 w-4 text-primary" />
-							Guard Insights — {selectedTelemetryAgent?.hostname || "Host Agent"}
+							Guard Insights ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â {selectedTelemetryAgent?.hostname || "Host Agent"}
 						</DialogTitle>
 						<DialogDescription>
 							Hardware identity, Guard version, and recent allow / block / warn / redact activity from this device
@@ -5698,19 +5691,19 @@ export default function BrowserAiPage() {
 								<div className="rounded-md border border-border bg-background p-3 space-y-1">
 									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Device &amp; User</p>
 									<p className="font-mono text-sm text-foreground font-semibold">
-										{selectedTelemetryAgent.hostname || "—"} / {selectedTelemetryAgent.username || "—"}
+										{selectedTelemetryAgent.hostname || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"} / {selectedTelemetryAgent.username || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 									</p>
 								</div>
 								<div className="rounded-md border border-border bg-background p-3 space-y-1">
 									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Host User IP</p>
-									<p className="font-mono text-sm text-emerald-400 font-semibold">{selectedTelemetryAgent.ip_address || "—"}</p>
+									<p className="font-mono text-sm text-emerald-400 font-semibold">{selectedTelemetryAgent.ip_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</p>
 								</div>
 							</div>
 
 							<div className="grid grid-cols-2 gap-3">
 								<div className="rounded-md border border-border bg-background p-3 space-y-1">
 									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Physical MAC Address</p>
-									<p className="font-mono text-xs text-foreground font-medium">{selectedTelemetryAgent.mac_address || "—"}</p>
+									<p className="font-mono text-xs text-foreground font-medium">{selectedTelemetryAgent.mac_address || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</p>
 								</div>
 								<div className="rounded-md border border-border bg-background p-3 space-y-1">
 									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Transport / OS / Version</p>
@@ -5718,7 +5711,7 @@ export default function BrowserAiPage() {
 										{selectedTelemetryAgent.transport_name || "Raksha Guard"} ({selectedTelemetryAgent.os_version || "OS"})
 									</p>
 									<p className="font-mono text-xs text-primary font-semibold mt-0.5">
-										Guard v{selectedTelemetryAgent.agent_version || "—"}
+										Guard v{selectedTelemetryAgent.agent_version || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 									</p>
 								</div>
 							</div>
@@ -5758,11 +5751,11 @@ export default function BrowserAiPage() {
 														{logActionBadge(log)}
 													</div>
 													<span className="text-[10px] text-muted-foreground shrink-0">
-														{log.timestamp ? new Date(log.timestamp).toLocaleString() : "—"}
+														{log.timestamp ? new Date(log.timestamp).toLocaleString() : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 													</span>
 												</div>
 												<p className="text-[11px] text-foreground/90 line-clamp-2 break-words">
-													{log.user_prompt_preview || log.user_prompt_full || "—"}
+													{log.user_prompt_preview || log.user_prompt_full || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 												</p>
 												{log.rule_triggered ? (
 													<p className="text-[10px] text-muted-foreground truncate">Rule: {log.rule_triggered}</p>
@@ -5783,7 +5776,7 @@ export default function BrowserAiPage() {
 				</DialogContent>
 			</Dialog>
 
-			{/* Prompt Details — centered modal */}
+			{/* Prompt Details ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â centered modal */}
 			<Dialog
 				open={!!selectedLog}
 				onOpenChange={(open) => {
@@ -5819,7 +5812,7 @@ export default function BrowserAiPage() {
 									</div>
 									<div className="rounded-lg border border-border/80 bg-background/60 p-3.5 space-y-1.5">
 										<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Desktop Name</Label>
-										<p className="text-sm font-medium truncate">{selectedLog.agent_hostname || "—"}</p>
+										<p className="text-sm font-medium truncate">{selectedLog.agent_hostname || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</p>
 										<p className="text-[11px] text-muted-foreground font-mono truncate">
 											{selectedLog.agent_id || selectedLog.client_ip || ""}
 										</p>
@@ -5909,7 +5902,7 @@ export default function BrowserAiPage() {
 									</div>
 									{isFileUploadLog(selectedLog) && logExtractedTextFromPrompt(selectedLog) ? (
 										<p className="text-[11px] text-muted-foreground">
-											Extracted file text is available under <strong className="font-medium text-foreground">View → Extracted text</strong>.
+											Extracted file text is available under <strong className="font-medium text-foreground">View ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Extracted text</strong>.
 										</p>
 									) : null}
 								</div>
@@ -5935,8 +5928,8 @@ export default function BrowserAiPage() {
 										) : (
 											<p className="text-xs text-muted-foreground shrink-0 max-w-[14rem] text-right leading-snug">
 												{(selectedLog.action || "").toLowerCase() === "blocked"
-													? "File bytes not stored — View unavailable for this block event"
-													: "Filename logged — file bytes not stored yet"}
+													? "File bytes not stored ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â View unavailable for this block event"
+													: "Filename logged ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â file bytes not stored yet"}
 											</p>
 										)}
 									</div>
@@ -5947,8 +5940,8 @@ export default function BrowserAiPage() {
 									<p className="text-sm font-semibold break-words">{predictReasonLabel(selectedLog)}</p>
 									<p className="text-[11px] text-muted-foreground">
 										Risk: {selectedLog.predictive_risk || "LOW"}
-										{selectedLog.risk_score != null ? ` · score ${selectedLog.risk_score}` : ""}
-										{selectedLog.predicted_category ? ` · ${selectedLog.predicted_category}` : ""}
+										{selectedLog.risk_score != null ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· score ${selectedLog.risk_score}` : ""}
+										{selectedLog.predicted_category ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${selectedLog.predicted_category}` : ""}
 									</p>
 								</div>
 
@@ -5961,7 +5954,7 @@ export default function BrowserAiPage() {
 										<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Violated Rule</Label>
 										<p className={`text-sm font-semibold ${selectedLog.rule_triggered && selectedLog.action !== "Allowed" ? "text-purple-300" : "text-muted-foreground"}`}>
 											{selectedLog.action === "Allowed" && (selectedLog.predicted_category || "").toUpperCase() === "AI_GUARD_BOT_CLEAR"
-												? "None (checked — no violation)"
+												? "None (checked ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â no violation)"
 												: (selectedLog.rule_triggered || "None")}
 										</p>
 									</div>
@@ -6011,7 +6004,7 @@ export default function BrowserAiPage() {
 				</DialogContent>
 			</Dialog>
 
-			{/* Attachment viewer — centered popup (PDF / image / download others) */}
+			{/* Attachment viewer ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â centered popup (PDF / image / download others) */}
 			<Dialog
 				open={!!pdfViewerLog}
 				onOpenChange={(open) => {
@@ -6042,7 +6035,7 @@ export default function BrowserAiPage() {
 									{logAttachmentLabel(pdfViewerLog)}
 								</DialogTitle>
 								<DialogDescription className="text-xs">
-									{pdfViewerLog.platform} · {pdfViewerLog.action || "—"} · Captured{" "}
+									{pdfViewerLog.platform} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {pdfViewerLog.action || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Captured{" "}
 									{new Date(pdfViewerLog.timestamp).toLocaleString()}
 								</DialogDescription>
 							</DialogHeader>
@@ -6126,8 +6119,8 @@ export default function BrowserAiPage() {
 									<div className="w-full max-h-[min(70vh,720px)] overflow-auto rounded-md border border-border bg-background p-4 space-y-3 no-scrollbar">
 										<div className="flex flex-wrap items-center justify-between gap-2">
 											<p className="text-xs text-muted-foreground">
-												{pdfViewerLog.platform} · {pdfViewerLog.action || "—"}
-												{pdfViewerLog.rule_triggered ? ` · ${pdfViewerLog.rule_triggered}` : ""}
+												{pdfViewerLog.platform} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {pdfViewerLog.action || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
+												{pdfViewerLog.rule_triggered ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${pdfViewerLog.rule_triggered}` : ""}
 											</p>
 											<Button
 												variant="ghost"
@@ -6158,11 +6151,11 @@ export default function BrowserAiPage() {
 										</p>
 										<pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">
 											{logExtractedText(pdfViewerLog, attachmentPreviewText) ||
-												(pdfLoading ? "Loading…" : "No text could be extracted from this file.")}
+												(pdfLoading ? "LoadingÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦" : "No text could be extracted from this file.")}
 										</pre>
 									</div>
 								) : pdfLoading ? (
-									<p className="text-sm text-muted-foreground">Loading document…</p>
+									<p className="text-sm text-muted-foreground">Loading documentÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦</p>
 								) : pdfError ? (
 									<p className="text-sm text-red-400">{pdfError}</p>
 								) : attachmentPreviewKind === "image" && pdfBlobUrl ? (
@@ -6350,7 +6343,7 @@ export default function BrowserAiPage() {
 								</div>
 								<Input
 									type={showRemoteUninstallKey ? "text" : "password"}
-									placeholder={guardKeyLoading ? "Loading Guard key…" : "Today's Guard key or company uninstall key"}
+									placeholder={guardKeyLoading ? "Loading Guard keyÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦" : "Today's Guard key or company uninstall key"}
 									value={remoteUninstallKey}
 									onChange={(e) => setRemoteUninstallKey(e.target.value)}
 									disabled={guardKeyLoading}
@@ -6429,13 +6422,13 @@ export default function BrowserAiPage() {
 								<div>
 									<span className="text-[10px] uppercase font-semibold text-muted-foreground block">Platform / OS</span>
 									<span className="inline-flex items-center gap-1 text-xs text-foreground capitalize">
-										{selectedAgentDetails.os_version || "—"}
+										{selectedAgentDetails.os_version || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 									</span>
 								</div>
 								<div>
 									<span className="text-[10px] uppercase font-semibold text-muted-foreground block">Agent Version</span>
 									<span className="font-mono text-xs text-foreground">
-										{selectedAgentDetails.agent_version ? `v${selectedAgentDetails.agent_version}` : "—"}
+										{selectedAgentDetails.agent_version ? `v${selectedAgentDetails.agent_version}` : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
 									</span>
 								</div>
 								<div>
@@ -6493,13 +6486,13 @@ export default function BrowserAiPage() {
 										{agentDetailsKeyLoading ? (
 											<span className="text-muted-foreground flex items-center gap-2">
 												<Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-												Fetching today&apos;s rolling key…
+												Fetching today&apos;s rolling keyÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦
 											</span>
 										) : agentDetailsKey ? (
 											showAgentDetailsKey ? (
 												<span className="font-bold text-emerald-400">{agentDetailsKey}</span>
 											) : (
-												<span className="text-muted-foreground tracking-widest">••••••••••••••••••••••••</span>
+												<span className="text-muted-foreground tracking-widest">ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢</span>
 											)
 										) : (
 											<span className="text-muted-foreground italic">No daily key generated yet</span>
@@ -6658,7 +6651,7 @@ export default function BrowserAiPage() {
 								</div>
 								{selectedAgentDetails.contact_email_pinned && (
 									<p className="text-[10px] text-muted-foreground">
-										Saved by admin — kept permanently (also after Guard reinstall on this laptop) until you edit or remove it.
+										Saved by admin ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â kept permanently (also after Guard reinstall on this laptop) until you edit or remove it.
 									</p>
 								)}
 							</div>
@@ -6715,7 +6708,7 @@ export default function BrowserAiPage() {
 
 					{warningMailTarget && (
 						<div className="space-y-4 text-xs overflow-y-auto flex-1 min-h-0 pr-1 no-scrollbar">
-							{/* SMTP connection status (Settings → Security) */}
+							{/* SMTP connection status (Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Security) */}
 							<div
 								className={`flex items-start gap-2 p-2.5 rounded-lg border text-[11px] ${
 									smtpReady
@@ -6727,7 +6720,7 @@ export default function BrowserAiPage() {
 									<>
 										<CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
 										<span>
-											SMTP connected via Settings → Security
+											SMTP connected via Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Security
 											{smtpConfig?.host ? ` (${smtpConfig.host}${smtpConfig.port ? `:${smtpConfig.port}` : ""})` : ""}.
 											Mail will be sent to the recipient below.
 										</span>
@@ -6736,7 +6729,7 @@ export default function BrowserAiPage() {
 									<>
 										<AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
 										<span>
-											SMTP is not enabled. Open Settings → Security, configure SMTP, enable it, then return here to send the warning report.
+											SMTP is not enabled. Open Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Security, configure SMTP, enable it, then return here to send the warning report.
 										</span>
 									</>
 								)}
@@ -6748,7 +6741,7 @@ export default function BrowserAiPage() {
 									Host: <span className="font-mono font-bold text-foreground ml-1">{warningMailTarget.hostname}</span>
 								</Badge>
 								<Badge variant="outline" className="border-border bg-card">
-									User: <span className="font-mono text-foreground ml-1">{warningMailTarget.username || "—"}</span>
+									User: <span className="font-mono text-foreground ml-1">{warningMailTarget.username || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}</span>
 								</Badge>
 								<Badge variant="outline" className="border-border bg-card">
 									IP: <span className="font-mono text-foreground ml-1">{warningMailTarget.ip_address}</span>
@@ -6805,7 +6798,7 @@ export default function BrowserAiPage() {
 										placeholder="Describe the policy violation and action required by the employee..."
 									/>
 									<p className="text-[11px] text-muted-foreground">
-										Includes device + violation summary report. Sent via Settings → Security SMTP.
+										Includes device + violation summary report. Sent via Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Security SMTP.
 									</p>
 								</div>
 

@@ -40,7 +40,7 @@ const hasAuth = (v?: string | SecretVar): boolean =>
 	typeof v === "string" ? !!v.trim() : !!(v?.value?.trim() || ((v?.type === "env" || v?.type === "vault") && !!v?.ref?.trim()));
 
 const buildDefaults = (initialConfig?: PrometheusFormFragmentProps["currentConfig"]): PrometheusFormSchema => ({
-	metrics_enabled: initialConfig?.metrics_enabled ?? true,
+	metrics_enabled: initialConfig?.metrics_enabled ?? false,
 	push_gateway_enabled: initialConfig?.push_gateway_enabled ?? false,
 	prometheus_config: {
 		push_gateway_url: toSecretVarFormValue(initialConfig?.push_gateway_url),
