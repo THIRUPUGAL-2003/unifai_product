@@ -26,6 +26,8 @@ func NewHealthHandler(config *lib.Config) *HealthHandler {
 // RegisterRoutes registers the health-related routes.
 func (h *HealthHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
 	r.GET("/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
+	r.GET("/api/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
+	r.GET("/api/governance/debug/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
 }
 
 // getHealth handles GET /api/health - Get the health status of the server.
@@ -86,5 +88,12 @@ func (h *HealthHandler) getHealth(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusServiceUnavailable, errors[0])
 		return
 	}
-	SendJSON(ctx, map[string]any{"status": "ok", "components": map[string]any{"db_pings": "ok"}})
+	SendJSON(ctx, map[string]any{
+		"status":     "healthy",
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"components": map[string]any{"db_pings": "ok"},
+		"checks": map[string]any{
+			"database": map[string]string{"status": "healthy"},
+		},
+	})
 }
