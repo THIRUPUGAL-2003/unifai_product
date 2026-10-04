@@ -25,12 +25,23 @@ export const rbacApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: { permission_ids },
 			}),
-			invalidatesTags: ["Roles", "Permissions"],
+			invalidatesTags: (_result, _error, { id }) => [
+				{ type: "Permissions", id },
+				{ type: "Permissions" },
+				"Permissions",
+				"Roles",
+			],
 		}),
 		deleteRole: builder.mutation<void, number>({
 			query: (id) => ({ url: `/roles/${id}`, method: "DELETE" }),
 			// Users on a deleted role are moved to "user" server-side.
-			invalidatesTags: ["Roles", "Users", "Permissions"],
+			invalidatesTags: (_result, _error, id) => [
+				{ type: "Permissions", id },
+				{ type: "Permissions" },
+				"Roles",
+				"Users",
+				"Permissions",
+			],
 		}),
 		getMyRBACPermissions: builder.query<
 			{ role: string; permissions: Record<string, Record<string, boolean>> },
@@ -45,7 +56,7 @@ export const rbacApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: { role_id, role_name },
 			}),
-			invalidatesTags: ["Users", "Roles", "Permissions"],
+			invalidatesTags: ["Users", "Roles", "Permissions", { type: "Permissions" }],
 		}),
 		getRBACScopeGrants: builder.query<RBACScopeGrants, void>({
 			query: () => ({ url: "/rbac/scope-grants" }),
@@ -56,7 +67,7 @@ export const rbacApi = baseApi.injectEndpoints({
 			{ scope_type: RBACScopeType; scope_id?: string; permission_ids: number[]; allowed_sections: string }
 		>({
 			query: (body) => ({ url: "/rbac/scope-grants", method: "PUT", body }),
-			invalidatesTags: ["RBACScopeGrants"],
+			invalidatesTags: ["RBACScopeGrants", "Users", "Permissions", { type: "Permissions" }],
 		}),
 	}),
 });

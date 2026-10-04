@@ -266,39 +266,114 @@ export default function RBACView() {
 	const [updateScopeGrant, { isLoading: isSavingScope }] = useUpdateRBACScopeGrantMutation();
 	const [deleteRole] = useDeleteRoleMutation();
 	const [assignUserRole] = useAssignUserRoleMutation();
-	const [updateSessionUser] = useUpdateSessionUserMutation();
+	const [updateSessionUser, { isLoading: isUpdatingUser }] = useUpdateSessionUserMutation();
 
-	// Sync permissions when target changes
+	// Track the active target key to synchronize permissions without wiping unsaved user selections on background re-renders
+	const activeTargetKey = useMemo(() => {
+		switch (target.type) {
+			case "role":
+				return `role:${target.role.id}`;
+			case "all_users":
+				return "all_users";
+			case "all_sub_admins":
+				return "all_sub_admins";
+			case "user":
+				return `user:${target.user.id}:${targetUser?.role ?? ""}:${targetUser?.allowed_sections ?? ""}`;
+			case "all_teams":
+				return `all_teams:${scopeGrants?.all_teams?.updated_at ?? ""}:${scopeGrants?.all_teams?.allowed_sections ?? ""}`;
+			case "team":
+				return `team:${target.team.id}:${scopeGrants?.teams?.[target.team.id]?.updated_at ?? ""}:${scopeGrants?.teams?.[target.team.id]?.allowed_sections ?? ""}`;
+			case "all_customers":
+				return `all_customers:${scopeGrants?.all_customers?.updated_at ?? ""}:${scopeGrants?.all_customers?.allowed_sections ?? ""}`;
+			case "customer":
+				return `customer:${target.customer.id}:${scopeGrants?.customers?.[target.customer.id]?.updated_at ?? ""}:${scopeGrants?.customers?.[target.customer.id]?.allowed_sections ?? ""}`;
+			default:
+				return "";
+		}
+	}, [target, targetUser?.role, targetUser?.allowed_sections, scopeGrants]);
+
+	const [lastSyncedKey, setLastSyncedKey] = useState<string>("");
+
+	// Sync permissions when target changes or when relevant query data arrives
 	useEffect(() => {
-		if (target.type === "role" && target.role.name?.toLowerCase() === "admin") {
-			setSelectedPerms(permissions.map((p) => p.id));
+		if (activeTargetKey === lastSyncedKey) {
 			return;
 		}
+
+		if (target.type === "role" && target.role.name?.toLowerCase() === "admin") {
+			if (permissions.length > 0) {
+				setSelectedPerms(permissions.map((p) => p.id));
+				setLastSyncedKey(activeTargetKey);
+			}
+			return;
+		}
+
 		if (scope) {
 			setSelectedPerms(scope.grant?.permission_ids ?? []);
+			setLastSyncedKey(activeTargetKey);
 			return;
 		}
-		if (rolePermData?.permissions) {
-			let granted = rolePermData.permissions;
-			// A scoped user sees their role's permissions narrowed to the sections saved for them
-			// (nothing saved = no sections granted).
-			if (target.type === "user" && targetUser && sectionScopeApplies(targetUser.role)) {
-				const allowed = new Set(
-					(targetUser.allowed_sections || "")
-						.split(",")
-						.map((s) => s.trim())
-						.filter(Boolean),
-				);
-				granted = granted.filter((p) => {
-					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
-					return sections.length === 0 || sections.some((s) => sectionGranted(allowed, s));
-				});
+
+		if (target.type === "user" && targetUser) {
+			const uRole = (targetUser.role || "user").toLowerCase();
+			if (uRole === "admin") {
+				if (permissions.length > 0) {
+					setSelectedPerms(permissions.map((p) => p.id));
+					setLastSyncedKey(activeTargetKey);
+				}
+				return;
 			}
-			setSelectedPerms(granted.map((p) => p.id));
-		} else if (activeRoleId === 0) {
-			setSelectedPerms((prev) => (prev.length ? [] : prev));
+			const userSections = (targetUser.allowed_sections || "")
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+
+			const allowed = new Set(userSections);
+			const userPermIds = new Set<number>();
+
+			if (userSections.length > 0) {
+				for (const p of permissions) {
+					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
+					if (sections.some((s) => sectionGranted(allowed, s))) {
+						userPermIds.add(p.id);
+					}
+				}
+			}
+
+			if (rolePermData?.permissions) {
+				for (const p of rolePermData.permissions) {
+					if (userSections.length > 0) {
+						const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
+						if (sections.length === 0 || sections.some((s) => sectionGranted(allowed, s)) || p.resource === "PromptRepository") {
+							userPermIds.add(p.id);
+						}
+					} else {
+						userPermIds.add(p.id);
+					}
+				}
+			}
+
+			// If userSections is empty and rolePermData is still loading, wait before committing sync
+			if (userSections.length === 0 && activeRoleId !== 0 && !rolePermData?.permissions) {
+				return;
+			}
+
+			setSelectedPerms(Array.from(userPermIds));
+			setLastSyncedKey(activeTargetKey);
+			return;
 		}
-	}, [target, targetUser, rolePermData, permissions, activeRoleId, scope]);
+
+		if (rolePermData?.permissions) {
+			setSelectedPerms(rolePermData.permissions.map((p) => p.id));
+			setLastSyncedKey(activeTargetKey);
+			return;
+		}
+
+		if (activeRoleId === 0) {
+			setSelectedPerms([]);
+			setLastSyncedKey(activeTargetKey);
+		}
+	}, [activeTargetKey, lastSyncedKey, target, targetUser, rolePermData, permissions, activeRoleId, scope]);
 
 	// Toggle accordion
 	const toggleSection = (section: keyof typeof expandedSections) => {
@@ -361,11 +436,9 @@ export default function RBACView() {
 		const grantedPerms = permissions.filter((p) => permIds.includes(p.id));
 		const sections = new Set<string>();
 		for (const p of grantedPerms) {
-			if (p.operation === "Read" || p.operation === "View") {
-				const mapped = RESOURCE_TO_SECTION_MAP[p.resource] || [];
-				for (const s of mapped) {
-					sections.add(s);
-				}
+			const mapped = RESOURCE_TO_SECTION_MAP[p.resource] || [];
+			for (const s of mapped) {
+				sections.add(s);
 			}
 		}
 		return allowedSectionsToString(sections);
@@ -380,6 +453,7 @@ export default function RBACView() {
 					return;
 				}
 				await updatePerms({ id: target.role.id, permission_ids: selectedPerms }).unwrap();
+				setLastSyncedKey("");
 				toast.success(`Permissions saved for role '${target.role.name}'`);
 				return;
 			}
@@ -391,6 +465,7 @@ export default function RBACView() {
 					return;
 				}
 				await updatePerms({ id: userRole.id, permission_ids: selectedPerms }).unwrap();
+				setLastSyncedKey("");
 				toast.success("Permissions updated for the 'user' role (applies to all users)");
 				return;
 			}
@@ -402,30 +477,18 @@ export default function RBACView() {
 					return;
 				}
 				await updatePerms({ id: subAdminRole.id, permission_ids: selectedPerms }).unwrap();
+				setLastSyncedKey("");
 				toast.success("Permissions updated for the 'sub_admin' role (applies to all sub admins)");
 				return;
 			}
 
 			if (target.type === "user") {
 				const user = targetUser ?? target.user;
-				if (!sectionScopeApplies(user.role)) {
-					toast.info(
-						user.role?.toLowerCase() === "admin"
-							? "Admins always have full access."
-							: "The 'user' role is limited to Prompt Repository. Assign sub_admin or a custom role to grant more sections.",
-					);
+				if (user.role?.toLowerCase() === "admin") {
+					toast.info("Admins always have full access.");
 					return;
 				}
-				// Per-user scoping can only narrow the role: a section whose API the role cannot
-				// call would show in the sidebar and then fail with "insufficient permissions".
-				const rolePermIds = new Set((rolePermData?.permissions || []).map((p) => p.id));
-				const effective = selectedPerms.filter((id) => rolePermIds.has(id));
-				if (effective.length < selectedPerms.length) {
-					toast.warning(
-						`${selectedPerms.length - effective.length} permission(s) are not granted by role '${user.role}' and were skipped. Grant them on the role first.`,
-					);
-				}
-				const sectionsStr = computeAllowedSections(effective);
+				const sectionsStr = computeAllowedSections(selectedPerms);
 				await updateSessionUser({
 					id: user.id,
 					updates: {
@@ -434,6 +497,7 @@ export default function RBACView() {
 						allowed_sections: sectionsStr,
 					},
 				}).unwrap();
+				setLastSyncedKey("");
 				toast.success(`Permissions and sidebar access updated for user '${user.username}'`);
 				return;
 			}
@@ -445,6 +509,7 @@ export default function RBACView() {
 					permission_ids: selectedPerms,
 					allowed_sections: computeAllowedSections(selectedPerms),
 				}).unwrap();
+				setLastSyncedKey("");
 				toast.success(
 					selectedPerms.length > 0
 						? `Permissions saved for ${scope.label}. Members inherit these sections on their next page load.`
@@ -512,6 +577,7 @@ export default function RBACView() {
 	const handleAssignUserRole = async (userId: string, newRole: string) => {
 		try {
 			await assignUserRole({ id: userId, role_name: newRole }).unwrap();
+			setLastSyncedKey("");
 			toast.success(`Role updated to '${newRole}'`);
 		} catch (err) {
 			toast.error(getErrorMessage(err));
@@ -973,10 +1039,10 @@ export default function RBACView() {
 								<Button
 									size="sm"
 									onClick={() => void handleSaveCurrentMatrix()}
-									disabled={isUpdatingPerms || isSavingScope}
+									disabled={isUpdatingPerms || isSavingScope || isUpdatingUser}
 									className="h-8 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold"
 								>
-									Save Permissions
+									{isUpdatingPerms || isSavingScope || isUpdatingUser ? "Saving..." : "Save Permissions"}
 								</Button>
 							</div>
 						</div>
@@ -1048,7 +1114,7 @@ export default function RBACView() {
 												return (
 													<label
 														key={perm.id}
-														className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1 text-xs transition-all ${
+														className={`flex cursor-pointer select-none items-center gap-2 rounded-md border px-2.5 py-1 text-xs transition-all ${
 															isChecked
 																? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-medium"
 																: "border-border bg-background text-muted-foreground hover:border-muted-foreground/30"
@@ -1058,13 +1124,14 @@ export default function RBACView() {
 															type="checkbox"
 															checked={isChecked}
 															onChange={(e) => {
+																const checked = e.target.checked;
 																setSelectedPerms((current) =>
-																	e.target.checked
-																		? [...current, perm.id]
+																	checked
+																		? (current.includes(perm.id) ? current : [...current, perm.id])
 																		: current.filter((id) => id !== perm.id),
 																);
 															}}
-															className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
+															className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5 cursor-pointer"
 														/>
 														<span>{perm.operation}</span>
 													</label>
