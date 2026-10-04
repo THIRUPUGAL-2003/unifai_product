@@ -270,7 +270,8 @@ func (h *WorkspaceHandler) updateRBACScopeGrant(ctx *fasthttp.RequestCtx) {
 	}
 
 	var grant *rbacScopeGrant
-	if len(ids) > 0 {
+	// Create grant when there are permissions OR sections — only both being empty means "clear the grant".
+	if len(ids) > 0 || sections != "" {
 		grant = &rbacScopeGrant{PermissionIDs: ids, AllowedSections: sections, UpdatedAt: time.Now().UTC()}
 	}
 

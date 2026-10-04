@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/raksha/raksha/framework/configstore"
@@ -36,45 +37,46 @@ func ResolveAllowedVirtualKeyIDsForUser(ctx context.Context, store configstore.C
 
 	// 2. Teams the user belongs to
 	teamMemberships, err := ws.ListTeamsForUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list teams for user: %w", err)
+	}
 	var teamIDs []string
 	var custIDs []string
 	seenTeams := make(map[string]bool)
 	seenCustomers := make(map[string]bool)
 
-	if err == nil && len(teamMemberships) > 0 {
-		for _, tm := range teamMemberships {
-			teamID := strings.TrimSpace(tm.TeamID)
-			if teamID == "" || seenTeams[teamID] {
-				continue
-			}
-			seenTeams[teamID] = true
-			teamIDs = append(teamIDs, teamID)
+	for _, tm := range teamMemberships {
+		teamID := strings.TrimSpace(tm.TeamID)
+		if teamID == "" || seenTeams[teamID] {
+			continue
+		}
+		seenTeams[teamID] = true
+		teamIDs = append(teamIDs, teamID)
 
-			// VKs assigned to this team
-			teamLinks, err := ws.ListVirtualKeysForTeam(ctx, teamID)
-			if err == nil {
-				for _, tl := range teamLinks {
-					if tl.VirtualKeyID != "" {
-						allowed[tl.VirtualKeyID] = true
-					}
+		// VKs assigned to this team
+		teamLinks, err := ws.ListVirtualKeysForTeam(ctx, teamID)
+		if err == nil {
+			for _, tl := range teamLinks {
+				if tl.VirtualKeyID != "" {
+					allowed[tl.VirtualKeyID] = true
 				}
 			}
+		}
 
-			// Check Customer owning this team
-			team, err := store.GetTeam(ctx, teamID)
-			if err == nil && team != nil && team.CustomerID != nil && *team.CustomerID != "" {
-				custID := strings.TrimSpace(*team.CustomerID)
-				if custID != "" && !seenCustomers[custID] {
-					seenCustomers[custID] = true
-					custIDs = append(custIDs, custID)
+		// Check Customer owning this team
+		team, err := store.GetTeam(ctx, teamID)
+		if err == nil && team != nil && team.CustomerID != nil && *team.CustomerID != "" {
+			custID := strings.TrimSpace(*team.CustomerID)
+			if custID != "" && !seenCustomers[custID] {
+				seenCustomers[custID] = true
+				custIDs = append(custIDs, custID)
 
-					// VKs assigned to this customer
-					custLinks, err := ws.ListVirtualKeysForCustomer(ctx, custID)
-					if err == nil {
-						for _, cl := range custLinks {
-							if cl.VirtualKeyID != "" {
-								allowed[cl.VirtualKeyID] = true
-							}
+				// VKs assigned to this customer
+				custLinks, err := ws.ListVirtualKeysForCustomer(ctx, custID)
+				if err == nil {
+					for _, cl := range custLinks {
+						if cl.VirtualKeyID != "" {
+							allowed[cl.VirtualKeyID] = true
 						}
 					}
 				}

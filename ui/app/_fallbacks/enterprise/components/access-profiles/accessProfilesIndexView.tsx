@@ -421,6 +421,7 @@ export default function AccessProfilesIndexView() {
 						}
 					}}
 					onDelete={async (id) => {
+						if (!window.confirm("Delete this access profile? This cannot be undone.")) return;
 						try {
 							await deleteProfile(id).unwrap();
 							toast.success("Profile deleted");

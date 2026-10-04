@@ -506,9 +506,14 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 	}
 	sessionExpiresAt := time.Now().Add(sessionDuration)
 	// Invalidate prior sessions for this user (stolen-cookie / fixation mitigation).
-	_ = h.configStore.DeleteSessionsByUsername(ctx, sessionUsername)
+	// Log errors — silently ignoring means old sessions could remain valid (security risk).
+	if err := h.configStore.DeleteSessionsByUsername(ctx, sessionUsername); err != nil {
+		logger.Warn("login: failed to invalidate prior sessions for %q: %v", sessionUsername, err)
+	}
 	if !strings.EqualFold(sessionUsername, payload.Username) {
-		_ = h.configStore.DeleteSessionsByUsername(ctx, strings.TrimSpace(payload.Username))
+		if err := h.configStore.DeleteSessionsByUsername(ctx, strings.TrimSpace(payload.Username)); err != nil {
+			logger.Warn("login: failed to invalidate prior sessions for alias %q: %v", payload.Username, err)
+		}
 	}
 	token := uuid.New().String()
 	session := &tables.SessionsTable{
@@ -546,11 +551,9 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 	}
 
 	resp := map[string]any{
-		"message": "Login successful",
-		"role":    sessionRole,
-	}
-	if sessionAllowedSections != "" {
-		resp["allowed_sections"] = sessionAllowedSections
+		"message":          "Login successful",
+		"role":             sessionRole,
+		"allowed_sections": sessionAllowedSections,
 	}
 	SendJSON(ctx, resp)
 }

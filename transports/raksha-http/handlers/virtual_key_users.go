@@ -83,12 +83,19 @@ func (h *GovernanceHandler) getVirtualKeyUsers(ctx *fasthttp.RequestCtx) {
 	}
 
 	// 2. Users from Teams assigned to this VK
+	seenTeamIDs := make(map[string]bool)
 	var teamIDs []string
+	addTeamID := func(id string) {
+		if id != "" && !seenTeamIDs[id] {
+			seenTeamIDs[id] = true
+			teamIDs = append(teamIDs, id)
+		}
+	}
 	if vk.TeamID != nil && *vk.TeamID != "" {
-		teamIDs = append(teamIDs, *vk.TeamID)
+		addTeamID(*vk.TeamID)
 	}
 	for _, t := range vk.Teams {
-		teamIDs = append(teamIDs, t.ID)
+		addTeamID(t.ID)
 	}
 	var teamLinks []struct {
 		TeamID string
@@ -96,7 +103,7 @@ func (h *GovernanceHandler) getVirtualKeyUsers(ctx *fasthttp.RequestCtx) {
 	_ = h.configStore.DB().WithContext(ctx).Table("governance_virtual_key_teams").
 		Select("team_id").Where("virtual_key_id = ?", vkID).Scan(&teamLinks).Error
 	for _, tl := range teamLinks {
-		teamIDs = append(teamIDs, tl.TeamID)
+		addTeamID(tl.TeamID)
 	}
 
 	for _, tid := range teamIDs {
@@ -113,12 +120,19 @@ func (h *GovernanceHandler) getVirtualKeyUsers(ctx *fasthttp.RequestCtx) {
 	}
 
 	// 3. Users from Customers assigned to this VK (Customer -> Teams -> Members)
+	seenCustomerIDs := make(map[string]bool)
 	var customerIDs []string
+	addCustomerID := func(id string) {
+		if id != "" && !seenCustomerIDs[id] {
+			seenCustomerIDs[id] = true
+			customerIDs = append(customerIDs, id)
+		}
+	}
 	if vk.CustomerID != nil && *vk.CustomerID != "" {
-		customerIDs = append(customerIDs, *vk.CustomerID)
+		addCustomerID(*vk.CustomerID)
 	}
 	for _, c := range vk.Customers {
-		customerIDs = append(customerIDs, c.ID)
+		addCustomerID(c.ID)
 	}
 	var custLinks []struct {
 		CustomerID string
@@ -126,7 +140,7 @@ func (h *GovernanceHandler) getVirtualKeyUsers(ctx *fasthttp.RequestCtx) {
 	_ = h.configStore.DB().WithContext(ctx).Table("governance_virtual_key_customers").
 		Select("customer_id").Where("virtual_key_id = ?", vkID).Scan(&custLinks).Error
 	for _, cl := range custLinks {
-		customerIDs = append(customerIDs, cl.CustomerID)
+		addCustomerID(cl.CustomerID)
 	}
 
 	for _, cid := range customerIDs {

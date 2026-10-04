@@ -106,7 +106,7 @@ func (h *GovernanceHandler) addTeamMember(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
 	}
-	if team.CustomerID != nil {
+	if team.CustomerID != nil && *team.CustomerID != "" {
 		other, err := h.conflictingCustomerTeam(ctx, ws, body.UserID, *team.CustomerID, teamID)
 		if err != nil {
 			SendError(ctx, fasthttp.StatusInternalServerError, "failed to check the user's teams")

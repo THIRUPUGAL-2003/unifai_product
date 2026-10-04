@@ -65,6 +65,7 @@ func (h *GovernanceHandler) checkCustomerBudgetAllocation(ctx context.Context, c
 	}
 	for period, customerLimit := range customerLimits {
 		total := allotted[period]
+		// Use a small epsilon for float64 equality to absorb summation rounding errors.
 		if total <= customerLimit+1e-9 {
 			continue
 		}
@@ -73,7 +74,12 @@ func (h *GovernanceHandler) checkCustomerBudgetAllocation(ctx context.Context, c
 				"teams under this customer already have $%.2f per %s allotted; the customer budget cannot be lower than that",
 				total, period)}
 		}
-		available := customerLimit - (total - teamLimits[period])
+		// teamLimits[period] returns 0 when the period is absent, which is correct:
+		// a new team that had no budget for this period is contributing $0, so
+		// all of `total` came from other teams.
+		thisTeamLimit := teamLimits[period]
+		otherTeamsTotal := total - thisTeamLimit
+		available := customerLimit - otherTeamsTotal
 		if available < 0 {
 			available = 0
 		}
