@@ -61,41 +61,45 @@ export default function PromptsView() {
 
 				<ResizableHandle className="mr-1 bg-transparent" />
 
-				{!isUserRole && <PromptFilterSidebar />}
+				<ResizablePanel defaultSize={80} minSize={50} className="overflow-hidden">
+					<div className="flex h-full w-full">
+						{!isUserRole && <PromptFilterSidebar />}
 
-				<ResizablePanel defaultSize={!isUserRole ? 65 : 80} minSize={40} className="bg-card overflow-hidden rounded-md">
-					{selectedPromptId ? (
-						<div className="flex h-full flex-col">
-							<PromptsViewHeader />
+						<div className="bg-card flex-1 h-full min-w-0 overflow-hidden rounded-md">
+							{selectedPromptId ? (
+								<div className="flex h-full flex-col">
+									<PromptsViewHeader />
 
-							{isLoadingPlayground ? (
-								<div className="flex flex-1 items-center justify-center">
-									<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
+									{isLoadingPlayground ? (
+										<div className="flex flex-1 items-center justify-center">
+											<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
+										</div>
+									) : (
+										<ResizablePanelGroup direction="horizontal" className="flex-1">
+											<ResizablePanel defaultSize={70} minSize={40}>
+												<PlaygroundPanel />
+											</ResizablePanel>
+											<ResizableHandle />
+											<ResizablePanel defaultSize={30} minSize={20}>
+												<SettingsPanel />
+											</ResizablePanel>
+										</ResizablePanelGroup>
+									)}
 								</div>
 							) : (
-								<ResizablePanelGroup direction="horizontal" className="flex-1">
-									<ResizablePanel defaultSize={70} minSize={40}>
-										<PlaygroundPanel />
-									</ResizablePanel>
-									<ResizableHandle />
-									<ResizablePanel defaultSize={30} minSize={20}>
-										<SettingsPanel />
-									</ResizablePanel>
-								</ResizablePanelGroup>
-							)}
-						</div>
-					) : (
-						<div className="flex h-full flex-col">
-							{!isUserRole && (
-								<div className="flex items-center justify-end border-b px-4 py-3">
-									<PromptHistoryControls />
+								<div className="flex h-full flex-col">
+									{!isUserRole && (
+										<div className="flex items-center justify-end border-b px-4 py-3">
+											<PromptHistoryControls />
+										</div>
+									)}
+									<div className="flex-1">
+										<EmptyState />
+									</div>
 								</div>
 							)}
-							<div className="flex-1">
-								<EmptyState />
-							</div>
 						</div>
-					)}
+					</div>
 				</ResizablePanel>
 			</ResizablePanelGroup>
 		</div>
