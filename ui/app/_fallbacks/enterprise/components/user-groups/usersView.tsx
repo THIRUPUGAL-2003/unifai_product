@@ -89,10 +89,9 @@ function isWorkspaceAdminRole(role: string): boolean {
 	return role === "admin" || role === "sub_admin";
 }
 
-// Built-in "user" is server-locked to Prompt Repository and admins are unrestricted,
-// so section grants never apply to either.
+// Section grants apply to all non-admin roles (user, sub_admin, custom roles).
 function sectionGrantsApply(role: string): boolean {
-	return role !== "user" && role !== "admin";
+	return role !== "admin";
 }
 
 function UserTeamCell({ userId }: { userId: string }) {
@@ -1236,7 +1235,7 @@ export default function UsersView() {
 							>
 								{roleOptions.length === 0 ? (
 									<>
-										<option value="user">User (Prompt Repository only)</option>
+										<option value="user">User</option>
 										<option value="sub_admin">Sub-Admin (scoped workspace access)</option>
 										<option value="admin">Admin (full workspace access)</option>
 									</>
@@ -1248,7 +1247,7 @@ export default function UsersView() {
 												: r.name === "sub_admin"
 													? "Sub-Admin (scoped workspace access)"
 													: r.name === "user"
-														? "User (Prompt Repository only)"
+														? "User"
 														: `${r.name}${r.description ? ` — ${r.description}` : ""}`}
 										</option>
 									))
@@ -1417,7 +1416,7 @@ export default function UsersView() {
 								) : null}
 								{roleOptions.length === 0 ? (
 									<>
-										<option value="user">User (Prompt Repository only)</option>
+										<option value="user">User</option>
 										<option value="sub_admin">Sub-Admin (scoped workspace access)</option>
 										<option value="admin">Admin (full workspace access)</option>
 									</>
@@ -1429,7 +1428,7 @@ export default function UsersView() {
 												: r.name === "sub_admin"
 													? "Sub-Admin (scoped workspace access)"
 													: r.name === "user"
-														? "User (Prompt Repository only)"
+														? "User"
 														: `${r.name}${r.description ? ` — ${r.description}` : ""}`}
 										</option>
 									))

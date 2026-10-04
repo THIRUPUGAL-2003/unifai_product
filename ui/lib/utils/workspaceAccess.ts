@@ -88,8 +88,12 @@ export function getScopedWorkspaceSections(
 	if (!auth || !auth.role || auth.role === "admin") {
 		return null;
 	}
-	if (auth.role === "user" && !auth.allowed_sections) {
-		return null;
+	if (auth.role === "user") {
+		const parsed = parseAdminAllowedSections(auth.allowed_sections);
+		if (parsed.size > 0) {
+			return parsed;
+		}
+		return new Set(["prompt-repository"]);
 	}
 	return parseAdminAllowedSections(auth.allowed_sections);
 }
@@ -101,10 +105,16 @@ export function hasNoWorkspaceSections(auth: Pick<SessionAuth, "role" | "allowed
 }
 
 export function getDefaultWorkspacePath(auth: SessionAuth | null | undefined): string {
+	const limited = getScopedWorkspaceSections(auth);
 	if (auth?.role === "user") {
+		if (!limited || isPathAllowedForUser(USER_ROLE_HOME_PATH, limited)) {
+			return USER_ROLE_HOME_PATH;
+		}
+		if (hasAnyWorkspaceSection(limited)) {
+			return getDefaultPathForSections(limited);
+		}
 		return USER_ROLE_HOME_PATH;
 	}
-	const limited = getScopedWorkspaceSections(auth);
 	if (limited && hasAnyWorkspaceSection(limited)) {
 		return getDefaultPathForSections(limited);
 	}
@@ -120,10 +130,6 @@ export function resolvePostLoginPath(
 
 	if (!safeGoto || safeGoto === "/workspace" || safeGoto === "/workspace/") {
 		return defaultPath;
-	}
-
-	if (auth?.role === "user") {
-		return safeGoto.startsWith(USER_ROLE_HOME_PATH) ? safeGoto : defaultPath;
 	}
 
 	const limited = getScopedWorkspaceSections(auth);
@@ -144,20 +150,18 @@ export function getWorkspaceAccessRedirect(
 	}
 	let target: string | null = null;
 
-	if (auth?.role === "user") {
-		if (!pathname.startsWith(USER_ROLE_HOME_PATH)) {
-			target = USER_ROLE_HOME_PATH;
+	const limited = getScopedWorkspaceSections(auth);
+	if (limited) {
+		if (!isPathAllowedForUser(pathname, limited)) {
+			target = getDefaultWorkspacePath(auth);
+		} else if (pathname === "/workspace" || pathname === "/workspace/") {
+			target = getDefaultWorkspacePath(auth);
 		}
 	} else if (hasNoWorkspaceSections(auth)) {
 		// The workspace layout renders a "No sections assigned" panel instead.
 		return null;
-	} else {
-		const limited = getScopedWorkspaceSections(auth);
-		if (limited && !isPathAllowedForUser(pathname, limited)) {
-			target = getDefaultPathForSections(limited);
-		} else if (pathname === "/workspace" || pathname === "/workspace/") {
-			target = getDefaultWorkspacePath(auth);
-		}
+	} else if (pathname === "/workspace" || pathname === "/workspace/") {
+		target = getDefaultWorkspacePath(auth);
 	}
 
 	// Grants with no recognised keys resolve to a fallback path that may itself be
