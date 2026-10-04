@@ -8,6 +8,8 @@ import { PlaygroundPanel } from "./fragments/playgroundPanel";
 import { SettingsPanel } from "./fragments/settingsPanel";
 import { DeleteFolderDialog, DeletePromptDialog } from "./components/alerts";
 import { PromptSheets } from "./components/sheets";
+import { PromptAccessDialog } from "./components/promptAccessDialog";
+import { PromptFilterSidebar } from "./components/promptFilterSidebar";
 import { EmptyState, PromptsEmptyState } from "./components/emptyState";
 import PromptsViewHeader from "./components/promptsViewHeader";
 import { usePromptContext } from "./context";
@@ -50,15 +52,18 @@ export default function PromptsView() {
 			<DeleteFolderDialog />
 			<DeletePromptDialog />
 			<PromptSheets />
+			<PromptAccessDialog />
 
 			<ResizablePanelGroup direction="horizontal" className="h-full">
-				<ResizablePanel defaultSize={20} className="bg-card mr-1 overflow-hidden rounded-r-md">
+				<ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="bg-card mr-1 overflow-hidden rounded-r-md">
 					<PromptSidebar />
 				</ResizablePanel>
 
 				<ResizableHandle className="mr-1 bg-transparent" />
 
-				<ResizablePanel defaultSize={80} minSize={50} className="bg-card overflow-hidden rounded-md">
+				{!isUserRole && <PromptFilterSidebar />}
+
+				<ResizablePanel defaultSize={!isUserRole ? 65 : 80} minSize={40} className="bg-card overflow-hidden rounded-md">
 					{selectedPromptId ? (
 						<div className="flex h-full flex-col">
 							<PromptsViewHeader />

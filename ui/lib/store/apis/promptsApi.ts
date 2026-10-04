@@ -30,6 +30,8 @@ import {
 	RenameSessionResponse,
 	UpdateSessionRequest,
 	UpdateSessionResponse,
+	PromptAccessResponse,
+	UpdatePromptAccessRequest,
 } from "@/lib/types/prompts";
 
 // Inject Prompt Repository endpoints into baseApi
@@ -268,6 +270,27 @@ export const promptsApi = baseApi.injectEndpoints({
 			}),
 			invalidatesTags: ["Sessions"],
 		}),
+
+		// Get prompt access scoping
+		getPromptAccess: builder.query<PromptAccessResponse, string>({
+			query: (promptId) => `/prompt-repo/prompts/${promptId}/access`,
+			providesTags: (result, error, promptId) => [{ type: "Prompts", id: `${promptId}-access` }],
+		}),
+
+		// Update prompt access scoping
+		updatePromptAccess: builder.mutation<PromptAccessResponse, { promptId: string; data: UpdatePromptAccessRequest }>({
+			query: ({ promptId, data }) => ({
+				url: `/prompt-repo/prompts/${promptId}/access`,
+				method: "PUT",
+				body: data,
+			}),
+			invalidatesTags: (result, error, { promptId }) => [
+				"Prompts",
+				{ type: "Prompts", id: promptId },
+				{ type: "Prompts", id: `${promptId}-access` },
+				"Users",
+			],
+		}),
 	}),
 });
 
@@ -294,6 +317,9 @@ export const {
 	useCreatePromptMutation,
 	useUpdatePromptMutation,
 	useDeletePromptMutation,
+	// Access Scoping
+	useGetPromptAccessQuery,
+	useUpdatePromptAccessMutation,
 	// Versions
 	useGetVersionsQuery,
 	useGetPromptVersionQuery,

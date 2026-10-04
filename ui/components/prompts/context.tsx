@@ -24,7 +24,7 @@ import {
 } from "@/lib/store/apis/promptsApi";
 import { useGetModelParametersQuery } from "@/lib/store/apis/providersApi";
 import { useGetSkillQuery } from "@/lib/store/apis/skillsApi";
-import { Folder, ModelParams, Prompt, PromptSession, PromptVersion } from "@/lib/types/prompts";
+import { Folder, ModelParams, Prompt, PromptFilters, PromptSession, PromptVersion } from "@/lib/types/prompts";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -92,6 +92,14 @@ interface PromptContextValue {
 	setDeleteFolderDialog: React.Dispatch<React.SetStateAction<{ open: boolean; folder?: Folder }>>;
 	deletePromptDialog: { open: boolean; prompt?: Prompt };
 	setDeletePromptDialog: React.Dispatch<React.SetStateAction<{ open: boolean; prompt?: Prompt }>>;
+
+	// Access dialog state
+	promptAccessDialog: { open: boolean; prompt?: Prompt };
+	setPromptAccessDialog: React.Dispatch<React.SetStateAction<{ open: boolean; prompt?: Prompt }>>;
+
+	// Filter state (admin customer, team, user scoping filters)
+	promptFilters: PromptFilters;
+	setPromptFilters: React.Dispatch<React.SetStateAction<PromptFilters>>;
 
 	// Mutation loading states
 	isDeletingFolder: boolean;
@@ -192,6 +200,16 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	// Delete dialog states
 	const [deleteFolderDialog, setDeleteFolderDialog] = useState<{ open: boolean; folder?: Folder }>({ open: false });
 	const [deletePromptDialog, setDeletePromptDialog] = useState<{ open: boolean; prompt?: Prompt }>({ open: false });
+
+	// Access dialog state
+	const [promptAccessDialog, setPromptAccessDialog] = useState<{ open: boolean; prompt?: Prompt }>({ open: false });
+
+	// Filter state
+	const [promptFilters, setPromptFilters] = useState<PromptFilters>({
+		customer_ids: [],
+		team_ids: [],
+		user_ids: [],
+	});
 
 	// Playground state
 	const [messages, setMessagesRaw] = useState<Message[]>([Message.system("")]);
@@ -1045,6 +1063,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		setDeleteFolderDialog,
 		deletePromptDialog,
 		setDeletePromptDialog,
+		promptAccessDialog,
+		setPromptAccessDialog,
+		promptFilters,
+		setPromptFilters,
 		isDeletingFolder,
 		isDeletingPrompt,
 		supportsVision,

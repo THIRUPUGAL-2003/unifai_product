@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { useGetSessionsQuery, useCreateSessionMutation } from "@/lib/store/apis/promptsApi";
-import { useIsAuthEnabledQuery } from "@/lib/store";
+import { useIsAuthEnabledQuery, useGetTeamsQuery, useGetSessionUsersQuery } from "@/lib/store";
 import { parseAsInteger, useQueryStates } from "nuqs";
 import { toast } from "sonner";
 import { Message } from "@/lib/message";
@@ -29,6 +29,7 @@ import {
 	Plus,
 	PlusIcon,
 	Search,
+	ShieldCheck,
 	Trash2,
 	Users,
 } from "lucide-react";
@@ -77,6 +78,8 @@ export function PromptSidebar() {
 		setDeleteFolderDialog,
 		setPromptSheet,
 		setDeletePromptDialog,
+		setPromptAccessDialog,
+		promptFilters,
 		handleMovePrompt: onMovePrompt,
 		canCreate,
 		canUpdate,
@@ -86,6 +89,9 @@ export function PromptSidebar() {
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isUserRole = isPromptMemberRole(authStatus?.role);
+
+	const { data: teamsData } = useGetTeamsQuery(undefined, { skip: isUserRole });
+	const { data: sessionUsersData } = useGetSessionUsersQuery(undefined, { skip: isUserRole });
 
 	const { data: sessionsData } = useGetSessionsQuery(selectedPrompt?.id ?? "", { skip: !selectedPrompt?.id });
 	const sessions = sessionsData?.sessions ?? [];
@@ -97,6 +103,13 @@ export function PromptSidebar() {
 			versionId: parseAsInteger,
 		},
 		{ history: "replace" },
+	);
+
+	const onManageAccess = useCallback(
+		(prompt: Prompt) => {
+			setPromptAccessDialog({ open: true, prompt });
+		},
+		[setPromptAccessDialog],
 	);
 
 	const onCreateFolder = useCallback((parentId?: string) => setFolderSheet({ open: true, parentId }), [setFolderSheet]);
@@ -190,33 +203,139 @@ export function PromptSidebar() {
 		});
 	}, []);
 
-	// Filter folders and prompts based on search
+	const hasActiveFilters = useMemo(() => {
+		return (
+			(promptFilters?.customer_ids?.length || 0) > 0 ||
+			(promptFilters?.team_ids?.length || 0) > 0 ||
+			(promptFilters?.user_ids?.length || 0) > 0
+		);
+	}, [promptFilters]);
+
+	const isPromptMatchingFilters = useCallback(
+		(p: Prompt) => {
+			if (!hasActiveFilters || !promptFilters) return true;
+
+			const cFilter = promptFilters.customer_ids || [];
+			const tFilter = promptFilters.team_ids || [];
+			const uFilter = promptFilters.user_ids || [];
+
+			// 1. Match Customer
+			if (cFilter.length > 0) {
+				let matchesC = false;
+				const pCusts = (p.customer_ids || "").split(",").map((s) => s.trim()).filter(Boolean);
+				if (pCusts.some((cid) => cFilter.includes(cid))) {
+					matchesC = true;
+				}
+				if (!matchesC && p.folder_id) {
+					for (const fid of folderAncestry(p.folder_id, folderMap)) {
+						const f = folderMap.get(fid);
+						if (f && f.entity_id && cFilter.includes(f.entity_id)) {
+							matchesC = true;
+							break;
+						}
+					}
+				}
+				if (!matchesC && p.team_ids) {
+					const pTeams = p.team_ids.split(",").map((s) => s.trim());
+					for (const tid of pTeams) {
+						const t = teamsData?.teams?.find((team) => team.id === tid);
+						if (t?.customer_id && cFilter.includes(t.customer_id)) {
+							matchesC = true;
+							break;
+						}
+					}
+				}
+				if (!matchesC) return false;
+			}
+
+			// 2. Match Team
+			if (tFilter.length > 0) {
+				let matchesT = false;
+				const pTeams = (p.team_ids || "").split(",").map((s) => s.trim()).filter(Boolean);
+				if (pTeams.some((tid) => tFilter.includes(tid))) {
+					matchesT = true;
+				}
+				if (!matchesT && p.folder_id) {
+					for (const fid of folderAncestry(p.folder_id, folderMap)) {
+						const f = folderMap.get(fid);
+						if (f && f.entity_id && tFilter.includes(f.entity_id)) {
+							matchesT = true;
+							break;
+						}
+					}
+				}
+				if (!matchesT) return false;
+			}
+
+			// 3. Match User
+			if (uFilter.length > 0) {
+				let matchesU = false;
+				const pUsers = (p.user_ids || "").split(",").map((s) => s.trim()).filter(Boolean);
+				if (pUsers.some((uid) => uFilter.includes(uid))) {
+					matchesU = true;
+				}
+				if (!matchesU && p.owner_user_id && uFilter.includes(p.owner_user_id)) {
+					matchesU = true;
+				}
+				if (!matchesU && sessionUsersData) {
+					for (const uid of uFilter) {
+						const u = sessionUsersData.find((user) => user.id === uid);
+						if (u?.allowed_prompt_repos) {
+							const repos = u.allowed_prompt_repos.split(",").map((s) => s.trim());
+							if (repos.includes(p.id)) {
+								matchesU = true;
+								break;
+							}
+						}
+					}
+				}
+				if (!matchesU && p.folder_id) {
+					for (const fid of folderAncestry(p.folder_id, folderMap)) {
+						const f = folderMap.get(fid);
+						if (f && f.entity_id && uFilter.includes(f.entity_id)) {
+							matchesU = true;
+							break;
+						}
+					}
+				}
+				if (!matchesU) return false;
+			}
+
+			return true;
+		},
+		[hasActiveFilters, promptFilters, folderMap, teamsData, sessionUsersData],
+	);
+
+	// Filter folders and prompts based on search and active filters
 	const filteredData = useMemo(() => {
-		if (!searchQuery.trim()) {
+		if (!searchQuery.trim() && !hasActiveFilters) {
 			return { folders, rootFolders, childFoldersByParent, promptsByFolder, rootPrompts };
 		}
 
-		const query = searchQuery.toLowerCase();
+		const query = searchQuery.trim().toLowerCase();
 		const matchedFolderIds = new Set<string>();
 		const filteredPromptsByFolder = new Map<string, Prompt[]>();
 		const filteredRootPrompts: Prompt[] = [];
 
 		for (const prompt of prompts) {
-			if (prompt.name.toLowerCase().includes(query)) {
-				if (!prompt.folder_id) {
-					filteredRootPrompts.push(prompt);
-				} else {
-					for (const id of folderAncestry(prompt.folder_id, folderMap)) matchedFolderIds.add(id);
-					const list = filteredPromptsByFolder.get(prompt.folder_id) || [];
-					list.push(prompt);
-					filteredPromptsByFolder.set(prompt.folder_id, list);
-				}
+			if (!isPromptMatchingFilters(prompt)) continue;
+			if (query && !prompt.name.toLowerCase().includes(query)) continue;
+
+			if (!prompt.folder_id) {
+				filteredRootPrompts.push(prompt);
+			} else {
+				for (const id of folderAncestry(prompt.folder_id, folderMap)) matchedFolderIds.add(id);
+				const list = filteredPromptsByFolder.get(prompt.folder_id) || [];
+				list.push(prompt);
+				filteredPromptsByFolder.set(prompt.folder_id, list);
 			}
 		}
 
-		for (const folder of folders) {
-			if (folder.name.toLowerCase().includes(query)) {
-				for (const id of folderAncestry(folder.id, folderMap)) matchedFolderIds.add(id);
+		if (query) {
+			for (const folder of folders) {
+				if (folder.name.toLowerCase().includes(query)) {
+					for (const id of folderAncestry(folder.id, folderMap)) matchedFolderIds.add(id);
+				}
 			}
 		}
 
@@ -230,7 +349,18 @@ export function PromptSidebar() {
 			promptsByFolder: filteredPromptsByFolder,
 			rootPrompts: filteredRootPrompts,
 		};
-	}, [folders, rootFolders, childFoldersByParent, folderMap, prompts, promptsByFolder, rootPrompts, searchQuery]);
+	}, [
+		folders,
+		rootFolders,
+		childFoldersByParent,
+		folderMap,
+		prompts,
+		promptsByFolder,
+		rootPrompts,
+		searchQuery,
+		hasActiveFilters,
+		isPromptMatchingFilters,
+	]);
 
 	// Prompt lookup for drag events
 	const promptMap = useMemo(() => {
@@ -462,9 +592,11 @@ export function PromptSidebar() {
 										onCreatePrompt={onCreatePrompt}
 										onEditPrompt={onEditPrompt}
 										onDeletePrompt={onDeletePrompt}
+										onManageAccess={onManageAccess}
 										canCreate={canCreate}
 										canUpdate={canUpdate}
 										canDelete={canDelete}
+										isUserRole={isUserRole}
 									/>
 								))}
 								<RootDropZone
@@ -474,8 +606,10 @@ export function PromptSidebar() {
 									onSelectPrompt={onSelectPrompt}
 									onEditPrompt={onEditPrompt}
 									onDeletePrompt={onDeletePrompt}
+									onManageAccess={onManageAccess}
 									canUpdate={canUpdate}
 									canDelete={canDelete}
+									isUserRole={isUserRole}
 								/>
 							</>
 						)}
@@ -493,23 +627,12 @@ interface RootDropZoneProps {
 	onSelectPrompt: (promptId: string) => void;
 	onEditPrompt: (prompt: Prompt) => void;
 	onDeletePrompt: (prompt: Prompt) => void;
+	onManageAccess?: (prompt: Prompt) => void;
 	canUpdate: boolean;
 	canDelete: boolean;
+	isUserRole?: boolean;
 }
 
-/**
- * Renders the droppable root area that lists and hosts draggable root-level prompts.
- *
- * @param isDragOver - Whether a draggable item is currently over the root drop zone (applies drag-over styling).
- * @param rootPrompts - Array of prompts that belong at the root (no folder).
- * @param selectedPromptId - ID of the currently selected prompt, used to mark its item as selected.
- * @param onSelectPrompt - Callback invoked with a prompt ID when a prompt is selected.
- * @param onEditPrompt - Callback invoked with a prompt when the prompt's edit action is triggered.
- * @param onDeletePrompt - Callback invoked with a prompt when the prompt's delete action is triggered.
- * @param canUpdate - Whether prompts are movable/editable (enables dragging).
- * @param canDelete - Whether prompts may be deleted (controls delete action visibility).
- * @returns The JSX element for the root drop zone containing draggable prompt items.
- */
 function RootDropZone({
 	isDragOver,
 	rootPrompts,
@@ -517,8 +640,10 @@ function RootDropZone({
 	onSelectPrompt,
 	onEditPrompt,
 	onDeletePrompt,
+	onManageAccess,
 	canUpdate,
 	canDelete,
+	isUserRole,
 }: RootDropZoneProps) {
 	const { ref } = useDroppable({ id: "root-drop-zone" });
 
@@ -532,8 +657,10 @@ function RootDropZone({
 					onSelect={() => onSelectPrompt(prompt.id)}
 					onEdit={() => onEditPrompt(prompt)}
 					onDelete={() => onDeletePrompt(prompt)}
+					onManageAccess={onManageAccess}
 					canUpdate={canUpdate}
 					canDelete={canDelete}
+					isUserRole={isUserRole}
 				/>
 			))}
 		</div>
@@ -559,9 +686,11 @@ interface DroppableFolderProps {
 	onCreatePrompt: (folderId?: string) => void;
 	onEditPrompt: (prompt: Prompt) => void;
 	onDeletePrompt: (prompt: Prompt) => void;
+	onManageAccess?: (prompt: Prompt) => void;
 	canCreate: boolean;
 	canUpdate: boolean;
 	canDelete: boolean;
+	isUserRole?: boolean;
 }
 
 function getRecursivePromptCount(
@@ -596,9 +725,11 @@ function DroppableFolder({
 	onCreatePrompt,
 	onEditPrompt,
 	onDeletePrompt,
+	onManageAccess,
 	canCreate,
 	canUpdate,
 	canDelete,
+	isUserRole,
 }: DroppableFolderProps) {
 	const { ref } = useDroppable({ id: `folder-${folder.id}` });
 	const isExpanded = expandedFolders.has(folder.id) || !!searchQuery;
@@ -751,9 +882,11 @@ function DroppableFolder({
 							onCreatePrompt={onCreatePrompt}
 							onEditPrompt={onEditPrompt}
 							onDeletePrompt={onDeletePrompt}
+							onManageAccess={onManageAccess}
 							canCreate={canCreate}
 							canUpdate={canUpdate}
 							canDelete={canDelete}
+							isUserRole={isUserRole}
 						/>
 					))}
 					{prompts.map((prompt) => (
@@ -764,8 +897,10 @@ function DroppableFolder({
 							onSelect={() => onSelectPrompt(prompt.id)}
 							onEdit={() => onEditPrompt(prompt)}
 							onDelete={() => onDeletePrompt(prompt)}
+							onManageAccess={onManageAccess}
 							canUpdate={canUpdate}
 							canDelete={canDelete}
+							isUserRole={isUserRole}
 						/>
 					))}
 					{(!childFolders || childFolders.length === 0) && prompts.length === 0 && (
@@ -783,30 +918,28 @@ interface DraggablePromptItemProps {
 	onSelect: () => void;
 	onEdit: () => void;
 	onDelete: () => void;
+	onManageAccess?: (prompt: Prompt) => void;
 	canUpdate: boolean;
 	canDelete: boolean;
+	isUserRole?: boolean;
 }
 
-/**
- * Renders a draggable prompt list item that shows the prompt name, selection/drag states, and an actions menu when permitted.
- *
- * Displays a file icon and truncated prompt name, applies visual styles for selection and dragging, prevents selection while dragging, and exposes rename/delete actions via a dropdown when `canUpdate` or `canDelete` are true.
- *
- * @param prompt - The prompt object to render.
- * @param isSelected - Whether this prompt is currently selected; used for styling.
- * @param onSelect - Callback invoked when the item is clicked (not invoked if the item is being dragged).
- * @param onEdit - Callback invoked to start editing/renaming the prompt.
- * @param onDelete - Callback invoked to delete the prompt.
- * @param canUpdate - When true, enables dragging and shows the rename action.
- * @param canDelete - When true, shows the delete action.
- * @returns The rendered prompt item JSX element.
- */
-function DraggablePromptItem({ prompt, isSelected, onSelect, onEdit, onDelete, canUpdate, canDelete }: DraggablePromptItemProps) {
+function DraggablePromptItem({
+	prompt,
+	isSelected,
+	onSelect,
+	onEdit,
+	onDelete,
+	onManageAccess,
+	canUpdate,
+	canDelete,
+	isUserRole,
+}: DraggablePromptItemProps) {
 	const { ref, isDragging } = useDraggable({
 		id: `prompt-${prompt.id}`,
 		disabled: !canUpdate,
 	});
-	const showActions = canUpdate || canDelete;
+	const showActions = canUpdate || canDelete || (!isUserRole && !!onManageAccess);
 
 	return (
 		<div
@@ -839,6 +972,19 @@ function DraggablePromptItem({ prompt, isSelected, onSelect, onEdit, onDelete, c
 						</Button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end">
+						{!isUserRole && onManageAccess && (
+							<DropdownMenuItem
+								className="cursor-pointer"
+								data-testid={`prompt-action-access-${prompt.id}`}
+								onClick={(e) => {
+									e.stopPropagation();
+									onManageAccess(prompt);
+								}}
+							>
+								<ShieldCheck className="h-4 w-4" />
+								Manage Access
+							</DropdownMenuItem>
+						)}
 						{canUpdate && (
 							<DropdownMenuItem
 								className="cursor-pointer"

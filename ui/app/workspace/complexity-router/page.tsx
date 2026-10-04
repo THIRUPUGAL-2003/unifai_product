@@ -409,7 +409,7 @@ export default function ComplexityRouterPage() {
 									if (!Number.isFinite(value)) return "Enter a number between 0 and 1";
 									if (value <= 0) return "Must be greater than 0";
 									if (value >= 1) return "Must be less than 1";
-									const { simple_medium, medium_complex } = liveBoundaries;
+									const { simple_medium, medium_complex } = liveBoundaries || {};
 									if (key === "medium_complex" && Number.isFinite(simple_medium) && value <= simple_medium) {
 										return "Must be greater than Simple → Medium";
 									}

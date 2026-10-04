@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +68,8 @@ func (h *PromptsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	// Prompts
 	r.GET("/api/prompt-repo/prompts", lib.ChainMiddlewares(h.getPrompts, middlewares...))
 	r.GET("/api/prompt-repo/prompts/{id}", lib.ChainMiddlewares(h.getPromptByID, middlewares...))
+	r.GET("/api/prompt-repo/prompts/{id}/access", lib.ChainMiddlewares(h.getPromptAccess, middlewares...))
+	r.PUT("/api/prompt-repo/prompts/{id}/access", lib.ChainMiddlewares(h.updatePromptAccess, middlewares...))
 	r.POST("/api/prompt-repo/prompts", lib.ChainMiddlewares(h.createPrompt, middlewares...))
 	r.PUT("/api/prompt-repo/prompts/{id}", lib.ChainMiddlewares(h.updatePrompt, middlewares...))
 	r.DELETE("/api/prompt-repo/prompts/{id}", lib.ChainMiddlewares(h.deletePrompt, middlewares...))
@@ -548,7 +551,6 @@ func (h *PromptsHandler) getPrompts(ctx *fasthttp.RequestCtx) {
 	}
 
 	tokenVal := ctx.UserValue(schemas.RakshaContextKeySessionToken)
-	var allowedRepos []string
 	var isUserRole bool
 
 	if token, ok := tokenVal.(string); ok && token != "" {
@@ -556,37 +558,15 @@ func (h *PromptsHandler) getPrompts(ctx *fasthttp.RequestCtx) {
 		if err == nil && session != nil {
 			if !isWorkspaceAdminRole(session.Role) {
 				isUserRole = true
-				dbUser, err := h.store.GetUserByUsername(ctx, session.Username)
-				if err == nil && dbUser != nil {
-					if dbUser.AllowedPromptRepos != "" {
-						allowedRepos = strings.Split(dbUser.AllowedPromptRepos, ",")
-					}
-				}
 			}
 		}
 	}
 
 	if isUserRole {
-		allowedMap := make(map[string]bool)
-		for _, id := range allowedRepos {
-			allowedMap[strings.TrimSpace(id)] = true
-		}
 		var filteredPrompts []tables.TablePrompt
 		for _, p := range prompts {
-			if !allowedMap[p.ID] {
+			if !h.checkPromptAccess(ctx, p.ID) {
 				continue
-			}
-			// Exclude any prompt that is in a Removed or archived folder
-			if p.FolderID != nil && h.store != nil && h.store.DB() != nil {
-				var folder tables.TableFolder
-				if err := h.store.DB().WithContext(ctx).Where("id = ?", *p.FolderID).First(&folder).Error; err == nil {
-					if strings.HasPrefix(folder.Type, "system_removed_") ||
-						strings.HasPrefix(folder.Type, "archived_") ||
-						strings.HasPrefix(folder.Name, "Removed ") ||
-						strings.HasSuffix(folder.Name, " (Archived)") {
-						continue
-					}
-				}
 			}
 			filteredPrompts = append(filteredPrompts, p)
 		}
@@ -1003,6 +983,61 @@ func (h *PromptsHandler) createVersion(ctx *fasthttp.RequestCtx) {
 	})
 }
 
+// PromptAccessResponse represents the access configuration for a prompt
+type PromptAccessResponse struct {
+	PromptID       string             `json:"prompt_id"`
+	PromptName     string             `json:"prompt_name"`
+	CustomerIDs    []string           `json:"customer_ids"`
+	TeamIDs        []string           `json:"team_ids"`
+	UserIDs        []string           `json:"user_ids"`
+	Users          []PromptAccessUser `json:"users"`
+	EffectiveUsers []PromptAccessUser `json:"effective_users"`
+}
+
+type PromptAccessUser struct {
+	ID         string `json:"id"`
+	UserID     string `json:"user_id"`
+	Name       string `json:"name"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	Role       string `json:"role"`
+	Origin     string `json:"origin"`      // "direct", "team", "customer"
+	OriginName string `json:"origin_name"` // "Direct Assignment", "Engineering", "Acme Corp / QA"
+}
+
+type UpdatePromptAccessRequest struct {
+	CustomerIDs []string `json:"customer_ids"`
+	TeamIDs     []string `json:"team_ids"`
+	UserIDs     []string `json:"user_ids"`
+}
+
+func splitNonEmpty(s, sep string) []string {
+	if s == "" {
+		return []string{}
+	}
+	parts := strings.Split(s, sep)
+	res := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			res = append(res, trimmed)
+		}
+	}
+	return res
+}
+
+func sanitizeIDList(ids []string) []string {
+	seen := make(map[string]bool)
+	res := make([]string, 0, len(ids))
+	for _, id := range ids {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" && !seen[trimmed] {
+			seen[trimmed] = true
+			res = append(res, trimmed)
+		}
+	}
+	return res
+}
+
 // checkPromptAccess verifies if the current session has access to the given prompt ID
 func (h *PromptsHandler) checkPromptAccess(ctx *fasthttp.RequestCtx, promptID string) bool {
 	tokenVal := ctx.UserValue(schemas.RakshaContextKeySessionToken)
@@ -1021,30 +1056,290 @@ func (h *PromptsHandler) checkPromptAccess(ctx *fasthttp.RequestCtx, promptID st
 	if err != nil || dbUser == nil {
 		return false
 	}
-	if dbUser.AllowedPromptRepos == "" {
+
+	prompt, pErr := h.store.GetPromptByID(ctx, promptID)
+	if pErr != nil || prompt == nil {
 		return false
 	}
+
 	// Check if prompt is in an archived/trash folder - regular users cannot access deleted prompts
-	if h.store != nil && h.store.DB() != nil {
-		if p, pErr := h.store.GetPromptByID(ctx, promptID); pErr == nil && p != nil && p.FolderID != nil {
-			var f tables.TableFolder
-			if fErr := h.store.DB().WithContext(ctx).Where("id = ?", *p.FolderID).First(&f).Error; fErr == nil {
-				if strings.HasPrefix(f.Type, "system_removed_") ||
-					strings.HasPrefix(f.Type, "archived_") ||
-					strings.HasPrefix(f.Name, "Removed ") ||
-					strings.HasSuffix(f.Name, " (Archived)") {
-					return false
+	if prompt.FolderID != nil && h.store != nil && h.store.DB() != nil {
+		var f tables.TableFolder
+		if fErr := h.store.DB().Where("id = ?", *prompt.FolderID).First(&f).Error; fErr == nil {
+			if strings.HasPrefix(f.Type, "system_removed_") ||
+				strings.HasPrefix(f.Type, "archived_") ||
+				strings.HasPrefix(f.Name, "Removed ") ||
+				strings.HasSuffix(f.Name, " (Archived)") {
+				return false
+			}
+		}
+	}
+
+	// 1. Owner
+	if prompt.OwnerUserID != nil && *prompt.OwnerUserID == dbUser.ID {
+		return true
+	}
+
+	// 2. Direct User assignment in prompt.UserIDs
+	if prompt.UserIDs != "" {
+		for _, uid := range strings.Split(prompt.UserIDs, ",") {
+			if strings.TrimSpace(uid) == dbUser.ID {
+				return true
+			}
+		}
+	}
+
+	// 3. User AllowedPromptRepos list
+	if dbUser.AllowedPromptRepos != "" {
+		for _, id := range strings.Split(dbUser.AllowedPromptRepos, ",") {
+			if strings.TrimSpace(id) == promptID {
+				return true
+			}
+		}
+	}
+
+	// 4. Team assignment in prompt.TeamIDs
+	if prompt.TeamIDs != "" && h.store != nil {
+		ws, ok := configstore.AsWorkspaceStore(h.store)
+		if ok && ws != nil {
+			if teams, err := ws.ListTeamsForUser(ctx, dbUser.ID); err == nil {
+				teamIDSet := make(map[string]bool)
+				for _, t := range teams {
+					teamIDSet[t.TeamID] = true
+				}
+				for _, tid := range strings.Split(prompt.TeamIDs, ",") {
+					if teamIDSet[strings.TrimSpace(tid)] {
+						return true
+					}
 				}
 			}
 		}
 	}
-	allowedRepos := strings.Split(dbUser.AllowedPromptRepos, ",")
-	for _, id := range allowedRepos {
-		if strings.TrimSpace(id) == promptID {
-			return true
+
+	// 5. Customer assignment in prompt.CustomerIDs
+	if prompt.CustomerIDs != "" && h.store != nil {
+		ws, ok := configstore.AsWorkspaceStore(h.store)
+		if ok && ws != nil {
+			if teams, err := ws.ListTeamsForUser(ctx, dbUser.ID); err == nil {
+				custIDSet := make(map[string]bool)
+				for _, t := range teams {
+					if tm, err := h.store.GetTeam(ctx, t.TeamID); err == nil && tm != nil && tm.CustomerID != nil {
+						custIDSet[*tm.CustomerID] = true
+					}
+				}
+				for _, cid := range strings.Split(prompt.CustomerIDs, ",") {
+					if custIDSet[strings.TrimSpace(cid)] {
+						return true
+					}
+				}
+			}
 		}
 	}
+
+	// If prompt has no scoping restrictions and user has no allowed_prompt_repos configured, allow open access
+	if prompt.CustomerIDs == "" && prompt.TeamIDs == "" && prompt.UserIDs == "" && dbUser.AllowedPromptRepos == "" {
+		return true
+	}
+
 	return false
+}
+
+// getPromptAccess returns the Customers, Teams, Users, and effective users assigned to this prompt
+func (h *PromptsHandler) getPromptAccess(ctx *fasthttp.RequestCtx) {
+	idVal := ctx.UserValue("id")
+	if idVal == nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "prompt ID is required")
+		return
+	}
+	id, ok := idVal.(string)
+	if !ok || id == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid prompt ID")
+		return
+	}
+
+	prompt, err := h.store.GetPromptByID(ctx, id)
+	if err != nil || prompt == nil {
+		SendError(ctx, fasthttp.StatusNotFound, "prompt not found")
+		return
+	}
+
+	customerIDs := splitNonEmpty(prompt.CustomerIDs, ",")
+	teamIDs := splitNonEmpty(prompt.TeamIDs, ",")
+	userIDs := splitNonEmpty(prompt.UserIDs, ",")
+
+	seenUserIDs := make(map[string]bool)
+	users := make([]PromptAccessUser, 0)
+
+	appendUser := func(userID, origin, originName string) {
+		if userID == "" || seenUserIDs[userID] {
+			return
+		}
+		seenUserIDs[userID] = true
+		u, err := h.store.GetUserByID(ctx, userID)
+		if err != nil || u == nil {
+			return
+		}
+		name := u.Username
+		if name == "" {
+			name = u.Email
+		}
+		users = append(users, PromptAccessUser{
+			ID:         u.ID,
+			UserID:     u.ID,
+			Name:       name,
+			Username:   name,
+			Email:      u.Email,
+			Role:       u.Role,
+			Origin:     origin,
+			OriginName: originName,
+		})
+	}
+
+	// 1. Direct Users
+	for _, uid := range userIDs {
+		appendUser(uid, "direct", "Direct Assignment")
+	}
+
+	// 2. Users from Teams
+	ws, _ := configstore.AsWorkspaceStore(h.store)
+	if ws != nil {
+		for _, tid := range teamIDs {
+			team, err := h.store.GetTeam(ctx, tid)
+			teamName := "Team"
+			if err == nil && team != nil {
+				teamName = team.Name
+			}
+			if members, err := ws.ListTeamMembers(ctx, tid); err == nil {
+				for _, m := range members {
+					appendUser(m.UserID, "team", teamName)
+				}
+			}
+		}
+
+		// 3. Users from Customers
+		for _, cid := range customerIDs {
+			cust, err := h.store.GetCustomer(ctx, cid)
+			custName := "Customer"
+			if err == nil && cust != nil {
+				custName = cust.Name
+			}
+			var custTeams []tables.TableTeam
+			_ = h.store.DB().Where("customer_id = ?", cid).Find(&custTeams).Error
+			for _, ct := range custTeams {
+				if members, err := ws.ListTeamMembers(ctx, ct.ID); err == nil {
+					for _, m := range members {
+						appendUser(m.UserID, "customer", custName+" / "+ct.Name)
+					}
+				}
+			}
+		}
+	}
+
+	SendJSON(ctx, PromptAccessResponse{
+		PromptID:       prompt.ID,
+		PromptName:     prompt.Name,
+		CustomerIDs:    customerIDs,
+		TeamIDs:        teamIDs,
+		UserIDs:        userIDs,
+		Users:          users,
+		EffectiveUsers: users,
+	})
+}
+
+// updatePromptAccess updates the Customers, Teams, and Users assigned to this prompt
+func (h *PromptsHandler) updatePromptAccess(ctx *fasthttp.RequestCtx) {
+	idVal := ctx.UserValue("id")
+	if idVal == nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "prompt ID is required")
+		return
+	}
+	id, ok := idVal.(string)
+	if !ok || id == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid prompt ID")
+		return
+	}
+
+	prompt, err := h.store.GetPromptByID(ctx, id)
+	if err != nil || prompt == nil {
+		SendError(ctx, fasthttp.StatusNotFound, "prompt not found")
+		return
+	}
+
+	callerID, role := h.promptCallerIdentity(ctx)
+	if role != "" && !isWorkspaceAdminRole(role) && (prompt.OwnerUserID == nil || *prompt.OwnerUserID != callerID) {
+		SendError(ctx, fasthttp.StatusForbidden, "Forbidden: admin access or prompt ownership required")
+		return
+	}
+
+	var req UpdatePromptAccessRequest
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	cleanCustomerIDs := sanitizeIDList(req.CustomerIDs)
+	cleanTeamIDs := sanitizeIDList(req.TeamIDs)
+	cleanUserIDs := sanitizeIDList(req.UserIDs)
+
+	cStr := strings.Join(cleanCustomerIDs, ",")
+	tStr := strings.Join(cleanTeamIDs, ",")
+	uStr := strings.Join(cleanUserIDs, ",")
+
+	if err := h.store.DB().Model(&tables.TablePrompt{}).Where("id = ?", id).Updates(map[string]any{
+		"customer_ids": cStr,
+		"team_ids":     tStr,
+		"user_ids":     uStr,
+	}).Error; err != nil {
+		logger.Error("failed to update prompt access: %v", err)
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+
+	prompt.CustomerIDs = cStr
+	prompt.TeamIDs = tStr
+	prompt.UserIDs = uStr
+
+	// Sync allowed_prompt_repos on users
+	ws, _ := configstore.AsWorkspaceStore(h.store)
+	if ws != nil {
+		allowedUserSet := make(map[string]bool)
+		for _, uid := range cleanUserIDs {
+			allowedUserSet[uid] = true
+		}
+		for _, tid := range cleanTeamIDs {
+			if members, err := ws.ListTeamMembers(ctx, tid); err == nil {
+				for _, m := range members {
+					allowedUserSet[m.UserID] = true
+				}
+			}
+		}
+		for _, cid := range cleanCustomerIDs {
+			var custTeams []tables.TableTeam
+			_ = h.store.DB().Where("customer_id = ?", cid).Find(&custTeams).Error
+			for _, ct := range custTeams {
+				if members, err := ws.ListTeamMembers(ctx, ct.ID); err == nil {
+					for _, m := range members {
+						allowedUserSet[m.UserID] = true
+					}
+				}
+			}
+		}
+
+		// Ensure all allowed users have `id` in their AllowedPromptRepos
+		for uid := range allowedUserSet {
+			u, err := h.store.GetUserByID(ctx, uid)
+			if err == nil && u != nil {
+				repos := splitNonEmpty(u.AllowedPromptRepos, ",")
+				if !slices.Contains(repos, id) {
+					repos = append(repos, id)
+					_ = h.store.DB().Model(&tables.TableUser{}).Where("id = ?", uid).Update("allowed_prompt_repos", strings.Join(repos, ",")).Error
+				}
+			}
+		}
+	}
+
+	h.reloadCache(ctx)
+	h.getPromptAccess(ctx)
 }
 
 // unassignPromptFromAllUsers removes promptID from allowed_prompt_repos across all users in the DB.

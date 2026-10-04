@@ -461,6 +461,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_owner_user_id_to_prompts"}, run: migrationAddOwnerUserIDToPrompts},
 	{IDs: []string{"widen_prompt_message_json_mysql"}, run: migrationWidenPromptMessageJSONMySQL},
 	{IDs: []string{"drop_unconfigured_telemetry_otel_plugins"}, run: migrationDropUnconfiguredObservabilityPlugins},
+	{IDs: []string{"add_governance_scoping_to_prompts"}, run: migrationAddGovernanceScopingToPrompts},
 }
 
 // migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
@@ -11478,3 +11479,34 @@ func migrationAddGovernanceVirtualKeyTeamsAndCustomersTables(ctx context.Context
 	}
 	return nil
 }
+
+// migrationAddGovernanceScopingToPrompts adds customer_ids, team_ids, user_ids columns to prompts table
+func migrationAddGovernanceScopingToPrompts(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_governance_scoping_to_prompts"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &tables.TablePrompt{}, "customer_ids"); err != nil {
+				return fmt.Errorf("add customer_ids to prompts: %w", err)
+			}
+			if err := addColumnIfNotExists(tx, logger, &tables.TablePrompt{}, "team_ids"); err != nil {
+				return fmt.Errorf("add team_ids to prompts: %w", err)
+			}
+			if err := addColumnIfNotExists(tx, logger, &tables.TablePrompt{}, "user_ids"); err != nil {
+				return fmt.Errorf("add user_ids to prompts: %w", err)
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return nil
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+

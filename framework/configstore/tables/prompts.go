@@ -17,6 +17,11 @@ type TablePrompt struct {
 	UpdatedAt   time.Time    `gorm:"not null" json:"updated_at"`
 	ConfigHash  string       `gorm:"type:varchar(64)" json:"-"`
 
+	// Governance scoping (Customer, Team, User assignment)
+	CustomerIDs string `gorm:"type:text" json:"customer_ids,omitempty"`
+	TeamIDs     string `gorm:"type:text" json:"team_ids,omitempty"`
+	UserIDs     string `gorm:"type:text" json:"user_ids,omitempty"`
+
 	// Relationships
 	Versions []TablePromptVersion `gorm:"foreignKey:PromptID;constraint:OnDelete:CASCADE" json:"versions,omitempty"`
 	Sessions []TablePromptSession `gorm:"foreignKey:PromptID;constraint:OnDelete:CASCADE" json:"sessions,omitempty"`

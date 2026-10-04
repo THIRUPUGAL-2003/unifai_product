@@ -59,8 +59,9 @@ func TestRBACScopeGrants_SavedAndInheritedByMembers(t *testing.T) {
 	if sub.AllowedSections != "settings" {
 		t.Fatalf("team grants must not overwrite the user's own sections, got %q", sub.AllowedSections)
 	}
-	if got := effectiveAllowedSections(nil, store, plain); got != "prompt-repository" {
-		t.Fatalf("built-in user role must not inherit grants, got %q", got)
+	wantPlain := "prompt-repository,observability/llm-logs,observability,governance/customers,governance/teams"
+	if got := effectiveAllowedSections(nil, store, plain); got != wantPlain {
+		t.Fatalf("user role member should inherit customer and team grants, got %q, want %q", got, wantPlain)
 	}
 
 	// An empty selection removes the grant.

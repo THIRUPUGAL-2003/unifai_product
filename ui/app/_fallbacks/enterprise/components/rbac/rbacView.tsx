@@ -31,6 +31,7 @@ import {
 	Check,
 	ChevronDown,
 	ChevronRight,
+	Edit2,
 	Eye,
 	Globe,
 	Info,
@@ -38,6 +39,7 @@ import {
 	Plus,
 	Search,
 	Shield,
+	ShieldCheck,
 	Trash2,
 	User,
 	Users,
@@ -388,7 +390,12 @@ export default function RBACView() {
 				const q = resourceSearch.toLowerCase();
 				const matchResource = perm.resource.toLowerCase().includes(q);
 				const matchOp = perm.operation.toLowerCase().includes(q);
-				if (!matchResource && !matchOp) continue;
+				const matchTier =
+					(q === "view" && (perm.operation === "View" || perm.operation === "Read")) ||
+					(q === "edit" && (perm.operation === "Create" || perm.operation === "Update")) ||
+					(q === "delete" && perm.operation === "Delete") ||
+					(q.includes("full") || q.includes("access"));
+				if (!matchResource && !matchOp && !matchTier) continue;
 			}
 			const list = map.get(perm.resource) || [];
 			list.push(perm);
@@ -1025,12 +1032,12 @@ export default function RBACView() {
 							{/* Action Buttons */}
 							<div className="flex flex-wrap items-center gap-2">
 								<Button variant="outline" size="sm" onClick={handleSelectAllReadView} className="h-8 text-xs">
-									<Eye className="mr-1.5 h-3.5 w-3.5 text-blue-500" />
+									<Eye className="mr-1.5 h-3.5 w-3.5 text-sky-500" />
 									View Only
 								</Button>
 								<Button variant="outline" size="sm" onClick={handleSelectAll} className="h-8 text-xs">
-									<Check className="mr-1.5 h-3.5 w-3.5 text-emerald-500" />
-									Select All
+									<ShieldCheck className="mr-1.5 h-3.5 w-3.5 text-emerald-500" />
+									Full Access (All)
 								</Button>
 								<Button variant="outline" size="sm" onClick={handleClearAll} className="h-8 text-xs">
 									<X className="mr-1.5 h-3.5 w-3.5 text-amber-500" />
@@ -1051,7 +1058,7 @@ export default function RBACView() {
 						<div className="relative mt-3">
 							<Search className="text-muted-foreground absolute top-2.5 left-2.5 h-3.5 w-3.5" />
 							<Input
-								placeholder="Filter resources (e.g. Logs, VirtualKeys, Governance, ModelProvider)…"
+								placeholder="Filter resources (e.g. Logs, VirtualKeys, Governance, or type 'edit', 'delete')…"
 								value={resourceSearch}
 								onChange={(e) => setResourceSearch(e.target.value)}
 								className="h-8 pl-8 text-xs"
@@ -1063,7 +1070,7 @@ export default function RBACView() {
 					<div className="border-b bg-muted/30 px-4 py-2 text-xs flex items-center gap-2 text-muted-foreground">
 						<Info className="h-4 w-4 shrink-0 text-emerald-500" />
 						<span>
-							Checked operations (`Read, View, Create, Update, Delete`) enable exact actions and sidebar sections. Unchecked items remain strictly hidden and forbidden.
+							Permissions are simplified into 4 clear levels: <strong>View</strong> (read-only), <strong>Edit</strong> (view + create/update), <strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control).
 						</span>
 					</div>
 
@@ -1073,70 +1080,233 @@ export default function RBACView() {
 							<p className="text-muted-foreground py-8 text-center text-sm">No resources matching filter.</p>
 						) : (
 							groupedPermissions.map(([resource, perms]) => {
-								const allGranted = perms.every((p) => selectedPerms.includes(p.id));
+								const viewPerms = perms.filter((p) => p.operation === "Read" || p.operation === "View");
+								const editPerms = perms.filter((p) => p.operation === "Create" || p.operation === "Update");
+								const deletePerms = perms.filter((p) => p.operation === "Delete");
+								const allPermIds = perms.map((p) => p.id);
+								const viewIds = viewPerms.map((p) => p.id);
+								const editIds = editPerms.map((p) => p.id);
+								const deleteIds = deletePerms.map((p) => p.id);
 
-								const toggleGroup = () => {
-									if (allGranted) {
-										const removeIds = new Set(perms.map((p) => p.id));
-										setSelectedPerms((prev) => prev.filter((id) => !removeIds.has(id)));
+								const isViewActive = viewIds.length > 0 && viewIds.some((id) => selectedPerms.includes(id));
+								const isEditActive = editIds.length > 0 && editIds.some((id) => selectedPerms.includes(id)) && isViewActive;
+								const isDeleteActive = deleteIds.length > 0 && deleteIds.every((id) => selectedPerms.includes(id));
+								const isFullAccessActive = allPermIds.length > 0 && allPermIds.every((id) => selectedPerms.includes(id));
+
+								const toggleView = () => {
+									if (isViewActive) {
+										// Turning OFF View removes all access for this resource
+										const toRemove = new Set(allPermIds);
+										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
 									} else {
-										const addIds = perms.map((p) => p.id);
-										setSelectedPerms((prev) => Array.from(new Set([...prev, ...addIds])));
+										// Turning ON View
+										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds])));
 									}
+								};
+
+								const toggleEdit = () => {
+									if (isEditActive) {
+										// Turning OFF Edit removes edit permissions
+										const toRemove = new Set(editIds);
+										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+									} else {
+										// Turning ON Edit automatically ensures View is also active
+										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...editIds])));
+									}
+								};
+
+								const toggleDelete = () => {
+									if (isDeleteActive) {
+										// Turning OFF Delete
+										const toRemove = new Set(deleteIds);
+										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+									} else {
+										// Turning ON Delete automatically ensures View is active
+										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...deleteIds])));
+									}
+								};
+
+								const toggleFullAccess = () => {
+									if (isFullAccessActive) {
+										// Clear all permissions for this resource
+										const toRemove = new Set(allPermIds);
+										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+									} else {
+										// Grant full access
+										setSelectedPerms((prev) => Array.from(new Set([...prev, ...allPermIds])));
+									}
+								};
+
+								const renderStatusBadge = () => {
+									if (isFullAccessActive) {
+										return (
+											<Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[11px] font-semibold gap-1">
+												<Check className="h-3 w-3 text-emerald-500" />
+												Full Access
+											</Badge>
+										);
+									}
+									if (isEditActive && isDeleteActive) {
+										return (
+											<Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[11px] font-medium">
+												Edit & Delete
+											</Badge>
+										);
+									}
+									if (isEditActive) {
+										return (
+											<Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30 text-[11px] font-medium">
+												Edit Only
+											</Badge>
+										);
+									}
+									if (isDeleteActive) {
+										return (
+											<Badge className="bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30 text-[11px] font-medium">
+												Delete Only
+											</Badge>
+										);
+									}
+									if (isViewActive) {
+										return (
+											<Badge className="bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30 text-[11px] font-medium">
+												View Only
+											</Badge>
+										);
+									}
+									return (
+										<Badge variant="outline" className="text-muted-foreground text-[11px] font-normal">
+											No Access
+										</Badge>
+									);
 								};
 
 								return (
 									<div
 										key={resource}
-										className="bg-card/60 hover:bg-card/90 rounded-lg border p-3 transition-colors shadow-2xs"
+										className="bg-card/70 hover:bg-card/95 rounded-xl border p-3.5 transition-all shadow-2xs hover:shadow-xs"
 									>
-										<div className="mb-2 flex items-center justify-between">
+										{/* Resource Header */}
+										<div className="mb-2.5 flex items-center justify-between">
 											<div className="flex items-center gap-2">
-												<span className="font-semibold text-sm">{resource}</span>
-												<Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal">
-													{perms.filter((p) => selectedPerms.includes(p.id)).length} / {perms.length} granted
-												</Badge>
+												<span className="font-semibold text-sm tracking-tight text-foreground">{resource}</span>
+												{renderStatusBadge()}
 											</div>
 
-											<button
-												type="button"
-												onClick={toggleGroup}
-												className="text-muted-foreground hover:text-foreground text-[11px] underline-offset-2 hover:underline"
-											>
-												{allGranted ? "Deselect All" : "Select All"}
-											</button>
+											<div className="flex items-center gap-2">
+												{isFullAccessActive ? (
+													<button
+														type="button"
+														onClick={toggleFullAccess}
+														className="text-xs text-muted-foreground hover:text-destructive transition-colors font-medium cursor-pointer"
+													>
+														Clear Access
+													</button>
+												) : (
+													<button
+														type="button"
+														onClick={toggleFullAccess}
+														className="text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold cursor-pointer"
+													>
+														Grant Full Access
+													</button>
+												)}
+											</div>
 										</div>
 
-										<div className="flex flex-wrap gap-2">
-											{perms.map((perm) => {
-												const isChecked = selectedPerms.includes(perm.id);
+										{/* 4-Tier Interactive Controls */}
+										<div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+											{/* 1. VIEW */}
+											<button
+												type="button"
+												onClick={toggleView}
+												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+													isViewActive
+														? "border-sky-500/50 bg-sky-500/15 text-sky-900 dark:text-sky-200 shadow-2xs"
+														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+												}`}
+											>
+												<div className="flex items-center gap-2">
+													<Eye className={`h-3.5 w-3.5 ${isViewActive ? "text-sky-500" : "text-muted-foreground"}`} />
+													<span>View</span>
+												</div>
+												<div
+													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+														isViewActive ? "border-sky-500 bg-sky-500 text-white" : "border-muted-foreground/40 bg-background"
+													}`}
+												>
+													{isViewActive && <Check className="h-3 w-3 stroke-[3]" />}
+												</div>
+											</button>
 
-												return (
-													<label
-														key={perm.id}
-														className={`flex cursor-pointer select-none items-center gap-2 rounded-md border px-2.5 py-1 text-xs transition-all ${
-															isChecked
-																? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-medium"
-																: "border-border bg-background text-muted-foreground hover:border-muted-foreground/30"
-														}`}
-													>
-														<input
-															type="checkbox"
-															checked={isChecked}
-															onChange={(e) => {
-																const checked = e.target.checked;
-																setSelectedPerms((current) =>
-																	checked
-																		? (current.includes(perm.id) ? current : [...current, perm.id])
-																		: current.filter((id) => id !== perm.id),
-																);
-															}}
-															className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5 cursor-pointer"
-														/>
-														<span>{perm.operation}</span>
-													</label>
-												);
-											})}
+											{/* 2. EDIT */}
+											<button
+												type="button"
+												onClick={toggleEdit}
+												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+													isEditActive
+														? "border-blue-500/50 bg-blue-500/15 text-blue-900 dark:text-blue-200 shadow-2xs"
+														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+												}`}
+											>
+												<div className="flex items-center gap-2">
+													<Edit2 className={`h-3.5 w-3.5 ${isEditActive ? "text-blue-500" : "text-muted-foreground"}`} />
+													<span>Edit</span>
+												</div>
+												<div
+													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+														isEditActive ? "border-blue-500 bg-blue-500 text-white" : "border-muted-foreground/40 bg-background"
+													}`}
+												>
+													{isEditActive && <Check className="h-3 w-3 stroke-[3]" />}
+												</div>
+											</button>
+
+											{/* 3. DELETE */}
+											<button
+												type="button"
+												onClick={toggleDelete}
+												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+													isDeleteActive
+														? "border-rose-500/50 bg-rose-500/15 text-rose-900 dark:text-rose-200 shadow-2xs"
+														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+												}`}
+											>
+												<div className="flex items-center gap-2">
+													<Trash2 className={`h-3.5 w-3.5 ${isDeleteActive ? "text-rose-500" : "text-muted-foreground"}`} />
+													<span>Delete</span>
+												</div>
+												<div
+													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+														isDeleteActive ? "border-rose-500 bg-rose-500 text-white" : "border-muted-foreground/40 bg-background"
+													}`}
+												>
+													{isDeleteActive && <Check className="h-3 w-3 stroke-[3]" />}
+												</div>
+											</button>
+
+											{/* 4. FULL ACCESS */}
+											<button
+												type="button"
+												onClick={toggleFullAccess}
+												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
+													isFullAccessActive
+														? "border-emerald-500/60 bg-emerald-500/20 text-emerald-950 dark:text-emerald-100 shadow-2xs"
+														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+												}`}
+											>
+												<div className="flex items-center gap-2">
+													<ShieldCheck className={`h-3.5 w-3.5 ${isFullAccessActive ? "text-emerald-500" : "text-muted-foreground"}`} />
+													<span>Full Access</span>
+												</div>
+												<div
+													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+														isFullAccessActive ? "border-emerald-500 bg-emerald-500 text-white" : "border-muted-foreground/40 bg-background"
+													}`}
+												>
+													{isFullAccessActive && <Check className="h-3 w-3 stroke-[3]" />}
+												</div>
+											</button>
 										</div>
 									</div>
 								);

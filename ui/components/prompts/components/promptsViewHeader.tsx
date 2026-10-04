@@ -25,6 +25,7 @@ export default function PromptsViewHeader() {
 		setMessages: onMessagesChange,
 		setCommitSheet,
 		setDeletePromptDialog,
+		setPromptAccessDialog,
 		apiKeyId,
 		skillId,
 		modelParams,
@@ -378,7 +379,19 @@ export default function PromptsViewHeader() {
 							<GitCommit className="h-4 w-4" />
 							Commit Version
 						</SplitButton>
-						{canDelete && selectedPrompt && (
+						{!isUserRole && selectedPrompt && (
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-8 gap-1.5 bg-transparent"
+								data-testid="header-prompt-access-btn"
+								onClick={() => setPromptAccessDialog({ open: true, prompt: selectedPrompt })}
+							>
+								<ShieldCheck className="h-4 w-4 text-primary" />
+								Access
+							</Button>
+						)}
+						{selectedPrompt && (!isUserRole || canDelete) && (
 							<DropdownMenu>
 								<DropdownMenuTrigger asChild>
 									<Button
@@ -392,15 +405,27 @@ export default function PromptsViewHeader() {
 									</Button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent align="end">
-									<DropdownMenuItem
-										variant="destructive"
-										className="cursor-pointer text-destructive focus:text-destructive"
-										data-testid="header-prompt-delete"
-										onClick={() => setDeletePromptDialog({ open: true, prompt: selectedPrompt })}
-									>
-										<Trash2 className="mr-2 h-4 w-4" />
-										Delete Prompt
-									</DropdownMenuItem>
+									{!isUserRole && (
+										<DropdownMenuItem
+											className="cursor-pointer"
+											data-testid="header-prompt-access"
+											onClick={() => setPromptAccessDialog({ open: true, prompt: selectedPrompt })}
+										>
+											<ShieldCheck className="mr-2 h-4 w-4" />
+											Manage Access
+										</DropdownMenuItem>
+									)}
+									{canDelete && (
+										<DropdownMenuItem
+											variant="destructive"
+											className="cursor-pointer text-destructive focus:text-destructive"
+											data-testid="header-prompt-delete"
+											onClick={() => setDeletePromptDialog({ open: true, prompt: selectedPrompt })}
+										>
+											<Trash2 className="mr-2 h-4 w-4" />
+											Delete Prompt
+										</DropdownMenuItem>
+									)}
 								</DropdownMenuContent>
 							</DropdownMenu>
 						)}

@@ -1,3 +1,13 @@
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alertDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ComboboxSelect, type ComboboxSelectOption } from "@/components/ui/combobox";
@@ -20,6 +30,7 @@ import {
 	useUpdateCircuitBreakerPolicyMutation,
 } from "@enterprise/lib/store/apis/circuitBreakerApi";
 import { CircuitBreakerPolicy } from "@enterprise/lib/types/workspace";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { ListFilter, PenLine, Plus, RotateCcw, Shield, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -62,19 +73,28 @@ function validatePolicyForm(form: CircuitBreakerPolicy): string | null {
 	if (!headerName) {
 		return "Header name is required — this is the provider response header that trips the circuit";
 	}
+	const cooldown = (form.default_cooldown || "").trim();
+	if (cooldown && !/^\d+(?:s|m|h|d)?$/i.test(cooldown)) {
+		return 'Default cooldown must be a valid duration (e.g., "30s", "5m") or seconds';
+	}
 	return null;
 }
 
 export default function CircuitBreakerView() {
+	const canCreate = useRbac(RbacResource.CircuitBreaker, RbacOperation.Create);
+	const canUpdate = useRbac(RbacResource.CircuitBreaker, RbacOperation.Update);
+	const canDelete = useRbac(RbacResource.CircuitBreaker, RbacOperation.Delete);
+
 	const [open, setOpen] = useState(false);
+	const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 	const [isManualHeaderInput, setIsManualHeaderInput] = useState(false);
 	const [form, setForm] = useState<CircuitBreakerPolicy>(emptyPolicy());
 	const [editing, setEditing] = useState(false);
-	const { data: policyData, isLoading: loading } = useGetCircuitBreakerPoliciesQuery();
+	const { data: policyData, isLoading: loading, isError: isPolicyError, error: policyError, refetch } = useGetCircuitBreakerPoliciesQuery();
 	const { data: stateData } = useGetCircuitBreakerStateQuery(undefined, { pollingInterval: 8000 });
 	const [createPolicy, { isLoading: creating }] = useCreateCircuitBreakerPolicyMutation();
 	const [updatePolicy, { isLoading: updating }] = useUpdateCircuitBreakerPolicyMutation();
-	const [deletePolicy] = useDeleteCircuitBreakerPolicyMutation();
+	const [deletePolicy, { isLoading: isDeleting }] = useDeleteCircuitBreakerPolicyMutation();
 	const [resetPolicy] = useResetCircuitBreakerPolicyMutation();
 	const policies = policyData?.policies || [];
 	const states = stateData?.circuits || {};
@@ -183,10 +203,12 @@ export default function CircuitBreakerView() {
 		}
 	};
 
-	const remove = async (name: string) => {
+	const confirmDelete = async () => {
+		if (!deleteTarget) return;
 		try {
-			await deletePolicy(name).unwrap();
-			toast.success("Policy deleted");
+			await deletePolicy(deleteTarget).unwrap();
+			toast.success(`Policy "${deleteTarget}" deleted`);
+			setDeleteTarget(null);
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
@@ -200,6 +222,18 @@ export default function CircuitBreakerView() {
 			toast.error(getErrorMessage(err));
 		}
 	};
+
+	if (isPolicyError && !loading) {
+		return (
+			<div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+				<p className="text-destructive text-sm font-medium">Failed to load circuit breaker policies</p>
+				{policyError ? <p className="text-muted-foreground max-w-md text-xs">{getErrorMessage(policyError)}</p> : null}
+				<Button type="button" variant="outline" size="sm" onClick={() => refetch()} data-testid="circuit-breaker-retry-btn">
+					Retry
+				</Button>
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex w-full flex-col gap-6 p-1">
@@ -215,6 +249,7 @@ export default function CircuitBreakerView() {
 					</p>
 				</div>
 				<Button
+					disabled={!canCreate}
 					onClick={() => {
 						setForm(emptyPolicy());
 						setEditing(false);
@@ -278,12 +313,20 @@ export default function CircuitBreakerView() {
 										<Badge variant={state?.status === "open" ? "destructive" : "secondary"}>{state?.status || "closed"}</Badge>
 									</TableCell>
 									<TableCell className="text-right">
-										<Button size="icon" variant="ghost" onClick={() => void reset(policy.name)}>
+										<Button
+											size="icon"
+											variant="ghost"
+											title={canUpdate ? "Reset circuit" : "No permission to reset circuit"}
+											disabled={!canUpdate}
+											onClick={() => void reset(policy.name)}
+										>
 											<RotateCcw className="h-4 w-4" />
 										</Button>
 										<Button
 											size="icon"
 											variant="ghost"
+											title={canUpdate ? "Edit policy" : "No permission to edit policy"}
+											disabled={!canUpdate}
 											onClick={() => {
 												setForm(policy);
 												setEditing(true);
@@ -291,9 +334,15 @@ export default function CircuitBreakerView() {
 												setOpen(true);
 											}}
 										>
-											<Shield className="h-4 w-4" />
+											<PenLine className="h-4 w-4" />
 										</Button>
-										<Button size="icon" variant="ghost" onClick={() => void remove(policy.name)}>
+										<Button
+											size="icon"
+											variant="ghost"
+											title={canDelete ? "Delete policy" : "No permission to delete policy"}
+											disabled={!canDelete}
+											onClick={() => setDeleteTarget(policy.name)}
+										>
 											<Trash2 className="h-4 w-4" />
 										</Button>
 									</TableCell>
@@ -496,6 +545,30 @@ export default function CircuitBreakerView() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			<AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete Policy</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete circuit breaker policy &quot;{deleteTarget}&quot;? This action cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={(e) => {
+								e.preventDefault();
+								void confirmDelete();
+							}}
+							disabled={isDeleting}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							{isDeleting ? "Deleting…" : "Delete"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }

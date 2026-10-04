@@ -28,11 +28,21 @@ export interface Prompt {
 	name: string;
 	folder_id?: string;
 	folder?: Folder;
+	customer_ids?: string;
+	team_ids?: string;
+	user_ids?: string;
+	owner_user_id?: string;
 	created_by_id?: number;
 	created_by?: PromptUser;
 	created_at: string;
 	updated_at: string;
 	latest_version?: PromptVersion;
+}
+
+export interface PromptFilters {
+	customer_ids: string[];
+	team_ids: string[];
+	user_ids: string[];
 }
 
 export interface ModelParams {
@@ -260,3 +270,28 @@ export interface CommitSessionRequest {
 export interface CommitSessionResponse {
 	version: PromptVersion;
 }
+
+// ============================================================================
+// API Request/Response Types - Access Scoping (Governance)
+// ============================================================================
+
+export interface PromptAccessUser {
+	user_id: string;
+	username: string;
+	email: string;
+	origin: "direct" | "team" | "customer";
+}
+
+export interface PromptAccessResponse {
+	customer_ids: string[];
+	team_ids: string[];
+	user_ids: string[];
+	owner_user_id: string;
+	effective_users: PromptAccessUser[];
+}
+
+export interface UpdatePromptAccessRequest {
+	customer_ids: string[];
+	team_ids: string[];
+	user_ids: string[];
+}
