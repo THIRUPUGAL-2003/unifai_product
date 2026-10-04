@@ -11,16 +11,40 @@ import json
 import unittest
 import urllib.parse
 
-from tests.test_target_predict_e2e import (
-    ADDON,
-    EVALS,
-    NS,
-    _flow,
-    _reset,
-    _run,
-    _send_bodies,
-    _ws_flow,
-)
+try:
+    from .test_target_predict_e2e import (
+        ADDON,
+        EVALS,
+        NS,
+        _flow,
+        _reset,
+        _run,
+        _send_bodies,
+        _ws_flow,
+    )
+except ImportError:
+    try:
+        from test_target_predict_e2e import (
+            ADDON,
+            EVALS,
+            NS,
+            _flow,
+            _reset,
+            _run,
+            _send_bodies,
+            _ws_flow,
+        )
+    except ImportError:
+        from tests.test_target_predict_e2e import (
+            ADDON,
+            EVALS,
+            NS,
+            _flow,
+            _reset,
+            _run,
+            _send_bodies,
+            _ws_flow,
+        )
 
 NUMBER = "7468486848"
 RULE_PATTERN = r"\b\d{10}\b|(?i)[A-Z]{5}[0-9]{4}[A-Z]"

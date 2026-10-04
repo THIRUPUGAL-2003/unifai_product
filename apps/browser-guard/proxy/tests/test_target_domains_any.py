@@ -12,7 +12,13 @@ import re
 import time
 import unittest
 
-from tests.test_target_predict_e2e import EVALS, NS, _flow, _reset, _run
+try:
+    from .test_target_predict_e2e import EVALS, NS, _flow, _reset, _run
+except ImportError:
+    try:
+        from test_target_predict_e2e import EVALS, NS, _flow, _reset, _run
+    except ImportError:
+        from tests.test_target_predict_e2e import EVALS, NS, _flow, _reset, _run
 
 NUMBER = "7468486848"
 
