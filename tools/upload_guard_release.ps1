@@ -10,8 +10,8 @@
   the dashboard serves the new files immediately; press Rebuild & Publish afterwards.
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Server,
-    [Parameter(Mandatory = $true)][string]$RemoteDir,
+    [Parameter(Mandatory = $false)][string]$Server = "root@76.13.243.253",
+    [Parameter(Mandatory = $false)][string]$RemoteDir = "/opt/projects/unifai_product/apps/browser-guard/release",
     [int]$Port = 22,
     [string]$IdentityFile = ""
 )
@@ -19,7 +19,7 @@ param(
 $ErrorActionPreference = "Stop"
 $releaseDir = Join-Path $PSScriptRoot "..\apps\browser-guard\release"
 # Only untracked binaries: uploading git-tracked files would make `git pull` on the server fail.
-$names = @("Raksha_Guard_Setup.exe", "Raksha_Guard.exe", "Raksha_Guard_macOS.zip", "Raksha_Guard_Setup.pkg")
+$names = @("Raksha_Guard_Setup.exe", "Raksha_Guard.exe", "Raksha_Guard_Windows.zip", "Raksha_Guard_macOS.zip", "Raksha_Guard_Setup.pkg")
 
 foreach ($tool in "ssh", "scp") {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
@@ -55,6 +55,7 @@ foreach ($f in $files) {
     if ($LASTEXITCODE -ne 0) { throw "rename failed for $($f.Name)." }
 }
 
-& ssh @sshArgs $Server "ls -la '$remote'"
+Write-Host "Syncing into running Docker container (unifai_version)..."
+& ssh @sshArgs $Server "docker cp '$remote/.' unifai_version:/app/release/ 2>/dev/null; docker cp '$remote/.' unifai_version:/app/apps/browser-guard/release/ 2>/dev/null; ls -la '$remote'"
 Write-Host ""
-Write-Host "Done. Open Browser AI > Setup, confirm Windows/macOS show Ready, then press Rebuild & Publish."
+Write-Host "Done! Open Browser AI > Setup (https://unifai.yespanchi.com), confirm Windows and macOS show Ready, then click 'Rebuild & Publish'."
