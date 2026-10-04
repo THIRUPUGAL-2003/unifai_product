@@ -1042,6 +1042,8 @@ func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token
 			(strings.HasPrefix(path, "/api/governance/virtual-keys") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/governance/providers") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/models") && string(ctx.Method()) == "GET") ||
+			(strings.HasPrefix(path, "/api/mcp/clients") && string(ctx.Method()) == "GET") ||
+			(strings.HasPrefix(path, "/api/skills") && string(ctx.Method()) == "GET") ||
 			(path == "/api/rbac/me/permissions" && string(ctx.Method()) == "GET")
 		if !isAllowed && !customRoleMayReach(store, session.Role, string(ctx.Method()), path) {
 			return sessionForbidden
@@ -1067,7 +1069,7 @@ func customRoleMayReach(store configstore.ConfigStore, role, method, path string
 
 func roleUsesRBACDelegation(role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
-	return role != "" && role != "user" && !isWorkspaceAdminRole(role)
+	return role != "" && !isWorkspaceAdminRole(role)
 }
 
 func customRolePathDelegable(method, path string) bool {

@@ -81,7 +81,9 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				if (method == "GET" || method == "HEAD") && (strings.HasPrefix(path, "/api/governance/virtual-keys") ||
 					strings.HasPrefix(path, "/api/governance/providers") ||
 					strings.HasPrefix(path, "/api/providers") ||
-					strings.HasPrefix(path, "/api/models")) {
+					strings.HasPrefix(path, "/api/models") ||
+					strings.HasPrefix(path, "/api/mcp/clients") ||
+					strings.HasPrefix(path, "/api/skills")) {
 					next(ctx)
 					return
 				}

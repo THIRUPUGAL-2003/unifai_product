@@ -10,6 +10,9 @@ import { Input } from "@/components/ui/input";
 import { useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
+import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
+import { Badge } from "@/components/ui/badge";
+import { Wrench } from "lucide-react";
 import { ModelProviderName } from "@/lib/types/config";
 import { ModelParams } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
@@ -69,7 +72,8 @@ export function SettingsPanel() {
 	const { data: providers, isLoading: isLoadingProviders } = useGetProvidersQuery();
 	// Keys for the API Key selector (from /api/keys endpoint, provider-filtered)
 	const { data: allKeys, isSuccess: hasLoadedAllKeys } = useGetAllKeysQuery(undefined, { skip: isMemberOnly });
-	const { data: skillsData } = useListSkillsQuery({ limit: 100, offset: 0 }, { skip: isMemberOnly });
+	const { data: skillsData } = useListSkillsQuery({ limit: 100, offset: 0 });
+	const { data: mcpClientsData } = useGetMCPClientsQuery();
 	const skillOptions = useMemo(
 		() => [
 			{ label: "None", value: "" },
@@ -100,6 +104,23 @@ export function SettingsPanel() {
 		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId),
 		[virtualKeysData, apiKeyId],
 	);
+	const activeMCPClients = useMemo(() => {
+		if (!selectedVirtualKey) return [];
+		const vkId = selectedVirtualKey.id;
+		return (mcpClientsData?.clients ?? []).filter((client) => {
+			if (client.config.disabled) return false;
+			if (client.config.allow_on_all_virtual_keys) return true;
+			if (client.vk_configs?.some((vc) => vc.virtual_key_id === vkId)) return true;
+			if (selectedVirtualKey.mcp_configs?.some((mc) => mc.mcp_client?.name === client.config.name)) return true;
+			return false;
+		});
+	}, [mcpClientsData, selectedVirtualKey]);
+
+	const totalMCPTools = useMemo(
+		() => activeMCPClients.reduce((acc, c) => acc + (c.tools?.length ?? 0), 0),
+		[activeMCPClients],
+	);
+
 	const selectedVKProviders = useMemo(
 		() => [...new Set((selectedVirtualKey?.provider_configs ?? []).map((pc) => pc.provider))],
 		[selectedVirtualKey],
@@ -282,12 +303,54 @@ export function SettingsPanel() {
 										No virtual key is available to you yet. Ask your admin to assign one to you, your team or your customer.
 									</p>
 								)}
-								{!!provider && !isMemberOnly && (
-									<p className="text-muted-foreground text-xs">
-										MCP tools use the Virtual Key you pick here (Bearer <code className="text-[10px]">sk-uf-…</code>
-										). Install servers with &quot;Available to all virtual keys&quot; on, or attach this key in MCP Catalog.
-										Server must show <strong>connected</strong> with discovered tools.
-									</p>
+								{selectedVirtualKey && (
+									<div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 p-2.5" data-testid="settings-mcp-status">
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-1.5">
+												<Wrench className="h-3.5 w-3.5 text-primary" />
+												<Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+													Connected MCP Tools
+												</Label>
+											</div>
+											<Badge variant={activeMCPClients.length > 0 ? "outline" : "secondary"} className="text-[10px] font-mono">
+												{totalMCPTools} {totalMCPTools === 1 ? "tool" : "tools"}
+											</Badge>
+										</div>
+										{activeMCPClients.length === 0 ? (
+											<p className="text-muted-foreground text-[11px] leading-relaxed">
+												No MCP servers attached to this key. Attach servers in MCP Catalog or enable &quot;Available to all virtual keys&quot;.
+											</p>
+										) : (
+											<div className="flex flex-col gap-1.5 mt-1">
+												{activeMCPClients.map((client) => {
+													const toolCount = client.tools?.length ?? 0;
+													const isConnected = client.state === "connected";
+													return (
+														<div
+															key={client.config.client_id}
+															className="flex items-center justify-between rounded bg-background/80 px-2 py-1 text-xs border border-border/40"
+														>
+															<div className="flex items-center gap-1.5 min-w-0">
+																<span
+																	className={cn(
+																		"h-2 w-2 rounded-full shrink-0",
+																		isConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500",
+																	)}
+																/>
+																<span className="font-medium truncate">{client.config.name}</span>
+																{client.config.allow_on_all_virtual_keys && (
+																	<span className="text-[10px] text-muted-foreground font-mono">(Global)</span>
+																)}
+															</div>
+															<span className="text-[11px] text-muted-foreground font-mono shrink-0">
+																{toolCount} {toolCount === 1 ? "tool" : "tools"}
+															</span>
+														</div>
+													);
+												})}
+											</div>
+										)}
+									</div>
 								)}
 
 								{skillOptions.length > 1 && (

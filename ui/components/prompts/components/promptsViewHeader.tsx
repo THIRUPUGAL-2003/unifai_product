@@ -57,6 +57,10 @@ export default function PromptsViewHeader() {
 		return null;
 	}, [selectedVK]);
 
+	const vkBudget = useMemo(() => selectedVK?.budgets?.[0], [selectedVK]);
+	const teamBudget = useMemo(() => selectedVK?.team?.budgets?.[0] || selectedVK?.teams?.[0]?.budgets?.[0], [selectedVK]);
+	const customerBudget = useMemo(() => selectedVK?.customer?.budgets?.[0] || selectedVK?.customers?.[0]?.budgets?.[0], [selectedVK]);
+
 	const committedLabel = useMemo(() => {
 		const version = selectedPrompt?.latest_version;
 		const p = (model && provider) || version?.provider || provider;
@@ -252,8 +256,23 @@ export default function PromptsViewHeader() {
 							</Badge>
 						)}
 						{authStatus?.budget !== undefined && authStatus.budget > 0 && (
-							<Badge variant="outline" className="font-mono text-xs border-primary/30 text-muted-foreground">
-								User Budget: ${(authStatus.budget_current_usage ?? 0).toFixed(2)} / ${authStatus.budget.toFixed(2)}
+							<Badge variant="outline" className="font-mono text-xs border-primary/30 text-muted-foreground" title="Your Personal User Budget">
+								User: ${(authStatus.budget_current_usage ?? 0).toFixed(2)} / ${authStatus.budget.toFixed(2)}
+							</Badge>
+						)}
+						{vkBudget && vkBudget.max_limit > 0 && (
+							<Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400" title="Virtual Key Budget (Shared)">
+								Key: ${(vkBudget.current_usage ?? 0).toFixed(2)} / ${vkBudget.max_limit.toFixed(2)}
+							</Badge>
+						)}
+						{teamBudget && teamBudget.max_limit > 0 && (
+							<Badge variant="outline" className="font-mono text-xs border-blue-500/30 text-blue-600 dark:text-blue-400" title="Team Budget (Shared)">
+								Team: ${(teamBudget.current_usage ?? 0).toFixed(2)} / ${teamBudget.max_limit.toFixed(2)}
+							</Badge>
+						)}
+						{customerBudget && customerBudget.max_limit > 0 && (
+							<Badge variant="outline" className="font-mono text-xs border-indigo-500/30 text-indigo-600 dark:text-indigo-400" title="Customer Budget (Shared)">
+								Customer: ${(customerBudget.current_usage ?? 0).toFixed(2)} / ${customerBudget.max_limit.toFixed(2)}
 							</Badge>
 						)}
 					</>
