@@ -403,7 +403,7 @@ export function SettingsPanel() {
 									</>
 								)}
 
-								{hasModel && (
+								{hasModel && !isMemberOnly && (
 									<>
 										<Separator />
 										<div className="flex flex-col gap-4">

@@ -271,7 +271,7 @@ export default function PromptsViewHeader() {
 						{hasVersionChanges && versions.length > 0 && <Badge variant="outline">Unpublished Changes</Badge>}
 					</>
 				)}
-				{!canUpdate && (
+				{!isUserRole && !canUpdate && (
 					<Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1 text-xs">
 						<Eye className="h-3 w-3" />
 						View Only
