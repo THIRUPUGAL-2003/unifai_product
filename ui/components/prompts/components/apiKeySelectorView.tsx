@@ -178,8 +178,8 @@ export function ApiKeySelectorView({
 							</div>
 						) : null}
 
-						{/* Customer Budget (shared across teams and users under this customer) */}
-						{customerBudgets.map((b) => (
+						{/* Customer Budget (only shown to admin) */}
+						{!isMember && customerBudgets.map((b) => (
 							<div key={`cust-${b.id || b.reset_duration}`} className="space-y-0.5 pt-1 border-t border-border/40">
 								<div className="flex items-center justify-between text-[11px]">
 									<span className="text-muted-foreground font-medium">Customer Budget ({customerName}):</span>
@@ -210,8 +210,8 @@ export function ApiKeySelectorView({
 							</div>
 						))}
 
-						{/* Team Budget (shared across users in this team) */}
-						{teamBudgets.map((b) => (
+						{/* Team Budget (only shown to admin) */}
+						{!isMember && teamBudgets.map((b) => (
 							<div key={`team-${b.id || b.reset_duration}`} className="space-y-0.5 pt-1 border-t border-border/40">
 								<div className="flex items-center justify-between text-[11px]">
 									<span className="text-muted-foreground font-medium">Team Budget ({teamName}):</span>
