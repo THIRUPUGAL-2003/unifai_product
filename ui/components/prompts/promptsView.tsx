@@ -45,13 +45,13 @@ export default function PromptsView() {
 			<PromptAccessDialog />
 
 			<ResizablePanelGroup direction="horizontal" className="h-full">
-				<ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="bg-card mr-1 overflow-hidden rounded-r-md">
+				<ResizablePanel defaultSize="24%" minSize="18%" maxSize="35%" className="bg-card mr-1 overflow-hidden rounded-r-md">
 					<PromptSidebar />
 				</ResizablePanel>
 
 				<ResizableHandle className="mr-1 bg-transparent" />
 
-				<ResizablePanel defaultSize={80} minSize={50} className="overflow-hidden">
+				<ResizablePanel defaultSize="76%" minSize="65%" className="overflow-hidden">
 					<div className="bg-card h-full w-full min-w-0 overflow-hidden rounded-md">
 						{selectedPromptId ? (
 							<div className="flex h-full flex-col">
@@ -63,11 +63,11 @@ export default function PromptsView() {
 									</div>
 								) : (
 									<ResizablePanelGroup direction="horizontal" className="flex-1">
-										<ResizablePanel defaultSize={70} minSize={40}>
+										<ResizablePanel defaultSize="70%" minSize="40%">
 											<PlaygroundPanel />
 										</ResizablePanel>
 										<ResizableHandle />
-										<ResizablePanel defaultSize={30} minSize={20}>
+										<ResizablePanel defaultSize="30%" minSize="20%">
 											<SettingsPanel />
 										</ResizablePanel>
 									</ResizablePanelGroup>
