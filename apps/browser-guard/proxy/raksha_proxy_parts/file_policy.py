@@ -149,7 +149,7 @@ def enforce_file_send_policy(
         is_voice = bool((
             chat_carries_attachment(raw_text) and _extract_transcript_fields_from_json(raw_text or "")
         ) or _looks_like_audio(b"", content_type, hint))
-        if is_voice and (_is_fake_upload_name(hint) or hint.lower() in ("document", "document.pdf", "attachment", "file")):
+        if is_voice and (_is_fake_upload_name(hint) or hint.lower() in ("attachment", "file")):
             hint = "Voice Note"
         tag = "[VOICE UPLOAD]" if is_voice else "[FILE UPLOAD]"
         if controls_active("block_upload"):
@@ -459,7 +459,7 @@ def enforce_file_send_policy(
         is_audio = _looks_like_audio(bytes(cached_bytes), cached_ct, fname)
 
         if is_audio:
-            if _is_fake_upload_name(fname) or fname.lower() in ("document", "document.pdf", "attachment", "audio.bin", "file.txt"):
+            if _is_fake_upload_name(fname) or fname.lower() in ("attachment", "audio.bin"):
                 suffix = f" {i + 1}" if n_cached > 1 else ""
                 fname = f"Voice Note{suffix}"
         elif _is_fake_upload_name(fname) or not fname:
@@ -487,7 +487,7 @@ def enforce_file_send_policy(
                         fname = pending
                     else:
                         fname = (fname or "").strip() or "attachment"
-                        if _is_fake_upload_name(fname) or fname.lower() in ("document", "document.pdf"):
+                        if _is_fake_upload_name(fname):
                             fname = "attachment"
                         if n_cached > 1 and fname == "attachment":
                             fname = f"attachment-{i + 1}"
@@ -498,7 +498,7 @@ def enforce_file_send_policy(
                 except Exception:
                     pass
         display_label = _display_label_for_upload(fname, bytes(cached_bytes), cached_ct)
-        if is_audio and display_label.lower() in ("document", "document.pdf", "attachment", "audio.bin"):
+        if is_audio and display_label.lower() in ("attachment", "audio.bin"):
             suffix = f" {i + 1}" if n_cached > 1 else ""
             display_label = f"Voice Note{suffix}"
         prepared.append({

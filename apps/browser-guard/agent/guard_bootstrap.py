@@ -233,6 +233,29 @@ def _utf8_stdio() -> None:
                 pass
 
 
+def show_antivirus_block_warning(reason: str = "") -> None:
+    msg = (
+        "SECURITY NOTICE: Raksha Guard was blocked by Antivirus or Windows Security.\n\n"
+        f"Reason: {reason or 'Access is denied or executable blocked by endpoint security.'}\n\n"
+        "Your Antivirus (e.g. Windows Defender, CrowdStrike, McAfee, Kaspersky, Norton, Bitdefender) "
+        "may be blocking Raksha Guard from running background protection.\n\n"
+        "Steps to resolve:\n"
+        "1. Open Windows Security or your company Antivirus app.\n"
+        "2. Under 'Protection history' or 'Quarantine', find Raksha_Guard.exe and choose 'Allow on device' or 'Restore'.\n"
+        f"3. Add an Exclusion / Whitelist for the application folder:\n"
+        f"   {data_dir()}\n"
+        "4. If on a corporate laptop, contact your IT Administrator to whitelist Raksha Guard in your central security console.\n"
+        "5. Restart Raksha Guard."
+    )
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, msg, "Raksha Guard - Antivirus Notice", 0x10 | 0x0)
+        except Exception:
+            pass
+    print(f"\n[Raksha Guard CRITICAL]\n{msg}\n", file=sys.stderr)
+
+
 def main() -> None:
     _utf8_stdio()
     version = runtime_version()
@@ -253,6 +276,15 @@ def main() -> None:
 
     try:
         import raksha_agent
+    except (PermissionError, OSError) as e:
+        if getattr(e, "winerror", None) in (5, 225) or "denied" in str(e).lower() or "virus" in str(e).lower():
+            show_antivirus_block_warning(str(e))
+        if not sha:
+            raise
+        mark_bad(sha, f"import failed: {type(e).__name__}: {e}")
+        uninstall_code_dir(finder)
+        sha = ""
+        import raksha_agent
     except Exception as e:
         if not sha:
             raise
@@ -265,6 +297,14 @@ def main() -> None:
         raksha_agent.main()
     except (SystemExit, KeyboardInterrupt):
         raise
+    except (PermissionError, OSError) as e:
+        if getattr(e, "winerror", None) in (5, 225) or "denied" in str(e).lower() or "virus" in str(e).lower():
+            show_antivirus_block_warning(str(e))
+        if not sha or not main_mode:
+            raise
+        mark_bad(sha, f"crashed: {type(e).__name__}: {e}")
+        relaunch({"RAKSHA_GUARD_FORCE_BUILTIN": "1"})
+        os._exit(1)
     except Exception as e:
         if not sha or not main_mode:
             raise

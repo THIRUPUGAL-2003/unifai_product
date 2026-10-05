@@ -30,3 +30,15 @@ Windows Settings > Apps > Raksha Guard > Uninstall
 
 When prompted, enter the company uninstall key from IT
 (Browser AI → Setup). Leave blank only if IT disabled the key requirement.
+
+Antivirus / Windows Defender Alert
+----------------------------------
+If your Antivirus (Windows Defender, CrowdStrike, McAfee, Kaspersky, Norton, Bitdefender, etc.)
+blocks installation, quarantines Raksha_Guard.exe, or prevents it from starting:
+1. Open Windows Security or your company Antivirus app.
+2. Under "Protection history" or "Quarantined threats", choose "Allow on device" or "Restore".
+3. Add an Exclusion / Whitelist for:
+   %LOCALAPPDATA%\Programs\Raksha\Guard\Raksha_Guard.exe
+4. If your laptop is managed by company IT, contact your IT Administrator with this notice
+   so they can approve Raksha Guard in the central endpoint security portal.
+

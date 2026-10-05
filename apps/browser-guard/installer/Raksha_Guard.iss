@@ -183,3 +183,33 @@ begin
     end;
   end;
 end;
+
+procedure ShowAntivirusWarning(Reason: String);
+begin
+  MsgBox('SECURITY NOTICE: Raksha Guard installation or startup was blocked.' + #13#10 + #13#10 +
+         'Reason: ' + Reason + #13#10 + #13#10 +
+         'Your Antivirus or Windows Security (e.g. Defender, CrowdStrike, McAfee, Kaspersky, Norton, Bitdefender) may be blocking this enterprise security app.' + #13#10 + #13#10 +
+         'Steps to resolve:' + #13#10 +
+         '1. Open Windows Security or your company Antivirus app.' + #13#10 +
+         '2. Under "Protection history" or "Quarantined threats", find Raksha_Guard.exe and choose "Allow on device" or "Restore".' + #13#10 +
+         '3. Add an Exclusion / Whitelist for the installation folder:' + #13#10 +
+         '   ' + ExpandConstant('{app}') + #13#10 +
+         '4. If using a company-managed laptop, contact your IT Administrator with this message so they can approve Raksha Guard in your central security console.' + #13#10 +
+         '5. Re-run this installer once allowed.',
+         mbCriticalError, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ExePath: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    ExePath := ExpandConstant('{app}\{#MyAppExeName}');
+    if not FileExists(ExePath) then
+    begin
+      ShowAntivirusWarning('The application executable "Raksha_Guard.exe" was blocked, quarantined, or removed by your Antivirus during file extraction.');
+    end;
+  end;
+end;
+

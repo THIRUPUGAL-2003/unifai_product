@@ -34,7 +34,10 @@ export const MCPTabView = forwardRef<MCPTabViewHandle, MCPTabViewProps>(function
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
+	const skipOpts = useMemo(
+		() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+		[active, pollingInterval],
+	);
 
 	const { data: mcpHistogramData, isLoading: loadingMcpHistogram } = useGetMCPHistogramQuery(fetchArg, skipOpts);
 	const { data: mcpCostData, isLoading: loadingMcpCost } = useGetMCPCostHistogramQuery(fetchArg, skipOpts);

@@ -1,0 +1,50 @@
+[Raksha Guard] Loaded config: D:\unifai_project\apps\browser-guard\release\raksha_guard_config.json
+==========================================================
+   Raksha Enterprise Desktop Security Guard Agent v1.1.16
+==========================================================
+[Raksha Guard] Log file: C:\Users\sakth\AppData\Local\Raksha\Guard\raksha_guard.log
+[Raksha Guard] Data dir: C:\Users\sakth\AppData\Local\Raksha\Guard
+[Raksha Guard] Agent ID: ea62ed47-1ed3-4d92-b39c-e9dfd943e31f
+[Raksha Guard] Hostname: DESKTOP-K8CQD3T / User: Thirupugal
+[Raksha Guard] MAC: 94-E6-F7-05-D7-C8 / Transport: {E9A3570A-9B55-4434-A195-FB88A9A4B901}
+[Raksha Guard] Guard code: server bundle 27bb8b67
+[Raksha Guard] Proxy Addon: C:\Users\sakth\AppData\Local\Raksha\Guard\proxy_bundle\27bb8b676b27295c\browser_ai_proxy.py
+[Raksha Guard] Backend URL: https://unifai.yespanchi.com
+[Raksha Guard] Mode: endpoint (agent_type=endpoint)
+[Raksha Guard] Listen: 127.0.0.1 / advertise PAC proxy: 127.0.0.1:18103
+[Raksha Guard] Local proxy: 127.0.0.1:18103
+[Raksha Guard] Backend Browser AI API OK: https://unifai.yespanchi.com
+[Raksha Guard AutoUpdate] HEAD check failed (HTTP Error 404: Not Found), trying GET fallback...
+[Raksha Guard AutoUpdate] GET fallback failed: HTTP Error 404: Not Found
+[Raksha Guard] Heartbeat OK (DESKTOP-K8CQD3T / 192.168.1.38 / 94-E6-F7-05-D7-C8 / active)
+[Raksha Guard] Wrote local proxy.pac (C:\Users\sakth\AppData\Local\Raksha\Guard\proxy.pac)
+[Raksha Guard] Local PAC HTTP server: http://127.0.0.1:18195/proxy.pac
+[Raksha Guard] Browser HTTP/3 (QUIC) disabled for Chromium browsers so Target Websites use the proxy.
+[Raksha Guard] PAC policies: Chrome, Edge, Brave, Opera, Vivaldi + Firefox.
+[Raksha Guard] mitmproxy cert store ready: C:\Users\sakth\.mitmproxy
+[Raksha Guard] CA already trusted — skip reinstall.
+[Raksha Guard] Autostart registered (Windows Run key).
+[Raksha Guard] Agent is active. Sleep/shutdown keep monitoring; only uninstall stops Guard.
+[Raksha Guard] IMPORTANT: Fully quit Chrome/Edge/Safari (all windows) then reopen for PAC to stick.
+[Raksha Guard] Heartbeat OK (DESKTOP-K8CQD3T / 192.168.1.38 / 94-E6-F7-05-D7-C8 / active)
+[Raksha Guard] Firefox not found yet — open Firefox once, then restart Guard to apply PAC.
+[Raksha Guard] PAC applied to Chrome, Edge, Brave, Opera, Vivaldi (+ Firefox profiles). Fully quit & reopen each browser once.
+[Raksha Guard] Wrote local proxy.pac (C:\Users\sakth\AppData\Local\Raksha\Guard\proxy.pac)
+[Raksha Guard] Windows PAC ENABLED -> http://127.0.0.1:18195/proxy.pac?v=258214752
+[Raksha Guard] Launching MitM Security Interceptor on 127.0.0.1:18103...
+[Raksha Guard] Firefox not found yet — open Firefox once, then restart Guard to apply PAC.
+[Raksha Guard] PAC applied to Chrome, Edge, Brave, Opera, Vivaldi (+ Firefox profiles). Fully quit & reopen each browser once.
+[Raksha Guard] PAC refreshed (~14 domain entries).
+[Raksha Guard] MitM worker ready pid=29160 on 127.0.0.1:18103
+[Raksha Guard] Proxy listening on 127.0.0.1:18103 (advertise 127.0.0.1:18103).
+[Raksha Guard] Local proxy listening on 127.0.0.1:18103 — applying PAC now.
+[Raksha Guard] Windows PAC ENABLED -> http://127.0.0.1:18195/proxy.pac?v=453258214
+[Raksha Guard] Firefox not found yet — open Firefox once, then restart Guard to apply PAC.
+[Raksha Guard] PAC applied to Chrome, Edge, Brave, Opera, Vivaldi (+ Firefox profiles). Fully quit & reopen each browser once.
+[Raksha Guard] Wrote local proxy.pac (C:\Users\sakth\AppData\Local\Raksha\Guard\proxy.pac)
+[Raksha Guard] Firefox not found yet — open Firefox once, then restart Guard to apply PAC.
+[Raksha Guard] PAC applied to Chrome, Edge, Brave, Opera, Vivaldi (+ Firefox profiles). Fully quit & reopen each browser once.
+[Raksha Guard] PAC restored to strict PROXY (monitored hosts).
+[Raksha Guard] Health=ok checks={'backend_targets': True, 'local_pac': True, 'proxy_port': True, 'ca_trusted': True, 'proxy_script': True, 'pac_strict': True}
+[Raksha Guard] Firefox not found yet — open Firefox once, then restart Guard to apply PAC.
+[Raksha Guard] PAC applied to Chrome, Edge, Brave, Opera, Vivaldi (+ Firefox profiles). Fully quit & reopen each browser once.

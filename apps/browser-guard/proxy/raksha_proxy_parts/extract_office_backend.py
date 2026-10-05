@@ -1517,6 +1517,8 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
     Backend handles guard rule matching and returns allowed/blocked decision.
     Returns (allowed, rule_triggered, action, redacted_prompt, reply_text, eval_error)
     """
+    if not RAKSHA_BACKEND_URL:
+        return True, "", "Allowed", prompt, "", "backend url not configured"
     try:
         metadata = {
             "domain": domain,

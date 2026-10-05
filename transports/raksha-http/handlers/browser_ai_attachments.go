@@ -453,15 +453,33 @@ func resolveBrowserAIAttachmentPath(storedName string) (string, error) {
 	return "", fmt.Errorf("attachment not found")
 }
 
-func browserAIAttachmentExpired(path string) bool {
+func getBrowserAIAttachmentTTL(manager *logstore.BrowserAIManager) (time.Duration, string) {
+	if manager != nil {
+		if ctrl, err := manager.GetControls(context.Background()); err == nil && ctrl != nil {
+			dur := logstore.ParseAttachmentRetentionDuration(ctrl.AttachmentRetention)
+			retStr := ctrl.AttachmentRetention
+			if retStr == "" {
+				retStr = "1h"
+			}
+			return dur, retStr
+		}
+	}
+	return 1 * time.Hour, "1h"
+}
+
+func browserAIAttachmentExpired(path string, ttl time.Duration) bool {
 	info, err := os.Stat(path)
 	if err != nil {
 		return true
 	}
-	return time.Since(info.ModTime()) > browserAIAttachmentTTL
+	if ttl <= 0 {
+		ttl = 1 * time.Hour
+	}
+	return time.Since(info.ModTime()) > ttl
 }
 
-// startBrowserAIAttachmentCleanup deletes temp upload files older than TTL.
+// startBrowserAIAttachmentCleanup deletes temp upload files older than TTL
+// and triggers search/prompt log auto-deletion periodically.
 // Prompt log rows and attachment_name stay permanent; only disk bytes are removed.
 func startBrowserAIAttachmentCleanup(manager *logstore.BrowserAIManager) {
 	browserAIAttachCleanOnce.Do(func() {
@@ -469,12 +487,20 @@ func startBrowserAIAttachmentCleanup(manager *logstore.BrowserAIManager) {
 		go func() {
 			// Initial sweep shortly after boot
 			purgeExpiredBrowserAIAttachments(manager)
+			if manager != nil {
+				_ = manager.ApplyPromptLogAutoDelete(context.Background())
+				_ = manager.ApplySearchLogAutoDelete(context.Background())
+			}
 			ticker := time.NewTicker(1 * time.Minute)
 			defer ticker.Stop()
 			for {
 				select {
 				case <-ticker.C:
 					purgeExpiredBrowserAIAttachments(manager)
+					if manager != nil {
+						_ = manager.ApplyPromptLogAutoDelete(context.Background())
+						_ = manager.ApplySearchLogAutoDelete(context.Background())
+					}
 				case <-browserAIAttachCleanStop:
 					return
 				}
@@ -484,7 +510,8 @@ func startBrowserAIAttachmentCleanup(manager *logstore.BrowserAIManager) {
 }
 
 func purgeExpiredBrowserAIAttachments(manager *logstore.BrowserAIManager) {
-	cutoff := time.Now().Add(-browserAIAttachmentTTL)
+	ttl, _ := getBrowserAIAttachmentTTL(manager)
+	cutoff := time.Now().Add(-ttl)
 	for _, dirFn := range []func() string{browserAIAttachmentDir, browserAIPdfDir} {
 		dir := dirFn()
 		entries, err := os.ReadDir(dir)

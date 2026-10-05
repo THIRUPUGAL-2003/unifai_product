@@ -76,7 +76,10 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
+	const skipOpts = useMemo(
+		() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+		[active, pollingInterval],
+	);
 
 	const { data: histogramData, isLoading: loadingHistogram } = useGetLogsHistogramQuery(fetchArg, skipOpts);
 	const { data: tokenData, isLoading: loadingTokens } = useGetLogsTokenHistogramQuery(fetchArg, skipOpts);

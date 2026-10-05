@@ -1,6 +1,8 @@
-# Part of Raksha browser_ai_proxy — do not import directly.
-
-
+# Part of Raksha browser_ai_proxy
+import re
+import json
+import os
+import urllib.parse
 
 def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     """Detect Claude / Anthropic chat submit from request path or JSON body — not hostname."""
@@ -2046,7 +2048,11 @@ def _is_claude_wire_noise(s: str) -> bool:
         return True
     if t.startswith("claude-") or t.startswith("anthropic-"):
         return True
-    if t in ("text", "text/plain", "user", "assistant", "human", "model", "application/json", "0", "1"):
+    if t in ("text", "text/plain", "user", "assistant", "human", "model", "application/json", "0", "1", "2", "3", "true", "false", "null", "undefined"):
+        return True
+    if t.isdigit() and len(t) <= 3:
+        return True
+    if re.fullmatch(r"\[\d+\]", t):
         return True
     if t.isupper() and "_" in t and len(t) < 40:
         return True

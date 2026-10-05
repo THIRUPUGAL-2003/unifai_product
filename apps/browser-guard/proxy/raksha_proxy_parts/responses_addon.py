@@ -1025,6 +1025,10 @@ class BrowserAIInterceptor:
             except Exception:
                 pass
 
+        is_gemini_send = "batchexecute" in (path or "").lower() and is_batchexecute_chat_submit(path, raw_text)
+        if is_gemini_send:
+            confident_send = True
+
         if not confident_send:
             if len(prompt.strip()) <= 15 or is_composer_typing_draft(domain, prompt):
                 stable = wait_if_composer_unstable(domain, prompt)
@@ -1037,8 +1041,8 @@ class BrowserAIInterceptor:
                         return
                 else:
                     prompt = stable
-        elif len(prompt.strip()) <= 48 and is_composer_typing_draft(domain, prompt):
-            # ChatGPT/Gemini often mark keystroke bodies "confident" — still coalesce.
+        elif not is_gemini_send and len(prompt.strip()) <= 48 and is_composer_typing_draft(domain, prompt):
+            # Keystroke bodies marked confident — coalesce typing.
             stable = wait_if_composer_unstable(domain, prompt)
             if stable is None:
                 with _composer_lock:

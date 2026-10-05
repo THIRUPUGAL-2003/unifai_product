@@ -5,49 +5,16 @@ import hashlib
 
 _FAKE_UPLOAD_NAMES = frozenset({
     "", "attachment", "attachment.txt", "attachment.bin", "blob", "blob.txt",
-    "file", "file.txt", "upload", "untitled", "document", "document.txt",
-    "image", "image.png", "audio", "video", "media", "unknown", "null", "undefined",
-    "document.pdf", "archive.zip", "attachment-1", "attachment-2", "attachment-3",
-    "spreadsheet.xlsx", "presentation.pptx", "document.docx", "file.txt",
-    # ChatGPT image/voice paste labels — never treat as a user-picked filename.
-    "screenshot", "screenshot.png", "screenshot.jpg", "screenshot.jpeg",
-    "screenshot.webp", "screenshot.gif", "screenshot.bmp",
-    "screen-shot", "screen_shot",
-    "photo", "photo.png", "photo.jpg", "picture", "picture.png",
-    "paste", "pasted", "pasted.png", "pasted-image", "pasted-image.png",
-    "audio.m4a", "audio.mp3", "audio.wav", "audio.webm",
-    "recording", "recording.m4a", "recording.mp3",
-    "voice", "voice.m4a", "voice.mp3",
+    "null", "undefined", "unknown",
 })
 
-# ChatGPT/Claude generic media stems (optionally + ext / -N). Real names like
-# "Screenshot 2024-09-21 at 2.33.00 AM.png" keep digits/words and stay real.
-_GENERIC_VENDOR_MEDIA_STEMS = frozenset({
-    "screenshot", "screen-shot", "screen_shot", "screenshots",
-    "image", "photo", "picture", "pic", "paste", "pasted",
-    "pasted-image", "pasted_image",
-    "audio", "recording", "voice", "voice-note", "voice_note", "voicenote",
-    "video", "media", "clip", "untitled", "download",
-    "blob", "attachment", "upload", "unknown", "file",
-})
+# Generic media stems are no longer blacklisted — if a user uploads screenshot.png, photo.jpg,
+# or presentation.pptx, that is their real filename and must be preserved as-is.
+_GENERIC_VENDOR_MEDIA_STEMS = frozenset()
 
-# Names invented by _default_name_from_bytes / sniff — ChatGPT+Gemini often cache
-# caption/extra blobs under these and they show up as fake "document-2.pdf" rows.
+# Only match anonymous numbered attachment placeholders synthesized by the proxy itself
 _GENERATED_UPLOAD_NAME_RE = re.compile(
-    r"^(?:"
-    r"attachment(-\d+)?"
-    r"|document(-\d+)?\.(pdf|docx|doc|txt)"
-    r"|spreadsheet(-\d+)?\.(xlsx|xls|xlsm)"
-    r"|presentation(-\d+)?\.(pptx|ppt)"
-    r"|archive(-\d+)?\.zip"
-    r"|image(-\d+)?\.(png|jpe?g|gif|webp|bmp)"
-    r"|screenshot(-\d+)?\.(png|jpe?g|gif|webp|bmp)"
-    r"|photo(-\d+)?\.(png|jpe?g|gif|webp)"
-    r"|voice-note(-\d+)?\.(wav|m4a|mp3|ogg|webm)"
-    r"|audio(-\d+)?\.(wav|m4a|mp3|ogg|webm)"
-    r"|video(-\d+)?\.(bin|mp4|webm)"
-    r"|file(-\d+)?\.txt"
-    r")$",
+    r"^attachment(-\d+)?$",
     re.I,
 )
 
@@ -96,20 +63,9 @@ _WIRE_JUNK_EXACT = frozenset({
 
 
 def _is_generic_vendor_media_label(name: str) -> bool:
-    """True for ChatGPT/Claude paste labels like 'screenshot' / 'screenshot.png'."""
+    """True only for completely empty or nameless placeholders."""
     n = (name or "").strip().lower()
-    if not n:
-        return True
-    base = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    if "." in base:
-        stem, ext = base.rsplit(".", 1)
-        if ext.isalnum() and 1 <= len(ext) <= 8:
-            base = stem
-    compact = re.sub(r"[\s._-]+\d+$", "", base).strip()
-    compact = compact.replace("_", "-").replace(" ", "-")
-    if compact in _GENERIC_VENDOR_MEDIA_STEMS:
-        return True
-    return base.replace("_", "-").replace(" ", "-") in _GENERIC_VENDOR_MEDIA_STEMS
+    return not n or n in _FAKE_UPLOAD_NAMES
 
 
 def _is_fake_upload_name(name: str) -> bool:
@@ -535,24 +491,18 @@ def _filename_from_multipart_or_headers(raw: bytes = b"", headers=None, raw_text
 
 
 def _default_name_from_bytes(raw: bytes, content_type: str = "", idx: int = 0, total_count: int = 1) -> str:
-    """Fallback label when the product wire omits the real filename."""
+    """Fallback label only when the wire completely omits any user filename.
+    Never invents fake filenames like document.pdf or spreadsheet.xlsx.
+    """
     kind = ""
     try:
         kind = _classify_upload_kind(raw or b"", content_type, "")
     except Exception:
         kind = ""
-    suffix = f"-{idx + 1}" if (idx > 0 or total_count > 1) else ""
-    return {
-        "pdf": f"document{suffix}.pdf",
-        "zip": f"archive{suffix}.zip",
-        "image": f"image{suffix}.png",
-        "audio": f"voice-note{suffix}.wav" if (raw and raw[:4] == b"RIFF") else f"voice-note{suffix}.m4a",
-        "video": f"video{suffix}.bin",
-        "docx": f"document{suffix}.docx",
-        "xlsx": f"spreadsheet{suffix}.xlsx",
-        "pptx": f"presentation{suffix}.pptx",
-        "plain": f"file{suffix}.txt",
-    }.get(kind, f"attachment{suffix}")
+    suffix = f" {idx + 1}" if (idx > 0 or total_count > 1) else ""
+    if kind == "audio" or (raw and raw[:4] == b"RIFF"):
+        return f"Voice Note{suffix}"
+    return f"attachment{suffix}"
 
 
 def _list_zip_member_basenames(data: bytes, max_names: int = 24) -> list[str]:

@@ -156,6 +156,8 @@ export interface BrowserControlSettings {
 	enabled: boolean;
 	block_upload: boolean;
 	upload_warning?: string;
+	/** Temporary file binary storage retention: 10m | 1h | 2h | 1d | 7d */
+	attachment_retention?: "10m" | "1h" | "2h" | "1d" | "7d" | string;
 	/** When true, search logs older than retention are purged automatically. */
 	search_log_auto_delete?: boolean;
 	/** Retention window: 1d | 7d | 30d | 90d | 180d | 365d */

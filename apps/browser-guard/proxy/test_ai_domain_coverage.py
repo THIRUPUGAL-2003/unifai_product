@@ -76,6 +76,14 @@ AI_DOMAINS = [
      ["/api/organizations/abc/chat_conversations/xyz/completion"],
      ['{"prompt":"hello claude","max_tokens":1024}']),
 
+    ("api.anthropic.com",     "Claude",
+     ["/v1/messages"],
+     ['{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello claude"}]}']),
+
+    ("console.anthropic.com", "Claude",
+     ["/api/organizations/abc/chat_conversations/xyz/completion", "/v1/messages"],
+     ['{"prompt":"test workbench prompt","max_tokens":1024}']),
+
     ("gemini.google.com",     "Gemini",
      ["/_/BardChatUi/data/batchexecute"],
      ['f.req=%5B%5B%5B%22wXbdQc%22']),
@@ -168,6 +176,15 @@ AI_DOMAINS = [
      ["/api/v1/completion"],
      ['{"prompt":"hello","model":"inflection-2"}']),
 ]
+
+# Seed test domains into target cache so detection can be evaluated
+if "_apply_targets_from_data" in NS:
+    NS["_apply_targets_from_data"]({
+        "targets": [
+            {"domain": dom, "platform_name": plat, "monitored": True}
+            for dom, plat, _, _ in AI_DOMAINS
+        ]
+    })
 
 # ─── Test runner ──────────────────────────────────────────────────────────────
 

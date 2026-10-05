@@ -840,7 +840,8 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 	if len(uploadBytes) >= 32 {
 		stored, ctype, storeErr := storeBrowserAIAttachment(logEntry.ID, safeName, uploadBytes, contentTypeHint)
 		if storeErr == nil && stored != "" {
-			exp := time.Now().Add(browserAIAttachmentTTL)
+			ttl, _ := getBrowserAIAttachmentTTL(h.manager)
+			exp := time.Now().Add(ttl)
 			rel := "attachments/" + stored
 			if err := h.manager.UpdateLogAttachmentMeta(ctx, logEntry.ID, safeName, stored, ctype, int64(len(uploadBytes)), rel, &exp); err == nil {
 				logEntry.AttachmentStoredName = stored
@@ -885,26 +886,28 @@ func (h *BrowserAIHandler) getAttachment(ctx *fasthttp.RequestCtx) {
 		name = "attachment"
 	}
 	stored := strings.TrimSpace(logEntry.AttachmentStoredName)
+	ttl, retStr := getBrowserAIAttachmentTTL(h.manager)
+	expiredMsg := fmt.Sprintf("file expired (retention period %s); log and filename remain", retStr)
 	if stored == "" {
-		SendError(ctx, fasthttp.StatusGone, "file expired (available for 10 minutes only); log and filename remain")
+		SendError(ctx, fasthttp.StatusGone, expiredMsg)
 		return
 	}
 	path, err := resolveBrowserAIAttachmentPath(stored)
 	if err != nil {
 		_ = h.manager.ClearLogAttachmentFile(ctx, logEntry.ID)
-		SendError(ctx, fasthttp.StatusGone, "file expired (available for 10 minutes only); log and filename remain")
+		SendError(ctx, fasthttp.StatusGone, expiredMsg)
 		return
 	}
-	if browserAIAttachmentExpired(path) {
+	if browserAIAttachmentExpired(path, ttl) {
 		_ = os.Remove(path)
 		_ = h.manager.ClearLogAttachmentFile(ctx, logEntry.ID)
-		SendError(ctx, fasthttp.StatusGone, "file expired (available for 10 minutes only); log and filename remain")
+		SendError(ctx, fasthttp.StatusGone, expiredMsg)
 		return
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		_ = h.manager.ClearLogAttachmentFile(ctx, logEntry.ID)
-		SendError(ctx, fasthttp.StatusGone, "file expired (available for 10 minutes only); log and filename remain")
+		SendError(ctx, fasthttp.StatusGone, expiredMsg)
 		return
 	}
 	ctype := sniffAttachmentContentType(data, name, logEntry.AttachmentContentType)

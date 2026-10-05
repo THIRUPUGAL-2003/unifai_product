@@ -27,7 +27,10 @@ export const ModelRankingsTabView = forwardRef<ModelRankingsTabViewHandle, Model
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
+	const skipOpts = useMemo(
+		() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+		[active, pollingInterval],
+	);
 
 	const { data: rankingsData, isLoading: loadingRankings } = useGetModelRankingsQuery(fetchArg, skipOpts);
 	const { data: modelData, isLoading: loadingModels } = useGetLogsModelHistogramQuery(fetchArg, skipOpts);

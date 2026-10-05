@@ -66,7 +66,10 @@ export const ProviderUsageTabView = forwardRef<ProviderUsageTabViewHandle, Provi
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
+	const skipOpts = useMemo(
+		() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+		[active, pollingInterval],
+	);
 
 	const { data: providerCostData, isLoading: loadingProviderCost } = useGetLogsProviderCostHistogramQuery(fetchArg, skipOpts);
 	const { data: providerTokenData, isLoading: loadingProviderTokens } = useGetLogsProviderTokenHistogramQuery(fetchArg, skipOpts);

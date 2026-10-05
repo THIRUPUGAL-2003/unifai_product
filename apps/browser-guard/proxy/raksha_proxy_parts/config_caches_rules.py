@@ -31,13 +31,19 @@ from mitmproxy import http
 # Configuration
 # ─────────────────────────────────────────────
 
-# Backend URL — set RAKSHA_BACKEND_URL (compose/agent). No customer domain in source.
-RAKSHA_BACKEND_URL = (os.getenv("RAKSHA_BACKEND_URL") or os.getenv("SERVER_DOMAIN") or "").rstrip("/")
-if not RAKSHA_BACKEND_URL:
-	print(
-		"[Raksha Proxy WARNING] RAKSHA_BACKEND_URL / SERVER_DOMAIN not set — "
-		"set it in .env / compose (do not hardcode domains in source)"
-	)
+# Backend URL — strictly obtained from environment variables (.env). Never hardcode hosts, ports, or domains.
+_env_backend = (os.getenv("RAKSHA_BACKEND_URL") or os.getenv("SERVER_DOMAIN") or "").strip().rstrip("/")
+if not _env_backend:
+	_env_host = (os.getenv("RAKSHA_BACKEND_HOST") or os.getenv("HOST") or "").strip()
+	_env_port = (os.getenv("RAKSHA_BACKEND_PORT") or os.getenv("BACKEND_PORT") or os.getenv("PORT") or "").strip()
+	if _env_host and _env_port:
+		_env_backend = f"http://{_env_host}:{_env_port}"
+	elif _env_host:
+		_env_backend = f"http://{_env_host}"
+
+RAKSHA_BACKEND_URL = _env_backend
+if RAKSHA_BACKEND_URL and not RAKSHA_BACKEND_URL.startswith("http://") and not RAKSHA_BACKEND_URL.startswith("https://"):
+	RAKSHA_BACKEND_URL = f"http://{RAKSHA_BACKEND_URL}"
 RAKSHA_GUARD_SECRET = (os.getenv("RAKSHA_GUARD_SECRET") or os.getenv("GUARD_SECRET_KEY") or "").strip()
 
 
@@ -392,6 +398,8 @@ _CLIENT_TARGET_STICKY_TTL = 10 * 60
 
 def _fetch_json(url: str, timeout: float | None = None) -> dict | None:
     """Generic GET JSON fetch from backend."""
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return None
     try:
         req = urllib.request.Request(url, headers=_backend_headers(), method="GET")
         with urllib.request.urlopen(req, timeout=timeout or _BACKEND_FETCH_TIMEOUT) as resp:
@@ -521,6 +529,8 @@ def _apply_targets_from_data(data: dict) -> None:
 
 
 def _refresh_targets_from_backend() -> None:
+    if not RAKSHA_BACKEND_URL:
+        return
     data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets?for=agent")
     if data is None:
         data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets")
@@ -681,6 +691,8 @@ def get_guard_rules(force_network: bool = False) -> list:
     _ensure_background_config_refresh()
     now = time.time()
     if not force_network and _rules_fetched_at > 0:
+        return _cached_rules
+    if not RAKSHA_BACKEND_URL:
         return _cached_rules
 
     data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/rules?for=agent")
@@ -879,6 +891,8 @@ def get_control_settings(force_network: bool = False) -> dict:
     global _cached_controls, _controls_fetched_at, _controls_from_backend
     _ensure_background_config_refresh()
     if not force_network and _controls_fetched_at > 0:
+        return _cached_controls
+    if not RAKSHA_BACKEND_URL:
         return _cached_controls
 
     data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/controls")

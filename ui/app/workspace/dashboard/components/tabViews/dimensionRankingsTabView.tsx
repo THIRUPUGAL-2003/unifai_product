@@ -22,7 +22,10 @@ interface DimensionRankingsTabViewProps {
 export const DimensionRankingsTabView = forwardRef<DimensionRankingsTabViewHandle, DimensionRankingsTabViewProps>(
 	function DimensionRankingsTabView({ filters, active, dimension, dimensionLabel, testIdPrefix, dataKey, pollingInterval = 0 }, ref) {
 		const fetchArg = useMemo(() => ({ filters, dimension }), [filters, dimension]);
-		const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
+		const skipOpts = useMemo(
+			() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+			[active, pollingInterval],
+		);
 
 		const { data, isLoading: loading } = useGetDimensionRankingsQuery(fetchArg, skipOpts);
 

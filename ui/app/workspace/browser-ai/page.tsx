@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import {
 	Globe,
@@ -43,6 +43,7 @@ import {
 	Send,
 	FileSpreadsheet,
 	KeyRound,
+	Clock,
 } from "lucide-react";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { useGetProvidersQuery } from "@/lib/store/apis/providersApi";
@@ -710,6 +711,7 @@ export default function BrowserAiPage() {
 		enabled: true,
 		block_upload: false,
 		upload_warning: "",
+		attachment_retention: "1h",
 		search_log_auto_delete: false,
 		search_log_retention: "7d",
 		prompt_log_auto_delete: false,
@@ -3342,6 +3344,45 @@ export default function BrowserAiPage() {
 											</p>
 										</div>
 									)}
+								</div>
+
+								{/* Option 3: Temporary file storage retention */}
+								<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3.5 bg-card">
+									<div className="min-w-0 space-y-1">
+										<div className="flex items-center gap-2">
+											<Clock className="h-4 w-4 text-muted-foreground" />
+											<p className="text-sm font-semibold">Temporary file binary storage retention</p>
+											<Badge variant="outline" className="text-[10px] px-2 py-0.5">
+												Disk auto-purge
+											</Badge>
+										</div>
+										<p className="text-xs text-muted-foreground leading-relaxed">
+											How long temporary uploaded files remain viewable/downloadable from disk. Filename and metadata in Prompt Logs are preserved permanently.
+										</p>
+									</div>
+									<div className="flex items-center gap-2 shrink-0">
+										<Select
+											value={
+												["10m", "1h", "2h", "1d", "7d"].includes(controls.attachment_retention || "")
+													? controls.attachment_retention
+													: "1h"
+											}
+											onValueChange={(val) => {
+												void patchControl({ attachment_retention: val });
+											}}
+										>
+											<SelectTrigger className="h-8 w-[140px] text-xs border-border bg-background">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="10m">10 minutes</SelectItem>
+												<SelectItem value="1h">1 hour (Default)</SelectItem>
+												<SelectItem value="2h">2 hours</SelectItem>
+												<SelectItem value="1d">1 day (24h)</SelectItem>
+												<SelectItem value="7d">7 days (1w)</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
 								</div>
 							</div>
 						</CardContent>
