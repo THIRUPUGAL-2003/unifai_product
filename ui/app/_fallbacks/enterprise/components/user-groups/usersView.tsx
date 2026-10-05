@@ -89,9 +89,9 @@ function isWorkspaceAdminRole(role: string): boolean {
 	return role === "admin" || role === "sub_admin";
 }
 
-// Section grants apply to sub_admin role only (scoped workspace access).
+// Section grants apply to user and sub_admin roles. Admin has unrestricted access.
 function sectionGrantsApply(role: string): boolean {
-	return role === "sub_admin";
+	return role !== "admin";
 }
 
 function isUserRole(role: string): boolean {

@@ -91,6 +91,7 @@ export function getScopedWorkspaceSections(
 	if (auth.role === "user") {
 		const parsed = parseAdminAllowedSections(auth.allowed_sections);
 		if (parsed.size > 0) {
+			parsed.add("prompt-repository");
 			return parsed;
 		}
 		return new Set(["prompt-repository"]);
