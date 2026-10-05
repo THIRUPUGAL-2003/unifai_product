@@ -29,7 +29,8 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
-UninstallDisplayName={#MyAppName}
+Uninstallable=no
+CreateUninstallRegKey=no
 CloseApplications=force
 RestartApplications=no
 
@@ -46,17 +47,16 @@ Source: "{src}\raksha_guard_config.json"; DestDir: "{app}"; Flags: external skip
 
 [Icons]
 Name: "{group}\Raksha Guard"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Uninstall Raksha Guard"; Filename: "{uninstallexe}"
+Name: "{group}\Uninstall Raksha Guard"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--uninstall-prompt"
 Name: "{userdesktop}\Raksha Guard"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
 
 [Registry]
 ; Permanent autostart for current user (HKCU) — required so PAC/proxy apply to the logged-in user
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Raksha_Guard"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
 [Run]
-; No skipifsilent — auto-update uses /VERYSILENT and must restart Guard after replace.
-; Via cmd with PYINSTALLER_RESET_ENVIRONMENT: an auto-updating Guard (onefile EXE) launches this
-; installer, and its inherited PyInstaller env would make the new Guard fail
-; ("Security validation failure: parent process has different executable").
+; Run immediately in silent / auto-update mode
+Filename: "{cmd}"; Parameters: "/c set ""PYINSTALLER_RESET_ENVIRONMENT=1"" && start """" ""{app}\{#MyAppExeName}"""; Flags: nowait runhidden skipifnotsilent
+; Checkbox on finish page in interactive mode
 Filename: "{cmd}"; Parameters: "/c set ""PYINSTALLER_RESET_ENVIRONMENT=1"" && start """" ""{app}\{#MyAppExeName}"""; Description: "Start Raksha Guard now"; Flags: nowait postinstall runhidden
 
 [UninstallRun]

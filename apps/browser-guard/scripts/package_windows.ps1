@@ -3,7 +3,7 @@ Set-Location -Path $PSScriptRoot\..
 # 1. Prepare Staging
 New-Item -ItemType Directory -Force -Path 'installer\staging' | Out-Null
 if (-not (Test-Path 'dist\Raksha_Guard.exe')) {
-    Write-Error "dist\Raksha_Guard.exe missing — run installer\build_agent.py (or build_installer.bat) first."
+    Write-Error "dist\Raksha_Guard.exe missing - run installer\build_agent.py (or build_installer.bat) first."
     exit 1
 }
 Copy-Item -Force 'dist\Raksha_Guard.exe' 'installer\staging\Raksha_Guard.exe'
@@ -13,7 +13,7 @@ if (Test-Path 'installer\EMPLOYEE_README.txt') { Copy-Item -Force 'installer\EMP
 if (Test-Path 'release\INSTALL_WINDOWS.txt') { Copy-Item -Force 'release\INSTALL_WINDOWS.txt' 'installer\staging\INSTALL_WINDOWS.txt' }
 if (Test-Path 'release\VERSION.txt') { Copy-Item -Force 'release\VERSION.txt' 'installer\staging\VERSION.txt' }
 
-# 2. Compile Inno Setup (same search order as build_installer.bat — no machine-specific paths)
+# 2. Compile Inno Setup (same search order as build_installer.bat - no machine-specific paths)
 $isccCandidates = @(
     (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
     'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
