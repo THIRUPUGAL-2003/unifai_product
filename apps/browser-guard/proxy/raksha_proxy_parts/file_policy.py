@@ -140,6 +140,8 @@ def enforce_file_send_policy(
                         break
         if not hint:
             hint = "attachment"
+        elif " -- $" in hint:
+            hint = hint.split(" -- $", 1)[0].strip()
         if (
             hint == "attachment"
             and not _extract_file_ids_from_chat(raw_text or "")
@@ -382,6 +384,18 @@ def enforce_file_send_policy(
             if looks_like_user_prompt(t) and not _looks_like_filename_only(t):
                 caption = t
                 break
+
+    if caption:
+        c_clean = caption.strip()
+        if (
+            not looks_like_user_prompt(c_clean)
+            or _is_chat_metadata_token(c_clean)
+            or _UUID_LIKE_RE.search(c_clean)
+            or (c_clean.startswith("$") and (len(c_clean) >= 12 or "-" in c_clean))
+            or _looks_like_filename_only(c_clean)
+            or _is_opaque_wire_blob(c_clean)
+        ):
+            caption = ""
 
     cached_list = _trim_phantom_upload_caches(
         cached_list,
@@ -709,9 +723,22 @@ def enforce_file_send_policy(
 
     n_files = len(file_rows)
     # Prompt Logs format: realname.pdf -- typed caption  (Claude-style, all Targets)
+    if caption:
+        c_clean = caption.strip()
+        if (
+            not looks_like_user_prompt(c_clean)
+            or _is_chat_metadata_token(c_clean)
+            or _UUID_LIKE_RE.search(c_clean)
+            or (c_clean.startswith("$") and (len(c_clean) >= 12 or "-" in c_clean))
+            or _looks_like_filename_only(c_clean)
+            or _is_opaque_wire_blob(c_clean)
+        ):
+            caption = ""
     caption_bit = f" -- {caption}" if caption else ""
 
     for idx, row in enumerate(file_rows):
+        if " -- $" in row.get("file_label", ""):
+            row["file_label"] = row["file_label"].split(" -- $", 1)[0].strip()
         tag = _upload_log_tag(row["file_label"], row["cached_ct"], row["cached_bytes"])
         row_text = (row.get("scanned") or "").strip()
         row_imgs = row.get("upload_images") or []
@@ -869,6 +896,12 @@ def _extract_file_send_user_caption(
         if re.fullmatch(r"[a-z][a-z0-9_]{2,40}", low) and "_" in low:
             return  # snake_case schema keys, not typed chat
         if not looks_like_user_prompt(t):
+            return
+        if _is_chat_metadata_token(t):
+            return
+        if _UUID_LIKE_RE.search(t):
+            return
+        if t.startswith("$") and (re.search(r"[0-9a-fA-F]{4,}", t) or "-" in t):
             return
         if _looks_like_document_body_dump(t):
             return

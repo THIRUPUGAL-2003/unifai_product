@@ -214,6 +214,7 @@ IGNORE_PATH_PATTERNS = [
     "/search/v2/navigate", "/rest/rate_limits", "/api/event",
     "/api/telemetry", "/api/analytics", "/api/stats",
     "/streamtimeline", "/reportviewing", "/report_viewing", "/event_logging",
+    "/getconversation", "/listconversations", "/recordaction",
 ]
 
 # Only these path markers are treated as real submitted chat prompts
@@ -251,7 +252,7 @@ CHAT_PATH_MARKERS = [
     "/chat_conversations", "/completion_messages",
     "/rest/chat", "/api/conversation", "/api/completions",
     "/api/v1/chat/completions", "/ask/stream", "/search/sse",
-    "/claudeai-rpc", "/anthropic.", "/performaction", "/perform_action",
+    "/anthropic.", "/performaction", "/perform_action",
     # DeepSeek web + API (chat.deepseek.com)
     "/api/v0/chat/completion", "/api/v0/chat/completions",
     "/chat/completion", "/powerchat", "/create_chat_completion",
@@ -1201,18 +1202,17 @@ def _path_has_ignore_pattern(path: str) -> bool:
         n = (n or "").lower()
         if not n:
             continue
-        if n.endswith("/"):
-            if n in p:
-                return True
+        token = n.strip("/")
+        if not token:
             continue
         idx = 0
         while True:
-            idx = p.find(n, idx)
+            idx = p.find(token, idx)
             if idx < 0:
                 break
-            before_ok = idx == 0 or p[idx - 1] == "/"
-            after_idx = idx + len(n)
-            after_ok = after_idx >= len(p) or p[after_idx] in "/?"
+            before_ok = idx == 0 or p[idx - 1] in "/._-"
+            after_idx = idx + len(token)
+            after_ok = after_idx >= len(p) or p[after_idx] in "/?._-"
             if before_ok and after_ok:
                 return True
             idx += 1
@@ -1384,7 +1384,7 @@ def _is_digit_heavy_user_text(text: str) -> bool:
     if not t:
         return False
     # Hex UUIDs / action tokens are wire IDs, not user numbers
-    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.I):
+    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", t, re.I):
         return False
     digits = sum(1 for c in t if c.isdigit())
     if digits < 1:
@@ -1465,10 +1465,10 @@ def _is_opaque_wire_blob(text: str) -> bool:
         return True
     if t.startswith(("{", "[")):
         return False
-    # UUID or React Flight Action ID token e.g. $a74604b4-54f3-43da-8962-990f7883a6ad or 74604b4-54f3-...
-    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.I):
+    # UUID or React Flight Action ID token e.g. $a74604b4-54f3-43da-8962-990f7883a6ad, $542aef20-... or 74604b4-54f3-...
+    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", t, re.I):
         return True
-    if t.startswith(("$a", "$@", "$F", "$L")) and len(t) >= 16 and " " not in t:
+    if t.startswith(("$a", "$@", "$F", "$L", "$")) and len(t) >= 16 and " " not in t and "-" in t:
         return True
     if _is_typed_numeric_prompt(t) or _is_digit_heavy_user_text(t):
         return False

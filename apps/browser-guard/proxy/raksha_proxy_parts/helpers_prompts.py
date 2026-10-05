@@ -7,7 +7,9 @@ import urllib.parse
 def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     """Detect Claude / Anthropic chat submit from request path or JSON body — not hostname."""
     path_l = (path or "").lower()
-    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion", "claudeai-rpc", "anthropic.", "performaction")):
+    if _path_has_ignore_pattern(path_l):
+        return False
+    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion", "performaction")):
         return True
     if not body or not body.lstrip().startswith("{"):
         return False
@@ -444,10 +446,10 @@ def looks_like_user_prompt(text: str) -> bool:
     # Filter tokens and RPC IDs when text has no spaces.
     # Digit-only text is a valid user prompt (IDs, math, OTPs). Do not drop it.
     if " " not in t:
-        # UUIDs or React Server Action tokens (e.g. $a74604b4-54f3-43da-8962-990f7883a6ad or 74604b4-54f3-...)
-        if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.IGNORECASE):
+        # UUIDs or React Server Action tokens (e.g. $a74604b4-54f3-43da-8962-990f7883a6ad, $542aef20-... or 74604b4-54f3-...)
+        if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", t, re.IGNORECASE):
             return False
-        if t.startswith(("$a", "$@", "$F", "$L")) and len(t) >= 16:
+        if t.startswith(("$a", "$@", "$F", "$L", "$")) and len(t) >= 16 and "-" in t:
             return False
         # Gemini session / client tokens: _05Zravx, _a1B2c3d4
         if re.fullmatch(r"_[0-9A-Za-z]{4,24}", t):
@@ -758,16 +760,38 @@ _CHAT_METADATA_JUNK = frozenset({
     "parts", "author", "metadata", "recipient", "client", "server", "ping", "pong",
     "null", "undefined", "true", "false", "default", "model", "parent", "child",
     "chatgpt", "gpt-4", "gpt-4o", "gpt-3.5", "o1", "o3", "thinking", "standard",
+    "claude", "haiku", "sonnet", "opus", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-7-sonnet",
 })
+
+_TIMEZONE_RE = re.compile(
+    r"^(?:Africa|America|Antarctica|Arctic|Asia|Atlantic|Australia|Europe|Indian|Pacific|UTC|GMT)(?:/[\w_-]+)+$",
+    re.IGNORECASE,
+)
+_SESSION_ID_RE = re.compile(r"^(?:sess|session|sid|device|req|msg)_[0-9a-zA-Z_-]+$", re.IGNORECASE)
+_TIMESTAMP_SEQ_RE = re.compile(r"^\d{10,}(?:-\d+)?$")
+_UUID_LIKE_RE = re.compile(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", re.I)
 
 
 def _is_chat_metadata_token(text: str) -> bool:
-    t = (text or "").strip().lower()
+    t = (text or "").strip()
+    t_l = t.lower()
     if not t:
         return True
-    if t in _CHAT_METADATA_JUNK:
+    if t_l in _CHAT_METADATA_JUNK:
         return True
-    if re.fullmatch(r"gpt[-\d\.]+[a-z]*", t):
+    if re.fullmatch(r"gpt[-\d\.]+[a-z]*", t_l) or re.fullmatch(r"claude[-\d\.]+[a-z]*", t_l):
+        return True
+    if any(ord(c) < 32 and c not in "\n\r\t" for c in t):
+        return True
+    if len(t) == 1 and not t.isalnum():
+        return True
+    if _TIMEZONE_RE.match(t):
+        return True
+    if _SESSION_ID_RE.match(t):
+        return True
+    if _TIMESTAMP_SEQ_RE.match(t):
+        return True
+    if _UUID_LIKE_RE.search(t):
         return True
     return False
 
@@ -784,7 +808,7 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
             continue
         if _is_opaque_wire_blob(got) or _is_internal_wire_text(got) or _is_chat_metadata_token(got):
             continue
-        if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", got, re.I):
+        if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", got, re.I):
             continue
         score = len(got)
         if " " in got:
@@ -1645,7 +1669,7 @@ def _prompt_from_json_string(sval: str) -> str | None:
     return _deep_extract_from_json(data) or _extract_from_json(data)
 
 
-_UUID_LEAF = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+_UUID_LEAF = re.compile(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", re.I)
 _ID_LEAF = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,40}")
 
 
@@ -2040,11 +2064,9 @@ def _is_claude_wire_noise(s: str) -> bool:
     t = (s or "").strip()
     if not t:
         return True
-    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", t, re.I):
+    if _is_chat_metadata_token(t):
         return True
-    if "organizations/" in t or "chat_conversations/" in t:
-        return True
-    if any(x in t for x in ("anthropic.", "ConversationService", "PerformAction", "ReportViewing")):
+    if any(x in t for x in ("anthropic.", "ConversationService", "PerformAction", "ReportViewing", "GetConversation", "ListConversations", "RecordAction")):
         return True
     if t.startswith("claude-") or t.startswith("anthropic-"):
         return True
@@ -2056,7 +2078,7 @@ def _is_claude_wire_noise(s: str) -> bool:
         return True
     if t.isupper() and "_" in t and len(t) < 40:
         return True
-    if _is_internal_wire_text(t) or _is_opaque_wire_blob(t) or _is_chat_metadata_token(t):
+    if _is_internal_wire_text(t) or _is_opaque_wire_blob(t):
         return True
     return False
 
@@ -2078,6 +2100,8 @@ def extract_connect_rpc_prompt(body_bytes: bytes, content_type: str = "", host: 
     if not body_bytes or len(body_bytes) < 4:
         return None
     url_l = (url or "").lower()
+    if _path_has_ignore_pattern(url_l):
+        return None
     ct_l = (content_type or "").lower()
 
     is_rpc = (
