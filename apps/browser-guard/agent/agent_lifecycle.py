@@ -15,6 +15,7 @@ from agent_pac_orchestration import clear_guard_runtime
 from guard_platform import (
     IS_MAC,
     IS_WIN,
+    data_dir,
     log_hint_path,
     prompt_uninstall_key as platform_prompt_uninstall_key,
     show_message as platform_show_message,
@@ -130,7 +131,21 @@ def schedule_install_removal() -> None:
                 if parent and parent.lower().endswith("\\raksha"):
                     parts.append(f'rmdir "{parent}" 2>nul')
             # Clean up the uninstalled device identity so a future reinstall generates a fresh active ID
-            parts.append(f'del /f /q "{os.path.join(data_dir(), "agent_id.txt")}" 2>nul')
+            try:
+                parts.append(f'del /f /q "{os.path.join(data_dir(), "agent_id.txt")}" 2>nul')
+            except Exception:
+                pass
+            # Clean up Windows Installed Apps / Control Panel entry & autostart
+            parts.append(r'reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}" /f >nul 2>&1')
+            parts.append(r'reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "Raksha_Guard" /f >nul 2>&1')
+            appdata = os.environ.get("APPDATA", "")
+            if appdata:
+                sm_group = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Raksha Guard")
+                parts.append(f'rmdir /s /q "{sm_group}" 2>nul')
+            userprofile = os.environ.get("USERPROFILE", "")
+            if userprofile:
+                desktop_lnk = os.path.join(userprofile, "Desktop", "Raksha Guard.lnk")
+                parts.append(f'del /f /q "{desktop_lnk}" 2>nul')
             cmd = " & ".join(parts)
             # Both STARTUPINFO(SW_HIDE) and CREATE_NO_WINDOW: completely hides cmd/ping/taskkill
             # on Windows 10 and Windows 11 (prevents Windows Terminal popup).
@@ -240,14 +255,22 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
 
 
 def run_uninstall_prompt() -> int:
-    if remote_uninstall_authorized(get_or_create_agent_id()):
+    agent_id = get_or_create_agent_id()
+    if remote_uninstall_authorized(agent_id):
         print("[Raksha Guard] Uninstall already approved by admin — no key needed.")
         clear_guard_runtime()
+        schedule_install_removal()
+        show_message("Raksha Guard", "Raksha Guard has been uninstalled successfully.")
         return 0
     key = prompt_uninstall_key()
     if key is None:
         print("[Raksha Guard] Uninstall cancelled by user.")
         return 3
-    # When called from Inno Setup uninstaller, Inno Setup itself deletes the files/folder.
-    # schedule_cleanup=False avoids launching a separate background cmd process that fights Inno.
-    return run_uninstall(key, schedule_cleanup=False)
+    code = run_uninstall(key, schedule_cleanup=True)
+    if code == 0:
+        show_message("Raksha Guard", "Raksha Guard has been uninstalled successfully.")
+    elif code == 2:
+        show_message("Raksha Guard", "Invalid uninstall key. Please contact your administrator.", flags=0x10)
+    elif code == 1:
+        show_message("Raksha Guard", "Could not reach server to verify uninstall key. Please check your network connection.", flags=0x10)
+    return code

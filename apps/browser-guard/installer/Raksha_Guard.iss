@@ -52,7 +52,19 @@ Name: "{userdesktop}\Raksha Guard"; Filename: "{app}\{#MyAppExeName}"; Tasks: au
 
 [Registry]
 ; Permanent autostart for current user (HKCU) — required so PAC/proxy apply to the logged-in user
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Raksha_Guard"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Raksha_Guard"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: autostart
+; Windows Control Panel ("Programs and Features") & Windows Settings ("Installed Apps") registration
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "DisplayName"; ValueData: "{#MyAppName}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "{#MyAppVersion}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "Publisher"; ValueData: "{#MyAppPublisher}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "DisplayIcon"; ValueData: "{app}\{#MyAppExeName}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "UninstallString"; ValueData: """{app}\{#MyAppExeName}"" --uninstall-prompt"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "QuietUninstallString"; ValueData: """{app}\{#MyAppExeName}"" --uninstall"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "HelpLink"; ValueData: "{#MyAppURL}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "URLInfoAbout"; ValueData: "{#MyAppURL}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoModify"; ValueData: 1
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoRepair"; ValueData: 1
 [Run]
 ; Run immediately in silent / auto-update mode
 Filename: "{cmd}"; Parameters: "/c set ""PYINSTALLER_RESET_ENVIRONMENT=1"" && start """" ""{app}\{#MyAppExeName}"""; Flags: nowait runhidden skipifnotsilent
