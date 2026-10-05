@@ -9,7 +9,6 @@ import { SettingsPanel } from "./fragments/settingsPanel";
 import { DeleteFolderDialog, DeletePromptDialog } from "./components/alerts";
 import { PromptSheets } from "./components/sheets";
 import { PromptAccessDialog } from "./components/promptAccessDialog";
-import { PromptFilterSidebar } from "./components/promptFilterSidebar";
 import { EmptyState, PromptsEmptyState } from "./components/emptyState";
 import PromptsViewHeader from "./components/promptsViewHeader";
 import { usePromptContext } from "./context";
@@ -62,10 +61,7 @@ export default function PromptsView() {
 				<ResizableHandle className="mr-1 bg-transparent" />
 
 				<ResizablePanel defaultSize={80} minSize={50} className="overflow-hidden">
-					<div className="flex h-full w-full">
-						{!isUserRole && <PromptFilterSidebar />}
-
-						<div className="bg-card flex-1 h-full min-w-0 overflow-hidden rounded-md">
+					<div className="bg-card h-full w-full min-w-0 overflow-hidden rounded-md">
 							{selectedPromptId ? (
 								<div className="flex h-full flex-col">
 									<PromptsViewHeader />
@@ -99,7 +95,6 @@ export default function PromptsView() {
 								</div>
 							)}
 						</div>
-					</div>
 				</ResizablePanel>
 			</ResizablePanelGroup>
 		</div>

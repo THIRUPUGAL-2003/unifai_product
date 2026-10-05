@@ -95,8 +95,9 @@ type BusinessUnitGovernance struct {
 
 // UserGovernance holds governance data for a user (enterprise-only)
 type UserGovernance struct {
-	BudgetID    *string `json:"budget_id,omitempty"`
-	RateLimitID *string `json:"rate_limit_id,omitempty"`
+	BudgetID    *string  `json:"budget_id,omitempty"`
+	RateLimitID *string  `json:"rate_limit_id,omitempty"`
+	TeamIDs     []string `json:"team_ids,omitempty"`
 }
 
 // BudgetAndRateLimitStatus represents the current budget and rate limit usage state
@@ -2616,14 +2617,25 @@ func (gs *LocalGovernanceStore) rebuildInMemoryStructures(ctx context.Context, c
 	// Prefer explicit user BudgetID/RateLimitID columns when present.
 	if gs.configStore != nil {
 		if dbUsers, err := gs.configStore.GetUsers(ctx); err == nil {
+			ws, _ := configstore.AsWorkspaceStore(gs.configStore)
 			for _, u := range dbUsers {
 				if u == nil || u.ID == "" {
 					continue
 				}
-				if u.BudgetID == nil && u.RateLimitID == nil {
+				var teamIDs []string
+				if ws != nil {
+					if links, lErr := ws.ListTeamsForUser(ctx, u.ID); lErr == nil && len(links) > 0 {
+						for _, l := range links {
+							if l.TeamID != "" {
+								teamIDs = append(teamIDs, l.TeamID)
+							}
+						}
+					}
+				}
+				if u.BudgetID == nil && u.RateLimitID == nil && len(teamIDs) == 0 {
 					continue
 				}
-				ug := &UserGovernance{BudgetID: u.BudgetID, RateLimitID: u.RateLimitID}
+				ug := &UserGovernance{BudgetID: u.BudgetID, RateLimitID: u.RateLimitID, TeamIDs: teamIDs}
 				gs.users.Store(u.ID, ug)
 			}
 		}
@@ -2837,18 +2849,32 @@ func (gs *LocalGovernanceStore) collectRateLimitsFromHierarchy(ctx context.Conte
 
 	teamID := gs.billedTeam(ctx, vk)
 	if teamID != "" {
+		var teamRateLimitID *string
 		if teamValue, exists := gs.teams.Load(teamID); exists && teamValue != nil {
 			if team, ok := teamValue.(*configstoreTables.TableTeam); ok && team != nil {
-				addRateLimit("Team", team.RateLimitID)
+				teamRateLimitID = team.RateLimitID
 			}
 		}
+		if teamRateLimitID == nil && gs.configStore != nil {
+			if dbTeam, err := gs.configStore.GetTeam(ctx, teamID); err == nil && dbTeam != nil {
+				teamRateLimitID = dbTeam.RateLimitID
+			}
+		}
+		addRateLimit("Team", teamRateLimitID)
 	}
 	for _, cid := range gs.billedCustomerIDs(ctx, vk, teamID) {
+		var customerRateLimitID *string
 		if customerValue, exists := gs.customers.Load(cid); exists && customerValue != nil {
 			if customer, ok := customerValue.(*configstoreTables.TableCustomer); ok && customer != nil {
-				addRateLimit("Customer", customer.RateLimitID)
+				customerRateLimitID = customer.RateLimitID
 			}
 		}
+		if customerRateLimitID == nil && gs.configStore != nil {
+			if dbCustomer, err := gs.configStore.GetCustomer(ctx, cid); err == nil && dbCustomer != nil {
+				customerRateLimitID = dbCustomer.RateLimitID
+			}
+		}
+		addRateLimit("Customer", customerRateLimitID)
 	}
 	return rateLimitsWithCategories
 }
@@ -2859,18 +2885,39 @@ const (
 	governanceUserTeamIDsContextKey schemas.RakshaContextKey = "raksha-governance-user-team-ids"
 )
 
+func extractUserIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if uid, ok := ctx.Value(schemas.RakshaContextKeyUserID).(string); ok && uid != "" {
+		return uid
+	}
+	if uid, ok := ctx.Value(string(schemas.RakshaContextKeyUserID)).(string); ok && uid != "" {
+		return uid
+	}
+	if uid, ok := ctx.Value("user_id").(string); ok && uid != "" {
+		return uid
+	}
+	return ""
+}
+
 // vkTeamIDs returns the VK's linked teams, primary team first, without duplicates.
 func vkTeamIDs(vk *configstoreTables.TableVirtualKey) []string {
 	if vk == nil {
 		return nil
 	}
-	ids := make([]string, 0, len(vk.Teams)+1)
+	ids := make([]string, 0, len(vk.Teams)+len(vk.TeamIDs)+1)
 	if tid := teamIDFromVK(vk); tid != "" {
 		ids = append(ids, tid)
 	}
 	for _, t := range vk.Teams {
 		if t.ID != "" && !slices.Contains(ids, t.ID) {
 			ids = append(ids, t.ID)
+		}
+	}
+	for _, tid := range vk.TeamIDs {
+		if tid != "" && !slices.Contains(ids, tid) {
+			ids = append(ids, tid)
 		}
 	}
 	return ids
@@ -2881,7 +2928,7 @@ func vkCustomerIDs(vk *configstoreTables.TableVirtualKey) []string {
 	if vk == nil {
 		return nil
 	}
-	ids := make([]string, 0, len(vk.Customers)+1)
+	ids := make([]string, 0, len(vk.Customers)+len(vk.CustomerIDs)+1)
 	if vk.CustomerID != nil && *vk.CustomerID != "" {
 		ids = append(ids, *vk.CustomerID)
 	} else if vk.Customer != nil && vk.Customer.ID != "" {
@@ -2890,6 +2937,11 @@ func vkCustomerIDs(vk *configstoreTables.TableVirtualKey) []string {
 	for _, c := range vk.Customers {
 		if c.ID != "" && !slices.Contains(ids, c.ID) {
 			ids = append(ids, c.ID)
+		}
+	}
+	for _, cid := range vk.CustomerIDs {
+		if cid != "" && !slices.Contains(ids, cid) {
+			ids = append(ids, cid)
 		}
 	}
 	return ids
@@ -2927,6 +2979,29 @@ func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreT
 		return ""
 	}
 	member, _ := ctx.Value(governanceUserTeamIDsContextKey).([]string)
+	if len(member) == 0 {
+		userID := extractUserIDFromContext(ctx)
+		if userID != "" {
+			if ug, ok := gs.GetUserGovernance(ctx, userID); ok && ug != nil && len(ug.TeamIDs) > 0 {
+				for _, tid := range ug.TeamIDs {
+					if !slices.Contains(member, tid) {
+						member = append(member, tid)
+					}
+				}
+			}
+			if len(member) == 0 && gs.configStore != nil {
+				if ws, ok := configstore.AsWorkspaceStore(gs.configStore); ok && ws != nil {
+					if links, err := ws.ListTeamsForUser(ctx, userID); err == nil {
+						for _, l := range links {
+							if l.TeamID != "" && !slices.Contains(member, l.TeamID) {
+								member = append(member, l.TeamID)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	for _, tid := range member {
 		if cid := gs.teamCustomerID(nil, tid); cid != "" && slices.Contains(customers, cid) {
 			return tid
@@ -2958,17 +3033,35 @@ func (gs *LocalGovernanceStore) billedCustomerIDs(ctx context.Context, vk *confi
 }
 
 func (gs *LocalGovernanceStore) teamCustomerID(vk *configstoreTables.TableVirtualKey, teamID string) string {
+	if teamID == "" {
+		return ""
+	}
 	if v, ok := gs.teams.Load(teamID); ok && v != nil {
-		if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil && team.CustomerID != nil {
-			return *team.CustomerID
+		if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil {
+			if team.CustomerID != nil && *team.CustomerID != "" {
+				return *team.CustomerID
+			}
+			if team.Customer != nil && team.Customer.ID != "" {
+				return team.Customer.ID
+			}
 		}
 	}
 	if vk != nil && vk.Team != nil && vk.Team.ID == teamID {
-		if vk.Team.CustomerID != nil {
+		if vk.Team.CustomerID != nil && *vk.Team.CustomerID != "" {
 			return *vk.Team.CustomerID
 		}
-		if vk.Team.Customer != nil {
+		if vk.Team.Customer != nil && vk.Team.Customer.ID != "" {
 			return vk.Team.Customer.ID
+		}
+	}
+	if gs.configStore != nil {
+		if team, err := gs.configStore.GetTeam(context.Background(), teamID); err == nil && team != nil {
+			if team.CustomerID != nil && *team.CustomerID != "" {
+				return *team.CustomerID
+			}
+			if team.Customer != nil && team.Customer.ID != "" {
+				return team.Customer.ID
+			}
 		}
 	}
 	return ""
@@ -3107,23 +3200,46 @@ func (gs *LocalGovernanceStore) collectBudgetsFromHierarchy(ctx context.Context,
 					entityWiseBudgets[category] = append(entityWiseBudgets[category], budget)
 					seen[budget.ID] = true
 				}
+			} else {
+				bCopy := b
+				gs.budgets.Store(b.ID, &bCopy)
+				entityWiseBudgets[category] = append(entityWiseBudgets[category], &bCopy)
+				seen[b.ID] = true
 			}
 		}
 	}
 	// One team and at most one customer per request (see billedTeamID / billedCustomerIDs).
 	teamID := gs.billedTeam(ctx, vk)
 	if teamID != "" {
+		var teamBudgets []configstoreTables.TableBudget
 		if teamValue, exists := gs.teams.Load(teamID); exists && teamValue != nil {
 			if team, ok := teamValue.(*configstoreTables.TableTeam); ok && team != nil {
-				addBudgets("Team", team.Budgets)
+				teamBudgets = team.Budgets
 			}
+		}
+		if len(teamBudgets) == 0 && gs.configStore != nil {
+			if dbTeam, err := gs.configStore.GetTeam(ctx, teamID); err == nil && dbTeam != nil {
+				teamBudgets = dbTeam.Budgets
+			}
+		}
+		if len(teamBudgets) > 0 {
+			addBudgets("Team", teamBudgets)
 		}
 	}
 	for _, cid := range gs.billedCustomerIDs(ctx, vk, teamID) {
+		var customerBudgets []configstoreTables.TableBudget
 		if customerValue, exists := gs.customers.Load(cid); exists && customerValue != nil {
 			if customer, ok := customerValue.(*configstoreTables.TableCustomer); ok && customer != nil {
-				addBudgets("Customer", customer.Budgets)
+				customerBudgets = customer.Budgets
 			}
+		}
+		if len(customerBudgets) == 0 && gs.configStore != nil {
+			if dbCustomer, err := gs.configStore.GetCustomer(ctx, cid); err == nil && dbCustomer != nil {
+				customerBudgets = dbCustomer.Budgets
+			}
+		}
+		if len(customerBudgets) > 0 {
+			addBudgets("Customer", customerBudgets)
 		}
 	}
 	return entityWiseBudgets

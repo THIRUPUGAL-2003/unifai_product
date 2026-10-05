@@ -1224,6 +1224,193 @@ func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
 	}
 }
 
+// TestSCIMDisplayNameMapping_EntraOktaKeycloak tests that Microsoft Entra ID, Okta,
+// and Keycloak user provisioning correctly stores the human-readable Display Name
+// as user.Username and the email/UPN as user.Email, with role defaulting to "user".
+func TestSCIMDisplayNameMapping_EntraOktaKeycloak(t *testing.T) {
+	store := newSCIMTestStore()
+	handler := &WorkspaceHandler{
+		workspace: store,
+		store: &lib.Config{
+			ConfigStore: store,
+		},
+	}
+	testBearer := "test-bearer-token-entra-display"
+	scimCfg := scimConfigPayload{
+		Enabled:     true,
+		Provider:    "entra",
+		BearerToken: testBearer,
+		Config:      map[string]any{},
+	}
+	raw, _ := json.Marshal(scimCfg)
+	_ = store.UpsertWorkspaceSetting(nil, configstore.WorkspaceSettingSCIM, string(raw))
 
+	authMiddleware := handler.scimMiddleware()
+	runWithAuth := func(h fasthttp.RequestHandler, method, uri, token string, body any) *fasthttp.RequestCtx {
+		ctx := &fasthttp.RequestCtx{}
+		ctx.Request.Header.SetMethod(method)
+		ctx.Request.SetRequestURI(uri)
+		if token != "" {
+			ctx.Request.Header.Set("Authorization", "Bearer "+token)
+		}
+		if body != nil {
+			rawBody, _ := json.Marshal(body)
+			ctx.Request.SetBody(rawBody)
+			ctx.Request.Header.Set("Content-Type", "application/json")
+		}
+		authMiddleware(h)(ctx)
+		return ctx
+	}
 
+	// 1. Entra ID provisions "Admin YesPanchi"
+	var entraUserID string
+	{
+		payload := map[string]any{
+			"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
+			"userName":    "admin@yespanchi.com",
+			"displayName": "Admin YesPanchi",
+			"externalId":  "entra-uid-yespanchi-1",
+			"active":      true,
+			"emails": []map[string]any{
+				{"value": "admin@yespanchi.com", "primary": true, "type": "work"},
+			},
+		}
+		ctx := runWithAuth(handler.scimCreateUser, "POST", "/scim/v2/Users", testBearer, payload)
+		if ctx.Response.StatusCode() != http.StatusCreated {
+			t.Fatalf("Failed to create Entra user, got %d body=%s", ctx.Response.StatusCode(), string(ctx.Response.Body()))
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(ctx.Response.Body(), &resp)
+		entraUserID = resp["id"].(string)
 
+		if resp["displayName"] != "Admin YesPanchi" {
+			t.Fatalf("Expected displayName Admin YesPanchi in SCIM response, got %v", resp["displayName"])
+		}
+		if resp["userName"] != "admin@yespanchi.com" {
+			t.Fatalf("Expected userName admin@yespanchi.com in SCIM response, got %v", resp["userName"])
+		}
+
+		// Check in DB
+		dbUser, err := store.GetUserByID(nil, entraUserID)
+		if err != nil || dbUser == nil {
+			t.Fatalf("User not found in store: %v", err)
+		}
+		if dbUser.Username != "Admin YesPanchi" {
+			t.Errorf("Expected DB Username 'Admin YesPanchi', got '%s'", dbUser.Username)
+		}
+		if dbUser.Email != "admin@yespanchi.com" {
+			t.Errorf("Expected DB Email 'admin@yespanchi.com', got '%s'", dbUser.Email)
+		}
+		if dbUser.Role != "user" {
+			t.Errorf("Expected default DB Role 'user', got '%s'", dbUser.Role)
+		}
+	}
+
+	// 2. Query by userName filter and displayName filter
+	{
+		ctx := runWithAuth(handler.scimListUsers, "GET", `/scim/v2/Users?filter=userName%20eq%20"admin@yespanchi.com"`, testBearer, nil)
+		if ctx.Response.StatusCode() != http.StatusOK {
+			t.Fatalf("Failed to filter user by userName, got %d", ctx.Response.StatusCode())
+		}
+		var listResp map[string]any
+		_ = json.Unmarshal(ctx.Response.Body(), &listResp)
+		if int(listResp["totalResults"].(float64)) != 1 {
+			t.Fatalf("Expected 1 result for userName eq query, got %v", listResp["totalResults"])
+		}
+
+		// DisplayName filter
+		ctx2 := runWithAuth(handler.scimListUsers, "GET", `/scim/v2/Users?filter=displayName%20eq%20"Admin YesPanchi"`, testBearer, nil)
+		if ctx2.Response.StatusCode() != http.StatusOK {
+			t.Fatalf("Failed to filter user by displayName, got %d", ctx2.Response.StatusCode())
+		}
+		var listResp2 map[string]any
+		_ = json.Unmarshal(ctx2.Response.Body(), &listResp2)
+		if int(listResp2["totalResults"].(float64)) != 1 {
+			t.Fatalf("Expected 1 result for displayName eq query, got %v", listResp2["totalResults"])
+		}
+	}
+
+	// 3. Okta provisions "Balaji R"
+	{
+		payload := map[string]any{
+			"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
+			"userName":    "balaji@yespanchi.com",
+			"displayName": "Balaji R",
+			"externalId":  "okta-uid-balaji",
+			"active":      true,
+			"emails": []map[string]any{
+				{"value": "balaji@yespanchi.com", "primary": true},
+			},
+		}
+		ctx := runWithAuth(handler.scimCreateUser, "POST", "/scim/v2/Users", testBearer, payload)
+		if ctx.Response.StatusCode() != http.StatusCreated {
+			t.Fatalf("Failed to create Okta user, got %d body=%s", ctx.Response.StatusCode(), string(ctx.Response.Body()))
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(ctx.Response.Body(), &resp)
+		uid := resp["id"].(string)
+
+		dbUser, _ := store.GetUserByID(nil, uid)
+		if dbUser.Username != "Balaji R" {
+			t.Errorf("Expected DB Username 'Balaji R', got '%s'", dbUser.Username)
+		}
+		if dbUser.Email != "balaji@yespanchi.com" {
+			t.Errorf("Expected DB Email 'balaji@yespanchi.com', got '%s'", dbUser.Email)
+		}
+	}
+
+	// 4. Keycloak provisions "Chithriya Vijayan"
+	{
+		payload := map[string]any{
+			"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
+			"userName":    "chithriya",
+			"displayName": "Chithriya Vijayan",
+			"externalId":  "keycloak-uid-chithriya",
+			"active":      true,
+			"emails": []map[string]any{
+				{"value": "chithriya.vijayan@yespanchi.com", "primary": true},
+			},
+		}
+		ctx := runWithAuth(handler.scimCreateUser, "POST", "/scim/v2/Users", testBearer, payload)
+		if ctx.Response.StatusCode() != http.StatusCreated {
+			t.Fatalf("Failed to create Keycloak user, got %d body=%s", ctx.Response.StatusCode(), string(ctx.Response.Body()))
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(ctx.Response.Body(), &resp)
+		uid := resp["id"].(string)
+
+		dbUser, _ := store.GetUserByID(nil, uid)
+		if dbUser.Username != "Chithriya Vijayan" {
+			t.Errorf("Expected DB Username 'Chithriya Vijayan', got '%s'", dbUser.Username)
+		}
+		if dbUser.Email != "chithriya.vijayan@yespanchi.com" {
+			t.Errorf("Expected DB Email 'chithriya.vijayan@yespanchi.com', got '%s'", dbUser.Email)
+		}
+	}
+
+	// 5. Entra updates displayName via PATCH
+	{
+		patch := map[string]any{
+			"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+			"Operations": []map[string]any{
+				{
+					"op":    "replace",
+					"path":  "displayName",
+					"value": "Admin YesPanchi (Lead)",
+				},
+			},
+		}
+		ctx := runWithAuth(func(c *fasthttp.RequestCtx) {
+			c.SetUserValue("id", entraUserID)
+			handler.scimPatchUser(c)
+		}, "PATCH", "/scim/v2/Users/"+entraUserID, testBearer, patch)
+
+		if ctx.Response.StatusCode() != http.StatusOK {
+			t.Fatalf("Failed to patch user displayName, got %d body=%s", ctx.Response.StatusCode(), string(ctx.Response.Body()))
+		}
+		dbUser, _ := store.GetUserByID(nil, entraUserID)
+		if dbUser.Username != "Admin YesPanchi (Lead)" {
+			t.Fatalf("Expected patched Username 'Admin YesPanchi (Lead)', got '%s'", dbUser.Username)
+		}
+	}
+}

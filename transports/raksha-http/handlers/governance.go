@@ -2535,6 +2535,74 @@ func (h *GovernanceHandler) deleteVirtualKey(ctx *fasthttp.RequestCtx) {
 
 // Team CRUD Operations
 
+func (h *GovernanceHandler) overlayLiveTeamGovernance(ctx context.Context, teams []configstoreTables.TableTeam) {
+	if h.governanceManager == nil || len(teams) == 0 {
+		return
+	}
+	data := h.governanceManager.GetGovernanceData(ctx)
+	if data == nil || len(data.Budgets) == 0 {
+		return
+	}
+	for i := range teams {
+		for j := range teams[i].Budgets {
+			bID := teams[i].Budgets[j].ID
+			if live, ok := data.Budgets[bID]; ok && live != nil {
+				teams[i].Budgets[j].CurrentUsage = live.CurrentUsage
+			}
+		}
+	}
+}
+
+func (h *GovernanceHandler) overlaySingleTeamGovernance(ctx context.Context, team *configstoreTables.TableTeam) {
+	if h.governanceManager == nil || team == nil {
+		return
+	}
+	data := h.governanceManager.GetGovernanceData(ctx)
+	if data == nil || len(data.Budgets) == 0 {
+		return
+	}
+	for j := range team.Budgets {
+		bID := team.Budgets[j].ID
+		if live, ok := data.Budgets[bID]; ok && live != nil {
+			team.Budgets[j].CurrentUsage = live.CurrentUsage
+		}
+	}
+}
+
+func (h *GovernanceHandler) overlayLiveCustomerGovernance(ctx context.Context, customers []configstoreTables.TableCustomer) {
+	if h.governanceManager == nil || len(customers) == 0 {
+		return
+	}
+	data := h.governanceManager.GetGovernanceData(ctx)
+	if data == nil || len(data.Budgets) == 0 {
+		return
+	}
+	for i := range customers {
+		for j := range customers[i].Budgets {
+			bID := customers[i].Budgets[j].ID
+			if live, ok := data.Budgets[bID]; ok && live != nil {
+				customers[i].Budgets[j].CurrentUsage = live.CurrentUsage
+			}
+		}
+	}
+}
+
+func (h *GovernanceHandler) overlaySingleCustomerGovernance(ctx context.Context, customer *configstoreTables.TableCustomer) {
+	if h.governanceManager == nil || customer == nil {
+		return
+	}
+	data := h.governanceManager.GetGovernanceData(ctx)
+	if data == nil || len(data.Budgets) == 0 {
+		return
+	}
+	for j := range customer.Budgets {
+		bID := customer.Budgets[j].ID
+		if live, ok := data.Budgets[bID]; ok && live != nil {
+			customer.Budgets[j].CurrentUsage = live.CurrentUsage
+		}
+	}
+}
+
 // getTeams handles GET /api/governance/teams - Get all teams
 func (h *GovernanceHandler) getTeams(ctx *fasthttp.RequestCtx) {
 	customerID := string(ctx.QueryArgs().Peek("customer_id"))
@@ -2562,6 +2630,7 @@ func (h *GovernanceHandler) getTeams(ctx *fasthttp.RequestCtx) {
 		if teams == nil {
 			teams = []configstoreTables.TableTeam{}
 		}
+		h.overlayLiveTeamGovernance(ctx, teams)
 		SendJSON(ctx, map[string]interface{}{
 			"teams":       teams,
 			"count":       len(teams),
@@ -2582,6 +2651,7 @@ func (h *GovernanceHandler) getTeams(ctx *fasthttp.RequestCtx) {
 	if teams == nil {
 		teams = []configstoreTables.TableTeam{}
 	}
+	h.overlayLiveTeamGovernance(ctx, teams)
 	SendJSON(ctx, map[string]interface{}{
 		"teams":       teams,
 		"count":       len(teams),
@@ -2727,6 +2797,7 @@ func (h *GovernanceHandler) getTeam(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 500, "Failed to retrieve team")
 		return
 	}
+	h.overlaySingleTeamGovernance(ctx, team)
 	SendJSON(ctx, map[string]interface{}{
 		"team": team,
 	})
@@ -3100,6 +3171,7 @@ func (h *GovernanceHandler) getCustomers(ctx *fasthttp.RequestCtx) {
 		if customers == nil {
 			customers = []configstoreTables.TableCustomer{}
 		}
+		h.overlayLiveCustomerGovernance(ctx, customers)
 		SendJSON(ctx, map[string]interface{}{
 			"customers":   customers,
 			"count":       len(customers),
@@ -3119,6 +3191,7 @@ func (h *GovernanceHandler) getCustomers(ctx *fasthttp.RequestCtx) {
 	if customers == nil {
 		customers = []configstoreTables.TableCustomer{}
 	}
+	h.overlayLiveCustomerGovernance(ctx, customers)
 	SendJSON(ctx, map[string]interface{}{
 		"customers":   customers,
 		"count":       len(customers),
@@ -3238,6 +3311,7 @@ func (h *GovernanceHandler) getCustomer(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 500, "Failed to retrieve customer")
 		return
 	}
+	h.overlaySingleCustomerGovernance(ctx, customer)
 	SendJSON(ctx, map[string]interface{}{
 		"customer": customer,
 	})
@@ -3481,6 +3555,15 @@ func (h *GovernanceHandler) getBudgets(ctx *fasthttp.RequestCtx) {
 		logger.Error("failed to retrieve budgets: %v", err)
 		SendError(ctx, 500, "failed to retrieve budgets")
 		return
+	}
+	if h.governanceManager != nil {
+		if data := h.governanceManager.GetGovernanceData(ctx); data != nil && len(data.Budgets) > 0 {
+			for i := range budgets {
+				if live, ok := data.Budgets[budgets[i].ID]; ok && live != nil {
+					budgets[i].CurrentUsage = live.CurrentUsage
+				}
+			}
+		}
 	}
 	SendJSON(ctx, map[string]interface{}{
 		"budgets": budgets,

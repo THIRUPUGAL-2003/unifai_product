@@ -4,8 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getErrorMessage } from "@/lib/store";
-import { useGetTeamsQuery } from "@/lib/store/apis/governanceApi";
-import { useGetRolesQuery } from "@enterprise/lib/store/apis/rbacApi";
 import { useGetSCIMConfigQuery, useUpdateSCIMConfigMutation } from "@enterprise/lib/store/apis/scimApi";
 import { SCIMConfig } from "@enterprise/lib/types/workspace";
 import { Save, UserRoundCog, Copy, Eye, EyeOff } from "lucide-react";
@@ -16,15 +14,11 @@ import { getExampleBaseUrl } from "@/lib/utils/port";
 
 export default function SCIMView() {
 	const { data, isLoading: loading } = useGetSCIMConfigQuery();
-	const { data: rolesData } = useGetRolesQuery();
-	const { data: teamsData } = useGetTeamsQuery();
 	const [updateConfig, { isLoading: saving }] = useUpdateSCIMConfigMutation();
 	const [config, setConfig] = useState<SCIMConfig>({ enabled: false, provider: "okta", config: {} });
 	const { copy: copyToClipboard } = useCopyToClipboard();
 	const [showToken, setShowToken] = useState(false);
 	const bearerToken = config.bearer_token || String(config.config?.bearer_token || "");
-	const roleNames = useMemo(() => (rolesData?.roles || []).map((r) => r.name), [rolesData]);
-	const teams = useMemo(() => teamsData?.teams || [], [teamsData]);
 	const scimBase = useMemo(() => {
 		const origin = getExampleBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
 		return origin ? `${origin}/scim/v2` : "/scim/v2";
@@ -82,7 +76,7 @@ export default function SCIMView() {
 					<a href="/workspace/governance/users" className="text-teal-400 underline-offset-2 hover:underline">
 						Users
 					</a>
-					. Set a default role below (or send SCIM <code className="text-xs">roles[0].value</code>).
+					. Users are automatically provisioned with the user role; administrators can reassign roles and teams under Governance.
 				</p>
 			</div>
 
@@ -150,52 +144,7 @@ export default function SCIMView() {
 							<Field label="Realm" value={config.config.realm || ""} onChange={(value) => setField("realm", value)} />
 						</>
 					)}
-					<div className="space-y-1">
-						<Label>Default role for provisioned users</Label>
-						<p className="text-muted-foreground text-xs">
-							Used when the IdP does not send a SCIM role. Create custom roles under Roles &amp; Permissions first.
-						</p>
-						<select
-							value={config.config.defaultRole || "user"}
-							onChange={(e) => setField("defaultRole", e.target.value)}
-							className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-							data-testid="scim-default-role"
-						>
-							{(roleNames.includes(config.config.defaultRole || "user")
-								? roleNames
-								: [...roleNames, config.config.defaultRole || "user"].filter(Boolean)
-							).map((name) => (
-								<option key={name} value={name}>
-									{name}
-								</option>
-							))}
-							{roleNames.length === 0 ? (
-								<>
-									<option value="user">user</option>
-									<option value="admin">admin</option>
-								</>
-							) : null}
-						</select>
-					</div>
-					<div className="space-y-1">
-						<Label>Default team for provisioned users</Label>
-						<p className="text-muted-foreground text-xs">
-							New SCIM users will be automatically added to this team. Leave blank to skip auto-assignment.
-						</p>
-						<select
-							value={config.config.defaultTeam || ""}
-							onChange={(e) => setField("defaultTeam", e.target.value)}
-							className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-							data-testid="scim-default-team"
-						>
-							<option value="">— None —</option>
-							{teams.map((t) => (
-								<option key={t.id} value={t.id}>
-									{t.name}
-								</option>
-							))}
-						</select>
-					</div>
+
 					<div className="space-y-1">
 						<Label>SCIM bearer token (for IdP → Raksha)</Label>
 						<div className="flex gap-2">

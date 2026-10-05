@@ -92,6 +92,40 @@ func TestCustomerKeyUsageChargesUserTeamCustomerAndKey(t *testing.T) {
 	}
 }
 
+func TestCustomerKeyUsageResolvesUserTeamWhenUserTeamIDsEmpty(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-dev"}})
+	gs.teams.Store("team-dev", &configstoreTables.TableTeam{
+		ID: "team-dev", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID:        "vk-cust",
+		Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}},
+		Budgets:   []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-cust", vk)
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	// UserTeamIDs is explicitly NOT provided; should resolve from UserGovernance.TeamIDs
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-cust", UserID: "user-1", Success: true, Cost: 5,
+	})
+
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != 5 {
+			t.Errorf("budget %s usage = %v, want 5", id, got)
+		}
+	}
+}
+
 func TestExhaustedBilledEntity(t *testing.T) {
 	gs := &LocalGovernanceStore{}
 	now := time.Now()

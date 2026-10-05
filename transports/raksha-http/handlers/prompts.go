@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fasthttp/router"
@@ -38,11 +39,13 @@ func NewPromptsHandler(store configstore.ConfigStore, reloader PromptCacheReload
 	if store == nil {
 		return nil
 	}
-	return &PromptsHandler{
+	h := &PromptsHandler{
 		store:     store,
 		reloader:  reloader,
 		lifecycle: NewPromptLifecycleManager(store),
 	}
+	h.startPromptHistoryRetentionCleanup()
+	return h
 }
 
 // reloadCache triggers a cache refresh if a reloader is configured.
@@ -1980,6 +1983,43 @@ func (h *PromptsHandler) commitSession(ctx *fasthttp.RequestCtx) {
 	h.reloadCache(ctx)
 	SendJSON(ctx, map[string]any{
 		"version": version,
+	})
+}
+
+var (
+	promptHistoryRetentionOnce sync.Once
+	promptHistoryRetentionStop chan struct{}
+)
+
+// startPromptHistoryRetentionCleanup runs a recurring background loop (circle)
+// every 5 minutes to purge prompt history older than the configured retention period
+// when AutoDelete is enabled. It only deletes chat history (sessions & messages);
+// it never touches users, teams, customers, or calculated budgets.
+func (h *PromptsHandler) startPromptHistoryRetentionCleanup() {
+	if h.store == nil {
+		return
+	}
+	promptHistoryRetentionOnce.Do(func() {
+		promptHistoryRetentionStop = make(chan struct{})
+		go func() {
+			// Initial sweep on boot
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			_, _ = h.applyPromptHistoryAutoDelete(ctx)
+			cancel()
+
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					sweepCtx, sweepCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					_, _ = h.applyPromptHistoryAutoDelete(sweepCtx)
+					sweepCancel()
+				case <-promptHistoryRetentionStop:
+					return
+				}
+			}
+		}()
 	})
 }
 

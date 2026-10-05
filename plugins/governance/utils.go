@@ -201,6 +201,21 @@ func (p *GovernancePlugin) stampUserOrgMembership(ctx *schemas.RakshaContext) {
 	}
 	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
 	if userID == "" {
+		if uid, ok := ctx.Value(schemas.RakshaContextKeyUserID).(string); ok {
+			userID = uid
+		}
+	}
+	if userID == "" {
+		if uid, ok := ctx.Value(string(schemas.RakshaContextKeyUserID)).(string); ok {
+			userID = uid
+		}
+	}
+	if userID == "" {
+		if uid, ok := ctx.Value("user_id").(string); ok {
+			userID = uid
+		}
+	}
+	if userID == "" {
 		return
 	}
 	ws, ok := configstore.AsWorkspaceStore(p.configStore)

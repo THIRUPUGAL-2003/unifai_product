@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1504,6 +1505,11 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 	// If effectiveVK is empty, it will be passed as empty string to postHookWorker
 	// The tracker will handle empty virtual keys gracefully by only updating provider-level and model-level usage
 	if requestedModel != "" {
+		if ctx != nil && effectiveVK != "" {
+			if _, stamped := ctx.Value(governanceUserTeamIDsContextKey).([]string); !stamped {
+				p.stampUserOrgMembership(ctx)
+			}
+		}
 		// Collect the affected budget and rate-limit IDs synchronously (fast in-memory
 		// lookups) and attach them to the context. The logging plugin reads these keys
 		// when building the log entry, enabling ghost-node usage reconciliation to
@@ -1732,6 +1738,17 @@ func (p *GovernancePlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas
 		HasUsageData: toolCost > 0, // Has usage data if we have a cost
 	}
 	captureRequestAttribution(ctx, usageUpdate)
+	if len(usageUpdate.UserTeamIDs) == 0 && userID != "" && p.configStore != nil {
+		if ws, ok := configstore.AsWorkspaceStore(p.configStore); ok && ws != nil {
+			if links, err := ws.ListTeamsForUser(p.ctx, userID); err == nil {
+				for _, link := range links {
+					if link.TeamID != "" && !slices.Contains(usageUpdate.UserTeamIDs, link.TeamID) {
+						usageUpdate.UserTeamIDs = append(usageUpdate.UserTeamIDs, link.TeamID)
+					}
+				}
+			}
+		}
+	}
 
 	// Queue usage update asynchronously using tracker
 	p.wg.Add(1)
@@ -1890,6 +1907,17 @@ func (p *GovernancePlugin) postHookWorker(result *schemas.RakshaResponse, raksha
 		if attribution != nil {
 			usageUpdate.UserTeamIDs = attribution.UserTeamIDs
 			usageUpdate.ScopedCustomerID = attribution.ScopedCustomerID
+		}
+		if len(usageUpdate.UserTeamIDs) == 0 && userID != "" && p.configStore != nil {
+			if ws, ok := configstore.AsWorkspaceStore(p.configStore); ok && ws != nil {
+				if links, err := ws.ListTeamsForUser(p.ctx, userID); err == nil {
+					for _, link := range links {
+						if link.TeamID != "" && !slices.Contains(usageUpdate.UserTeamIDs, link.TeamID) {
+							usageUpdate.UserTeamIDs = append(usageUpdate.UserTeamIDs, link.TeamID)
+						}
+					}
+				}
+			}
 		}
 
 		// Queue usage update asynchronously using tracker

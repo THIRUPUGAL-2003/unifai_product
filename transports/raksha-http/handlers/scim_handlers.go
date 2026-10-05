@@ -130,6 +130,7 @@ func (h *WorkspaceHandler) scimSchemas(ctx *fasthttp.RequestCtx) {
 				"description": "User Account",
 				"attributes": []map[string]any{
 					{"name": "userName", "type": "string", "required": true},
+					{"name": "displayName", "type": "string"},
 					{"name": "active", "type": "boolean"},
 				},
 			},
@@ -223,7 +224,7 @@ func scimFilterUsers(users []*tables.TableUser, filter string) []*tables.TableUs
 	}
 
 	normLower := strings.ToLower(strings.TrimSpace(normalized))
-	for _, prefix := range []string{"username eq ", "externalid eq ", "id eq ", "email eq ", "emails.value eq "} {
+	for _, prefix := range []string{"username eq ", "externalid eq ", "id eq ", "email eq ", "emails.value eq ", "displayname eq "} {
 		if strings.HasPrefix(normLower, prefix) {
 			raw := strings.TrimSpace(normalized[len(prefix):])
 			raw = strings.Trim(raw, `"'`)
@@ -231,6 +232,10 @@ func scimFilterUsers(users []*tables.TableUser, filter string) []*tables.TableUs
 			for _, user := range users {
 				switch prefix {
 				case "username eq ":
+					if strings.EqualFold(user.Username, raw) || strings.EqualFold(user.Email, raw) {
+						out = append(out, user)
+					}
+				case "displayname eq ":
 					if strings.EqualFold(user.Username, raw) {
 						out = append(out, user)
 					}
@@ -288,9 +293,10 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var body struct {
-		UserName   string `json:"userName"`
-		ExternalID string `json:"externalId"`
-		Emails     []struct {
+		UserName    string `json:"userName"`
+		DisplayName string `json:"displayName"`
+		ExternalID  string `json:"externalId"`
+		Emails      []struct {
 			Value   string `json:"value"`
 			Primary bool   `json:"primary"`
 		} `json:"emails"`
@@ -309,24 +315,33 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		scimError(ctx, fasthttp.StatusBadRequest, "invalid scim payload", "invalidSyntax")
 		return
 	}
+	rawUsername := strings.TrimSpace(body.UserName)
 	email := strings.ToLower(scimEmailFromBody(body.Emails))
-	username := strings.TrimSpace(body.UserName)
 	externalID := strings.TrimSpace(body.ExternalID)
-	if email == "" && strings.Contains(username, "@") {
-		email = strings.ToLower(username)
+	if email == "" && strings.Contains(rawUsername, "@") {
+		email = strings.ToLower(rawUsername)
+	}
+
+	displayName := strings.TrimSpace(body.DisplayName)
+	if displayName == "" {
+		displayName = strings.TrimSpace(body.Name.Formatted)
+	}
+	if displayName == "" && (body.Name.GivenName != "" || body.Name.FamilyName != "") {
+		displayName = strings.TrimSpace(strings.TrimSpace(body.Name.GivenName) + " " + strings.TrimSpace(body.Name.FamilyName))
+	}
+
+	username := displayName
+	if username == "" {
+		username = rawUsername
+	}
+	if username == "" && email != "" {
+		username = email
 	}
 	if username == "" {
-		if formatted := strings.TrimSpace(body.Name.Formatted); formatted != "" {
-			username = formatted
-		} else if email != "" {
-			username = email
-		}
-	}
-	if username == "" {
-		scimError(ctx, fasthttp.StatusBadRequest, "userName is required", "invalidValue")
+		scimError(ctx, fasthttp.StatusBadRequest, "userName or displayName is required", "invalidValue")
 		return
 	}
-	if isBuiltinAdminIdentity(ctx, h.store.ConfigStore, username, email) {
+	if isBuiltinAdminIdentity(ctx, h.store.ConfigStore, username, email, rawUsername) {
 		scimError(ctx, fasthttp.StatusConflict, "userName or email is reserved for the built-in admin account", "uniqueness")
 		return
 	}
@@ -339,7 +354,7 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	// Link a local account that already has this username / email (case-insensitive) instead
 	// of creating a duplicate. An account already bound to a different IdP identity is a
 	// conflict, never a silent re-link.
-	if existing := h.scimFindUser(ctx, username, email, externalID); existing != nil {
+	if existing := h.scimFindUser(ctx, username, email, externalID, rawUsername); existing != nil {
 		if externalID != "" && existing.ExternalID != "" && !strings.EqualFold(existing.ExternalID, externalID) {
 			scimError(ctx, fasthttp.StatusConflict, "a user with this userName or email is linked to a different externalId", "uniqueness")
 			return
@@ -353,6 +368,12 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		}
 		if requestedRole != "" {
 			existing.Role = h.scimValidRole(ctx, requestedRole, existing.Role)
+		}
+		if username != "" {
+			existing.Username = username
+		}
+		if email != "" {
+			existing.Email = email
 		}
 		existing.UpdatedAt = time.Now().UTC()
 		if err := h.store.ConfigStore.UpdateUser(ctx, existing); err != nil {
@@ -402,8 +423,8 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	SendJSONWithStatus(ctx, scimUserResource(user), fasthttp.StatusCreated)
 }
 
-// scimFindUser matches an existing user by externalId, username or email, case-insensitively.
-func (h *WorkspaceHandler) scimFindUser(ctx context.Context, username, email, externalID string) *tables.TableUser {
+// scimFindUser matches an existing user by externalId, username, email, or rawUserName, case-insensitively.
+func (h *WorkspaceHandler) scimFindUser(ctx context.Context, username, email, externalID, rawUserName string) *tables.TableUser {
 	users, err := h.store.ConfigStore.GetUsers(ctx)
 	if err != nil {
 		return nil
@@ -415,14 +436,25 @@ func (h *WorkspaceHandler) scimFindUser(ctx context.Context, username, email, ex
 			}
 		}
 	}
-	for _, u := range users {
-		if u != nil && username != "" && strings.EqualFold(u.Username, username) {
-			return u
+	if email != "" {
+		for _, u := range users {
+			if u != nil && u.Email != "" && strings.EqualFold(u.Email, email) {
+				return u
+			}
 		}
 	}
-	for _, u := range users {
-		if u != nil && email != "" && u.Email != "" && strings.EqualFold(u.Email, email) {
-			return u
+	if username != "" {
+		for _, u := range users {
+			if u != nil && strings.EqualFold(u.Username, username) {
+				return u
+			}
+		}
+	}
+	if rawUserName != "" {
+		for _, u := range users {
+			if u != nil && (strings.EqualFold(u.Username, rawUserName) || (u.Email != "" && strings.EqualFold(u.Email, rawUserName))) {
+				return u
+			}
 		}
 	}
 	return nil
@@ -627,9 +659,30 @@ func applySCIMUserPatch(user *tables.TableUser, patch map[string]any) {
 			cleanKey = cleanKey[len(userSchema):]
 		}
 		switch cleanKey {
+		case "displayname":
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				user.Username = strings.TrimSpace(s)
+			}
+		case "name.formatted":
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				user.Username = strings.TrimSpace(s)
+			}
+		case "name":
+			if m, ok := v.(map[string]any); ok {
+				if formatted, ok := m["formatted"].(string); ok && strings.TrimSpace(formatted) != "" {
+					user.Username = strings.TrimSpace(formatted)
+				}
+			}
 		case "username":
-			if s, ok := v.(string); ok && s != "" {
-				user.Username = s
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				s = strings.TrimSpace(s)
+				if strings.Contains(s, "@") {
+					if user.Email == "" {
+						user.Email = strings.ToLower(s)
+					}
+				} else if user.Username == "" {
+					user.Username = s
+				}
 			}
 		case "active":
 			switch val := v.(type) {
@@ -715,17 +768,28 @@ func scimUserResource(user *tables.TableUser) map[string]any {
 	if email == "" {
 		email = user.Username
 	}
+	scimUserName := user.Email
+	if scimUserName == "" {
+		scimUserName = user.Username
+	}
+	displayName := user.Username
+	if displayName == "" {
+		displayName = email
+	}
 	externalID := user.ExternalID
 	resource := map[string]any{
-		"schemas":  []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
-		"id":       user.ID,
-		"userName": user.Username,
+		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
+		"id":          user.ID,
+		"userName":    scimUserName,
+		"displayName": displayName,
 		"name": map[string]any{
-			"formatted": user.Username,
+			"formatted": displayName,
 		},
 		"active": user.IsApproved(),
 		"emails": []map[string]any{{
-			"value": email, "primary": true,
+			"value":   email,
+			"type":    "work",
+			"primary": true,
 		}},
 		"roles": []map[string]any{{"value": user.Role}},
 		"meta": map[string]any{

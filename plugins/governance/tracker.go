@@ -4,6 +4,7 @@ package governance
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -182,6 +183,38 @@ func (t *UsageTracker) UpdateUsage(ctx context.Context, update *UsageUpdate) {
 		return
 	}
 
+	// Resolve user team IDs if missing so team-level attribution under customer keys succeeds
+	if len(update.UserTeamIDs) == 0 && update.UserID != "" {
+		if local, ok := t.store.(*LocalGovernanceStore); ok && local != nil {
+			if ug, ok := local.GetUserGovernance(ctx, update.UserID); ok && ug != nil && len(ug.TeamIDs) > 0 {
+				for _, tid := range ug.TeamIDs {
+					if !slices.Contains(update.UserTeamIDs, tid) {
+						update.UserTeamIDs = append(update.UserTeamIDs, tid)
+					}
+				}
+			}
+		}
+		if len(update.UserTeamIDs) == 0 {
+			store := t.configStore
+			if store == nil {
+				if local, ok := t.store.(*LocalGovernanceStore); ok && local != nil {
+					store = local.configStore
+				}
+			}
+			if store != nil {
+				if ws, ok := configstore.AsWorkspaceStore(store); ok && ws != nil {
+					if links, err := ws.ListTeamsForUser(ctx, update.UserID); err == nil {
+						for _, link := range links {
+							if link.TeamID != "" && !slices.Contains(update.UserTeamIDs, link.TeamID) {
+								update.UserTeamIDs = append(update.UserTeamIDs, link.TeamID)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Get virtual key
 	vk, exists := t.store.GetVirtualKey(ctx, update.VirtualKey)
 	if !exists {
@@ -235,11 +268,20 @@ func captureRequestAttribution(ctx context.Context, update *UsageUpdate) {
 }
 
 func withRequestAttribution(ctx context.Context, update *UsageUpdate) context.Context {
+	if update == nil {
+		return ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if len(update.UserTeamIDs) > 0 {
 		ctx = context.WithValue(ctx, governanceUserTeamIDsContextKey, update.UserTeamIDs)
 	}
 	if update.ScopedCustomerID != "" {
 		ctx = context.WithValue(ctx, schemas.RakshaContextKeyGovernanceScopedCustomerID, update.ScopedCustomerID)
+	}
+	if update.UserID != "" {
+		ctx = context.WithValue(ctx, schemas.RakshaContextKeyUserID, update.UserID)
 	}
 	return ctx
 }

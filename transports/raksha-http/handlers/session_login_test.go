@@ -203,6 +203,12 @@ func (m *memoryConfigStore) UpdateUser(ctx context.Context, user *tables.TableUs
 			copied.Password = existing.Password
 		}
 	}
+	for k, u := range m.users {
+		if u.ID == copied.ID {
+			delete(m.users, k)
+			break
+		}
+	}
 	m.users[strings.ToLower(strings.TrimSpace(copied.Username))] = &copied
 	return nil
 }
