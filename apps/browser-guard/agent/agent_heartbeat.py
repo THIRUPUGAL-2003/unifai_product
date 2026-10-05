@@ -34,7 +34,7 @@ def pause_guard(agent_id: str) -> None:
         return
     _guard_paused = True
     print("[Raksha Guard] PAUSE command: disabling proxy PAC & QUIC bypass (standby mode).")
-    clear_guard_runtime()
+    clear_guard_runtime(clear_startup=False)
 
 
 def resume_guard(agent_id: str) -> None:
@@ -122,7 +122,7 @@ def apply_admin_uninstall(agent_id: str) -> None:
         f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/uninstall-ack",
         {"agent_id": agent_id},
     )
-    clear_guard_runtime()
+    clear_guard_runtime(clear_startup=True)
     stop_proxy_worker()
     # Remove agent_id.txt so a future install starts with a fresh agent ID and avoids stale uninstalled lock
     try:
@@ -132,8 +132,7 @@ def apply_admin_uninstall(agent_id: str) -> None:
             os.remove(p)
     except Exception:
         pass
-    if not launch_windows_uninstaller():
-        schedule_install_removal()
+    schedule_install_removal()
     os._exit(0)
 
 

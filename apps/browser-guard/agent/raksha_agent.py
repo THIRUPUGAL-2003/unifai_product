@@ -70,6 +70,7 @@ from guard_platform import (
     data_dir,
     log_hint_path,
     register_autostart,
+    register_windows_uninstall_entry,
 )
 
 
@@ -85,7 +86,27 @@ def main() -> None:
             code = run_uninstall_prompt()
         else:
             key = sys.argv[2] if len(sys.argv) >= 3 else ""
-            code = run_uninstall(key)
+            if not key.strip():
+                code = run_uninstall_prompt()
+            else:
+                code = run_uninstall(key.strip(), schedule_cleanup=True)
+                if code == 2:
+                    show_message_async(
+                        "Invalid Uninstall Key",
+                        "The uninstall key entered is incorrect.\n\nRaksha Guard remains installed and active.\nContact your IT administrator for today's daily key or company key.",
+                        flags=0x10,
+                    )
+                elif code == 1:
+                    show_message_async(
+                        "Uninstall Failed",
+                        "Unable to verify uninstall key with the server.\n\nCheck your network connection and try again.\nRaksha Guard remains active.",
+                        flags=0x10,
+                    )
+                elif code == 0:
+                    show_message_async(
+                        "Raksha Guard Uninstalled",
+                        "Raksha Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
+                    )
         sys.exit(code)
 
     # MitM worker child — must NOT take single-instance lock (parent holds it).
@@ -177,8 +198,10 @@ def main() -> None:
         try:
             if getattr(sys, "frozen", False):
                 register_autostart(sys.executable)
+                if IS_WIN:
+                    register_windows_uninstall_entry(sys.executable)
         except Exception as e:
-            print(f"[Raksha Guard WARNING] Autostart: {e}")
+            print(f"[Raksha Guard WARNING] Autostart / Uninstall registration: {e}")
 
         maybe_first_run_prompt()
 

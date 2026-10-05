@@ -219,46 +219,55 @@ def prompt_uninstall_key() -> str | None:
     if IS_WIN:
         script = r"""
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Raksha Guard Uninstall'
-$form.Size = New-Object System.Drawing.Size(420,160)
+$form.Size = New-Object System.Drawing.Size(460,185)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.MinimizeBox = $false
+$form.TopMost = $true
+$form.ShowInTaskbar = $true
+
 $label = New-Object System.Windows.Forms.Label
-$label.Location = New-Object System.Drawing.Point(12,12)
-$label.Size = New-Object System.Drawing.Size(380,30)
-$label.Text = 'Enter company or device uninstall key:'
+$label.Location = New-Object System.Drawing.Point(20,16)
+$label.Size = New-Object System.Drawing.Size(410,32)
+$label.Text = 'Enter company or device uninstall key to remove Raksha Guard:'
+$label.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $form.Controls.Add($label)
+
 $box = New-Object System.Windows.Forms.TextBox
-$box.Location = New-Object System.Drawing.Point(12,50)
-$box.Size = New-Object System.Drawing.Size(380,24)
-$box.UseSystemPasswordChar = $true
+$box.Location = New-Object System.Drawing.Point(20,52)
+$box.Size = New-Object System.Drawing.Size(405,24)
+$box.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $form.Controls.Add($box)
+
 $ok = New-Object System.Windows.Forms.Button
-$ok.Text = 'OK'
+$ok.Text = 'Uninstall'
 $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
-$ok.Location = New-Object System.Drawing.Point(220,90)
+$ok.Location = New-Object System.Drawing.Point(235,95)
+$ok.Size = New-Object System.Drawing.Size(95,30)
+$ok.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $form.Controls.Add($ok)
+
 $cancel = New-Object System.Windows.Forms.Button
 $cancel.Text = 'Cancel'
 $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-$cancel.Location = New-Object System.Drawing.Point(310,90)
+$cancel.Location = New-Object System.Drawing.Point(340,95)
+$cancel.Size = New-Object System.Drawing.Size(85,30)
+$cancel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $form.Controls.Add($cancel)
+
 $form.AcceptButton = $ok
 $form.CancelButton = $cancel
-$form.TopMost = $true
-$form.ShowInTaskbar = $true
 $form.Add_Shown({ $form.Activate(); $box.Focus() })
 $result = $form.ShowDialog()
 if ($result -ne [System.Windows.Forms.DialogResult]::OK) { exit 3 }
 [Console]::Out.Write($box.Text.Trim())
 """
         try:
-            # No STARTUPINFO SW_HIDE here: Windows applies it to the process's first
-            # ShowWindow, which is the key form, leaving it invisible. CREATE_NO_WINDOW
-            # already keeps the PowerShell console from appearing.
             completed = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-STA", "-Command", script],
                 capture_output=True,
@@ -275,9 +284,9 @@ if ($result -ne [System.Windows.Forms.DialogResult]::OK) { exit 3 }
     if IS_MAC:
         script = (
             'try\n'
-            'set r to display dialog "Enter company uninstall key (leave blank if not required):" '
-            'default answer "" with title "Raksha Guard Uninstall" with hidden answer '
-            'buttons {"Cancel", "OK"} default button "OK"\n'
+            'set r to display dialog "Enter company uninstall key provided by your administrator to uninstall Raksha Guard:" '
+            'default answer "" with title "Raksha Guard Uninstall" '
+            'buttons {"Cancel", "Uninstall"} default button "Uninstall"\n'
             'return text returned of r\n'
             'on error\n'
             'return "__CANCEL__"\n'
@@ -731,6 +740,7 @@ def register_autostart(exe_path: str) -> None:
         plist_path = os.path.join(agents, "com.raksha.guard.plist")
         # Prefer .app Contents/MacOS binary when frozen as app bundle
         program = exe_path
+
         plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -794,6 +804,32 @@ def clear_autostart() -> None:
             print("[Raksha Guard] LaunchAgent removed.")
         except Exception as e:
             print(f"[Raksha Guard WARNING] Could not clear LaunchAgent: {e}")
+
+
+def register_windows_uninstall_entry(exe_path: str) -> None:
+    """Ensure Raksha Guard is registered in Windows Control Panel & Settings (Installed Apps)."""
+    if not IS_WIN or not exe_path:
+        return
+    try:
+        from agent_config import AGENT_VERSION, RAKSHA_BACKEND_URL
+        sub_key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, sub_key)  # type: ignore
+        install_dir = os.path.dirname(os.path.abspath(exe_path))
+        winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "Raksha Guard")  # type: ignore
+        winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, AGENT_VERSION)  # type: ignore
+        winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Raksha")  # type: ignore
+        winreg.SetValueEx(key, "DisplayIcon", 0, winreg.REG_SZ, exe_path)  # type: ignore
+        winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, install_dir)  # type: ignore
+        winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ, f'"{exe_path}" --uninstall-prompt')  # type: ignore
+        winreg.SetValueEx(key, "QuietUninstallString", 0, winreg.REG_SZ, f'"{exe_path}" --uninstall')  # type: ignore
+        winreg.SetValueEx(key, "HelpLink", 0, winreg.REG_SZ, RAKSHA_BACKEND_URL)  # type: ignore
+        winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, RAKSHA_BACKEND_URL)  # type: ignore
+        winreg.SetValueEx(key, "NoModify", 0, winreg.REG_DWORD, 1)  # type: ignore
+        winreg.SetValueEx(key, "NoRepair", 0, winreg.REG_DWORD, 1)  # type: ignore
+        winreg.CloseKey(key)  # type: ignore
+        print("[Raksha Guard] Windows Control Panel / Installed Apps uninstall entry registered.")
+    except Exception as e:
+        print(f"[Raksha Guard WARNING] Could not register uninstall entry: {e}")
 
 
 def os_label() -> str:

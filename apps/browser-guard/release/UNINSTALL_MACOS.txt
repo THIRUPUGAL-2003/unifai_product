@@ -3,11 +3,11 @@ Raksha Guard — macOS Uninstall (turn OFF)
 
 1. Double-click Uninstall_Raksha_Guard.command (from the install ZIP or /Applications helpers).
    - If blocked: Right-click → Open → Open
-2. Enter the company uninstall key from IT (Browser AI → Setup).
+2. Enter the company uninstall key (from Setup) or today's rotating daily Guard key (from Guard Agents menu).
 3. Wait for the success dialog — Guard stops, proxy/PAC cleared, app removed.
 4. Fully quit and reopen browsers (Cmd+Q).
 
-Same uninstall key rule as Windows. Leave blank only if IT disabled the key requirement.
+Both today's rotating daily key (rotates every 24h) and the company master key are valid.
 
 Admin remote uninstall from Browser AI also turns Guard OFF on the next heartbeat
 (no employee key) — same as Windows.

@@ -88,8 +88,9 @@ if exist "%ZIP_STAGE%" rmdir /S /Q "%ZIP_STAGE%"
 mkdir "%ZIP_STAGE%"
 
 copy /Y release\Raksha_Guard_Setup.exe "%ZIP_STAGE%\Raksha_Guard_Setup.exe" >nul
-if exist release\Raksha_Guard.exe copy /Y release\Raksha_Guard.exe "%ZIP_STAGE%\Raksha_Guard.exe" >nul
-if exist dist\Raksha_Guard.exe if not exist release\Raksha_Guard.exe copy /Y dist\Raksha_Guard.exe "%ZIP_STAGE%\Raksha_Guard.exe" >nul
+if not exist "%ZIP_STAGE%\portable" mkdir "%ZIP_STAGE%\portable"
+if exist release\Raksha_Guard.exe copy /Y release\Raksha_Guard.exe "%ZIP_STAGE%\portable\Raksha_Guard.exe" >nul
+if exist dist\Raksha_Guard.exe if not exist release\Raksha_Guard.exe copy /Y dist\Raksha_Guard.exe "%ZIP_STAGE%\portable\Raksha_Guard.exe" >nul
 copy /Y release\raksha_guard_config.json "%ZIP_STAGE%\raksha_guard_config.json" >nul
 if exist release\INSTALL_WINDOWS.txt copy /Y release\INSTALL_WINDOWS.txt "%ZIP_STAGE%\INSTALL_WINDOWS.txt" >nul
 if exist installer\EMPLOYEE_README.txt copy /Y installer\EMPLOYEE_README.txt "%ZIP_STAGE%\EMPLOYEE_README.txt" >nul

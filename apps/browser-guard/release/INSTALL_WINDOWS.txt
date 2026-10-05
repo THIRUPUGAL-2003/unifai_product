@@ -24,4 +24,4 @@ Uninstall (turn OFF)
 --------------------
 Windows Settings → Apps → Raksha Guard → Uninstall
 (or Start Menu → Raksha Guard → Uninstall).
-Enter the company uninstall key from IT (Browser AI → Setup).
+Enter the company uninstall key (from Setup) or today's rotating daily Guard key (from Guard Agents menu).

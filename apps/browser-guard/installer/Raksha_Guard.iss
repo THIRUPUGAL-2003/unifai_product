@@ -67,9 +67,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoRepair"; ValueData: 1
 [Run]
 ; Run immediately in silent / auto-update mode
-Filename: "{cmd}"; Parameters: "/c set ""PYINSTALLER_RESET_ENVIRONMENT=1"" && start """" ""{app}\{#MyAppExeName}"""; Flags: nowait runhidden skipifnotsilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent
 ; Checkbox on finish page in interactive mode
-Filename: "{cmd}"; Parameters: "/c set ""PYINSTALLER_RESET_ENVIRONMENT=1"" && start """" ""{app}\{#MyAppExeName}"""; Description: "Start Raksha Guard now"; Flags: nowait postinstall runhidden
+Filename: "{app}\{#MyAppExeName}"; Description: "Start Raksha Guard now"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "StopGuard"

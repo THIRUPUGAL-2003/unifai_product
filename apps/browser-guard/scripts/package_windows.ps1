@@ -2,11 +2,17 @@ Set-Location -Path $PSScriptRoot\..
 
 # 1. Prepare Staging
 New-Item -ItemType Directory -Force -Path 'installer\staging' | Out-Null
-if (-not (Test-Path 'dist\Raksha_Guard.exe')) {
-    Write-Error "dist\Raksha_Guard.exe missing - run installer\build_agent.py (or build_installer.bat) first."
+$guardExe = $null
+if (Test-Path 'dist\Raksha_Guard.exe') {
+    $guardExe = 'dist\Raksha_Guard.exe'
+} elseif (Test-Path 'release\Raksha_Guard.exe') {
+    $guardExe = 'release\Raksha_Guard.exe'
+}
+if (-not $guardExe) {
+    Write-Error "Raksha_Guard.exe missing - run installer\build_agent.py (or build_installer.bat) first."
     exit 1
 }
-Copy-Item -Force 'dist\Raksha_Guard.exe' 'installer\staging\Raksha_Guard.exe'
+Copy-Item -Force $guardExe 'installer\staging\Raksha_Guard.exe'
 Copy-Item -Force 'release\raksha_guard_config.json' 'installer\staging\raksha_guard_config.json'
 Copy-Item -Force 'raksha_guard.ico' 'installer\staging\raksha_guard.ico'
 if (Test-Path 'installer\EMPLOYEE_README.txt') { Copy-Item -Force 'installer\EMPLOYEE_README.txt' 'installer\staging\EMPLOYEE_README.txt' }
@@ -34,7 +40,10 @@ if (Test-Path $zipStage) { Remove-Item -Recurse -Force $zipStage }
 New-Item -ItemType Directory -Force -Path $zipStage | Out-Null
 
 Copy-Item -Force 'release\Raksha_Guard_Setup.exe' "$zipStage\Raksha_Guard_Setup.exe"
-Copy-Item -Force 'dist\Raksha_Guard.exe' "$zipStage\Raksha_Guard.exe"
+if ($guardExe -and (Test-Path $guardExe)) {
+    New-Item -ItemType Directory -Force -Path "$zipStage\portable" | Out-Null
+    Copy-Item -Force $guardExe "$zipStage\portable\Raksha_Guard.exe"
+}
 Copy-Item -Force 'release\raksha_guard_config.json' "$zipStage\raksha_guard_config.json"
 if (Test-Path 'release\INSTALL_WINDOWS.txt') { Copy-Item -Force 'release\INSTALL_WINDOWS.txt' "$zipStage\INSTALL_WINDOWS.txt" }
 if (Test-Path 'installer\EMPLOYEE_README.txt') { Copy-Item -Force 'installer\EMPLOYEE_README.txt' "$zipStage\EMPLOYEE_README.txt" }

@@ -78,12 +78,13 @@ def pac_restore_strict_proxy() -> None:
     print("[Raksha Guard] PAC restored to strict PROXY (monitored hosts).")
 
 
-def clear_guard_runtime() -> None:
+def clear_guard_runtime(clear_startup: bool = True) -> None:
     from agent_browser_policy import set_browser_quic, set_system_proxy_pac_and_browsers
 
     set_system_proxy_pac_and_browsers(enable=False)
     set_browser_quic(enable_quic=True)
-    clear_autostart()
+    if clear_startup:
+        clear_autostart()
 
 
 def sync_pac_loop(stop_event: threading.Event) -> None:

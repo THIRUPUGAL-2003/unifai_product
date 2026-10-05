@@ -88,10 +88,11 @@ def _is_guard_install_path(path: str) -> bool:
 
 
 def schedule_install_removal() -> None:
-    """After PAC/autostart clear: delete Guard EXE / .app once this process exits.
+    """After PAC/autostart clear: delete Guard EXE / .app, registry entries, and shortcuts.
 
-    Windows: detached cmd waits then deletes EXE (+ Guard install folder when safe).
-    macOS: detached shell removes known Raksha_Guard.app locations.
+    Windows: detached cmd waits, terminates Guard, deletes registry uninstall & run keys,
+    shortcuts, EXE, and install/data directories completely.
+    macOS: detached shell removes LaunchAgent, .app locations, and data dir.
     """
     try:
         if IS_WIN:
@@ -101,44 +102,59 @@ def schedule_install_removal() -> None:
                 targets.append(exe)
             local = os.environ.get("LOCALAPPDATA", "")
             pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+            appdata = os.environ.get("APPDATA", "")
+            userprofile = os.environ.get("USERPROFILE", "")
+            allusersprofile = os.environ.get("ALLUSERSPROFILE", "")
+
             for cand in (
                 os.path.join(local, "Programs", "Raksha", "Guard", "Raksha_Guard.exe") if local else "",
                 os.path.join(pf, "Raksha", "Guard", "Raksha_Guard.exe"),
             ):
                 if cand and os.path.isfile(cand) and cand not in targets:
                     targets.append(cand)
-            if not targets:
-                print("[Raksha Guard] Remote uninstall: no Guard EXE path to delete.")
-                return
-            # `timeout` needs an interactive console and exits instantly when detached, so
-            # use ping as the delay; then stop every Guard process (incl. the MitM worker
-            # holding the EXE open) before deleting.
+
             parts: list[str] = [
-                "ping -n 5 127.0.0.1 >nul",
+                "ping -n 4 127.0.0.1 >nul",
                 "taskkill /F /IM Raksha_Guard.exe >nul 2>&1",
                 "ping -n 2 127.0.0.1 >nul",
+                'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}" /f >nul 2>&1',
+                'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "Raksha_Guard" /f >nul 2>&1',
             ]
+
+            if userprofile:
+                parts.append(f'del /f /q "{userprofile}\\Desktop\\Raksha Guard.lnk" >nul 2>&1')
+            if allusersprofile:
+                parts.append(f'del /f /q "{allusersprofile}\\Desktop\\Raksha Guard.lnk" >nul 2>&1')
+
+            if appdata:
+                parts.append(f'rmdir /s /q "{appdata}\\Microsoft\\Windows\\Start Menu\\Programs\\Raksha Guard" >nul 2>&1')
+
             dirs: set[str] = set()
             for t in targets:
-                parts.append(f'del /f /q "{t}"')
+                parts.append(f'del /f /q "{t}" >nul 2>&1')
                 d = os.path.dirname(t)
                 if _is_guard_install_path(d):
                     dirs.add(d)
+            if local:
+                dirs.add(os.path.join(local, "Programs", "Raksha", "Guard"))
+
             for d in dirs:
-                parts.append(f'rmdir /s /q "{d}" 2>nul')
+                parts.append(f'rmdir /s /q "{d}" >nul 2>&1')
                 parent = os.path.dirname(d)
                 if parent and parent.lower().endswith("\\raksha"):
-                    parts.append(f'rmdir "{parent}" 2>nul')
+                    parts.append(f'rmdir "{parent}" >nul 2>&1')
+
+            if local:
+                parts.append(f'rmdir /s /q "{os.path.join(local, "Raksha", "Guard")}" >nul 2>&1')
+                parts.append(f'rmdir "{os.path.join(local, "Raksha")}" >nul 2>&1')
+
             cmd = " & ".join(parts)
-            # Both STARTUPINFO(SW_HIDE) and CREATE_NO_WINDOW: completely hides cmd/ping/taskkill
-            # on Windows 10 and Windows 11 (prevents Windows Terminal popup).
             si = subprocess.STARTUPINFO()
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             si.wShowWindow = subprocess.SW_HIDE
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            # String, not list: a list would escape the path quotes as \" for cmd.exe.
             subprocess.Popen(f"cmd.exe /c {cmd}", startupinfo=si, creationflags=flags, close_fds=True)
-            print(f"[Raksha Guard] Scheduled EXE removal: {targets}")
+            print("[Raksha Guard] Scheduled complete Windows uninstall cleanup.")
             return
 
         if IS_MAC:
@@ -147,26 +163,27 @@ def schedule_install_removal() -> None:
                 "/Applications/Raksha_Guard.app",
                 os.path.join(home, "Applications", "Raksha_Guard.app"),
             ]
-            # If running from a frozen .app, also remove that bundle
             if getattr(sys, "frozen", False):
                 exe = os.path.abspath(sys.executable)
-                # .../Raksha_Guard.app/Contents/MacOS/Raksha_Guard
                 marker = "/Contents/MacOS/"
                 if marker in exe.replace("\\", "/"):
                     app = exe[: exe.replace("\\", "/").index(marker)]
                     if app.endswith(".app") and app not in apps:
                         apps.append(app)
-            existing = [a for a in apps if os.path.isdir(a)]
-            guard_data = os.path.join(home, "Library", "Application Support", "Raksha", "Guard")
-            if os.path.isdir(guard_data):
-                existing.append(guard_data)
-            if not existing:
-                print("[Raksha Guard] Remote uninstall: no Guard .app to delete.")
-                return
-            quoted = " ".join(f'"{a}"' for a in existing)
-            script = f'(sleep 3; rm -rf {quoted}) >/dev/null 2>&1 &'
+            plist = os.path.join(home, "Library", "LaunchAgents", "com.raksha.guard.plist")
+            guard_data = os.path.join(home, "Library", "Application Support", "Raksha")
+            app_paths = " ".join(f'"{a}"' for a in apps)
+            script = (
+                f'(sleep 3; '
+                f'launchctl unload "{plist}" 2>/dev/null; '
+                f'rm -f "{plist}"; '
+                f'rm -rf {app_paths} "{guard_data}"; '
+                f'pkill -f "Raksha_Guard.app/Contents/MacOS/Raksha_Guard" 2>/dev/null; '
+                f'pkill -f "/MacOS/Raksha_Guard" 2>/dev/null) >/dev/null 2>&1 &'
+            )
             subprocess.Popen(["/bin/bash", "-c", script], start_new_session=True)
-            print(f"[Raksha Guard] Scheduled .app removal: {existing}")
+            print("[Raksha Guard] Scheduled complete macOS uninstall cleanup.")
+            return
     except Exception as e:
         print(f"[Raksha Guard WARNING] Could not schedule install removal: {e}")
 
@@ -182,7 +199,7 @@ def remote_uninstall_authorized(agent_id: str) -> bool:
 
 
 def launch_windows_uninstaller() -> bool:
-    """Run the Inno Setup uninstaller silently (removes files, autostart, Apps entry)."""
+    """Run the Inno Setup uninstaller silently if present (removes files, autostart, Apps entry)."""
     if not IS_WIN or not getattr(sys, "frozen", False):
         return False
     app_dir = os.path.dirname(os.path.abspath(sys.executable))
@@ -223,7 +240,14 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
     )
     if status == 200:
         print("[Raksha Guard] Uninstall authorized by backend.")
-        clear_guard_runtime()
+        clear_guard_runtime(clear_startup=True)
+        try:
+            from agent_identity import agent_id_path
+            p = agent_id_path()
+            if os.path.isfile(p):
+                os.remove(p)
+        except Exception:
+            pass
         if schedule_cleanup:
             schedule_install_removal()
         return 0
@@ -238,14 +262,55 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
 
 
 def run_uninstall_prompt() -> int:
-    if remote_uninstall_authorized(get_or_create_agent_id()):
+    agent_id = get_or_create_agent_id()
+    if remote_uninstall_authorized(agent_id):
         print("[Raksha Guard] Uninstall already approved by admin — no key needed.")
-        clear_guard_runtime()
+        clear_guard_runtime(clear_startup=True)
+        try:
+            from agent_identity import agent_id_path
+            p = agent_id_path()
+            if os.path.isfile(p):
+                os.remove(p)
+        except Exception:
+            pass
+        schedule_install_removal()
+        if IS_WIN or not os.environ.get("RAKSHA_WRAPPER_UI"):
+            show_message(
+                "Raksha Guard Uninstalled",
+                "Raksha Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
+            )
         return 0
+
     key = prompt_uninstall_key()
     if key is None:
         print("[Raksha Guard] Uninstall cancelled by user.")
         return 3
-    # When called from Inno Setup uninstaller, Inno Setup itself deletes the files/folder.
-    # schedule_cleanup=False avoids launching a separate background cmd process that fights Inno.
-    return run_uninstall(key, schedule_cleanup=False)
+    if not key.strip():
+        if IS_WIN or not os.environ.get("RAKSHA_WRAPPER_UI"):
+            show_message(
+                "Uninstall Key Required",
+                "Uninstall key is required to uninstall Raksha Guard.\n\nRaksha Guard remains installed and active.",
+                flags=0x10,
+            )
+        return 2
+
+    code = run_uninstall(key, schedule_cleanup=True)
+    if IS_WIN or not os.environ.get("RAKSHA_WRAPPER_UI"):
+        if code == 0:
+            show_message(
+                "Raksha Guard Uninstalled",
+                "Raksha Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
+            )
+        elif code == 2:
+            show_message(
+                "Invalid Uninstall Key",
+                "The uninstall key entered is incorrect.\n\nRaksha Guard remains installed and active.\nContact your IT administrator for the uninstall key.",
+                flags=0x10,
+            )
+        else:
+            show_message(
+                "Uninstall Failed",
+                "Unable to verify uninstall key with the server.\n\nCheck your network connection and try again.\nRaksha Guard remains active.",
+                flags=0x10,
+            )
+    return code
