@@ -89,9 +89,13 @@ function isWorkspaceAdminRole(role: string): boolean {
 	return role === "admin" || role === "sub_admin";
 }
 
-// Section grants apply to all non-admin roles (user, sub_admin, custom roles).
+// Section grants apply to sub_admin role only (scoped workspace access).
 function sectionGrantsApply(role: string): boolean {
-	return role !== "admin";
+	return role === "sub_admin";
+}
+
+function isUserRole(role: string): boolean {
+	return role === "user";
 }
 
 function UserTeamCell({ userId }: { userId: string }) {
@@ -345,7 +349,7 @@ export default function UsersView() {
 	};
 
 	const teamPicker =
-		role !== "admin" ? (
+		isUserRole(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">Team</label>
 				<p className="text-muted-foreground text-xs">
@@ -371,7 +375,7 @@ export default function UsersView() {
 		) : null;
 
 	const virtualKeyPicker =
-		role !== "admin" ? (
+		isUserRole(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">
 					{inheritedVirtualKeys.length > 0 ? "Direct Virtual Key (optional)" : "Virtual Key (required for Prompt Repository chat)"}
@@ -475,7 +479,7 @@ export default function UsersView() {
 		) : null;
 
 	const promptReposPicker =
-		!isWorkspaceAdminRole(role) ? (
+		isUserRole(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">Allowed Prompt Repositories (Optional)</label>
 				<p className="text-muted-foreground text-xs">
@@ -543,11 +547,11 @@ export default function UsersView() {
 		email: email.trim() || undefined,
 		password: password || undefined,
 		role,
-		budget,
-		rate_limit: rateLimit,
-		allowed_prompt_repos: !isWorkspaceAdminRole(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
+		budget: isUserRole(role) ? budget : 0,
+		rate_limit: isUserRole(role) ? rateLimit : 0,
+		allowed_prompt_repos: isUserRole(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
 		allowed_sections: sectionGrantsApply(role) ? allowedSectionsToString(allowedSections) : "",
-		auto_create_prompt: autoCreatePrompt,
+		auto_create_prompt: isUserRole(role) ? autoCreatePrompt : false,
 	});
 
 	const handleCreateUser = async (e: React.FormEvent) => {
@@ -578,7 +582,7 @@ export default function UsersView() {
 		try {
 			// The create endpoint validates and stores the role (incl. admin-only checks).
 			const created = await createUser({ ...userPayload(), password }).unwrap();
-			if (created?.id && role !== "admin") {
+			if (created?.id && isUserRole(role)) {
 				try {
 					await syncUserTeam(created.id, teamId, "");
 				} catch (teamErr) {
@@ -643,17 +647,19 @@ export default function UsersView() {
 		setIsUpdating(true);
 		try {
 			await updateUser({ id: selectedUser.id, updates: userPayload() }).unwrap();
-			if (role !== "admin") {
+			if (isUserRole(role)) {
 				await syncUserTeam(selectedUser.id, teamId, initialTeamId);
 				await syncUserVirtualKey(selectedUser.id, virtualKeyId, initialVirtualKeyId);
-				if (!virtualKeyId && role === "user" && inheritedVirtualKeys.length === 0) {
+				if (!virtualKeyId && inheritedVirtualKeys.length === 0) {
 					toast.warning("Saved without a Virtual Key — Prompt Repository chat stays blocked until you assign one.");
 				}
-			} else if (initialTeamId) {
-				await syncUserTeam(selectedUser.id, "", initialTeamId);
-			}
-			if (role === "admin" && initialVirtualKeyId) {
-				await syncUserVirtualKey(selectedUser.id, "", initialVirtualKeyId);
+			} else {
+				if (initialTeamId) {
+					await syncUserTeam(selectedUser.id, "", initialTeamId);
+				}
+				if (initialVirtualKeyId) {
+					await syncUserVirtualKey(selectedUser.id, "", initialVirtualKeyId);
+				}
 			}
 			toast.success("User updated successfully");
 			setIsEditOpen(false);
@@ -1070,21 +1076,23 @@ export default function UsersView() {
 													</span>
 												</TableCell>
 												<TableCell>
-													{user.role === "admin" ? (
+													{isWorkspaceAdminRole(user.role) ? (
 														<span className="text-muted-foreground text-sm">—</span>
 													) : (
 														<UserTeamCell userId={user.id} />
 													)}
 												</TableCell>
 												<TableCell>
-													{user.role === "admin" ? (
+													{isWorkspaceAdminRole(user.role) ? (
 														<span className="text-muted-foreground text-sm">—</span>
 													) : (
 														<UserVirtualKeysCell userId={user.id} allVirtualKeys={virtualKeys} />
 													)}
 												</TableCell>
 												<TableCell className="font-mono text-xs">
-													{user.budget > 0 ? (
+													{isWorkspaceAdminRole(user.role) ? (
+														<span className="text-muted-foreground text-sm">—</span>
+													) : user.budget > 0 ? (
 														<div className="flex min-w-[110px] flex-col gap-1">
 															<div className="flex justify-between text-xs">
 																<span className="font-semibold text-foreground">
@@ -1116,7 +1124,15 @@ export default function UsersView() {
 														</span>
 													)}
 												</TableCell>
-												<TableCell className="font-mono text-xs">{user.rate_limit > 0 ? `${user.rate_limit} RPM` : "Unlimited"}</TableCell>
+												<TableCell className="font-mono text-xs">
+													{isWorkspaceAdminRole(user.role) ? (
+														<span className="text-muted-foreground text-sm">—</span>
+													) : user.rate_limit > 0 ? (
+														`${user.rate_limit} RPM`
+													) : (
+														"Unlimited"
+													)}
+												</TableCell>
 												<TableCell className="max-w-[200px] truncate text-xs" title={resolveAllowedPromptNames(user.allowed_prompt_repos)}>
 													{isWorkspaceAdminRole(user.role) ? "All" : resolveAllowedPromptNames(user.allowed_prompt_repos)}
 												</TableCell>
@@ -1218,12 +1234,10 @@ export default function UsersView() {
 								onChange={(e) => {
 									const nextRole = e.target.value;
 									setRole(nextRole);
-									if (nextRole === "admin") {
+									if (!isUserRole(nextRole)) {
 										setAllowedPromptRepos("");
 										setTeamId("");
 										setVirtualKeyId("");
-									} else if (nextRole === "sub_admin") {
-										setAllowedPromptRepos("");
 									}
 									if (!sectionGrantsApply(nextRole)) {
 										setAllowedSections(new Set());
@@ -1258,50 +1272,54 @@ export default function UsersView() {
 						{virtualKeyPicker}
 						{workspaceAccessPicker}
 						{promptReposPicker}
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
-									<DollarSign className="text-muted-foreground/60 h-3.5 w-3.5" /> Budget Limit
-								</label>
-								<Input
-									type="number"
-									step="0.01"
-									value={budget || ""}
-									onChange={(e) => setBudget(parseFloat(e.target.value) || 0)}
-									placeholder="USD / Month"
-									className="bg-muted/20 border-border/50 focus:border-teal-500/50"
-								/>
-							</div>
-							<div className="space-y-2">
-								<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
-									<Activity className="text-muted-foreground/60 h-3.5 w-3.5" /> Rate Limit
-								</label>
-								<Input
-									type="number"
-									value={rateLimit || ""}
-									onChange={(e) => setRateLimit(parseInt(e.target.value) || 0)}
-									placeholder="RPM Limit"
-									className="bg-muted/20 border-border/50 focus:border-teal-500/50"
-								/>
-							</div>
-						</div>
-						<div className="border-border/50 bg-muted/10 flex items-center gap-2 rounded-lg border p-3">
-							<input
-								id="auto-create-prompt"
-								type="checkbox"
-								checked={autoCreatePrompt}
-								onChange={(e) => setAutoCreatePrompt(e.target.checked)}
-								className="border-border rounded text-teal-500 focus:ring-teal-500/50"
-							/>
-							<div className="flex flex-col">
-								<label htmlFor="auto-create-prompt" className="text-foreground cursor-pointer text-sm font-medium">
-									Auto-create Prompt Repository workspace (Optional)
-								</label>
-								<span className="text-muted-foreground text-xs">
-									Optionally generates a personal prompt repository for this user with pre-configured model parameters.
-								</span>
-							</div>
-						</div>
+						{isUserRole(role) ? (
+							<>
+								<div className="grid grid-cols-2 gap-4">
+									<div className="space-y-2">
+										<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
+											<DollarSign className="text-muted-foreground/60 h-3.5 w-3.5" /> Budget Limit
+										</label>
+										<Input
+											type="number"
+											step="0.01"
+											value={budget || ""}
+											onChange={(e) => setBudget(parseFloat(e.target.value) || 0)}
+											placeholder="USD / Month"
+											className="bg-muted/20 border-border/50 focus:border-teal-500/50"
+										/>
+									</div>
+									<div className="space-y-2">
+										<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
+											<Activity className="text-muted-foreground/60 h-3.5 w-3.5" /> Rate Limit
+										</label>
+										<Input
+											type="number"
+											value={rateLimit || ""}
+											onChange={(e) => setRateLimit(parseInt(e.target.value) || 0)}
+											placeholder="RPM Limit"
+											className="bg-muted/20 border-border/50 focus:border-teal-500/50"
+										/>
+									</div>
+								</div>
+								<div className="border-border/50 bg-muted/10 flex items-center gap-2 rounded-lg border p-3">
+									<input
+										id="auto-create-prompt"
+										type="checkbox"
+										checked={autoCreatePrompt}
+										onChange={(e) => setAutoCreatePrompt(e.target.checked)}
+										className="border-border rounded text-teal-500 focus:ring-teal-500/50"
+									/>
+									<div className="flex flex-col">
+										<label htmlFor="auto-create-prompt" className="text-foreground cursor-pointer text-sm font-medium">
+											Auto-create Prompt Repository workspace (Optional)
+										</label>
+										<span className="text-muted-foreground text-xs">
+											Optionally generates a personal prompt repository for this user with pre-configured model parameters.
+										</span>
+									</div>
+								</div>
+							</>
+						) : null}
 						<DialogFooter className="pt-4">
 							<Button
 								type="button"
@@ -1396,12 +1414,10 @@ export default function UsersView() {
 								onChange={(e) => {
 									const nextRole = e.target.value;
 									setRole(nextRole);
-									if (nextRole === "admin") {
+									if (!isUserRole(nextRole)) {
 										setAllowedPromptRepos("");
 										setTeamId("");
 										setVirtualKeyId("");
-									} else if (nextRole === "sub_admin") {
-										setAllowedPromptRepos("");
 									}
 									if (!sectionGrantsApply(nextRole)) {
 										setAllowedSections(new Set());
@@ -1439,33 +1455,35 @@ export default function UsersView() {
 						{virtualKeyPicker}
 						{workspaceAccessPicker}
 						{promptReposPicker}
-						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
-									<DollarSign className="text-muted-foreground/60 h-3.5 w-3.5" /> Budget Limit
-								</label>
-								<Input
-									type="number"
-									step="0.01"
-									value={budget || ""}
-									onChange={(e) => setBudget(parseFloat(e.target.value) || 0)}
-									placeholder="USD / Month"
-									className="bg-muted/20 border-border/50 focus:border-teal-500/50"
-								/>
+						{isUserRole(role) ? (
+							<div className="grid grid-cols-2 gap-4">
+								<div className="space-y-2">
+									<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
+										<DollarSign className="text-muted-foreground/60 h-3.5 w-3.5" /> Budget Limit
+									</label>
+									<Input
+										type="number"
+										step="0.01"
+										value={budget || ""}
+										onChange={(e) => setBudget(parseFloat(e.target.value) || 0)}
+										placeholder="USD / Month"
+										className="bg-muted/20 border-border/50 focus:border-teal-500/50"
+									/>
+								</div>
+								<div className="space-y-2">
+									<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
+										<Activity className="text-muted-foreground/60 h-3.5 w-3.5" /> Rate Limit
+									</label>
+									<Input
+										type="number"
+										value={rateLimit || ""}
+										onChange={(e) => setRateLimit(parseInt(e.target.value) || 0)}
+										placeholder="RPM Limit"
+										className="bg-muted/20 border-border/50 focus:border-teal-500/50"
+									/>
+								</div>
 							</div>
-							<div className="space-y-2">
-								<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">
-									<Activity className="text-muted-foreground/60 h-3.5 w-3.5" /> Rate Limit
-								</label>
-								<Input
-									type="number"
-									value={rateLimit || ""}
-									onChange={(e) => setRateLimit(parseInt(e.target.value) || 0)}
-									placeholder="RPM Limit"
-									className="bg-muted/20 border-border/50 focus:border-teal-500/50"
-								/>
-							</div>
-						</div>
+						) : null}
 						<DialogFooter className="pt-4">
 							<Button
 								type="button"
