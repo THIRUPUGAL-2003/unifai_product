@@ -37,15 +37,6 @@ export default function PromptsView() {
 		);
 	}
 
-	if (folders.length === 0 && prompts.length === 0) {
-		return (
-			<div className="no-padding-parent no-border-parent flex h-[calc(100dvh_-_18px)] w-full items-center">
-				<PromptSheets />
-				<PromptsEmptyState />
-			</div>
-		);
-	}
-
 	return (
 		<div className="no-padding-parent no-border-parent bg-background h-[calc(100dvh_-_16px)] w-full">
 			<DeleteFolderDialog />

@@ -31,6 +31,7 @@ import {
 	Search,
 	ShieldCheck,
 	Trash2,
+	UserCheck,
 	Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -159,11 +160,15 @@ export function PromptSidebar() {
 			}
 		}
 
-		// Sort root folders: Customers (1), Users (2), custom folders (5), Removed archives (10)
+		// Sort root folders: Customers (1), Teams (2), Users (3), custom folders (5), Removed archives (10-12)
 		const order = (f: Folder) => {
 			if (f.name === "Customers" || f.type === "system_customers_root") return 1;
-			if (f.name === "Users" || f.type === "system_users_root") return 2;
-			if (f.name.startsWith("Removed") || f.type?.startsWith("archived_")) return 10;
+			if (f.name === "Teams" || f.type === "system_teams_root") return 2;
+			if (f.name === "Users" || f.type === "system_users_root") return 3;
+			if (f.name === "Removed Customers" || f.type === "system_removed_customers_root") return 10;
+			if (f.name === "Removed Users" || f.type === "system_removed_users_root") return 11;
+			if (f.name === "Removed Teams" || f.type === "system_removed_teams_root") return 12;
+			if (f.name.startsWith("Removed") || f.type?.startsWith("archived_")) return 13;
 			return 5;
 		};
 		root.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
@@ -746,6 +751,7 @@ function DroppableFolder({
 
 	const isArchiveFolder = folder.type?.startsWith("archived_") || folder.name.startsWith("Removed");
 	const isCustomersFolder = folder.type === "system_customers_root" || folder.name === "Customers";
+	const isTeamsFolder = folder.type === "system_teams_root" || folder.name === "Teams";
 	const isUsersFolder = folder.type === "system_users_root" || folder.name === "Users";
 
 	const showActions = canCreate || canUpdate || canDelete;
@@ -779,10 +785,12 @@ function DroppableFolder({
 				</button>
 				{isArchiveFolder ? (
 					<Archive className="text-muted-foreground h-4 w-4 shrink-0" />
-				) : isUsersFolder ? (
-					<Users className="text-primary h-4 w-4 shrink-0" />
 				) : isCustomersFolder ? (
 					<Building className="text-primary h-4 w-4 shrink-0" />
+				) : isTeamsFolder ? (
+					<Users className="text-primary h-4 w-4 shrink-0" />
+				) : isUsersFolder ? (
+					<UserCheck className="text-primary h-4 w-4 shrink-0" />
 				) : isExpanded ? (
 					<FolderOpen className="text-muted-foreground h-4 w-4 shrink-0" />
 				) : (

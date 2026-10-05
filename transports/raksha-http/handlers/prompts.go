@@ -205,6 +205,9 @@ type CommitSessionRequest struct {
 
 // getFolders handles GET /api/prompt-repo/folders
 func (h *PromptsHandler) getFolders(ctx *fasthttp.RequestCtx) {
+	if h.lifecycle != nil {
+		_ = h.lifecycle.EnsureAllSystemRoots(ctx)
+	}
 	folders, err := h.store.GetFolders(ctx)
 	if err != nil {
 		logger.Error("failed to get folders: %v", err)
