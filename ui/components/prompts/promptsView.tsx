@@ -9,7 +9,6 @@ import { SettingsPanel } from "./fragments/settingsPanel";
 import { DeleteFolderDialog, DeletePromptDialog } from "./components/alerts";
 import { PromptSheets } from "./components/sheets";
 import { PromptAccessDialog } from "./components/promptAccessDialog";
-import { PromptFilterSidebar } from "./components/promptFilterSidebar";
 import { EmptyState, PromptsEmptyState } from "./components/emptyState";
 import PromptsViewHeader from "./components/promptsViewHeader";
 import { usePromptContext } from "./context";
@@ -62,43 +61,39 @@ export default function PromptsView() {
 				<ResizableHandle className="mr-1 bg-transparent" />
 
 				<ResizablePanel defaultSize={80} minSize={50} className="overflow-hidden">
-					<div className="flex h-full w-full">
-						{!isUserRole && <PromptFilterSidebar />}
+					<div className="bg-card h-full w-full min-w-0 overflow-hidden rounded-md">
+						{selectedPromptId ? (
+							<div className="flex h-full flex-col">
+								<PromptsViewHeader />
 
-						<div className="bg-card flex-1 h-full min-w-0 overflow-hidden rounded-md">
-							{selectedPromptId ? (
-								<div className="flex h-full flex-col">
-									<PromptsViewHeader />
-
-									{isLoadingPlayground ? (
-										<div className="flex flex-1 items-center justify-center">
-											<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
-										</div>
-									) : (
-										<ResizablePanelGroup direction="horizontal" className="flex-1">
-											<ResizablePanel defaultSize={70} minSize={40}>
-												<PlaygroundPanel />
-											</ResizablePanel>
-											<ResizableHandle />
-											<ResizablePanel defaultSize={30} minSize={20}>
-												<SettingsPanel />
-											</ResizablePanel>
-										</ResizablePanelGroup>
-									)}
-								</div>
-							) : (
-								<div className="flex h-full flex-col">
-									{!isUserRole && (
-										<div className="flex items-center justify-end border-b px-4 py-3">
-											<PromptHistoryControls />
-										</div>
-									)}
-									<div className="flex-1">
-										<EmptyState />
+								{isLoadingPlayground ? (
+									<div className="flex flex-1 items-center justify-center">
+										<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
 									</div>
+								) : (
+									<ResizablePanelGroup direction="horizontal" className="flex-1">
+										<ResizablePanel defaultSize={70} minSize={40}>
+											<PlaygroundPanel />
+										</ResizablePanel>
+										<ResizableHandle />
+										<ResizablePanel defaultSize={30} minSize={20}>
+											<SettingsPanel />
+										</ResizablePanel>
+									</ResizablePanelGroup>
+								)}
+							</div>
+						) : (
+							<div className="flex h-full flex-col">
+								{!isUserRole && (
+									<div className="flex items-center justify-end border-b px-4 py-3">
+										<PromptHistoryControls />
+									</div>
+								)}
+								<div className="flex-1">
+									<EmptyState />
 								</div>
-							)}
-						</div>
+							</div>
+						)}
 					</div>
 				</ResizablePanel>
 			</ResizablePanelGroup>

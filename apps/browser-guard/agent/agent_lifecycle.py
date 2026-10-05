@@ -129,6 +129,8 @@ def schedule_install_removal() -> None:
                 parent = os.path.dirname(d)
                 if parent and parent.lower().endswith("\\raksha"):
                     parts.append(f'rmdir "{parent}" 2>nul')
+            # Clean up the uninstalled device identity so a future reinstall generates a fresh active ID
+            parts.append(f'del /f /q "{os.path.join(data_dir(), "agent_id.txt")}" 2>nul')
             cmd = " & ".join(parts)
             # Both STARTUPINFO(SW_HIDE) and CREATE_NO_WINDOW: completely hides cmd/ping/taskkill
             # on Windows 10 and Windows 11 (prevents Windows Terminal popup).
