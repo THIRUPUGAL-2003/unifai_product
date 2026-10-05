@@ -34,6 +34,7 @@ interface ProviderUsageTabViewProps {
 	providerCostProvider: string;
 	providerTokenProvider: string;
 	providerLatencyProvider: string;
+	pollingInterval?: number;
 	onProviderCostChartToggle: (type: ChartType) => void;
 	onProviderTokenChartToggle: (type: ChartType) => void;
 	onProviderLatencyChartToggle: (type: ChartType) => void;
@@ -54,6 +55,7 @@ export const ProviderUsageTabView = forwardRef<ProviderUsageTabViewHandle, Provi
 		providerCostProvider,
 		providerTokenProvider,
 		providerLatencyProvider,
+		pollingInterval = 0,
 		onProviderCostChartToggle,
 		onProviderTokenChartToggle,
 		onProviderLatencyChartToggle,
@@ -64,7 +66,7 @@ export const ProviderUsageTabView = forwardRef<ProviderUsageTabViewHandle, Provi
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active }), [active]);
+	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
 
 	const { data: providerCostData, isLoading: loadingProviderCost } = useGetLogsProviderCostHistogramQuery(fetchArg, skipOpts);
 	const { data: providerTokenData, isLoading: loadingProviderTokens } = useGetLogsProviderTokenHistogramQuery(fetchArg, skipOpts);

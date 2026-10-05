@@ -43,10 +43,10 @@ export function SettingsPanel() {
 		selectedPromptId,
 	} = usePromptContext();
 
-	const { data: authStatus } = useIsAuthEnabledQuery();
+	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
 	const isMemberOnly = Boolean(authStatus?.role && authStatus.role !== "admin");
 
-	const { data: virtualKeysData } = useGetVirtualKeysQuery();
+	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { pollingInterval: 5000 });
 
 	const onProviderChange = useCallback(
 		(p: string) => {

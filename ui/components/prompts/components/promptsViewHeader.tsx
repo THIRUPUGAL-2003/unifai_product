@@ -41,10 +41,10 @@ export default function PromptsViewHeader() {
 		selectedSession: fullSelectedSession,
 	} = usePromptContext();
 
-	const { data: authStatus } = useIsAuthEnabledQuery();
+	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
-	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole });
+	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole, pollingInterval: 5000 });
 	const selectedVK = useMemo(
 		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId),
 		[virtualKeysData, apiKeyId],

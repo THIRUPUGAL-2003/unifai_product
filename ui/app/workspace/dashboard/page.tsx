@@ -4,13 +4,16 @@ import { ScrollArea } from "@/components/ui/scrollArea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTimezonePreference } from "@/lib/hooks/useTimezonePreference";
 import { parseAsSafeArrayOf } from "@/lib/queryParamsParser";
-import { useGetMCPAvailableFilterDataQuery } from "@/lib/store";
+import { baseApi, useAppDispatch, useGetMCPAvailableFilterDataQuery } from "@/lib/store";
 import type { LogFilters, MCPToolLogFilters } from "@/lib/types/logs";
 import { dateUtils } from "@/lib/types/logs";
-import { getRangeForPeriod, TIME_PERIODS } from "@/lib/utils/timeRange";
+import { cn } from "@/lib/utils";
+import { getRangeForPeriod, getUnixRangeForPeriod, TIME_PERIODS } from "@/lib/utils/timeRange";
 import { useLocation } from "@tanstack/react-router";
 import { parseAsBoolean, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { Radio, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { type ChartType } from "./components/charts/chartTypeToggle";
 import { ModelFilterSelect } from "./components/charts/modelFilterSelect";
 import { ExportPopover } from "./components/exportPopover";
@@ -40,6 +43,7 @@ export default function DashboardPage() {
 			start_time: parseAsInteger.withDefault(defaultTimeRange.startTime),
 			end_time: parseAsInteger.withDefault(defaultTimeRange.endTime),
 			tab: parseAsString.withDefault("overview"),
+			polling: parseAsBoolean.withDefault(true).withOptions({ clearOnDefault: false }),
 			virtual_key_ids: parseAsSafeArrayOf.withDefault([]),
 			providers: parseAsSafeArrayOf.withDefault([]),
 			models: parseAsSafeArrayOf.withDefault([]),
@@ -427,7 +431,61 @@ export default function DashboardPage() {
 		setPdfMode(false);
 	}, []);
 
+	const dispatch = useAppDispatch();
+	const [isRefreshing, setIsRefreshing] = useState(false);
+
 	const activeTab = urlState.tab || "overview";
+	const polling = urlState.polling;
+	// 5s polling interval when live mode is on
+	const DASHBOARD_POLLING_INTERVAL = 5000;
+	const pollingInterval = polling ? DASHBOARD_POLLING_INTERVAL : 0;
+
+	// Live sliding time range when a relative period is active
+	const liveUnixRange = useMemo(() => {
+		if (!urlState.period) return null;
+		return getUnixRangeForPeriod(urlState.period);
+	}, [urlState.period]);
+
+	const effectiveStartTime = liveUnixRange ? liveUnixRange.start : urlState.start_time;
+	const effectiveEndTime = liveUnixRange ? liveUnixRange.end : urlState.end_time;
+
+	const handleRefresh = useCallback(async () => {
+		setIsRefreshing(true);
+		try {
+			if (urlState.period) {
+				const range = getUnixRangeForPeriod(urlState.period);
+				setUrlState({
+					start_time: range.start,
+					end_time: range.end,
+				});
+			}
+			dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers"]));
+			const tabMap: Record<string, React.RefObject<any>> = {
+				overview: overviewRef,
+				"provider-usage": providerRef,
+				rankings: modelRankingsRef,
+				mcp: mcpRef,
+				"team-rankings": teamRankingsRef,
+				"customer-rankings": customerRankingsRef,
+				"bu-rankings": buRankingsRef,
+				"user-rankings": userRankingsRef,
+				"virtual-key-rankings": virtualKeyRankingsRef,
+			};
+			const activeRef = tabMap[activeTab];
+			if (activeRef?.current?.loadData) {
+				await activeRef.current.loadData();
+			}
+		} finally {
+			setTimeout(() => setIsRefreshing(false), 500);
+		}
+	}, [urlState.period, setUrlState, dispatch, activeTab]);
+
+	const handlePollToggle = useCallback(
+		(enabled: boolean) => {
+			setUrlState({ polling: enabled });
+		},
+		[setUrlState],
+	);
 
 	return (
 		<div id="dashboard-root" className="no-padding-parent no-border-parent bg-background flex h-[calc(100vh_-_16px)] w-full gap-3">
@@ -442,6 +500,36 @@ export default function DashboardPage() {
 						<h1 className="text-lg font-semibold">Dashboard</h1>
 					</div>
 					<div className="flex items-center gap-2">
+						{/* Refresh button with spinner */}
+						<Button
+							variant="outline"
+							size="sm"
+							className="gap-1.5"
+							onClick={handleRefresh}
+							disabled={isRefreshing}
+							data-testid="dashboard-refresh-btn"
+							title="Refresh dashboard metrics"
+						>
+							<RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+							Refresh
+						</Button>
+
+						{/* Live polling toggle */}
+						<Button
+							variant={polling ? "default" : "outline"}
+							size="sm"
+							className="gap-1.5"
+							onClick={() => handlePollToggle(!polling)}
+							data-testid="dashboard-live-toggle"
+							title={polling ? "Live updates on (every 5s) — click to pause" : "Live updates off — click to enable"}
+						>
+							{polling ? (
+								<Radio className="h-4 w-4 animate-pulse" />
+							) : (
+								<Radio className="h-4 w-4" />
+							)}
+							Live
+						</Button>
 						<ExportPopover
 							onLoadData={handlePreloadData}
 							onPdfExport={handlePdfExport}
@@ -538,8 +626,8 @@ export default function DashboardPage() {
 									ref={overviewRef}
 									filters={filters}
 									active={activeTab === "overview" || pdfMode}
-									startTime={urlState.start_time}
-									endTime={urlState.end_time}
+									startTime={effectiveStartTime}
+									endTime={effectiveEndTime}
 									volumeChartType={toChartType(urlState.volume_chart)}
 									tokenChartType={toChartType(urlState.token_chart)}
 									costChartType={toChartType(urlState.cost_chart)}
@@ -547,6 +635,7 @@ export default function DashboardPage() {
 									latencyChartType={toChartType(urlState.latency_chart)}
 									costModel={urlState.cost_model}
 									usageModel={urlState.usage_model}
+									pollingInterval={pollingInterval}
 									onVolumeChartToggle={handleVolumeChartToggle}
 									onTokenChartToggle={handleTokenChartToggle}
 									onCostChartToggle={handleCostChartToggle}
@@ -565,14 +654,15 @@ export default function DashboardPage() {
 									ref={providerRef}
 									filters={filters}
 									active={activeTab === "provider-usage" || pdfMode}
-									startTime={urlState.start_time}
-									endTime={urlState.end_time}
+									startTime={effectiveStartTime}
+									endTime={effectiveEndTime}
 									providerCostChartType={toChartType(urlState.provider_cost_chart)}
 									providerTokenChartType={toChartType(urlState.provider_token_chart)}
 									providerLatencyChartType={toChartType(urlState.provider_latency_chart)}
 									providerCostProvider={urlState.provider_cost_provider}
 									providerTokenProvider={urlState.provider_token_provider}
 									providerLatencyProvider={urlState.provider_latency_provider}
+									pollingInterval={pollingInterval}
 									onProviderCostChartToggle={handleProviderCostChartToggle}
 									onProviderTokenChartToggle={handleProviderTokenChartToggle}
 									onProviderLatencyChartToggle={handleProviderLatencyChartToggle}
@@ -590,8 +680,9 @@ export default function DashboardPage() {
 									ref={modelRankingsRef}
 									filters={filters}
 									active={activeTab === "rankings" || pdfMode}
-									startTime={urlState.start_time}
-									endTime={urlState.end_time}
+									startTime={effectiveStartTime}
+									endTime={effectiveEndTime}
+									pollingInterval={pollingInterval}
 								/>
 							</div>
 						</TabsContent>
@@ -603,10 +694,11 @@ export default function DashboardPage() {
 									ref={mcpRef}
 									filters={mcpFilters}
 									active={activeTab === "mcp" || pdfMode}
-									startTime={urlState.start_time}
-									endTime={urlState.end_time}
+									startTime={effectiveStartTime}
+									endTime={effectiveEndTime}
 									mcpVolumeChartType={toChartType(urlState.mcp_volume_chart)}
 									mcpCostChartType={toChartType(urlState.mcp_cost_chart)}
+									pollingInterval={pollingInterval}
 									onMcpVolumeChartToggle={handleMcpVolumeChartToggle}
 									onMcpCostChartToggle={handleMcpCostChartToggle}
 								/>
@@ -624,6 +716,7 @@ export default function DashboardPage() {
 									dimensionLabel="Team"
 									testIdPrefix="dashboard-team-rankings"
 									dataKey="teamRankingsData"
+									pollingInterval={pollingInterval}
 								/>
 							</div>
 						</TabsContent>
@@ -639,6 +732,7 @@ export default function DashboardPage() {
 									dimensionLabel="Customer"
 									testIdPrefix="dashboard-customer-rankings"
 									dataKey="customerRankingsData"
+									pollingInterval={pollingInterval}
 								/>
 							</div>
 						</TabsContent>
@@ -654,6 +748,7 @@ export default function DashboardPage() {
 									dimensionLabel="Business Unit"
 									testIdPrefix="dashboard-bu-rankings"
 									dataKey="buRankingsData"
+									pollingInterval={pollingInterval}
 								/>
 							</div>
 						</TabsContent>
@@ -669,6 +764,7 @@ export default function DashboardPage() {
 									dimensionLabel="User"
 									testIdPrefix="dashboard-user-rankings"
 									dataKey="userRankingsData"
+									pollingInterval={pollingInterval}
 								/>
 							</div>
 						</TabsContent>
@@ -684,6 +780,7 @@ export default function DashboardPage() {
 									dimensionLabel="Virtual Key"
 									testIdPrefix="dashboard-virtual-key-rankings"
 									dataKey="virtualKeyRankingsData"
+									pollingInterval={pollingInterval}
 								/>
 							</div>
 						</TabsContent>

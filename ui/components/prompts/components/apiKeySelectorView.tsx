@@ -31,8 +31,8 @@ export function ApiKeySelectorView({
 	placeholder?: string;
 }) {
 	const [query, setQuery] = useState("");
-	const { data: authStatus } = useIsAuthEnabledQuery();
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 30000 });
+	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
+	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 5000 });
 	const blocks = billingBlocks?.blocks;
 
 	const allOptions = useMemo(() => {

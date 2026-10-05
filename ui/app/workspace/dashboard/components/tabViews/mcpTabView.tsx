@@ -24,16 +24,17 @@ interface MCPTabViewProps {
 	endTime: number;
 	mcpVolumeChartType: ChartType;
 	mcpCostChartType: ChartType;
+	pollingInterval?: number;
 	onMcpVolumeChartToggle: (type: ChartType) => void;
 	onMcpCostChartToggle: (type: ChartType) => void;
 }
 
 export const MCPTabView = forwardRef<MCPTabViewHandle, MCPTabViewProps>(function MCPTabView(
-	{ filters, active, startTime, endTime, mcpVolumeChartType, mcpCostChartType, onMcpVolumeChartToggle, onMcpCostChartToggle },
+	{ filters, active, startTime, endTime, mcpVolumeChartType, mcpCostChartType, pollingInterval = 0, onMcpVolumeChartToggle, onMcpCostChartToggle },
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active }), [active]);
+	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
 
 	const { data: mcpHistogramData, isLoading: loadingMcpHistogram } = useGetMCPHistogramQuery(fetchArg, skipOpts);
 	const { data: mcpCostData, isLoading: loadingMcpCost } = useGetMCPCostHistogramQuery(fetchArg, skipOpts);

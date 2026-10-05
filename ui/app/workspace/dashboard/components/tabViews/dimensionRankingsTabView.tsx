@@ -16,12 +16,13 @@ interface DimensionRankingsTabViewProps {
 	dimensionLabel: string;
 	testIdPrefix: string;
 	dataKey: keyof DashboardData;
+	pollingInterval?: number;
 }
 
 export const DimensionRankingsTabView = forwardRef<DimensionRankingsTabViewHandle, DimensionRankingsTabViewProps>(
-	function DimensionRankingsTabView({ filters, active, dimension, dimensionLabel, testIdPrefix, dataKey }, ref) {
+	function DimensionRankingsTabView({ filters, active, dimension, dimensionLabel, testIdPrefix, dataKey, pollingInterval = 0 }, ref) {
 		const fetchArg = useMemo(() => ({ filters, dimension }), [filters, dimension]);
-		const skipOpts = useMemo(() => ({ skip: !active }), [active]);
+		const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
 
 		const { data, isLoading: loading } = useGetDimensionRankingsQuery(fetchArg, skipOpts);
 

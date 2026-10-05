@@ -19,14 +19,15 @@ interface ModelRankingsTabViewProps {
 	active: boolean;
 	startTime: number;
 	endTime: number;
+	pollingInterval?: number;
 }
 
 export const ModelRankingsTabView = forwardRef<ModelRankingsTabViewHandle, ModelRankingsTabViewProps>(function ModelRankingsTabView(
-	{ filters, active, startTime, endTime },
+	{ filters, active, startTime, endTime, pollingInterval = 0 },
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active }), [active]);
+	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
 
 	const { data: rankingsData, isLoading: loadingRankings } = useGetModelRankingsQuery(fetchArg, skipOpts);
 	const { data: modelData, isLoading: loadingModels } = useGetLogsModelHistogramQuery(fetchArg, skipOpts);

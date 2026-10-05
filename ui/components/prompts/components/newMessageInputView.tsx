@@ -33,9 +33,9 @@ export function NewMessageInputView() {
 	const [attachments, setAttachments] = useState<MessageContent[]>([]);
 	const userInputRef = useRef<HTMLTextAreaElement>(null);
 
-	const { data: authStatus } = useIsAuthEnabledQuery();
-	const { data: virtualKeysData } = useGetVirtualKeysQuery();
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 30000 });
+	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
+	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { pollingInterval: 5000 });
+	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 5000 });
 
 	const budgetAlert = useMemo(() => {
 		// 1. Check User Personal Budget

@@ -41,6 +41,7 @@ interface OverviewTabViewProps {
 	latencyChartType: ChartType;
 	costModel: string;
 	usageModel: string;
+	pollingInterval?: number;
 	onVolumeChartToggle: (type: ChartType) => void;
 	onTokenChartToggle: (type: ChartType) => void;
 	onCostChartToggle: (type: ChartType) => void;
@@ -63,6 +64,7 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 		latencyChartType,
 		costModel,
 		usageModel,
+		pollingInterval = 0,
 		onVolumeChartToggle,
 		onTokenChartToggle,
 		onCostChartToggle,
@@ -74,7 +76,7 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
-	const skipOpts = useMemo(() => ({ skip: !active }), [active]);
+	const skipOpts = useMemo(() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: true }), [active, pollingInterval]);
 
 	const { data: histogramData, isLoading: loadingHistogram } = useGetLogsHistogramQuery(fetchArg, skipOpts);
 	const { data: tokenData, isLoading: loadingTokens } = useGetLogsTokenHistogramQuery(fetchArg, skipOpts);

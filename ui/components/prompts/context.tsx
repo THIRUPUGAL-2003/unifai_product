@@ -7,7 +7,7 @@ import {
 	type ToolCall,
 	type VariableMap,
 } from "@/lib/message";
-import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
+import { baseApi, getErrorMessage, useAppDispatch, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
 import { useGetCoreConfigQuery } from "@/lib/store/apis/configApi";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -159,12 +159,13 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [createSession] = useCreateSessionMutation();
 	const [updateSession] = useUpdateSessionMutation();
 
-	const { data: authStatus } = useIsAuthEnabledQuery();
+	const dispatch = useAppDispatch();
+	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
 	// Members prefer an assigned Virtual Key when present; otherwise Auto (provider keys).
-	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole });
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { skip: !isUserRole });
+	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole, pollingInterval: 5000 });
+	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { skip: !isUserRole, pollingInterval: 5000 });
 	const assignedMemberVkValue = useMemo(() => {
 		if (!isUserRole) return "";
 		const vks = virtualKeysData?.virtual_keys ?? [];
@@ -732,6 +733,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					onFinally: () => {
 						if (!isActive()) return;
 						setIsStreaming(false);
+						dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers"]));
 					},
 				},
 				abortController.signal,
@@ -845,6 +847,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					onFinally: () => {
 						if (!isActive()) return;
 						setIsStreaming(false);
+						dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers"]));
 					},
 				},
 				abortController.signal,
