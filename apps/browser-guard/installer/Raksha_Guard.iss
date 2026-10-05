@@ -151,9 +151,19 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  AppDir: String;
 begin
   StopRunningGuard();
   RemovePreviousBuild();
+  AppDir := ExpandConstant('{app}');
+  if DirExists(AppDir) then
+  begin
+    if (not FileExists(AppDir + '\unins000.exe')) and FileExists(AppDir + '\unins000.dat') then
+    begin
+      DeleteFile(AppDir + '\unins000.dat');
+    end;
+  end;
   Result := '';
 end;
 
