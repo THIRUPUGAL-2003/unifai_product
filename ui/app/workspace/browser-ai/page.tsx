@@ -5049,9 +5049,6 @@ export default function BrowserAiPage() {
 							</div>
 						</CardHeader>
 						<CardContent className="space-y-4">
-							<div className="rounded-md border border-amber-800/50 bg-amber-950/20 p-3">
-								<p className="text-sm font-medium text-amber-200">Uninstall always requires this key</p>
-							</div>
 							<div className="space-y-3">
 								{agentSettings?.key_configured && !uninstallKeyEditing ? (
 									<div className="space-y-2 rounded-md border border-border p-3">
