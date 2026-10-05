@@ -39,6 +39,11 @@ import {
 	ChevronDown,
 	MoreHorizontal,
 	PowerOff,
+	PauseCircle,
+	PlayCircle,
+	Pause,
+	Play,
+	HardDriveDownload,
 	Mail,
 	Send,
 	FileSpreadsheet,
@@ -132,6 +137,9 @@ import {
 	useSaveBrowserAiUninstallKeyMutation,
 	useBulkDeleteBrowserAiAgentsMutation,
 	useRemoteUninstallBrowserAiAgentMutation,
+	usePauseBrowserAiAgentMutation,
+	useResumeBrowserAiAgentMutation,
+	useAllowReinstallBrowserAiAgentMutation,
 	useLazyGetBrowserAiAgentUninstallKeyQuery,
 	useRotateBrowserAiAgentUninstallKeyMutation,
 	useDeleteBrowserAiAgentMutation,
@@ -828,6 +836,7 @@ export default function BrowserAiPage() {
 	const agents = agentsData?.agents || [];
 	const totalAgents = agentsData?.total || 0;
 	const activeAgentsCount = agentsData?.active_count ?? agents.filter((a) => a.status === "active").length;
+	const pausedAgentsCount = agentsData?.paused_count ?? agents.filter((a) => a.status === "paused").length;
 	const uninstalledAgentsCount = agentsData?.uninstalled_count ?? agents.filter((a) => a.status === "uninstalled").length;
 	const agentSettings = agentSettingsData?.settings;
 	const visibleAgentIds = useMemo(() => agents.map((a) => a.id), [agents]);
@@ -1058,12 +1067,19 @@ export default function BrowserAiPage() {
 	const [deleteTarget] = useDeleteBrowserAiTargetMutation();
 	const [bulkDeleteAgents, { isLoading: deletingAgents }] = useBulkDeleteBrowserAiAgentsMutation();
 	const [remoteUninstallAgent, { isLoading: isRemoteUninstalling }] = useRemoteUninstallBrowserAiAgentMutation();
+	const [pauseAgent, { isLoading: isPausing }] = usePauseBrowserAiAgentMutation();
+	const [resumeAgent, { isLoading: isResuming }] = useResumeBrowserAiAgentMutation();
+	const [allowReinstallAgent, { isLoading: isAllowingReinstall }] = useAllowReinstallBrowserAiAgentMutation();
 	const [fetchAgentUninstallKey] = useLazyGetBrowserAiAgentUninstallKeyQuery();
 	const [rotateAgentUninstallKey, { isLoading: isRotatingGuardKey }] = useRotateBrowserAiAgentUninstallKeyMutation();
 	const [deleteSingleAgent] = useDeleteBrowserAiAgentMutation();
 	const [updateAgentContactEmail, { isLoading: isUpdatingContactEmail }] = useUpdateBrowserAiAgentContactEmailMutation();
 	const [guardKeyLoading, setGuardKeyLoading] = useState(false);
 	const [guardKeyHint, setGuardKeyHint] = useState("");
+
+	const [networkDeployDialogOpen, setNetworkDeployDialogOpen] = useState(false);
+	const [targetAgentForDeploy, setTargetAgentForDeploy] = useState<BrowserAIAgent | null>(null);
+	const [networkDeployCopied, setNetworkDeployCopied] = useState<string>("");
 
 	const [selectedAgentDetails, setSelectedAgentDetails] = useState<BrowserAIAgent | null>(null);
 	const [agentDetailsKey, setAgentDetailsKey] = useState<string>("");
@@ -1234,7 +1250,7 @@ export default function BrowserAiPage() {
 		try {
 			await remoteUninstallAgent({ id: targetAgentToUninstall.id, key }).unwrap();
 			setRemoteUninstallSuccess(
-				`Remote shutdown signal sent to ${targetAgentToUninstall.hostname || targetAgentToUninstall.id}. Guard will stop on next heartbeat (~15ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ30s).`
+				`Remote uninstall signal sent to ${targetAgentToUninstall.hostname || targetAgentToUninstall.id}. Guard will clear PAC and remove itself on next heartbeat.`
 			);
 			refetchAgents();
 			setTimeout(() => {
@@ -1248,6 +1264,63 @@ export default function BrowserAiPage() {
 				getErrorMessage(err) || "Failed to send remote uninstall. Use this Guard's key or the company uninstall key."
 			);
 		}
+	};
+
+	const handlePauseAgent = async (agent: BrowserAIAgent) => {
+		try {
+			await pauseAgent(agent.id).unwrap();
+			toast({
+				title: "Guard Paused (Standby)",
+				description: `Protection paused on ${agent.hostname || agent.id}. Proxy & PAC disabled.`,
+			});
+			refetchAgents();
+		} catch (err: any) {
+			toast({
+				title: "Failed to pause Guard",
+				description: getErrorMessage(err) || "Could not pause agent",
+				variant: "destructive",
+			});
+		}
+	};
+
+	const handleResumeAgent = async (agent: BrowserAIAgent) => {
+		try {
+			await resumeAgent(agent.id).unwrap();
+			toast({
+				title: "Guard Resumed (Active)",
+				description: `Protection resumed on ${agent.hostname || agent.id}. Proxy & PAC re-enabled.`,
+			});
+			refetchAgents();
+		} catch (err: any) {
+			toast({
+				title: "Failed to resume Guard",
+				description: getErrorMessage(err) || "Could not resume agent",
+				variant: "destructive",
+			});
+		}
+	};
+
+	const handleAllowReinstall = async (agent: BrowserAIAgent) => {
+		try {
+			await allowReinstallAgent(agent.id).unwrap();
+			toast({
+				title: "Reinstall Allowed",
+				description: `Uninstalled block cleared for ${agent.hostname || agent.id}. You can now run the installer on that laptop.`,
+			});
+			refetchAgents();
+		} catch (err: any) {
+			toast({
+				title: "Failed to allow reinstall",
+				description: getErrorMessage(err) || "Could not clear uninstalled status",
+				variant: "destructive",
+			});
+		}
+	};
+
+	const handleOpenNetworkDeployDialog = (agent: BrowserAIAgent) => {
+		setTargetAgentForDeploy(agent);
+		setNetworkDeployCopied("");
+		setNetworkDeployDialogOpen(true);
 	};
 
 	const handleDeleteSingleAgent = async (agent: BrowserAIAgent) => {
@@ -1899,6 +1972,14 @@ export default function BrowserAiPage() {
 	const getAgentStatusBadge = (status: string, uninstallRequested?: boolean) => {
 		const s = (status || "").toLowerCase();
 		if (s === "uninstalled") return <Badge className="bg-slate-800 text-slate-300 border border-slate-700">Uninstalled</Badge>;
+		if (s === "paused") {
+			return (
+				<Badge className="bg-amber-950/80 text-amber-300 border border-amber-700/80 gap-1 inline-flex items-center">
+					<Pause className="h-3 w-3" />
+					Paused (Standby)
+				</Badge>
+			);
+		}
 		if (s === "uninstall_pending" || uninstallRequested) {
 			return <Badge className="bg-amber-950 text-amber-300 border border-amber-800">Uninstall pending</Badge>;
 		}
@@ -4528,6 +4609,7 @@ export default function BrowserAiPage() {
 							<SelectContent>
 								<SelectItem value="all">All statuses</SelectItem>
 								<SelectItem value="active">Active</SelectItem>
+								<SelectItem value="paused">Paused (Standby)</SelectItem>
 								<SelectItem value="uninstall_pending">Uninstall pending</SelectItem>
 								<SelectItem value="uninstalled">Uninstalled</SelectItem>
 							</SelectContent>
@@ -4550,7 +4632,7 @@ export default function BrowserAiPage() {
 						</Select>
 					</div>
 
-					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
 						<Card className="bg-card border-border">
 							<CardHeader className="pb-2">
 								<CardDescription>Total registered</CardDescription>
@@ -4565,6 +4647,12 @@ export default function BrowserAiPage() {
 						</Card>
 						<Card className="bg-card border-border">
 							<CardHeader className="pb-2">
+								<CardDescription>Paused (Standby)</CardDescription>
+								<CardTitle className="text-2xl text-amber-400">{pausedAgentsCount}</CardTitle>
+							</CardHeader>
+						</Card>
+						<Card className="bg-card border-border">
+							<CardHeader className="pb-2">
 								<CardDescription>Uninstalled</CardDescription>
 								<CardTitle className="text-2xl text-slate-400">{uninstalledAgentsCount}</CardTitle>
 							</CardHeader>
@@ -4573,7 +4661,7 @@ export default function BrowserAiPage() {
 							<CardHeader className="pb-2">
 								<CardDescription>Uninstall key</CardDescription>
 								<CardTitle className="text-lg">
-									{agentSettings?.key_configured ? "Configured ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Always required" : "Not set ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Set key first"}
+									{agentSettings?.key_configured ? "Configured · Always required" : "Not set · Set key first"}
 								</CardTitle>
 							</CardHeader>
 						</Card>
@@ -4741,7 +4829,7 @@ export default function BrowserAiPage() {
 															<span className="sr-only">Actions</span>
 														</Button>
 													</DropdownMenuTrigger>
-													<DropdownMenuContent align="end" className="w-56 bg-card border-border">
+													<DropdownMenuContent align="end" className="w-64 bg-card border-border">
 														<DropdownMenuItem
 															onClick={() => handleOpenAgentDetails(agent)}
 															className="cursor-pointer gap-2 font-medium"
@@ -4749,13 +4837,64 @@ export default function BrowserAiPage() {
 															<KeyRound className="h-4 w-4 text-emerald-400" />
 															View Device &amp; Daily Key
 														</DropdownMenuItem>
+
+														{/* Pause / Standby when active */}
+														{agent.status !== "uninstalled" && agent.status !== "paused" && (
+															<DropdownMenuItem
+																onClick={() => handlePauseAgent(agent)}
+																disabled={isPausing}
+																className="text-amber-400 focus:text-amber-400 focus:bg-amber-950/40 cursor-pointer gap-2"
+															>
+																<PauseCircle className="h-4 w-4 text-amber-400" />
+																Pause / Turn Off Guard (Standby)
+															</DropdownMenuItem>
+														)}
+
+														{/* Resume when paused */}
+														{agent.status === "paused" && (
+															<DropdownMenuItem
+																onClick={() => handleResumeAgent(agent)}
+																disabled={isResuming}
+																className="text-emerald-400 focus:text-emerald-400 focus:bg-emerald-950/40 cursor-pointer gap-2 font-medium"
+															>
+																<PlayCircle className="h-4 w-4 text-emerald-400" />
+																Turn On / Resume Guard
+															</DropdownMenuItem>
+														)}
+
+														{/* Network / Remote Deploy Script */}
 														<DropdownMenuItem
-															onClick={() => handleOpenRemoteUninstall(agent)}
-															className="text-red-400 focus:text-red-400 focus:bg-red-950/40 cursor-pointer gap-2"
+															onClick={() => handleOpenNetworkDeployDialog(agent)}
+															className="text-blue-400 focus:text-blue-400 focus:bg-blue-950/40 cursor-pointer gap-2"
 														>
-															<PowerOff className="h-4 w-4 text-red-400" />
-															Turn Off / Uninstall Guard
+															<Terminal className="h-4 w-4 text-blue-400" />
+															Network Push / Install Script
 														</DropdownMenuItem>
+
+														{/* Allow Reinstall when uninstalled */}
+														{agent.status === "uninstalled" && (
+															<DropdownMenuItem
+																onClick={() => handleAllowReinstall(agent)}
+																disabled={isAllowingReinstall}
+																className="text-emerald-400 focus:text-emerald-400 focus:bg-emerald-950/40 cursor-pointer gap-2 font-medium"
+															>
+																<RefreshCw className="h-4 w-4 text-emerald-400" />
+																Allow Reinstall / Re-enroll
+															</DropdownMenuItem>
+														)}
+
+														{/* Permanent Uninstall */}
+														{agent.status !== "uninstalled" && (
+															<DropdownMenuItem
+																onClick={() => handleOpenRemoteUninstall(agent)}
+																className="text-red-400 focus:text-red-400 focus:bg-red-950/40 cursor-pointer gap-2"
+															>
+																<PowerOff className="h-4 w-4 text-red-400" />
+																Uninstall Guard (Permanent)
+															</DropdownMenuItem>
+														)}
+
+														<DropdownMenuSeparator />
 														<DropdownMenuItem
 															onClick={() => handleCopyGuardUninstallKey(agent)}
 															className="cursor-pointer gap-2"
@@ -6335,18 +6474,21 @@ export default function BrowserAiPage() {
 				</DialogContent>
 			</Dialog>
 
-			{/* REMOTE UNINSTALL / TURN OFF GUARD DIALOG */}
+			{/* REMOTE UNINSTALL DIALOG (PERMANENT) */}
 			<Dialog open={remoteUninstallDialogOpen} onOpenChange={setRemoteUninstallDialogOpen}>
 				<DialogContent className="bg-card border-border text-foreground w-[calc(100%-2rem)] sm:max-w-md">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2 text-base text-red-400">
 							<PowerOff className="h-5 w-5 text-red-400" />
-							Turn Off / Remote Uninstall Guard
+							Uninstall Guard (Permanent)
 						</DialogTitle>
 						<DialogDescription className="text-xs">
-							Send a remote shutdown signal to{" "}
+							Permanently uninstall Raksha Guard from{" "}
 							<strong className="text-foreground">{targetAgentToUninstall?.hostname || targetAgentToUninstall?.id}</strong>.
-							The laptop will clear PAC/autostart, stop Guard, and delete the installed EXE / .app on the next heartbeat.
+							The laptop will clear PAC/autostart, terminate Guard, and delete the installed EXE from disk on the next heartbeat.
+							<span className="block mt-1 text-amber-300">
+								(Tip: To temporarily stop monitoring without deleting the app, use <strong>Pause / Turn Off Guard (Standby)</strong> instead.)
+							</span>
 						</DialogDescription>
 					</DialogHeader>
 
@@ -6384,7 +6526,7 @@ export default function BrowserAiPage() {
 								</div>
 								<Input
 									type={showRemoteUninstallKey ? "text" : "password"}
-									placeholder={guardKeyLoading ? "Loading Guard keyÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦" : "Today's Guard key or company uninstall key"}
+									placeholder={guardKeyLoading ? "Loading Guard key…" : "Today's Guard key or company uninstall key"}
 									value={remoteUninstallKey}
 									onChange={(e) => setRemoteUninstallKey(e.target.value)}
 									disabled={guardKeyLoading}
@@ -6418,9 +6560,141 @@ export default function BrowserAiPage() {
 								) : (
 									<PowerOff className="h-4 w-4" />
 								)}
-								Turn Off Guard
+								Uninstall Permanently
 							</Button>
 						)}
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* NETWORK REMOTE PUSH & INSTALL SCRIPT DIALOG */}
+			<Dialog open={networkDeployDialogOpen} onOpenChange={setNetworkDeployDialogOpen}>
+				<DialogContent className="bg-card border-border text-foreground w-[calc(100%-2rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2 text-base text-blue-400">
+							<Terminal className="h-5 w-5 text-blue-400" />
+							Remote Push &amp; Network Reinstall Script
+						</DialogTitle>
+						<DialogDescription className="text-xs">
+							Run one of these commands to silently install or reinstall Raksha Guard on{" "}
+							<strong className="text-foreground">{targetAgentForDeploy?.hostname || targetAgentForDeploy?.ip_address || "the target laptop"}</strong> without employee popups.
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-4 py-2 text-xs">
+						{/* Target machine info badge */}
+						<div className="flex flex-wrap gap-3 p-2.5 rounded-md bg-secondary/30 border border-border text-xs">
+							<div><span className="text-muted-foreground">Target Host:</span> <span className="font-semibold text-foreground">{targetAgentForDeploy?.hostname || "—"}</span></div>
+							<div><span className="text-muted-foreground">IP Address:</span> <span className="font-mono text-foreground">{targetAgentForDeploy?.ip_address || "—"}</span></div>
+							<div><span className="text-muted-foreground">OS:</span> <span className="text-foreground">{targetAgentForDeploy?.os_version || "Windows"}</span></div>
+							<div><span className="text-muted-foreground">Current Status:</span> <span className="text-foreground">{targetAgentForDeploy?.status || "—"}</span></div>
+						</div>
+
+						{/* Option 1: PowerShell Silent Install One-Liner */}
+						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
+							<div className="flex items-center justify-between">
+								<span className="font-semibold text-foreground flex items-center gap-1.5">
+									<Terminal className="h-3.5 w-3.5 text-blue-400" />
+									1. PowerShell Silent Install (One-Liner)
+								</span>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="h-7 text-xs gap-1 text-blue-400 hover:text-blue-300"
+									onClick={() => {
+										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
+										const script = `curl.exe -fSL -o "$env:TEMP\\Raksha_Guard_Setup.exe" "${origin}/api/browser-ai/setup/Raksha_Guard_Setup.exe"; Start-Process "$env:TEMP\\Raksha_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Raksha_Guard_Setup.exe"`;
+										navigator.clipboard.writeText(script);
+										setNetworkDeployCopied("ps");
+										setTimeout(() => setNetworkDeployCopied(""), 2500);
+									}}
+								>
+									{networkDeployCopied === "ps" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+									{networkDeployCopied === "ps" ? "Copied!" : "Copy Command"}
+								</Button>
+							</div>
+							<p className="text-[11px] text-muted-foreground">
+								Downloads the installer and runs silently in the background (no popups, no restart). Ideal for remote terminal or local PowerShell.
+							</p>
+							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
+								{`curl.exe -fSL -o "$env:TEMP\\Raksha_Guard_Setup.exe" "${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Raksha_Guard_Setup.exe"; Start-Process "$env:TEMP\\Raksha_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Raksha_Guard_Setup.exe"`}
+							</pre>
+						</div>
+
+						{/* Option 2: Office Network Push via PsExec */}
+						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
+							<div className="flex items-center justify-between">
+								<span className="font-semibold text-foreground flex items-center gap-1.5">
+									<Radio className="h-3.5 w-3.5 text-purple-400" />
+									2. Office Network Remote Push (PsExec / LAN)
+								</span>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="h-7 text-xs gap-1 text-purple-400 hover:text-purple-300"
+									onClick={() => {
+										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
+										const ip = targetAgentForDeploy?.ip_address || "<laptop-ip>";
+										const script = `psexec \\\\${ip} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${origin}/api/browser-ai/setup/Raksha_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`;
+										navigator.clipboard.writeText(script);
+										setNetworkDeployCopied("psexec");
+										setTimeout(() => setNetworkDeployCopied(""), 2500);
+									}}
+								>
+									{networkDeployCopied === "psexec" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+									{networkDeployCopied === "psexec" ? "Copied!" : "Copy Command"}
+								</Button>
+							</div>
+							<p className="text-[11px] text-muted-foreground">
+								Push directly from your admin machine across the office LAN/VPN to this laptop without touching the employee screen.
+							</p>
+							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap break-all">
+								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Raksha_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`}
+							</pre>
+						</div>
+
+						{/* Option 3: Manual Direct Silent Arguments */}
+						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
+							<div className="flex items-center justify-between">
+								<span className="font-semibold text-foreground flex items-center gap-1.5">
+									<SlidersHorizontal className="h-3.5 w-3.5 text-amber-400" />
+									3. Installer Command-Line Flags (Silent)
+								</span>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="h-7 text-xs gap-1 text-amber-400 hover:text-amber-300"
+									onClick={() => {
+										navigator.clipboard.writeText("Raksha_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
+										setNetworkDeployCopied("flags");
+										setTimeout(() => setNetworkDeployCopied(""), 2500);
+									}}
+								>
+									{networkDeployCopied === "flags" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+									{networkDeployCopied === "flags" ? "Copied!" : "Copy Flags"}
+								</Button>
+							</div>
+							<p className="text-[11px] text-muted-foreground">
+								If you run the installer from a shared network drive or pen drive:
+							</p>
+							<pre className="p-2 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-amber-300">
+								Raksha_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+							</pre>
+						</div>
+					</div>
+
+					<DialogFooter className="flex-col sm:flex-row gap-2 justify-between items-center">
+						<a
+							href="/api/browser-ai/setup/Raksha_Guard_Setup.exe"
+							download="Raksha_Guard_Setup.exe"
+							className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+						>
+							<HardDriveDownload className="h-3.5 w-3.5" />
+							Direct Download Raksha_Guard_Setup.exe
+						</a>
+						<Button variant="outline" size="sm" onClick={() => setNetworkDeployDialogOpen(false)}>
+							Close
+						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

@@ -62,7 +62,7 @@ export interface BrowserAIAgent {
 	agent_type?: "endpoint" | "network" | string;
 	health_status?: string;
 	health_detail?: string;
-	status: "active" | "uninstalled" | "uninstall_pending" | string;
+	status: "active" | "paused" | "uninstalled" | "uninstall_pending" | string;
 	uninstall_requested?: boolean;
 	/** True when this Guard has an auto-generated per-device uninstall key. */
 	has_uninstall_key?: boolean;
@@ -696,6 +696,7 @@ export const browserAiApi = baseApi.injectEndpoints({
 				latest_mac_version?: string;
 				active_count?: number;
 				uninstalled_count?: number;
+				paused_count?: number;
 			},
 			{ status?: string; search?: string; agent_type?: string; limit?: number; offset?: number } | void
 		>({
@@ -763,6 +764,39 @@ export const browserAiApi = baseApi.injectEndpoints({
 				url: `/browser-ai/agents/${encodeURIComponent(id)}/remote-uninstall`,
 				method: "POST",
 				body: { key },
+			}),
+			invalidatesTags: ["BrowserAiAgents" as any],
+		}),
+
+		pauseBrowserAiAgent: builder.mutation<
+			{ status: string; agent: BrowserAIAgent },
+			string
+		>({
+			query: (id) => ({
+				url: `/browser-ai/agents/${encodeURIComponent(id)}/pause`,
+				method: "POST",
+			}),
+			invalidatesTags: ["BrowserAiAgents" as any],
+		}),
+
+		resumeBrowserAiAgent: builder.mutation<
+			{ status: string; agent: BrowserAIAgent },
+			string
+		>({
+			query: (id) => ({
+				url: `/browser-ai/agents/${encodeURIComponent(id)}/resume`,
+				method: "POST",
+			}),
+			invalidatesTags: ["BrowserAiAgents" as any],
+		}),
+
+		allowReinstallBrowserAiAgent: builder.mutation<
+			{ status: string; agent: BrowserAIAgent },
+			string
+		>({
+			query: (id) => ({
+				url: `/browser-ai/agents/${encodeURIComponent(id)}/allow-reinstall`,
+				method: "POST",
 			}),
 			invalidatesTags: ["BrowserAiAgents" as any],
 		}),
@@ -905,6 +939,9 @@ export const {
 	useSaveBrowserAiFleetConfigMutation,
 	useSaveBrowserAiUninstallKeyMutation,
 	useRemoteUninstallBrowserAiAgentMutation,
+	usePauseBrowserAiAgentMutation,
+	useResumeBrowserAiAgentMutation,
+	useAllowReinstallBrowserAiAgentMutation,
 	useLazyGetBrowserAiAgentUninstallKeyQuery,
 	useRotateBrowserAiAgentUninstallKeyMutation,
 	useDeleteBrowserAiAgentMutation,

@@ -127,6 +127,9 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/browser-ai/setup/proxy-bundle.json", lib.ChainMiddlewares(h.getProxyBundleInfo, middlewares...))
 	r.GET("/api/browser-ai/setup/proxy-bundle.zip", lib.ChainMiddlewares(h.downloadProxyBundle, middlewares...))
 
+	r.GET("/api/browser-ai/setup/Raksha_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+	r.HEAD("/api/browser-ai/setup/Raksha_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+
 	r.GET("/api/browser-ai/agents", lib.ChainMiddlewares(h.listAgents, middlewares...))
 	r.POST("/api/browser-ai/agents/heartbeat", lib.ChainMiddlewares(h.agentHeartbeat, middlewares...))
 	r.POST("/api/browser-ai/agents/wait-command", lib.ChainMiddlewares(h.agentWaitCommand, middlewares...))
@@ -140,6 +143,9 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.POST("/api/browser-ai/agents/uninstall-ack", lib.ChainMiddlewares(h.ackRemoteUninstall, middlewares...))
 	r.POST("/api/browser-ai/agents/uninstall-status", lib.ChainMiddlewares(h.uninstallStatus, middlewares...))
 	r.POST("/api/browser-ai/agents/{id}/remote-uninstall", lib.ChainMiddlewares(h.remoteUninstallAgent, middlewares...))
+	r.POST("/api/browser-ai/agents/{id}/pause", lib.ChainMiddlewares(h.pauseAgent, middlewares...))
+	r.POST("/api/browser-ai/agents/{id}/resume", lib.ChainMiddlewares(h.resumeAgent, middlewares...))
+	r.POST("/api/browser-ai/agents/{id}/allow-reinstall", lib.ChainMiddlewares(h.allowReinstallAgent, middlewares...))
 	r.GET("/api/browser-ai/agents/{id}/uninstall-key", lib.ChainMiddlewares(h.getAgentUninstallKey, middlewares...))
 	r.POST("/api/browser-ai/agents/{id}/uninstall-key/rotate", lib.ChainMiddlewares(h.rotateAgentUninstallKey, middlewares...))
 	r.POST("/api/browser-ai/agents/bulk-delete", lib.ChainMiddlewares(h.bulkDeleteAgents, middlewares...))

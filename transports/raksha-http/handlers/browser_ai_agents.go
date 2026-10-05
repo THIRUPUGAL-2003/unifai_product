@@ -67,12 +67,13 @@ func (h *BrowserAIHandler) listAgents(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}
-	activeCount, uninstalledCount, _ := h.manager.CountAgentsStatus(ctx, search, agentType)
+	activeCount, uninstalledCount, pausedCount, _ := h.manager.CountAgentsStatus(ctx, search, agentType)
 	SendJSON(ctx, map[string]any{
 		"agents":             agents,
 		"total":              total,
 		"active_count":       activeCount,
 		"uninstalled_count":  uninstalledCount,
+		"paused_count":       pausedCount,
 		"limit":              limit,
 		"offset":             offset,
 		"latest_version":     readGuardReleaseVersion(),
@@ -121,6 +122,10 @@ func (h *BrowserAIHandler) agentHeartbeat(ctx *fasthttp.RequestCtx) {
 	command := ""
 	if agent != nil && (agent.UninstallRequested || agent.Status == logstore.AgentStatusUninstalled || agent.Status == logstore.AgentStatusUninstallPending) {
 		command = "uninstall"
+	} else if agent != nil && agent.Status == logstore.AgentStatusPaused {
+		command = "pause"
+	} else if agent != nil && agent.Status == logstore.AgentStatusActive {
+		command = "resume"
 	}
 	resp := map[string]any{
 		"status":       "success",
@@ -690,6 +695,53 @@ func (h *BrowserAIHandler) updateAgentContactEmail(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	agent, err := h.manager.UpdateAgentContactEmail(ctx, id, body.ContactEmail)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+		return
+	}
+	SendJSON(ctx, map[string]any{"status": "success", "agent": agent})
+}
+
+func (h *BrowserAIHandler) pauseAgent(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	id, ok := ctx.UserValue("id").(string)
+	if !ok || strings.TrimSpace(id) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Missing agent ID")
+		return
+	}
+	agent, err := h.manager.PauseAgent(ctx, id)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+		return
+	}
+	guardEvents.notify(id, guardEventPause)
+	SendJSON(ctx, map[string]any{"status": "success", "agent": agent, "command": "pause"})
+}
+
+func (h *BrowserAIHandler) resumeAgent(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	id, ok := ctx.UserValue("id").(string)
+	if !ok || strings.TrimSpace(id) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Missing agent ID")
+		return
+	}
+	agent, err := h.manager.ResumeAgent(ctx, id)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+		return
+	}
+	guardEvents.notify(id, guardEventResume)
+	SendJSON(ctx, map[string]any{"status": "success", "agent": agent, "command": "resume"})
+}
+
+func (h *BrowserAIHandler) allowReinstallAgent(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	id, ok := ctx.UserValue("id").(string)
+	if !ok || strings.TrimSpace(id) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Missing agent ID")
+		return
+	}
+	agent, err := h.manager.AllowReinstallAgent(ctx, id)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return

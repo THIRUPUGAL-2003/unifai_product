@@ -12,6 +12,8 @@ import (
 const (
 	guardEventUninstall = "uninstall"
 	guardEventRebuild   = "rebuild"
+	guardEventPause     = "pause"
+	guardEventResume    = "resume"
 
 	// guardCommandWait stays under common reverse-proxy read timeouts (60s).
 	guardCommandWait = 25 * time.Second

@@ -15,10 +15,36 @@ from agent_config import HEARTBEAT_SECONDS, SERVER_MODE, RAKSHA_BACKEND_URL
 from agent_http import _http_json
 from agent_identity import collect_agent_info
 from agent_lifecycle import launch_windows_uninstaller, schedule_install_removal
-from agent_pac_orchestration import clear_guard_runtime, ensure_pac_still_on
+from agent_pac_orchestration import clear_guard_runtime, ensure_pac_still_on, pac_restore_strict_proxy
 from agent_proxy_bundle import confirm_bundle_healthy, maybe_apply_bundle_async
 from agent_proxy_engine import stop_proxy_worker
 from guard_platform import IS_MAC, data_dir
+
+_guard_paused = False
+
+
+def is_guard_paused() -> bool:
+    global _guard_paused
+    return _guard_paused
+
+
+def pause_guard(agent_id: str) -> None:
+    global _guard_paused
+    if _guard_paused:
+        return
+    _guard_paused = True
+    print("[Raksha Guard] PAUSE command: disabling proxy PAC & QUIC bypass (standby mode).")
+    clear_guard_runtime()
+
+
+def resume_guard(agent_id: str) -> None:
+    global _guard_paused
+    if not _guard_paused:
+        return
+    _guard_paused = False
+    print("[Raksha Guard] RESUME command: re-enabling proxy PAC & monitoring.")
+    pac_restore_strict_proxy()
+    set_browser_quic(enable_quic=False)
 
 
 def send_heartbeat(agent_id: str, status: str = "active") -> dict | None:
@@ -98,6 +124,14 @@ def apply_admin_uninstall(agent_id: str) -> None:
     )
     clear_guard_runtime()
     stop_proxy_worker()
+    # Remove agent_id.txt so a future install starts with a fresh agent ID and avoids stale uninstalled lock
+    try:
+        from agent_identity import agent_id_path
+        p = agent_id_path()
+        if os.path.isfile(p):
+            os.remove(p)
+    except Exception:
+        pass
     if not launch_windows_uninstaller():
         schedule_install_removal()
     os._exit(0)
@@ -106,19 +140,33 @@ def apply_admin_uninstall(agent_id: str) -> None:
 def heartbeat_loop(agent_id: str, stop_event: threading.Event) -> None:
     ticks = 0
     while not stop_event.is_set():
-        data = send_heartbeat(agent_id, status="active")
+        current_status = "paused" if is_guard_paused() else "active"
+        data = send_heartbeat(agent_id, status=current_status)
         if heartbeat_wants_uninstall(data):
             apply_admin_uninstall(agent_id)
             return
+
+        cmd = str((data or {}).get("command") or "").strip().lower()
+        agent_obj = (data or {}).get("agent") if isinstance((data or {}).get("agent"), dict) else {}
+        server_status = str(agent_obj.get("status") or "").strip().lower()
+
+        if cmd == "pause" or server_status == "paused":
+            pause_guard(agent_id)
+        elif cmd in ("resume", "active") or server_status == "active":
+            if is_guard_paused():
+                resume_guard(agent_id)
+
         ticks += 1
-        if data is not None and ticks >= 2:
-            confirm_bundle_healthy()
-        # Re-assert PAC only every ~2 min — every-30s registry poke can drop tunnels on Windows.
-        if ticks % 4 == 1:
-            ensure_pac_still_on(silent=True)
+        if not is_guard_paused():
+            if data is not None and ticks >= 2:
+                confirm_bundle_healthy()
+            # Re-assert PAC only every ~2 min — every-30s registry poke can drop tunnels on Windows.
+            if ticks % 4 == 1:
+                ensure_pac_still_on(silent=True)
+            set_browser_quic(enable_quic=False)
+
         # Auto-update check every hour (rate-limited inside check_and_update_if_needed)
         check_and_update_if_needed()
-        set_browser_quic(enable_quic=False)
         stop_event.wait(HEARTBEAT_SECONDS)
 
 
@@ -140,7 +188,11 @@ def command_wait_loop(agent_id: str, stop_event: threading.Event) -> None:
                 if event == "rebuild":
                     # Spread fleet-wide bundle downloads so the server is not hit by every Guard at once.
                     stop_event.wait(random.uniform(0.0, 3.0))
-                hb = send_heartbeat(agent_id, status="active")
+                elif event == "pause":
+                    pause_guard(agent_id)
+                elif event == "resume":
+                    resume_guard(agent_id)
+                hb = send_heartbeat(agent_id, status="paused" if is_guard_paused() else "active")
                 if heartbeat_wants_uninstall(hb) or (event == "uninstall" and hb is None):
                     apply_admin_uninstall(agent_id)
                     return

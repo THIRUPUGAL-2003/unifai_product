@@ -762,3 +762,16 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 	resp["history_id"] = h.recordRebuild(ctx, started, status, resp, logTail)
 	SendJSON(ctx, resp)
 }
+
+func (h *BrowserAIHandler) downloadSetupExe(ctx *fasthttp.RequestCtx) {
+	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_Setup.exe"])
+	if !setupOK {
+		setupPath, setupOK = findFirstExisting(browserAISetupCandidates()["Raksha_Guard.exe"])
+	}
+	if !setupOK {
+		SendError(ctx, fasthttp.StatusNotFound, "Windows Guard installer (.exe) not found on server")
+		return
+	}
+	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Raksha_Guard_Setup.exe"`)
+	ctx.SendFile(setupPath)
+}
