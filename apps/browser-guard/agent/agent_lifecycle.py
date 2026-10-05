@@ -127,7 +127,13 @@ def schedule_install_removal() -> None:
                 parts.append(f'del /f /q "{allusersprofile}\\Desktop\\Raksha Guard.lnk" >nul 2>&1')
 
             if appdata:
-                parts.append(f'rmdir /s /q "{appdata}\\Microsoft\\Windows\\Start Menu\\Programs\\Raksha Guard" >nul 2>&1')
+                sm = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Raksha Guard")
+                parts.append(f'del /f /q "{sm}\\*.*" >nul 2>&1')
+                parts.append(f'rmdir /s /q "{sm}" >nul 2>&1')
+            if allusersprofile:
+                sm_all = os.path.join(allusersprofile, "Microsoft", "Windows", "Start Menu", "Programs", "Raksha Guard")
+                parts.append(f'del /f /q "{sm_all}\\*.*" >nul 2>&1')
+                parts.append(f'rmdir /s /q "{sm_all}" >nul 2>&1')
 
             dirs: set[str] = set()
             for t in targets:
@@ -139,12 +145,14 @@ def schedule_install_removal() -> None:
                 dirs.add(os.path.join(local, "Programs", "Raksha", "Guard"))
 
             for d in dirs:
+                parts.append(f'del /f /q "{d}\\*.*" >nul 2>&1')
                 parts.append(f'rmdir /s /q "{d}" >nul 2>&1')
                 parent = os.path.dirname(d)
                 if parent and parent.lower().endswith("\\raksha"):
                     parts.append(f'rmdir "{parent}" >nul 2>&1')
 
             if local:
+                parts.append(f'del /f /q "{os.path.join(local, "Raksha", "Guard")}\\*.*" >nul 2>&1')
                 parts.append(f'rmdir /s /q "{os.path.join(local, "Raksha", "Guard")}" >nul 2>&1')
                 parts.append(f'rmdir "{os.path.join(local, "Raksha")}" >nul 2>&1')
 
@@ -153,7 +161,7 @@ def schedule_install_removal() -> None:
             si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             si.wShowWindow = subprocess.SW_HIDE
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            subprocess.Popen(f"cmd.exe /c {cmd}", startupinfo=si, creationflags=flags, close_fds=True)
+            subprocess.Popen(f'cmd.exe /c "{cmd}"', startupinfo=si, creationflags=flags, close_fds=True)
             print("[Raksha Guard] Scheduled complete Windows uninstall cleanup.")
             return
 
