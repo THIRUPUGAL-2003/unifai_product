@@ -158,12 +158,15 @@ def _download_and_install_windows(server_version: str) -> bool:
                 close_fds=True,
             )
 
+        creation_flags = (
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            | (getattr(subprocess, "DETACHED_PROCESS", 0))
+            | (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        )
         subprocess.Popen(
             [tmp_exe, "/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES"],
             env=fresh_env,
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-            if hasattr(subprocess, "DETACHED_PROCESS")
-            else 0,
+            creationflags=creation_flags,
         )
         print("[Raksha Guard AutoUpdate] Install launched. Guard will restart.")
         time.sleep(5)
