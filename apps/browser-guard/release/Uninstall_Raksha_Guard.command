@@ -115,10 +115,28 @@ do
   fi
 done
 
-# Optional: keep logs for IT — do NOT wipe data dir by default
-# Data left at: ~/Library/Application Support/Raksha/Guard
+# Clear system Auto Proxy (PAC) state on all macOS network services
+while IFS= read -r SERVICE; do
+  if [[ -n "$SERVICE" && ! "$SERVICE" =~ ^\* ]]; then
+    networksetup -setautoproxystate "$SERVICE" off 2>/dev/null || true
+  fi
+done < <(networksetup -listallnetworkservices 2>/dev/null | tail -n +2)
 
-osascript -e 'display dialog "Raksha Guard is OFF and uninstalled.\n\nFully quit and reopen browsers.\nLogs (if IT needs them) remain under:\n~/Library/Application Support/Raksha/Guard" with title "Raksha Guard" buttons {"OK"} default button 1 with icon note' || true
+# Remove browser policies
+SUPPORT="$HOME/Library/Application Support"
+for ROOT in \
+  "$SUPPORT/Google/Chrome/policies/managed" \
+  "$SUPPORT/Google/Chrome Canary/policies/managed" \
+  "$SUPPORT/Microsoft Edge/policies/managed" \
+  "$SUPPORT/BraveSoftware/Brave-Browser/policies/managed" \
+  "$SUPPORT/Chromium/policies/managed"
+do
+  rm -f "$ROOT/raksha_guard.json" 2>/dev/null || true
+done
 
-echo "Done. Guard stopped, PAC cleared, app removed."
-echo "Optional cleanup: rm -rf \"$HOME/Library/Application Support/Raksha/Guard\""
+# Clean up application data directory
+rm -rf "$HOME/Library/Application Support/Raksha" 2>/dev/null || true
+
+osascript -e 'display dialog "Raksha Guard is OFF and successfully uninstalled.\n\nBrowser protection has been disabled and files removed.\nPlease fully quit and reopen your browsers." with title "Raksha Guard" buttons {"OK"} default button 1 with icon note' || true
+
+echo "Done. Guard stopped, PAC proxy cleared, app and data removed."
