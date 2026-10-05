@@ -410,6 +410,8 @@ type BrowserControlSettings struct {
 	Enabled       bool   `json:"enabled"`                         // master switch for upload control
 	BlockUpload   bool   `json:"block_upload"`                    // block file uploads to AI sites
 	UploadWarning string `gorm:"type:text" json:"upload_warning"` // shown when this upload policy blocks; empty = no message
+	// AttachmentRetention: temporary file binary storage retention ("10m" | "1h" | "2h" | "1d" | "7d")
+	AttachmentRetention string `json:"attachment_retention"`
 	// Search log retention: when SearchLogAutoDelete is true, logs older than
 	// SearchLogRetention (1d|7d|30d|90d|180d|365d) are purged automatically.
 	SearchLogAutoDelete bool   `json:"search_log_auto_delete"`
@@ -576,10 +578,11 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 	var ctrl BrowserControlSettings
 	if err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
 		_ = m.db.WithContext(ctx).Create(&BrowserControlSettings{
-			ID:          BrowserControlSettingsID,
-			Enabled:     true,
-			BlockUpload: false,
-			UpdatedAt:   time.Now(),
+			ID:                  BrowserControlSettingsID,
+			Enabled:             true,
+			BlockUpload:         false,
+			AttachmentRetention: "1h",
+			UpdatedAt:           time.Now(),
 		}).Error
 	}
 
@@ -864,6 +867,24 @@ func (m *BrowserAIManager) DeleteSearchLogsByIDs(ctx context.Context, ids []stri
 	return res.RowsAffected, res.Error
 }
 
+// ParseAttachmentRetentionDuration maps attachment retention ("10m", "1h", "2h", "1d", "7d") to time.Duration.
+func ParseAttachmentRetentionDuration(retention string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(retention)) {
+	case "10m":
+		return 10 * time.Minute
+	case "1h":
+		return 1 * time.Hour
+	case "2h":
+		return 2 * time.Hour
+	case "1d":
+		return 24 * time.Hour
+	case "7d":
+		return 7 * 24 * time.Hour
+	default:
+		return 1 * time.Hour
+	}
+}
+
 func parseRetentionDuration(retention string) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(retention)) {
 	case "1d":
@@ -1040,6 +1061,7 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 			ID:                  BrowserControlSettingsID,
 			Enabled:             true,
 			BlockUpload:         false,
+			AttachmentRetention: "1h",
 			SearchLogAutoDelete: false,
 			SearchLogRetention:  "7d",
 			PromptLogAutoDelete: false,
@@ -1054,6 +1076,7 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 			ID:                  BrowserControlSettingsID,
 			Enabled:             true,
 			BlockUpload:         false,
+			AttachmentRetention: "1h",
 			SearchLogAutoDelete: false,
 			SearchLogRetention:  "7d",
 			PromptLogAutoDelete: false,
@@ -1063,6 +1086,9 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 		if createErr := m.db.WithContext(ctx).Create(&ctrl).Error; createErr != nil {
 			return &ctrl, createErr
 		}
+	}
+	if ctrl.AttachmentRetention == "" {
+		ctrl.AttachmentRetention = "1h"
 	}
 	if ctrl.SearchLogRetention == "" {
 		ctrl.SearchLogRetention = "7d"
@@ -1086,6 +1112,7 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 			ID:                  BrowserControlSettingsID,
 			Enabled:             true,
 			BlockUpload:         false,
+			AttachmentRetention: "1h",
 			SearchLogAutoDelete: false,
 			SearchLogRetention:  "7d",
 			PromptLogAutoDelete: false,
@@ -1101,6 +1128,7 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 		"enabled":                true,
 		"block_upload":           true,
 		"upload_warning":         true,
+		"attachment_retention":   true,
 		"search_log_auto_delete": true,
 		"search_log_retention":   true,
 		"prompt_log_auto_delete": true,
@@ -1114,6 +1142,18 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 		if k == "upload_warning" {
 			if s, ok := v.(string); ok {
 				filtered[k] = strings.TrimSpace(s)
+				continue
+			}
+		}
+		if k == "attachment_retention" {
+			if s, ok := v.(string); ok {
+				s = strings.ToLower(strings.TrimSpace(s))
+				switch s {
+				case "10m", "1h", "2h", "1d", "7d":
+					filtered[k] = s
+				default:
+					filtered[k] = "1h"
+				}
 				continue
 			}
 		}
@@ -1138,6 +1178,9 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 	}
 	if err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
 		return nil, err
+	}
+	if ctrl.AttachmentRetention == "" {
+		ctrl.AttachmentRetention = "1h"
 	}
 	if ctrl.SearchLogRetention == "" {
 		ctrl.SearchLogRetention = "7d"
