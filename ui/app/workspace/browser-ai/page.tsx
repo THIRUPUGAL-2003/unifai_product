@@ -1975,37 +1975,40 @@ export default function BrowserAiPage() {
 		const hs = (healthStatus || "").toLowerCase();
 		if (s === "tampered" || hs === "tampered" || hs.includes("tamper") || hs.includes("unauthorized")) {
 			return (
-				<Badge className="bg-rose-950 text-rose-300 border border-rose-700 gap-1 inline-flex items-center">
-					<AlertTriangle className="h-3 w-3" />
-					Warning (Tamper Attempt)
+				<Badge className="bg-rose-950 text-rose-300 border border-rose-700 gap-1 inline-flex items-center text-xs" title="Warning: Tamper Attempt Detected">
+					<AlertTriangle className="h-3 w-3 shrink-0" />
+					Tampered
 				</Badge>
 			);
 		}
-		if (s === "uninstalled") return <Badge className="bg-slate-800 text-slate-300 border border-slate-700">Uninstalled</Badge>;
+		if (s === "uninstalled") return <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-xs">Uninstalled</Badge>;
 		if (s === "paused") {
 			return (
-				<Badge className="bg-amber-950/80 text-amber-300 border border-amber-700/80 gap-1 inline-flex items-center">
-					<Pause className="h-3 w-3" />
-					Paused (Standby)
+				<Badge className="bg-amber-950/80 text-amber-300 border border-amber-700/80 gap-1 inline-flex items-center text-xs" title="Paused (Standby)">
+					<Pause className="h-3 w-3 shrink-0" />
+					Paused
 				</Badge>
 			);
 		}
 		if (s === "uninstall_pending" || uninstallRequested) {
-			return <Badge className="bg-amber-950 text-amber-300 border border-amber-800">Uninstall pending</Badge>;
+			return <Badge className="bg-amber-950 text-amber-300 border border-amber-800 text-xs" title="Uninstall pending">Uninstalling</Badge>;
 		}
 		if (s === "active") {
 			const isOffline = lastSeenAt ? Date.now() - new Date(lastSeenAt).getTime() > 3 * 60 * 1000 : false;
 			if (isOffline) {
 				return (
-					<Badge className="bg-amber-950 text-amber-300 border border-amber-800 gap-1 inline-flex items-center">
-						<AlertTriangle className="h-3 w-3" />
-						Warning (Process Killed / Offline)
+					<Badge
+						className="bg-amber-950 text-amber-300 border border-amber-800 gap-1 inline-flex items-center text-xs"
+						title="Process Killed / Offline (No heartbeat for > 3 minutes)"
+					>
+						<AlertTriangle className="h-3 w-3 shrink-0" />
+						Offline
 					</Badge>
 				);
 			}
-			return <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800">Active</Badge>;
+			return <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-xs">Active</Badge>;
 		}
-		return <Badge className="bg-slate-800 text-slate-300 border border-slate-700">{status || "unknown"}</Badge>;
+		return <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-xs">{status || "unknown"}</Badge>;
 	};
 
 	const nicGuidOnly = (raw?: string) => {
@@ -4689,7 +4692,7 @@ export default function BrowserAiPage() {
 													);
 												})()}
 											</TableCell>
-											<TableCell className="align-top whitespace-nowrap">{getAgentStatusBadge(agent.status, agent.uninstall_requested, agent.last_seen_at, agent.health_status)}</TableCell>
+											<TableCell className="align-top whitespace-nowrap overflow-hidden">{getAgentStatusBadge(agent.status, agent.uninstall_requested, agent.last_seen_at, agent.health_status)}</TableCell>
 											<TableCell className="align-top text-xs text-muted-foreground whitespace-nowrap">
 												{agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : "—"}
 											</TableCell>
