@@ -2409,6 +2409,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		if createErr := m.db.WithContext(ctx).Create(&agent).Error; createErr != nil {
 			return nil, createErr
 		}
+		m.purgeHostDuplicates(ctx, agent.ID, agent.Hostname, agent.MacAddress, agent.Username)
 		markAgentUninstallKeyFlag(&agent)
 		return &agent, nil
 	}
@@ -2471,8 +2472,35 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	if err := m.db.WithContext(ctx).Save(&existing).Error; err != nil {
 		return nil, err
 	}
+	if existing.Status == AgentStatusActive {
+		m.purgeHostDuplicates(ctx, existing.ID, existing.Hostname, existing.MacAddress, existing.Username)
+	}
 	markAgentUninstallKeyFlag(&existing)
 	return &existing, nil
+}
+
+func (m *BrowserAIManager) purgeHostDuplicates(ctx context.Context, keepID, hostname, macAddress, username string) {
+	if m.db == nil || strings.TrimSpace(hostname) == "" {
+		return
+	}
+	hostLower := strings.ToLower(strings.TrimSpace(hostname))
+	macClean := strings.ToLower(strings.TrimSpace(macAddress))
+	userLower := strings.ToLower(strings.TrimSpace(username))
+
+	subQuery := m.db.WithContext(ctx).Model(&BrowserAIAgent{}).
+		Where("id != ? AND LOWER(hostname) = ?", keepID, hostLower)
+
+	if macClean != "" && macClean != "—" && macClean != "00:00:00:00:00:00" && !strings.HasPrefix(macClean, "00:00") {
+		subQuery = subQuery.Where("(LOWER(mac_address) = ? OR mac_address = '—' OR mac_address = '' OR mac_address IS NULL)", macClean)
+	} else if userLower != "" {
+		subQuery = subQuery.Where("LOWER(username) = ?", userLower)
+	}
+
+	var dupIDs []string
+	if err := subQuery.Pluck("id", &dupIDs).Error; err == nil && len(dupIDs) > 0 {
+		_ = m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("agent_id IN ?", dupIDs).Update("agent_id", keepID).Error
+		_ = m.db.WithContext(ctx).Where("id IN ?", dupIDs).Delete(&BrowserAIAgent{}).Error
+	}
 }
 
 // AutoRotateDailyAgentUninstallKeys scans active agents and auto-rotates any expired daily uninstall keys.

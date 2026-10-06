@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +31,8 @@ func (h *HealthHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.
 	r.GET("/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
 	r.GET("/api/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
 	r.GET("/api/governance/debug/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
+	r.GET("/api/branding", lib.ChainMiddlewares(h.getBranding, middlewares...))
+	r.GET("/api/system/branding", lib.ChainMiddlewares(h.getBranding, middlewares...))
 }
 
 // getHealth handles GET /api/health - Get the health status of the server.
@@ -97,3 +102,51 @@ func (h *HealthHandler) getHealth(ctx *fasthttp.RequestCtx) {
 		},
 	})
 }
+
+// getBranding returns live branding configuration loaded from environment variables.
+func (h *HealthHandler) getBranding(ctx *fasthttp.RequestCtx) {
+	prodName := strings.TrimSpace(os.Getenv("RAKSHA_PRODUCT_NAME"))
+	if prodName == "" {
+		prodName = "Raksha"
+	}
+	prodSubtitle := strings.TrimSpace(os.Getenv("RAKSHA_PRODUCT_SUBTITLE"))
+	if prodSubtitle == "" {
+		prodSubtitle = "Real-time AI Knowledge Screening & Hazard Audit"
+	}
+	companyName := strings.TrimSpace(os.Getenv("RAKSHA_COMPANY_NAME"))
+	if companyName == "" {
+		companyName = "YesPanchi Group of Companies"
+	}
+	companyShortName := strings.TrimSpace(os.Getenv("RAKSHA_COMPANY_SHORT_NAME"))
+	if companyShortName == "" {
+		parts := strings.Fields(companyName)
+		if len(parts) > 0 {
+			companyShortName = parts[0]
+		} else {
+			companyShortName = "YesPanchi"
+		}
+	}
+	companyLogo := strings.TrimSpace(os.Getenv("RAKSHA_COMPANY_LOGO"))
+	if companyLogo == "" {
+		companyLogo = "/yes-panchi-logo.png"
+	}
+	footerCopyright := strings.TrimSpace(os.Getenv("RAKSHA_FOOTER_COPYRIGHT"))
+	footerSubtitle := strings.TrimSpace(os.Getenv("RAKSHA_FOOTER_SUBTITLE"))
+	if footerSubtitle == "" {
+		footerSubtitle = "Enterprise AI Governance Platform."
+	}
+	if footerCopyright == "" {
+		footerCopyright = fmt.Sprintf("© %d %s. All rights reserved. %s", time.Now().Year(), companyName, footerSubtitle)
+	}
+
+	SendJSON(ctx, map[string]any{
+		"product_name":       prodName,
+		"product_subtitle":   prodSubtitle,
+		"company_name":       companyName,
+		"company_short_name": companyShortName,
+		"company_logo":       companyLogo,
+		"footer_copyright":   footerCopyright,
+		"footer_subtitle":    footerSubtitle,
+	})
+}
+

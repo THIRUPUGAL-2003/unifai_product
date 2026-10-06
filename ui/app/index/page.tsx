@@ -35,9 +35,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getApiBaseUrl } from "@/lib/utils/port";
-import { COMPANY_LOGO, COMPANY_NAME } from "@/lib/constants/config";
+import { COMPANY_LOGO, COMPANY_NAME, DEFAULT_FOOTER_TEXT, PRODUCT_NAME, PRODUCT_FULL_NAME } from "@/lib/constants/config";
+import { useBranding } from "@/lib/hooks/useBranding";
 
 export default function LandingPage() {
+	const branding = useBranding();
 	const [isLoggedIn, setIsLoggedIn] = useState(false);
 	const [codeTab, setCodeTab] = useState<"python" | "curl" | "node">("python");
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -181,10 +183,10 @@ console.log(response.choices[0].message.content);`
 		}
 	];
 
-	const companyLogoSrc = COMPANY_LOGO;
-	const productName = "RAKSHA";
-	const productFullName = "Real-time AI Knowledge Screening & Hazard Audit";
-	const companyFullName = COMPANY_NAME;
+	const companyLogoSrc = branding.companyLogo;
+	const productName = branding.productName;
+	const productFullName = branding.productFullName;
+	const companyFullName = branding.companyName;
 
 	return (
 		<div className="bg-[#07090e] text-[#cbd5e1] min-h-screen font-sans selection:bg-sky-500/25 selection:text-white antialiased relative w-full overflow-y-visible">
@@ -888,7 +890,7 @@ console.log(response.choices[0].message.content);`
 						<Link to="/signup" className="hover:text-white transition-colors cursor-pointer">Sign Up</Link>
 					</div>
 
-					<div>&copy; 2026 {companyFullName}. All rights reserved.</div>
+					<div>{branding.footerText}</div>
 				</div>
 			</footer>
 

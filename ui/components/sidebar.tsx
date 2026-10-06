@@ -72,6 +72,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE, COMPANY_NAME, COMPANY_LOGO, COMPANY_SHORT_NAME } from "@/lib/constants/config";
+import { useBranding } from "@/lib/hooks/useBranding";
 import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, useLogoutMutation, useIsAuthEnabledQuery } from "@/lib/store";
 import { beginLogout, clearAuthStorage } from "@/lib/store/apis";
 import {
@@ -1376,9 +1377,10 @@ export default function AppSidebar() {
 		return false;
 	};
 
+	const branding = useBranding();
 	// Always render the light theme version for SSR to avoid hydration mismatch
-	const logoSrc = COMPANY_LOGO;
-	const iconSrc = COMPANY_LOGO;
+	const logoSrc = branding.companyLogo;
+	const iconSrc = branding.companyLogo;
 
 	const { isConnected: isWebSocketConnected } = useWebSocket();
 
@@ -1482,7 +1484,7 @@ export default function AppSidebar() {
 				{/* Expanded state: horizontal layout */}
 				<div className="flex h-10 w-full items-center justify-between px-1.5 group-data-[collapsible=icon]:hidden">
 					<Link to="/workspace/logs" className="group flex items-center gap-2 pl-2">
-						<img className="h-8 w-auto max-w-[180px] object-contain" src={logoSrc} alt={COMPANY_NAME} width={180} height={32} />
+						<img className="h-8 w-auto max-w-[180px] object-contain" src={logoSrc} alt={branding.companyName} width={180} height={32} />
 					</Link>
 					<button
 						onClick={toggleSidebar}
@@ -1499,7 +1501,7 @@ export default function AppSidebar() {
 					className="hidden w-full cursor-pointer flex-col items-center gap-2 py-2 group-data-[collapsible=icon]:flex"
 					onClick={toggleSidebar}
 				>
-					<img className="h-7 w-auto max-w-[28px] object-contain" src={iconSrc} alt={COMPANY_SHORT_NAME} width={28} height={28} />
+					<img className="h-7 w-auto max-w-[28px] object-contain" src={iconSrc} alt={branding.companyShortName} width={28} height={28} />
 				</div>
 			</SidebarHeader>
 			{envLabel && (

@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { COMPANY_LOGO, COMPANY_NAME } from "@/lib/constants/config";
+import { COMPANY_LOGO, COMPANY_NAME, DEFAULT_FOOTER_TEXT } from "@/lib/constants/config";
+import { useBranding } from "@/lib/hooks/useBranding";
 import { getApiBaseUrl } from "@/lib/utils/port";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -28,6 +29,7 @@ import { useEffect, useState } from "react";
 const CODE_RESEND_COOLDOWN_SECONDS = 120;
 
 export default function SignupPage() {
+	const branding = useBranding();
 	const [username, setUsername] = useState("");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
@@ -197,8 +199,8 @@ export default function SignupPage() {
 					<div className="hidden h-5 w-px bg-white/15 sm:block" />
 
 					<div className="hidden sm:flex items-center gap-2.5">
-						<img src={COMPANY_LOGO} alt={COMPANY_NAME} className="h-7 w-auto object-contain" />
-						<span className="text-sm font-bold tracking-tight text-white">{COMPANY_NAME}</span>
+						<img src={branding.companyLogo} alt={branding.companyName} className="h-7 w-auto object-contain" />
+						<span className="text-sm font-bold tracking-tight text-white">{branding.companyName}</span>
 					</div>
 				</div>
 
@@ -558,7 +560,7 @@ export default function SignupPage() {
 
 			{/* Minimal Sleek Footer */}
 			<footer className="relative z-10 mx-auto w-full max-w-[1400px] border-t border-white/5 px-6 py-4 text-center text-xs text-slate-500">
-				<span>© {new Date().getFullYear()} {COMPANY_NAME}. All rights reserved. Enterprise AI Governance Platform.</span>
+				<span>{branding.footerText}</span>
 			</footer>
 		</div>
 	);

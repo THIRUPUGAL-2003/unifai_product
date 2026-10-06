@@ -33,8 +33,13 @@ services:
       - RAKSHA_GUARD_SECRET=${RAKSHA_GUARD_SECRET:?set RAKSHA_GUARD_SECRET in .env}
       - RAKSHA_GUARD_REQUIRE_SECRET=${RAKSHA_GUARD_REQUIRE_SECRET:-1}
       - RAKSHA_PAC_ALLOW_QUERY_PROXY=${RAKSHA_PAC_ALLOW_QUERY_PROXY:-0}
+      - RAKSHA_PRODUCT_NAME=${RAKSHA_PRODUCT_NAME:-Raksha}
+      - RAKSHA_PRODUCT_SUBTITLE=${RAKSHA_PRODUCT_SUBTITLE:-Real-time AI Knowledge Screening & Hazard Audit}
       - RAKSHA_COMPANY_NAME=${RAKSHA_COMPANY_NAME:-YesPanchi Group of Companies}
+      - RAKSHA_COMPANY_SHORT_NAME=${RAKSHA_COMPANY_SHORT_NAME:-YesPanchi}
       - RAKSHA_COMPANY_LOGO=${RAKSHA_COMPANY_LOGO:-/yes-panchi-logo.png}
+      - RAKSHA_FOOTER_COPYRIGHT=${RAKSHA_FOOTER_COPYRIGHT:-}
+      - RAKSHA_FOOTER_SUBTITLE=${RAKSHA_FOOTER_SUBTITLE:-Enterprise AI Governance Platform.}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

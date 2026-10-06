@@ -344,8 +344,17 @@ export const PROVIDER_SUPPORTED_REQUESTS: Record<BaseProvider, string[]> = {
 export const IS_ENTERPRISE = process.env.RAKSHA_IS_ENTERPRISE === "true";
 export const TRIAL_EXPIRY = parseTrialExpiry(process.env.RAKSHA_ENTERPRISE_TRIAL_EXPIRY);
 
-/** Dashboard branding — override via RAKSHA_COMPANY_NAME / RAKSHA_COMPANY_LOGO in .env. */
+/** Product branding — override via RAKSHA_PRODUCT_NAME / RAKSHA_PRODUCT_SUBTITLE in .env. */
+export const PRODUCT_NAME = (process.env.RAKSHA_PRODUCT_NAME || "Raksha").trim() || "Raksha";
+export const PRODUCT_FULL_NAME = (process.env.RAKSHA_PRODUCT_FULL_NAME || process.env.RAKSHA_PRODUCT_SUBTITLE || "Real-time AI Knowledge Screening & Hazard Audit").trim();
+
+/** Dashboard & company branding — override via RAKSHA_COMPANY_NAME / RAKSHA_COMPANY_LOGO in .env. */
 export const COMPANY_NAME = (process.env.RAKSHA_COMPANY_NAME || "YesPanchi Group of Companies").trim() || "YesPanchi Group of Companies";
-/** Official YesPanchi mark (public/yes-panchi-logo.png). GIF source also at /yes-panchi-logo.gif. */
+export const COMPANY_SHORT_NAME = (process.env.RAKSHA_COMPANY_SHORT_NAME || COMPANY_NAME.split(/\s+/)[0] || "YesPanchi").trim();
+/** Official company logo mark (default: /yes-panchi-logo.png). */
 export const COMPANY_LOGO = (process.env.RAKSHA_COMPANY_LOGO || "/yes-panchi-logo.png").trim() || "/yes-panchi-logo.png";
-export const COMPANY_SHORT_NAME = COMPANY_NAME.split(/\s+/)[0] || "YesPanchi";
+
+/** Footer copyright text — override via RAKSHA_FOOTER_COPYRIGHT / RAKSHA_FOOTER_SUBTITLE in .env. */
+export const FOOTER_COPYRIGHT = (process.env.RAKSHA_FOOTER_COPYRIGHT || "").trim();
+export const FOOTER_SUBTITLE = (process.env.RAKSHA_FOOTER_SUBTITLE || "Enterprise AI Governance Platform.").trim();
+export const DEFAULT_FOOTER_TEXT = FOOTER_COPYRIGHT || `© ${new Date().getFullYear()} ${COMPANY_NAME}. All rights reserved. ${FOOTER_SUBTITLE}`;

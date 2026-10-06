@@ -17,7 +17,12 @@ export default defineConfig(({ mode }) => {
 	const backendTarget = env.RAKSHA_BACKEND_URL || process.env.RAKSHA_BACKEND_URL || `http://localhost:${backendPort}`;
 	const uiPort = Number(env.UI_PORT || process.env.UI_PORT || 3000);
 	const companyName = env.RAKSHA_COMPANY_NAME || process.env.RAKSHA_COMPANY_NAME || "YesPanchi Group of Companies";
-	const companyLogo = env.RAKSHA_COMPANY_LOGO || process.env.RAKSHA_COMPANY_LOGO || "/logo.png";
+	const companyShortName = env.RAKSHA_COMPANY_SHORT_NAME || process.env.RAKSHA_COMPANY_SHORT_NAME || "YesPanchi";
+	const companyLogo = env.RAKSHA_COMPANY_LOGO || process.env.RAKSHA_COMPANY_LOGO || "/yes-panchi-logo.png";
+	const productName = env.RAKSHA_PRODUCT_NAME || env.PRODUCT_NAME || process.env.RAKSHA_PRODUCT_NAME || process.env.PRODUCT_NAME || "Raksha";
+	const productFullName = env.RAKSHA_PRODUCT_FULL_NAME || env.RAKSHA_PRODUCT_SUBTITLE || process.env.RAKSHA_PRODUCT_FULL_NAME || process.env.RAKSHA_PRODUCT_SUBTITLE || "Real-time AI Knowledge Screening & Hazard Audit";
+	const footerCopyright = env.RAKSHA_FOOTER_COPYRIGHT || process.env.RAKSHA_FOOTER_COPYRIGHT || "";
+	const footerSubtitle = env.RAKSHA_FOOTER_SUBTITLE || process.env.RAKSHA_FOOTER_SUBTITLE || "Enterprise AI Governance Platform.";
 
 	return {
 		plugins: [
@@ -58,8 +63,13 @@ export default defineConfig(({ mode }) => {
 		"process.env.RAKSHA_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : "false"),
 		"process.env.RAKSHA_DISABLE_PROFILER": JSON.stringify(process.env.RAKSHA_DISABLE_PROFILER ?? ""),
 		"process.env.RAKSHA_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(process.env.ENTERPRISE_TRIAL_EXPIRY ?? ""),
+		"process.env.RAKSHA_PRODUCT_NAME": JSON.stringify(productName),
+		"process.env.RAKSHA_PRODUCT_FULL_NAME": JSON.stringify(productFullName),
 		"process.env.RAKSHA_COMPANY_NAME": JSON.stringify(companyName),
+		"process.env.RAKSHA_COMPANY_SHORT_NAME": JSON.stringify(companyShortName),
 		"process.env.RAKSHA_COMPANY_LOGO": JSON.stringify(companyLogo),
+		"process.env.RAKSHA_FOOTER_COPYRIGHT": JSON.stringify(footerCopyright),
+		"process.env.RAKSHA_FOOTER_SUBTITLE": JSON.stringify(footerSubtitle),
 		"process.env.RAKSHA_PORT": JSON.stringify(backendPort),
 		"process.env.RAKSHA_BACKEND_URL": JSON.stringify(backendTarget),
 	},
