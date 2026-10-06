@@ -1,4 +1,4 @@
-import { isPromptWarningMessage, formatPromptWarningMessage } from "../../utils/errorDisplay";
+import { isPromptWarningMessage, formatPromptWarningMessage, formatCleanGuardrailMessage } from "../../utils/errorDisplay";
 import { Message } from "@/lib/message";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, XIcon } from "lucide-react";
@@ -9,7 +9,9 @@ import { AlertTriangle, XIcon } from "lucide-react";
  */
 export default function ErrorMessageView({ message, disabled, onRemove }: { message: Message; disabled?: boolean; onRemove?: () => void }) {
 	const isWarning = isPromptWarningMessage(message.content);
-	const text = isWarning ? formatPromptWarningMessage(message.content) : message.content;
+	const text = isWarning
+		? formatPromptWarningMessage(message.content)
+		: formatCleanGuardrailMessage(message.content);
 
 	return (
 		<div

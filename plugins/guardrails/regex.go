@@ -78,6 +78,9 @@ func (p *RegexProvider) ValidateInput(ctx *schemas.RakshaContext, req *schemas.R
 	var texts []string
 	if req.ChatRequest != nil {
 		for _, msg := range req.ChatRequest.Input {
+			if strings.EqualFold(string(msg.Role), "assistant") {
+				continue
+			}
 			texts = append(texts, extractChatMessageTexts(msg)...)
 		}
 	}
@@ -87,6 +90,9 @@ func (p *RegexProvider) ValidateInput(ctx *schemas.RakshaContext, req *schemas.R
 			texts = append(texts, *params.Instructions)
 		}
 		for _, msg := range req.ResponsesRequest.Input {
+			if msg.Role != nil && strings.EqualFold(string(*msg.Role), "assistant") {
+				continue
+			}
 			texts = append(texts, extractResponsesMessageTexts(msg)...)
 		}
 	}
@@ -112,14 +118,23 @@ func (p *RegexProvider) MatchText(content, phase string) error {
 	return p.matchBlocked(content, phase)
 }
 
+func looksLikeRegex(s string) bool {
+	for _, sub := range []string{"^", "$", "\\d", "\\w", "\\s", "\\b", "(?:", "(?=", "[", "]", "{", "}", "*", "+", "|", "(?"} {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *RegexProvider) matchBlocked(content, phase string) error {
 	for _, pattern := range p.patterns {
 		if pattern.compiled.MatchString(content) {
-			desc := pattern.Description
-			if desc == "" {
-				desc = pattern.Pattern
+			desc := strings.TrimSpace(pattern.Description)
+			if desc != "" && !looksLikeRegex(desc) && desc != pattern.Pattern {
+				return fmt.Errorf("%s detected", desc)
 			}
-			return fmt.Errorf("%s matches blocked pattern: %s", phase, desc)
+			return fmt.Errorf("restricted content detected")
 		}
 	}
 	return nil

@@ -71,3 +71,14 @@ export function formatPromptWarningMessage(message?: string | null): string {
 
 	return message;
 }
+
+/** Formats guardrail errors into short, clean, human-friendly text without regex or technical codes. */
+export function formatCleanGuardrailMessage(message?: string | null): string {
+	if (!message) return "";
+	let text = message.replace(/\s*\(guardrail_violation\)\s*$/i, "").trim();
+	text = text.replace(/:\s*(?:input|output)?\s*matches blocked pattern:.*$/i, ": Restricted content detected.");
+	text = text.replace(/matches blocked pattern:\s*\S+/i, "Restricted content detected.");
+	text = text.replace(/:\s*[\^\$\[\\].*$/i, ": Restricted content detected.");
+	return text;
+}
+

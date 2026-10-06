@@ -342,12 +342,28 @@ export class Message {
 
 	/**
 	 * Convert to OpenAI-compatible API format for chat completions.
-	 * Excludes error messages.
+	 * Excludes error messages and unaccepted requests that immediately failed.
 	 */
 	static toAPIMessages(messages: Message[]): APIMessage[] {
-		return messages
-			.filter((m) => m.type !== MessageType.CompletionError)
-			.map((m): APIMessage => {
+		const validMessages: Message[] = [];
+		for (let i = 0; i < messages.length; i++) {
+			const m = messages[i];
+			if (m.type === MessageType.CompletionError) {
+				continue;
+			}
+			// If a CompletionRequest was rejected (immediately followed by a CompletionError),
+			// do not include the rejected request in subsequent API context.
+			if (
+				m.type === MessageType.CompletionRequest &&
+				i + 1 < messages.length &&
+				messages[i + 1].type === MessageType.CompletionError
+			) {
+				continue;
+			}
+			validMessages.push(m);
+		}
+
+		return validMessages.map((m): APIMessage => {
 				// When role has been changed, currentType differs from originalType —
 				// fall back to a generic conversion using the public getters.
 				if (m.currentType !== m.originalType) {

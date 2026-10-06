@@ -85,7 +85,11 @@ function formatPlaygroundError(raw: string, status?: number): string {
 		return `${text} — Select a vision-capable model for images.`;
 	}
 	if (lower.includes("guardrail")) {
-		return text.startsWith("Guardrail") ? text : `Guardrail blocked this request: ${text}`;
+		let cleaned = text.replace(/\s*\(guardrail_violation\)\s*$/i, "").trim();
+		cleaned = cleaned.replace(/:\s*(?:input|output)?\s*matches blocked pattern:.*$/i, ": Restricted content detected.");
+		cleaned = cleaned.replace(/matches blocked pattern:\s*\S+/i, "Restricted content detected.");
+		cleaned = cleaned.replace(/:\s*[\^\$\[\\].*$/i, ": Restricted content detected.");
+		return cleaned.startsWith("Guardrail") ? cleaned : `Guardrail blocked this request: ${cleaned}`;
 	}
 	if (lower.includes("budget is used up")) {
 		return text;
@@ -110,7 +114,7 @@ function parseErrorPayload(data: unknown, fallback: string): string {
 		const nested = typeof e.error === "string" ? e.error : "";
 		const code = typeof e.code === "string" ? e.code : typeof e.type === "string" ? e.type : "";
 		const base = (message || nested || "").trim() || fallback;
-		if (code && !base.toLowerCase().includes(code.toLowerCase())) {
+		if (code && code !== "guardrail_violation" && !base.toLowerCase().includes(code.toLowerCase())) {
 			return `${base} (${code})`;
 		}
 		return base;
