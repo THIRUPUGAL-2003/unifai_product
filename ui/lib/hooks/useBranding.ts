@@ -42,7 +42,7 @@ export function useBranding(): BrandingInfo {
 					companyName: data.company_name || COMPANY_NAME,
 					companyShortName: data.company_short_name || COMPANY_SHORT_NAME,
 					companyLogo: data.company_logo || COMPANY_LOGO,
-					footerText: data.footer_copyright || DEFAULT_FOOTER_TEXT,
+					footerText: (data.footer_copyright || DEFAULT_FOOTER_TEXT).replace(/\uFFFD/g, '©'),
 					footerSubtitle: data.footer_subtitle || FOOTER_SUBTITLE,
 				});
 			})
