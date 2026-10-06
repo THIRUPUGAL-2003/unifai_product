@@ -17,6 +17,7 @@ import { AlertChannel } from "@enterprise/lib/types/workspace";
 import { Bell, Plus, Send, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 const emptyChannel = (): Omit<AlertChannel, "id"> => ({
 	name: "",
@@ -28,12 +29,15 @@ const emptyChannel = (): Omit<AlertChannel, "id"> => ({
 export default function AlertChannelsView() {
 	const [open, setOpen] = useState(false);
 	const [form, setForm] = useState(emptyChannel());
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 	const { data, isLoading: loading } = useGetAlertChannelsQuery();
 	const [createChannel] = useCreateAlertChannelMutation();
 	const [updateChannel] = useUpdateAlertChannelMutation();
 	const [testChannel] = useTestAlertChannelMutation();
 	const [deleteChannel] = useDeleteAlertChannelMutation();
 	const channels = data?.channels || [];
+	const pagedChannels = channels.slice(offset, offset + limit);
 
 	const save = async () => {
 		try {
@@ -99,37 +103,52 @@ export default function AlertChannelsView() {
 					<p className="text-muted-foreground mt-1 text-sm">Add a destination to start receiving operational alerts.</p>
 				</div>
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Name</TableHead>
-							<TableHead>Type</TableHead>
-							<TableHead>Enabled</TableHead>
-							<TableHead className="text-right">Actions</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{channels.map((channel) => (
-							<TableRow key={channel.id}>
-								<TableCell className="font-medium">{channel.name}</TableCell>
-								<TableCell>
-									<Badge variant="secondary">{channel.type}</Badge>
-								</TableCell>
-								<TableCell>
-									<Switch checked={channel.enabled} onCheckedChange={() => void toggle(channel)} />
-								</TableCell>
-								<TableCell className="text-right">
-									<Button size="icon" variant="ghost" onClick={() => void test(channel.id)}>
-										<Send className="h-4 w-4" />
-									</Button>
-									<Button size="icon" variant="ghost" onClick={() => void remove(channel.id)}>
-										<Trash2 className="h-4 w-4" />
-									</Button>
-								</TableCell>
+				<div className="rounded-md border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Name</TableHead>
+								<TableHead>Type</TableHead>
+								<TableHead>Enabled</TableHead>
+								<TableHead className="text-right">Actions</TableHead>
 							</TableRow>
-						))}
-					</TableBody>
-				</Table>
+						</TableHeader>
+						<TableBody>
+							{pagedChannels.map((channel) => (
+								<TableRow key={channel.id}>
+									<TableCell className="font-medium">{channel.name}</TableCell>
+									<TableCell>
+										<Badge variant="secondary">{channel.type}</Badge>
+									</TableCell>
+									<TableCell>
+										<Switch checked={channel.enabled} onCheckedChange={() => void toggle(channel)} />
+									</TableCell>
+									<TableCell className="text-right">
+										<Button size="icon" variant="ghost" onClick={() => void test(channel.id)}>
+											<Send className="h-4 w-4" />
+										</Button>
+										<Button size="icon" variant="ghost" onClick={() => void remove(channel.id)}>
+											<Trash2 className="h-4 w-4" />
+										</Button>
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+					<DataTablePagination
+						offset={offset}
+						limit={limit}
+						totalCount={channels.length}
+						onOffsetChange={setOffset}
+						onLimitChange={(newLimit) => {
+							setLimit(newLimit);
+							setOffset(0);
+						}}
+						itemLabel="channels"
+						perPageLabel="Channels per page"
+						dataTestId="alert-channels-pagination"
+					/>
+				</div>
 			)}
 
 			<Dialog open={open} onOpenChange={setOpen}>

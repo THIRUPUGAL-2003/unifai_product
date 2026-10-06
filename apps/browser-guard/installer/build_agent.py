@@ -79,6 +79,11 @@ def main() -> int:
     if sync_script.is_file():
         subprocess.run([sys.executable, str(sync_script)], check=False)
 
+    # Support --native flag for 100% C-compiled machine code binaries (anti-decompilation)
+    if "--native" in sys.argv:
+        from build_native_nuitka import main as native_main
+        return native_main()
+
     system = platform.system().lower()
     if system == "windows":
         out = build_windows()

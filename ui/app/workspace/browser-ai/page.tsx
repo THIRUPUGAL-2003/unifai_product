@@ -72,6 +72,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
 	DropdownMenu,
@@ -2844,57 +2845,19 @@ export default function BrowserAiPage() {
 							</div>
 
 							{/* Standard Pagination Controls */}
-							<div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-4 text-xs text-muted-foreground">
-								<div className="flex items-center gap-2">
-									<span>Rows per page</span>
-									<Select
-										value={pageLimit.toString()}
-										onValueChange={(val) => {
-											setPageLimit(Number(val));
-											setPageOffset(0);
-										}}
-									>
-										<SelectTrigger className="h-8 w-[70px] bg-background border-border">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="10">10</SelectItem>
-											<SelectItem value="25">25</SelectItem>
-											<SelectItem value="50">50</SelectItem>
-											<SelectItem value="100">100</SelectItem>
-										</SelectContent>
-									</Select>
-									<span>
-										Showing {totalLogs > 0 ? pageOffset + 1 : 0} to {Math.min(pageOffset + pageLimit, totalLogs)} of {totalLogs} entries
-									</span>
-								</div>
-
-								<div className="flex items-center gap-2">
-									<span>
-										Page {currentPage} of {totalPages}
-									</span>
-									<div className="flex items-center gap-1">
-										<Button
-											variant="outline"
-											size="icon"
-											disabled={pageOffset === 0}
-											onClick={() => setPageOffset(Math.max(0, pageOffset - pageLimit))}
-											className="h-8 w-8 border-border"
-										>
-											<ChevronLeft className="h-4 w-4" />
-										</Button>
-										<Button
-											variant="outline"
-											size="icon"
-											disabled={pageOffset + pageLimit >= totalLogs}
-											onClick={() => setPageOffset(pageOffset + pageLimit)}
-											className="h-8 w-8 border-border"
-										>
-											<ChevronRight className="h-4 w-4" />
-										</Button>
-									</div>
-								</div>
-							</div>
+							<DataTablePagination
+								offset={pageOffset}
+								limit={pageLimit}
+								totalCount={totalLogs}
+								onOffsetChange={setPageOffset}
+								onLimitChange={(newLimit) => {
+									setPageLimit(newLimit);
+									setPageOffset(0);
+								}}
+								itemLabel="entries"
+								perPageLabel="Rows per page"
+								dataTestId="browser-ai-logs-pagination"
+							/>
 						</CardContent>
 					</Card>
 				</TabsContent>
@@ -3189,59 +3152,19 @@ export default function BrowserAiPage() {
 							</div>
 
 							{/* Search Logs pagination */}
-							<div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-4 text-xs text-muted-foreground">
-								<div className="flex items-center gap-2">
-									<span>Rows per page</span>
-									<Select
-										value={searchLogPageLimit.toString()}
-										onValueChange={(val) => {
-											setSearchLogPageLimit(Number(val));
-											setSearchLogPageOffset(0);
-										}}
-									>
-										<SelectTrigger className="h-8 w-[70px] bg-background border-border">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="10">10</SelectItem>
-											<SelectItem value="25">25</SelectItem>
-											<SelectItem value="50">50</SelectItem>
-											<SelectItem value="100">100</SelectItem>
-										</SelectContent>
-									</Select>
-									<span>
-										Showing {totalSearchLogs > 0 ? searchLogPageOffset + 1 : 0} to{" "}
-										{Math.min(searchLogPageOffset + searchLogPageLimit, totalSearchLogs)} of {totalSearchLogs} entries
-									</span>
-								</div>
-								<div className="flex items-center gap-2">
-									<span>
-										Page {searchLogCurrentPage} of {searchLogTotalPages}
-									</span>
-									<div className="flex items-center gap-1">
-										<Button
-											variant="outline"
-											size="icon"
-											disabled={searchLogPageOffset === 0}
-											onClick={() => setSearchLogPageOffset(Math.max(0, searchLogPageOffset - searchLogPageLimit))}
-											className="h-8 w-8 border-border"
-											aria-label="Previous search logs page"
-										>
-											<ChevronLeft className="h-4 w-4" />
-										</Button>
-										<Button
-											variant="outline"
-											size="icon"
-											disabled={searchLogPageOffset + searchLogPageLimit >= totalSearchLogs}
-											onClick={() => setSearchLogPageOffset(searchLogPageOffset + searchLogPageLimit)}
-											className="h-8 w-8 border-border"
-											aria-label="Next search logs page"
-										>
-											<ChevronRight className="h-4 w-4" />
-										</Button>
-									</div>
-								</div>
-							</div>
+							<DataTablePagination
+								offset={searchLogPageOffset}
+								limit={searchLogPageLimit}
+								totalCount={totalSearchLogs}
+								onOffsetChange={setSearchLogPageOffset}
+								onLimitChange={(newLimit) => {
+									setSearchLogPageLimit(newLimit);
+									setSearchLogPageOffset(0);
+								}}
+								itemLabel="entries"
+								perPageLabel="Rows per page"
+								dataTestId="browser-ai-search-logs-pagination"
+							/>
 						</CardContent>
 					</Card>
 				</TabsContent>
@@ -3858,54 +3781,20 @@ export default function BrowserAiPage() {
 								)}
 
 								{filteredRules.length > 0 && (
-									<div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-border">
-										<div className="flex items-center gap-2 text-xs text-muted-foreground">
-											<span>Rows per page</span>
-											<Select
-												value={rulesPageLimit.toString()}
-												onValueChange={(v) => {
-													setRulesPageLimit(Number(v));
-													setRulesPageOffset(0);
-												}}
-											>
-												<SelectTrigger className="h-8 w-[72px]">
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="10">10</SelectItem>
-													<SelectItem value="25">25</SelectItem>
-													<SelectItem value="50">50</SelectItem>
-												</SelectContent>
-											</Select>
-											<span>
-												Showing {filteredRules.length ? rulesPageOffset + 1 : 0} - {Math.min(rulesPageOffset + rulesPageLimit, filteredRules.length)} of {filteredRules.length}
-												{Math.min(rulesPageOffset + rulesPageLimit, filteredRules.length)} of {filteredRules.length}
-											</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<span className="text-xs text-muted-foreground">
-												Page {rulesCurrentPage} of {rulesTotalPages}
-											</span>
-											<Button
-												variant="outline"
-												size="sm"
-												className="h-8"
-												disabled={rulesPageOffset <= 0}
-												onClick={() => setRulesPageOffset(Math.max(0, rulesPageOffset - rulesPageLimit))}
-											>
-												<ChevronLeft className="h-4 w-4" />
-											</Button>
-											<Button
-												variant="outline"
-												size="sm"
-												className="h-8"
-												disabled={rulesPageOffset + rulesPageLimit >= filteredRules.length}
-												onClick={() => setRulesPageOffset(rulesPageOffset + rulesPageLimit)}
-											>
-												<ChevronRight className="h-4 w-4" />
-											</Button>
-										</div>
-									</div>
+									<DataTablePagination
+										offset={rulesPageOffset}
+										limit={rulesPageLimit}
+										totalCount={filteredRules.length}
+										onOffsetChange={setRulesPageOffset}
+										onLimitChange={(newLimit) => {
+											setRulesPageLimit(newLimit);
+											setRulesPageOffset(0);
+										}}
+										pageSizeOptions={[10, 25, 50]}
+										itemLabel="rules"
+										perPageLabel="Rows per page"
+										dataTestId="browser-ai-rules-pagination"
+									/>
 								)}
 							</div>
 						</CardContent>
@@ -4331,54 +4220,20 @@ export default function BrowserAiPage() {
 							</div>
 
 							{targets.length > 0 ? (
-								<div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border mt-4 text-xs text-muted-foreground">
-									<div className="flex items-center gap-2">
-										<span className="whitespace-nowrap">Parent domains per page</span>
-										<Select
-											value={String(targetPageLimit)}
-											onValueChange={(v) => setTargetPageLimit(Number(v))}
-										>
-											<SelectTrigger className="h-8 w-[72px] bg-background border-border">
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="5">5</SelectItem>
-												<SelectItem value="10">10</SelectItem>
-												<SelectItem value="25">25</SelectItem>
-												<SelectItem value="50">50</SelectItem>
-											</SelectContent>
-										</Select>
-										<span>
-											Showing {totalTargetParents > 0 ? targetPageOffset + 1 : 0} to{" "}
-											{Math.min(targetPageOffset + targetPageLimit, totalTargetParents)} of {totalTargetParents} parent domains
-										</span>
-									</div>
-									<div className="flex items-center gap-2">
-										<span>
-											Page {targetCurrentPage} of {targetTotalPages}
-										</span>
-										<div className="flex items-center gap-1">
-											<Button
-												variant="outline"
-												size="icon"
-												disabled={targetPageOffset === 0}
-												onClick={() => setTargetPageOffset(Math.max(0, targetPageOffset - targetPageLimit))}
-												className="h-8 w-8 border-border"
-											>
-												<ChevronLeft className="h-4 w-4" />
-											</Button>
-											<Button
-												variant="outline"
-												size="icon"
-												disabled={targetPageOffset + targetPageLimit >= totalTargetParents}
-												onClick={() => setTargetPageOffset(targetPageOffset + targetPageLimit)}
-												className="h-8 w-8 border-border"
-											>
-												<ChevronRight className="h-4 w-4" />
-											</Button>
-										</div>
-									</div>
-								</div>
+								<DataTablePagination
+									offset={targetPageOffset}
+									limit={targetPageLimit}
+									totalCount={totalTargetParents}
+									onOffsetChange={setTargetPageOffset}
+									onLimitChange={(newLimit) => {
+										setTargetPageLimit(newLimit);
+										setTargetPageOffset(0);
+									}}
+									pageSizeOptions={[5, 10, 25, 50]}
+									itemLabel="parent domains"
+									perPageLabel="Parent domains per page"
+									dataTestId="browser-ai-targets-pagination"
+								/>
 							) : null}
 						</CardContent>
 					</Card>
@@ -4964,59 +4819,20 @@ export default function BrowserAiPage() {
 						</CardContent>
 					</Card>
 
-					{/* Guard Agents pagination — always visible (Prompt Logs style) */}
-					<div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-muted-foreground">
-						<div className="flex items-center gap-2">
-							<span>Rows per page</span>
-							<Select
-								value={agentPageLimit.toString()}
-								onValueChange={(val) => {
-									setAgentPageLimit(Number(val));
-								}}
-							>
-								<SelectTrigger className="h-8 w-[70px] bg-background border-border">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="10">10</SelectItem>
-									<SelectItem value="25">25</SelectItem>
-									<SelectItem value="50">50</SelectItem>
-									<SelectItem value="100">100</SelectItem>
-								</SelectContent>
-							</Select>
-							<span>
-								Showing {totalAgents > 0 ? agentPageOffset + 1 : 0} to{" "}
-								{Math.min(agentPageOffset + agentPageLimit, totalAgents)} of {totalAgents} entries
-							</span>
-						</div>
-						<div className="flex items-center gap-2">
-							<span>
-								Page {agentCurrentPage} of {agentTotalPages}
-							</span>
-							<div className="flex items-center gap-1">
-								<Button
-									variant="outline"
-									size="icon"
-									disabled={agentPageOffset === 0}
-									onClick={() => setAgentPageOffset(Math.max(0, agentPageOffset - agentPageLimit))}
-									className="h-8 w-8 border-border"
-									aria-label="Previous agents page"
-								>
-									<ChevronLeft className="h-4 w-4" />
-								</Button>
-								<Button
-									variant="outline"
-									size="icon"
-									disabled={agentPageOffset + agentPageLimit >= totalAgents}
-									onClick={() => setAgentPageOffset(agentPageOffset + agentPageLimit)}
-									className="h-8 w-8 border-border"
-									aria-label="Next agents page"
-								>
-									<ChevronRight className="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-					</div>
+					{/* Guard Agents pagination —  always visible (Prompt Logs style) */}
+					<DataTablePagination
+						offset={agentPageOffset}
+						limit={agentPageLimit}
+						totalCount={totalAgents}
+						onOffsetChange={setAgentPageOffset}
+						onLimitChange={(newLimit) => {
+							setAgentPageLimit(newLimit);
+							setAgentPageOffset(0);
+						}}
+						itemLabel="entries"
+						perPageLabel="Rows per page"
+						dataTestId="browser-ai-agents-pagination"
+					/>
 
 					<AlertDialog
 						open={showAgentDeleteDialog}

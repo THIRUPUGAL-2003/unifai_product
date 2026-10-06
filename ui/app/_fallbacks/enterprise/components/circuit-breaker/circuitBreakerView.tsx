@@ -34,6 +34,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { ListFilter, PenLine, Plus, RotateCcw, Shield, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 const emptyPolicy = (): CircuitBreakerPolicy => ({
 	name: "",
@@ -90,6 +91,8 @@ export default function CircuitBreakerView() {
 	const [isManualHeaderInput, setIsManualHeaderInput] = useState(false);
 	const [form, setForm] = useState<CircuitBreakerPolicy>(emptyPolicy());
 	const [editing, setEditing] = useState(false);
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 	const { data: policyData, isLoading: loading, isError: isPolicyError, error: policyError, refetch } = useGetCircuitBreakerPoliciesQuery();
 	const { data: stateData } = useGetCircuitBreakerStateQuery(undefined, { pollingInterval: 8000 });
 	const [createPolicy, { isLoading: creating }] = useCreateCircuitBreakerPolicyMutation();
@@ -97,6 +100,7 @@ export default function CircuitBreakerView() {
 	const [deletePolicy, { isLoading: isDeleting }] = useDeleteCircuitBreakerPolicyMutation();
 	const [resetPolicy] = useResetCircuitBreakerPolicyMutation();
 	const policies = policyData?.policies || [];
+	const pagedPolicies = policies.slice(offset, offset + limit);
 	const states = stateData?.circuits || {};
 	const { data: providersData = [] } = useGetProvidersQuery();
 
@@ -270,87 +274,102 @@ export default function CircuitBreakerView() {
 					<p className="text-muted-foreground mt-1 text-sm">Create a policy to fail over a degraded endpoint.</p>
 				</div>
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Name</TableHead>
-							<TableHead>Primary</TableHead>
-							<TableHead>Fallback</TableHead>
-							<TableHead>Signal</TableHead>
-							<TableHead>State</TableHead>
-							<TableHead className="text-right">Actions</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{policies.map((policy) => {
-							const state = states[policy.name];
-							return (
-								<TableRow key={policy.name}>
-									<TableCell className="font-medium">
-										<div className="flex items-center gap-2">
-											{policy.name}
-											<Badge variant={policy.enabled === false ? "outline" : "secondary"}>
-												{policy.enabled === false ? "disabled" : "enabled"}
-											</Badge>
-										</div>
-									</TableCell>
-									<TableCell className="font-mono text-xs">
-										{policy.primary_provider}/{policy.primary_model}
-									</TableCell>
-									<TableCell className="font-mono text-xs">
-										{policy.fallback_provider}/{policy.fallback_model}
-									</TableCell>
-									<TableCell className="text-xs">
-										{policy.condition.signals
-											.map((signal) => {
-												if (!signal.header_name) return "—";
-												if (signal.header_value) return `${signal.header_name}=${signal.header_value}`;
-												return signal.header_name;
-											})
-											.join(", ")}
-									</TableCell>
-									<TableCell>
-										<Badge variant={state?.status === "open" ? "destructive" : "secondary"}>{state?.status || "closed"}</Badge>
-									</TableCell>
-									<TableCell className="text-right">
-										<Button
-											size="icon"
-											variant="ghost"
-											title={canUpdate ? "Reset circuit" : "No permission to reset circuit"}
-											disabled={!canUpdate}
-											onClick={() => void reset(policy.name)}
-										>
-											<RotateCcw className="h-4 w-4" />
-										</Button>
-										<Button
-											size="icon"
-											variant="ghost"
-											title={canUpdate ? "Edit policy" : "No permission to edit policy"}
-											disabled={!canUpdate}
-											onClick={() => {
-												setForm(policy);
-												setEditing(true);
-												setIsManualHeaderInput(false);
-												setOpen(true);
-											}}
-										>
-											<PenLine className="h-4 w-4" />
-										</Button>
-										<Button
-											size="icon"
-											variant="ghost"
-											title={canDelete ? "Delete policy" : "No permission to delete policy"}
-											disabled={!canDelete}
-											onClick={() => setDeleteTarget(policy.name)}
-										>
-											<Trash2 className="h-4 w-4" />
-										</Button>
-									</TableCell>
-								</TableRow>
-							);
-						})}
-					</TableBody>
-				</Table>
+				<div className="rounded-md border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Name</TableHead>
+								<TableHead>Primary</TableHead>
+								<TableHead>Fallback</TableHead>
+								<TableHead>Signal</TableHead>
+								<TableHead>State</TableHead>
+								<TableHead className="text-right">Actions</TableHead>
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{pagedPolicies.map((policy) => {
+								const state = states[policy.name];
+								return (
+									<TableRow key={policy.name}>
+										<TableCell className="font-medium">
+											<div className="flex items-center gap-2">
+												{policy.name}
+												<Badge variant={policy.enabled === false ? "outline" : "secondary"}>
+													{policy.enabled === false ? "disabled" : "enabled"}
+												</Badge>
+											</div>
+										</TableCell>
+										<TableCell className="font-mono text-xs">
+											{policy.primary_provider}/{policy.primary_model}
+										</TableCell>
+										<TableCell className="font-mono text-xs">
+											{policy.fallback_provider}/{policy.fallback_model}
+										</TableCell>
+										<TableCell className="text-xs">
+											{policy.condition.signals
+												.map((signal) => {
+													if (!signal.header_name) return "—";
+													if (signal.header_value) return `${signal.header_name}=${signal.header_value}`;
+													return signal.header_name;
+												})
+												.join(", ")}
+										</TableCell>
+										<TableCell>
+											<Badge variant={state?.status === "open" ? "destructive" : "secondary"}>{state?.status || "closed"}</Badge>
+										</TableCell>
+										<TableCell className="text-right">
+											<Button
+												size="icon"
+												variant="ghost"
+												title={canUpdate ? "Reset circuit" : "No permission to reset circuit"}
+												disabled={!canUpdate}
+												onClick={() => void reset(policy.name)}
+											>
+												<RotateCcw className="h-4 w-4" />
+											</Button>
+											<Button
+												size="icon"
+												variant="ghost"
+												title={canUpdate ? "Edit policy" : "No permission to edit policy"}
+												disabled={!canUpdate}
+												onClick={() => {
+													setForm(policy);
+													setEditing(true);
+													setIsManualHeaderInput(false);
+													setOpen(true);
+												}}
+											>
+												<PenLine className="h-4 w-4" />
+											</Button>
+											<Button
+												size="icon"
+												variant="ghost"
+												title={canDelete ? "Delete policy" : "No permission to delete policy"}
+												disabled={!canDelete}
+												onClick={() => setDeleteTarget(policy.name)}
+											>
+												<Trash2 className="h-4 w-4" />
+											</Button>
+										</TableCell>
+									</TableRow>
+								);
+							})}
+						</TableBody>
+					</Table>
+					<DataTablePagination
+						offset={offset}
+						limit={limit}
+						totalCount={policies.length}
+						onOffsetChange={setOffset}
+						onLimitChange={(newLimit) => {
+							setLimit(newLimit);
+							setOffset(0);
+						}}
+						itemLabel="policies"
+						perPageLabel="Policies per page"
+						dataTestId="circuit-breaker-pagination"
+					/>
+				</div>
 			)}
 
 			<Dialog open={open} onOpenChange={setOpen}>

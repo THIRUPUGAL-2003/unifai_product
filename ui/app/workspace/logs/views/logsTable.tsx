@@ -1,6 +1,7 @@
 import {
 	buildPinStyle,
 	type ColumnConfigEntry,
+	DataTablePagination,
 	DraggableColumnHeader,
 	PIN_SHADOW_LEFT,
 	PIN_SHADOW_RIGHT,
@@ -243,42 +244,17 @@ export function LogsDataTable({
 				</Table>
 			</div>
 
-			{/* Pagination Footer */}
-			<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
-				<div className="text-muted-foreground flex items-center gap-2">
-					{startItem.toLocaleString()}-{endItem.toLocaleString()} of {totalItems.toLocaleString()} entries
-				</div>
-
-				<div className="flex items-center gap-2">
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={() => goToPage(currentPage - 1)}
-						disabled={currentPage <= 1}
-						data-testid="prev-page"
-						aria-label="Previous page"
-					>
-						<ChevronLeft className="size-3" />
-					</Button>
-
-					<div className="flex items-center gap-1">
-						<span>Page</span>
-						<span>{currentPage}</span>
-						<span>of {totalPages}</span>
-					</div>
-
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={() => goToPage(currentPage + 1)}
-						disabled={totalPages === 0 || currentPage >= totalPages}
-						data-testid="next-page"
-						aria-label="Next page"
-					>
-						<ChevronRight className="size-3" />
-					</Button>
-				</div>
-			</div>
+			{/* Standard DataTable Pagination Footer */}
+			<DataTablePagination
+				offset={pagination.offset}
+				limit={pagination.limit}
+				totalCount={totalItems}
+				onOffsetChange={(newOffset) => onPaginationChange({ ...pagination, offset: newOffset })}
+				onLimitChange={(newLimit) => onPaginationChange({ ...pagination, limit: newLimit, offset: 0 })}
+				itemLabel="logs"
+				perPageLabel="Rows per page"
+				dataTestId="pagination"
+			/>
 		</div>
 	);
 }

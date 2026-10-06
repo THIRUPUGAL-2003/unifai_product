@@ -14,6 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { PIN_SHADOW_RIGHT } from "@/components/table/columnPinning";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
@@ -191,6 +192,7 @@ export default function ScopedPricingOverridesView() {
 
 	const [search, setSearch] = useState("");
 	const [offset, setOffset] = useState(0);
+	const [pageSize, setPageSize] = useState(25);
 	const debouncedSearch = useDebouncedValue(search, 300);
 
 	useEffect(() => {
@@ -211,11 +213,11 @@ export default function ScopedPricingOverridesView() {
 			virtualKeyID: virtualKeyID || undefined,
 			providerID: providerID || undefined,
 			providerKeyID: providerKeyID || undefined,
-			limit: PAGE_SIZE,
+			limit: pageSize,
 			offset,
 			search: debouncedSearch || undefined,
 		}),
-		[scopeKind, virtualKeyID, providerID, providerKeyID, offset, debouncedSearch],
+		[scopeKind, virtualKeyID, providerID, providerKeyID, pageSize, offset, debouncedSearch],
 	);
 
 	const { data, isLoading, error, refetch, isError } = useGetPricingOverridesQuery(queryArgs);
@@ -472,45 +474,17 @@ export default function ScopedPricingOverridesView() {
 				)}
 			</div>
 
-			{/* Pagination */}
-			{totalCount > 0 && (
-				<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
-					<div className="text-muted-foreground flex items-center gap-2">
-						{(offset + 1).toLocaleString()}-{Math.min(offset + PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-						entries
-					</div>
-
-					<div className="flex items-center gap-2">
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-							disabled={offset === 0}
-							data-testid="pricing-overrides-pagination-prev-btn"
-							aria-label="Previous page"
-						>
-							<ChevronLeft className="size-3" />
-						</Button>
-
-						<div className="flex items-center gap-1">
-							<span>Page</span>
-							<span>{Math.floor(offset / PAGE_SIZE) + 1}</span>
-							<span>of {Math.ceil(totalCount / PAGE_SIZE)}</span>
-						</div>
-
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => setOffset(offset + PAGE_SIZE)}
-							disabled={offset + PAGE_SIZE >= totalCount}
-							data-testid="pricing-overrides-pagination-next-btn"
-							aria-label="Next page"
-						>
-							<ChevronRight className="size-3" />
-						</Button>
-					</div>
-				</div>
-			)}
+			{/* Standard DataTable Pagination Footer */}
+			<DataTablePagination
+				offset={offset}
+				limit={pageSize}
+				totalCount={totalCount}
+				onOffsetChange={setOffset}
+				onLimitChange={setPageSize}
+				itemLabel="pricing overrides"
+				perPageLabel="Overrides per page"
+				dataTestId="pricing-overrides-pagination"
+			/>
 
 			<PricingOverrideSheet
 				open={isDrawerOpen}

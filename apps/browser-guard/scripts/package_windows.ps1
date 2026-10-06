@@ -1,5 +1,11 @@
 Set-Location -Path $PSScriptRoot\..
 
+# 0. Sync configs from root .env
+if (Test-Path 'scripts\sync_config_from_env.py') {
+    Write-Host "Syncing Guard config from root .env..."
+    python scripts\sync_config_from_env.py
+}
+
 # 1. Prepare Staging
 New-Item -ItemType Directory -Force -Path 'installer\staging' | Out-Null
 $guardExe = $null

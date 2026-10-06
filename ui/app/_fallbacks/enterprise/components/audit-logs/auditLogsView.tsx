@@ -5,8 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { getErrorMessage } from "@/lib/store";
 import { useGetAuditLogsQuery, useLazyExportAuditLogsQuery } from "@enterprise/lib/store/apis/auditLogsApi";
 import { ScrollText } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 function formatAuditDate(ts: string) {
 	const d = new Date(ts);
@@ -20,23 +20,21 @@ function formatAuditTime(ts: string) {
 	return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
 }
 
-const PAGE_SIZE = 50;
-
 export default function AuditLogsView() {
 	const [search, setSearch] = useState("");
 	const [action, setAction] = useState("");
 	const [outcome, setOutcome] = useState("");
 	const [page, setPage] = useState(0);
+	const [pageSize, setPageSize] = useState(50);
 	const filters = useMemo(
 		() => ({ search: search.trim() || undefined, action: action || undefined, outcome: outcome || undefined }),
 		[search, action, outcome],
 	);
 	useEffect(() => setPage(0), [filters]);
-	const { data, isLoading: loading, isFetching } = useGetAuditLogsQuery({ ...filters, limit: PAGE_SIZE, offset: page * PAGE_SIZE });
+	const { data, isLoading: loading, isFetching } = useGetAuditLogsQuery({ ...filters, limit: pageSize, offset: page * pageSize });
 	const [exportAuditLogs] = useLazyExportAuditLogsQuery();
 	const logs = data?.logs || [];
 	const total = data?.total_count ?? 0;
-	const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
 	const getExportPayload = useCallback(async () => {
 		let rows;
@@ -158,24 +156,19 @@ export default function AuditLogsView() {
 					</Table>
 				)}
 			</div>
-			{total > PAGE_SIZE ? (
-				<div className="text-muted-foreground flex items-center justify-end gap-3 text-sm" data-testid="audit-logs-pagination">
-					<span>
-						{page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} of {total}
-					</span>
-					<Button variant="outline" size="sm" disabled={page === 0 || isFetching} onClick={() => setPage((p) => Math.max(0, p - 1))}>
-						Previous
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={page + 1 >= pageCount || isFetching}
-						onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-					>
-						Next
-					</Button>
-				</div>
-			) : null}
+			<DataTablePagination
+				offset={page * pageSize}
+				limit={pageSize}
+				totalCount={total}
+				onOffsetChange={(newOffset) => setPage(Math.floor(newOffset / pageSize))}
+				onLimitChange={(newLimit) => {
+					setPageSize(newLimit);
+					setPage(0);
+				}}
+				itemLabel="audit logs"
+				perPageLabel="Logs per page"
+				dataTestId="audit-logs-pagination"
+			/>
 		</div>
 	);
 }

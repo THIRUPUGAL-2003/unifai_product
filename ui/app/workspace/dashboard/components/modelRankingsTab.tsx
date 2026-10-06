@@ -19,6 +19,7 @@ import {
 import { ChartCard } from "./charts/chartCard";
 import { ChartErrorBoundary } from "./charts/chartErrorBoundary";
 import { formatCost, SortableHeader, TrendBadge } from "./rankingsShared";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 type SortField = "total_requests" | "success_rate" | "total_tokens" | "total_cost" | "avg_latency";
 type SortOrder = "asc" | "desc";
@@ -235,9 +236,12 @@ function TopModelsChart({
 function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels, startTime, endTime }: ModelRankingsTabProps) {
 	const [sortField, setSortField] = useState<SortField>("total_requests");
 	const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 
 	const handleSort = useCallback(
 		(field: SortField) => {
+			setOffset(0);
 			if (sortField === field) {
 				setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
 			} else {
@@ -256,6 +260,8 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 			return sortOrder === "desc" ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number);
 		});
 	}, [rankingsData, sortField, sortOrder]);
+
+	const paginatedRankings = useMemo(() => sortedRankings.slice(offset, offset + limit), [sortedRankings, offset, limit]);
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -332,9 +338,9 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{sortedRankings.map((entry: ModelRankingEntry, index: number) => (
+							{paginatedRankings.map((entry: ModelRankingEntry, index: number) => (
 								<TableRow key={`${entry.provider}:${entry.model}`}>
-									<TableCell className="text-muted-foreground font-mono text-xs">{index + 1}</TableCell>
+									<TableCell className="text-muted-foreground font-mono text-xs">{offset + index + 1}</TableCell>
 									<TableCell>
 										<div className="flex items-center gap-2">
 											{entry.provider in ProviderIcons ? (
@@ -386,6 +392,19 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 							))}
 						</TableBody>
 					</Table>
+					<DataTablePagination
+						offset={offset}
+						limit={limit}
+						totalCount={sortedRankings.length}
+						onOffsetChange={setOffset}
+						onLimitChange={(newLimit) => {
+							setLimit(newLimit);
+							setOffset(0);
+						}}
+						itemLabel="models"
+						perPageLabel="Models per page"
+						dataTestId="model-rankings-pagination"
+					/>
 				</Card>
 			)}
 		</div>

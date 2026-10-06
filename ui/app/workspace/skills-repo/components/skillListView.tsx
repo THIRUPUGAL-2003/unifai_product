@@ -1,6 +1,7 @@
 "use client";
 
 import FullPageLoader from "@/components/fullPageLoader";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { PIN_SHADOW_RIGHT } from "@/components/table/columnPinning";
 import {
 	AlertDialog,
@@ -625,41 +626,16 @@ export function SkillsListView({
 				</Table>
 			</div>
 
-			{/* Pagination */}
-			{total > 0 && (
-				<div className="flex shrink-0 items-center justify-between text-xs">
-					<div className="text-muted-foreground flex items-center gap-2">
-						{(offset + 1).toLocaleString()}-{Math.min(offset + PAGE_SIZE, total).toLocaleString()} of {total.toLocaleString()} entries
-					</div>
-					<div className="flex items-center gap-2">
-						<Button
-							variant="ghost"
-							size="sm"
-							data-testid="skill-pagination-prev"
-							onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-							disabled={offset === 0 || isFetching}
-							aria-label="Previous page"
-						>
-							<ChevronLeft className="size-3" />
-						</Button>
-						<div className="flex items-center gap-1">
-							<span>Page</span>
-							<span>{Math.floor(offset / PAGE_SIZE) + 1}</span>
-							<span>of {Math.ceil(total / PAGE_SIZE)}</span>
-						</div>
-						<Button
-							variant="ghost"
-							size="sm"
-							data-testid="skill-pagination-next"
-							onClick={() => setOffset(offset + PAGE_SIZE)}
-							disabled={offset + PAGE_SIZE >= total || isFetching}
-							aria-label="Next page"
-						>
-							<ChevronRight className="size-3" />
-						</Button>
-					</div>
-				</div>
-			)}
+			{/* Standard DataTable Pagination Footer */}
+			<DataTablePagination
+				offset={offset}
+				limit={PAGE_SIZE}
+				totalCount={total}
+				onOffsetChange={setOffset}
+				itemLabel="skills"
+				perPageLabel="Skills per page"
+				dataTestId="skill-pagination"
+			/>
 		</div>
 	);
 }

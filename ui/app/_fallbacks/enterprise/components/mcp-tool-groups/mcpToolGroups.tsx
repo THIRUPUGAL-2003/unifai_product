@@ -16,6 +16,7 @@ import { MCPToolGroup } from "@enterprise/lib/types/workspace";
 import { Boxes, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 /** Build runtime tool patterns: clientName-toolName (governance format). */
 function buildToolEntries(clientId: string, clientName: string, toolNamesRaw: string): { mcp_client_id: string; mcp_client_name: string; tool_names?: string[]; name: string }[] {
@@ -77,6 +78,9 @@ export default function MCPToolGroups() {
 	const [updateGroup] = useUpdateMCPToolGroupMutation();
 	const [deleteGroup] = useDeleteMCPToolGroupMutation();
 	const groups = groupData?.tool_groups || [];
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
+	const pagedGroups = useMemo(() => groups.slice(offset, offset + limit), [groups, offset, limit]);
 	const [open, setOpen] = useState(false);
 	const [editing, setEditing] = useState<MCPToolGroup | null>(null);
 	const [name, setName] = useState("");
@@ -197,46 +201,61 @@ export default function MCPToolGroups() {
 					<p className="text-muted-foreground mt-1 text-sm">Create a group to share a curated tool set.</p>
 				</div>
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Name</TableHead>
-							<TableHead>Tools</TableHead>
-							<TableHead>Virtual keys</TableHead>
-							<TableHead>Enabled</TableHead>
-							<TableHead />
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{groups.map((group) => (
-							<TableRow key={group.id}>
-								<TableCell>
-									<div className="font-medium">{group.name}</div>
-									<div className="text-muted-foreground text-xs">{group.description}</div>
-								</TableCell>
-								<TableCell>
-									<Badge variant="secondary">{group.tools?.length || 0} tool pattern(s)</Badge>
-								</TableCell>
-								<TableCell>
-									<Badge variant="outline">
-										{group.virtual_key_ids?.length ? `${group.virtual_key_ids.length} key(s)` : "No keys (restricted)"}
-									</Badge>
-								</TableCell>
-								<TableCell>
-									<Switch checked={group.enabled} onCheckedChange={() => void toggle(group)} />
-								</TableCell>
-								<TableCell className="text-right">
-									<Button size="icon" variant="ghost" onClick={() => openEdit(group)} title="Edit">
-										<Pencil className="h-4 w-4" />
-									</Button>
-									<Button size="icon" variant="ghost" onClick={() => void remove(group.id)}>
-										<Trash2 className="h-4 w-4" />
-									</Button>
-								</TableCell>
+				<div className="rounded-md border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Name</TableHead>
+								<TableHead>Tools</TableHead>
+								<TableHead>Virtual keys</TableHead>
+								<TableHead>Enabled</TableHead>
+								<TableHead />
 							</TableRow>
-						))}
-					</TableBody>
-				</Table>
+						</TableHeader>
+						<TableBody>
+							{pagedGroups.map((group) => (
+								<TableRow key={group.id}>
+									<TableCell>
+										<div className="font-medium">{group.name}</div>
+										<div className="text-muted-foreground text-xs">{group.description}</div>
+									</TableCell>
+									<TableCell>
+										<Badge variant="secondary">{group.tools?.length || 0} tool pattern(s)</Badge>
+									</TableCell>
+									<TableCell>
+										<Badge variant="outline">
+											{group.virtual_key_ids?.length ? `${group.virtual_key_ids.length} key(s)` : "No keys (restricted)"}
+										</Badge>
+									</TableCell>
+									<TableCell>
+										<Switch checked={group.enabled} onCheckedChange={() => void toggle(group)} />
+									</TableCell>
+									<TableCell className="text-right">
+										<Button size="icon" variant="ghost" onClick={() => openEdit(group)} title="Edit">
+											<Pencil className="h-4 w-4" />
+										</Button>
+										<Button size="icon" variant="ghost" onClick={() => void remove(group.id)}>
+											<Trash2 className="h-4 w-4" />
+										</Button>
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+					<DataTablePagination
+						offset={offset}
+						limit={limit}
+						totalCount={groups.length}
+						onOffsetChange={setOffset}
+						onLimitChange={(newLimit) => {
+							setLimit(newLimit);
+							setOffset(0);
+						}}
+						itemLabel="tool groups"
+						perPageLabel="Groups per page"
+						dataTestId="mcp-tool-groups-pagination"
+					/>
+				</div>
 			)}
 
 			<Dialog

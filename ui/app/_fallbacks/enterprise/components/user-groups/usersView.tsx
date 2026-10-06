@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	Users,
 	Plus,
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { toast } from "sonner";
 import {
 	WORKSPACE_ACCESS_SECTIONS,
@@ -825,6 +826,18 @@ export default function UsersView() {
 		(u) => ["pending", "email_unverified"].includes(u.status || "approved") && matchesSearch(u) && matchesRole(u),
 	);
 	const activeUsers = approvedUsers.filter((u) => matchesSearch(u) && matchesRole(u));
+	const [activeUsersOffset, setActiveUsersOffset] = useState(0);
+	const [activeUsersLimit, setActiveUsersLimit] = useState(10);
+
+	useEffect(() => {
+		setActiveUsersOffset(0);
+	}, [searchQuery, roleFilter]);
+
+	const pagedActiveUsers = useMemo(
+		() => activeUsers.slice(activeUsersOffset, activeUsersOffset + activeUsersLimit),
+		[activeUsers, activeUsersOffset, activeUsersLimit],
+	);
+
 	const activeUsersTitle =
 		roleFilter === "admin" ? "Active admins" : roleFilter === "user" ? "Active users (role: User)" : "Active users";
 
@@ -1047,7 +1060,7 @@ export default function UsersView() {
 										</TableRow>
 									</TableHeader>
 									<TableBody>
-										{activeUsers.map((user) => (
+										{pagedActiveUsers.map((user: SessionUser) => (
 											<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
 												<TableCell className="flex items-center gap-2 font-medium">
 													<div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/10 text-xs font-bold text-teal-400 uppercase">
@@ -1163,6 +1176,19 @@ export default function UsersView() {
 										))}
 									</TableBody>
 								</Table>
+								<DataTablePagination
+									offset={activeUsersOffset}
+									limit={activeUsersLimit}
+									totalCount={activeUsers.length}
+									onOffsetChange={setActiveUsersOffset}
+									onLimitChange={(newLimit) => {
+										setActiveUsersLimit(newLimit);
+										setActiveUsersOffset(0);
+									}}
+									itemLabel="users"
+									perPageLabel="Users per page"
+									dataTestId="users-pagination"
+								/>
 							</div>
 						)}
 					</div>

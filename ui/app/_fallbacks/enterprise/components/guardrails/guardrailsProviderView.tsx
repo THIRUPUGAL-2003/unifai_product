@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { collectGuardrailIds, nextGuardrailId } from "./utils";
 
 function validateProviderForm(provider: Partial<GuardrailProvider> | null, patternText: string): string | null {
@@ -29,8 +30,11 @@ export default function GuardrailsProviderView() {
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [editingProvider, setEditingProvider] = useState<Partial<GuardrailProvider> | null>(null);
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 
 	const providers = config?.guardrail_providers || [];
+	const pagedProviders = useMemo(() => providers.slice(offset, offset + limit), [providers, offset, limit]);
 	const rules = config?.guardrail_rules || [];
 
 	const getRegexPatterns = (provider: Partial<GuardrailProvider>) => {
@@ -185,7 +189,7 @@ export default function GuardrailsProviderView() {
 								</TableCell>
 							</TableRow>
 						) : (
-							providers.map((provider) => (
+							pagedProviders.map((provider) => (
 								<TableRow key={provider.id}>
 									<TableCell className="font-mono text-sm font-medium">{provider.id}</TableCell>
 									<TableCell className="capitalize">{provider.provider_name}</TableCell>
@@ -210,6 +214,19 @@ export default function GuardrailsProviderView() {
 						)}
 					</TableBody>
 				</Table>
+				<DataTablePagination
+					offset={offset}
+					limit={limit}
+					totalCount={providers.length}
+					onOffsetChange={setOffset}
+					onLimitChange={(newLimit) => {
+						setLimit(newLimit);
+						setOffset(0);
+					}}
+					itemLabel="providers"
+					perPageLabel="Providers per page"
+					dataTestId="guardrails-providers-pagination"
+				/>
 			</div>
 
 			<Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

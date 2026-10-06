@@ -8,11 +8,15 @@ import type { MCPAuthType, MCPClient } from "@/lib/types/mcp";
 import { KeyRound, Save } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 export default function MCPAuthConfigView() {
 	const { data, isLoading } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
 	const [updateClient] = useUpdateMCPClientMutation();
 	const clients = data?.clients || [];
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
+	const pagedClients = useMemo(() => clients.slice(offset, offset + limit), [clients, offset, limit]);
 	const [selectedId, setSelectedId] = useState<string>("");
 	const [headerName, setHeaderName] = useState("Authorization");
 	const [headerValue, setHeaderValue] = useState("");
@@ -75,33 +79,48 @@ export default function MCPAuthConfigView() {
 				</div>
 			) : (
 				<div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>Client</TableHead>
-								<TableHead>Auth</TableHead>
-								<TableHead>State</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{clients.map((client) => (
-								<TableRow
-									key={client.config.client_id}
-									className={selectedId === client.config.client_id ? "bg-muted/40" : ""}
-									onClick={() => {
-										setSelectedId(client.config.client_id);
-										setPerUserKeys((client.config.per_user_header_keys || []).join(", "));
-									}}
-								>
-									<TableCell className="font-medium">{client.config.name}</TableCell>
-									<TableCell>
-										<Badge variant="secondary">{(client.config.auth_type || "none") as MCPAuthType}</Badge>
-									</TableCell>
-									<TableCell>{client.state}</TableCell>
+					<div className="rounded-md border flex flex-col justify-between">
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Client</TableHead>
+									<TableHead>Auth</TableHead>
+									<TableHead>State</TableHead>
 								</TableRow>
-							))}
-						</TableBody>
-					</Table>
+							</TableHeader>
+							<TableBody>
+								{pagedClients.map((client) => (
+									<TableRow
+										key={client.config.client_id}
+										className={selectedId === client.config.client_id ? "bg-muted/40" : ""}
+										onClick={() => {
+											setSelectedId(client.config.client_id);
+											setPerUserKeys((client.config.per_user_header_keys || []).join(", "));
+										}}
+									>
+										<TableCell className="font-medium">{client.config.name}</TableCell>
+										<TableCell>
+											<Badge variant="secondary">{(client.config.auth_type || "none") as MCPAuthType}</Badge>
+										</TableCell>
+										<TableCell>{client.state}</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+						<DataTablePagination
+							offset={offset}
+							limit={limit}
+							totalCount={clients.length}
+							onOffsetChange={setOffset}
+							onLimitChange={(newLimit) => {
+								setLimit(newLimit);
+								setOffset(0);
+							}}
+							itemLabel="clients"
+							perPageLabel="Clients per page"
+							dataTestId="mcp-auth-config-pagination"
+						/>
+					</div>
 
 					<div className="space-y-4 rounded-xl border p-4">
 						{!selected ? (

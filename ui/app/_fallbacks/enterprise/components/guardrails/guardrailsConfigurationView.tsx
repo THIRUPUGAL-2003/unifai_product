@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { MultiSelect } from "@/components/ui/multiSelect";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import {
 	buildCelFromPromptSelection,
 	collectGuardrailIds,
@@ -60,8 +61,11 @@ export default function GuardrailsConfigurationView() {
 	const [editingRule, setEditingRule] = useState<Partial<GuardrailRule> | null>(null);
 	const [promptScope, setPromptScope] = useState<GuardrailPromptScope>("all");
 	const [selectedPromptIds, setSelectedPromptIds] = useState<string[]>([]);
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 
 	const rules = config?.guardrail_rules || [];
+	const pagedRules = useMemo(() => rules.slice(offset, offset + limit), [rules, offset, limit]);
 	const providers = config?.guardrail_providers || [];
 	const isEnabled = rules.length > 0 && rules.some((r) => r.enabled);
 
@@ -265,7 +269,7 @@ export default function GuardrailsConfigurationView() {
 								</TableCell>
 							</TableRow>
 						) : (
-							rules.map((rule) => (
+							pagedRules.map((rule) => (
 								<TableRow key={rule.id}>
 									<TableCell>
 										<Switch
@@ -331,6 +335,19 @@ export default function GuardrailsConfigurationView() {
 						)}
 					</TableBody>
 				</Table>
+				<DataTablePagination
+					offset={offset}
+					limit={limit}
+					totalCount={rules.length}
+					onOffsetChange={setOffset}
+					onLimitChange={(newLimit) => {
+						setLimit(newLimit);
+						setOffset(0);
+					}}
+					itemLabel="rules"
+					perPageLabel="Rules per page"
+					dataTestId="guardrails-rules-pagination"
+				/>
 			</div>
 
 			<Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

@@ -7,6 +7,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { ProviderLabels } from "@/lib/constants/logs";
 import { Info } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 function formatCost(dollars: number) {
 	return `$${dollars.toFixed(4)}`;
@@ -44,6 +46,15 @@ export default function ModelCatalogTable({
 	totalCost24h,
 	isLoadingModels,
 }: ModelCatalogTableProps) {
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
+
+	useEffect(() => {
+		setOffset(0);
+	}, [providerFilter]);
+
+	const paginatedRows = useMemo(() => rows.slice(offset, offset + limit), [rows, offset, limit]);
+
 	const summaryCards = [
 		{ label: "Total Providers", value: totalProviders.toLocaleString() },
 		{ label: "Total Models", value: totalModels.toLocaleString() },
@@ -127,7 +138,7 @@ export default function ModelCatalogTable({
 								</TableCell>
 							</TableRow>
 						) : (
-							rows.map((row) => (
+							paginatedRows.map((row) => (
 								<TableRow key={row.providerName}>
 									<TableCell className="overflow-hidden">
 										<div className="flex items-center gap-2">
@@ -166,6 +177,19 @@ export default function ModelCatalogTable({
 						)}
 					</TableBody>
 				</Table>
+				<DataTablePagination
+					offset={offset}
+					limit={limit}
+					totalCount={rows.length}
+					onOffsetChange={setOffset}
+					onLimitChange={(newLimit) => {
+						setLimit(newLimit);
+						setOffset(0);
+					}}
+					itemLabel="providers"
+					perPageLabel="Providers per page"
+					dataTestId="model-catalog-pagination"
+				/>
 			</div>
 		</div>
 	);

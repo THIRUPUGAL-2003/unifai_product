@@ -27,6 +27,7 @@ import { BusinessUnit } from "@enterprise/lib/types/workspace";
 import { Building2, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 export function BusinessUnitsView() {
 	const [selected, setSelected] = useState<BusinessUnit | null>(null);
@@ -34,6 +35,8 @@ export function BusinessUnitsView() {
 	const [open, setOpen] = useState(false);
 	const [teamId, setTeamId] = useState("");
 	const [unitToDelete, setUnitToDelete] = useState<BusinessUnit | null>(null);
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 	const hasCreateAccess = useRbac(RbacResource.Teams, RbacOperation.Create);
 	const hasUpdateAccess = useRbac(RbacResource.Teams, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.Teams, RbacOperation.Delete);
@@ -49,6 +52,8 @@ export function BusinessUnitsView() {
 	const teams = teamData?.teams || [];
 	const customers = customersData?.customers || [];
 	const assigned = assignedData?.teams || [];
+
+	const pagedUnits = useMemo(() => units.slice(offset, offset + limit), [units, offset, limit]);
 
 	const assignedIds = useMemo(() => new Set(assigned.map((t) => t.id)), [assigned]);
 	const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
@@ -131,7 +136,7 @@ export function BusinessUnitsView() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{units.map((unit) => (
+						{pagedUnits.map((unit) => (
 							<TableRow key={unit.id} className={selected?.id === unit.id ? "bg-muted/40" : ""} onClick={() => setSelected(unit)}>
 								<TableCell className="font-medium">{unit.name}</TableCell>
 								<TableCell>{unit.team_count}</TableCell>
@@ -152,6 +157,19 @@ export function BusinessUnitsView() {
 						))}
 					</TableBody>
 				</Table>
+				<DataTablePagination
+					offset={offset}
+					limit={limit}
+					totalCount={units.length}
+					onOffsetChange={setOffset}
+					onLimitChange={(newLimit) => {
+						setLimit(newLimit);
+						setOffset(0);
+					}}
+					itemLabel="business units"
+					perPageLabel="Units per page"
+					dataTestId="business-units-pagination"
+				/>
 			</div>
 
 			<div className="rounded-xl border p-4">

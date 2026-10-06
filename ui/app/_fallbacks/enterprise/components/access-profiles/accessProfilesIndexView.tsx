@@ -21,6 +21,7 @@ import { AccessProfile } from "@enterprise/lib/types/workspace";
 import { Copy, IdCard, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 type ProfileFormState = {
 	name: string;
@@ -490,58 +491,77 @@ function TableView({
 	onClone: (id: number) => void;
 	onDelete: (id: number) => void;
 }) {
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
+	const pagedProfiles = useMemo(() => profiles.slice(offset, offset + limit), [profiles, offset, limit]);
+
 	return (
-		<Table>
-			<TableHeader>
-				<TableRow>
-					<TableHead>Name</TableHead>
-					<TableHead>Providers</TableHead>
-					<TableHead>MCP</TableHead>
-					<TableHead>Virtual keys</TableHead>
-					<TableHead>Active</TableHead>
-					<TableHead>Version</TableHead>
-					<TableHead className="text-right">Actions</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{profiles.map((profile) => (
-					<TableRow key={profile.id}>
-						<TableCell>
-							<div className="font-medium">{profile.name}</div>
-							<div className="text-muted-foreground text-xs">{profile.description}</div>
-						</TableCell>
-						<TableCell className="text-xs">{profile.provider_configs?.map((cfg) => cfg.provider_name).join(", ") || "—"}</TableCell>
-						<TableCell className="text-xs">
-							{profile.mcp_servers?.length
-								? profile.mcp_servers
-										.map((s) => String(s.mcp_client_name || s.name || ""))
-										.filter(Boolean)
-										.join(", ") || `${profile.mcp_servers.length} server(s)`
-								: "—"}
-						</TableCell>
-						<TableCell className="text-xs">
-							{profile.virtual_key_ids?.length ? `${profile.virtual_key_ids.length} key(s)` : "—"}
-						</TableCell>
-						<TableCell>
-							<Switch checked={profile.is_active} onCheckedChange={() => onToggle(profile)} />
-						</TableCell>
-						<TableCell>
-							<Badge variant="secondary">v{profile.version}</Badge>
-						</TableCell>
-						<TableCell className="text-right">
-							<Button size="icon" variant="ghost" onClick={() => onEdit(profile)} title="Edit">
-								<Pencil className="h-4 w-4" />
-							</Button>
-							<Button size="icon" variant="ghost" onClick={() => onClone(profile.id)} title="Clone">
-								<Copy className="h-4 w-4" />
-							</Button>
-							<Button size="icon" variant="ghost" onClick={() => onDelete(profile.id)}>
-								<Trash2 className="h-4 w-4" />
-							</Button>
-						</TableCell>
+		<div className="rounded-md border">
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead>Name</TableHead>
+						<TableHead>Providers</TableHead>
+						<TableHead>MCP</TableHead>
+						<TableHead>Virtual keys</TableHead>
+						<TableHead>Active</TableHead>
+						<TableHead>Version</TableHead>
+						<TableHead className="text-right">Actions</TableHead>
 					</TableRow>
-				))}
-			</TableBody>
-		</Table>
+				</TableHeader>
+				<TableBody>
+					{pagedProfiles.map((profile) => (
+						<TableRow key={profile.id}>
+							<TableCell>
+								<div className="font-medium">{profile.name}</div>
+								<div className="text-muted-foreground text-xs">{profile.description}</div>
+							</TableCell>
+							<TableCell className="text-xs">{profile.provider_configs?.map((cfg) => cfg.provider_name).join(", ") || "—"}</TableCell>
+							<TableCell className="text-xs">
+								{profile.mcp_servers?.length
+									? profile.mcp_servers
+											.map((s) => String(s.mcp_client_name || s.name || ""))
+											.filter(Boolean)
+											.join(", ") || `${profile.mcp_servers.length} server(s)`
+									: "—"}
+							</TableCell>
+							<TableCell className="text-xs">
+								{profile.virtual_key_ids?.length ? `${profile.virtual_key_ids.length} key(s)` : "—"}
+							</TableCell>
+							<TableCell>
+								<Switch checked={profile.is_active} onCheckedChange={() => onToggle(profile)} />
+							</TableCell>
+							<TableCell>
+								<Badge variant="secondary">v{profile.version}</Badge>
+							</TableCell>
+							<TableCell className="text-right">
+								<Button size="icon" variant="ghost" onClick={() => onEdit(profile)} title="Edit">
+									<Pencil className="h-4 w-4" />
+								</Button>
+								<Button size="icon" variant="ghost" onClick={() => onClone(profile.id)} title="Clone">
+									<Copy className="h-4 w-4" />
+								</Button>
+								<Button size="icon" variant="ghost" onClick={() => onDelete(profile.id)}>
+									<Trash2 className="h-4 w-4" />
+								</Button>
+							</TableCell>
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
+			<DataTablePagination
+				offset={offset}
+				limit={limit}
+				totalCount={profiles.length}
+				onOffsetChange={setOffset}
+				onLimitChange={(newLimit) => {
+					setLimit(newLimit);
+					setOffset(0);
+				}}
+				itemLabel="profiles"
+				perPageLabel="Profiles per page"
+				dataTestId="access-profiles-pagination"
+			/>
+		</div>
 	);
 }

@@ -23,6 +23,7 @@ export default function GovernanceVirtualKeysPage() {
 			customer_id: parseAsString.withDefault(""),
 			team_id: parseAsString.withDefault(""),
 			offset: parseAsInteger.withDefault(0),
+			limit: parseAsInteger.withDefault(PAGE_SIZE),
 			sort_by: parseAsString.withDefault(""),
 			order: parseAsString.withDefault(""),
 			selected_vk: parseAsString.withDefault(""),
@@ -39,7 +40,7 @@ export default function GovernanceVirtualKeysPage() {
 		isFetching,
 	} = useGetVirtualKeysQuery(
 		{
-			limit: PAGE_SIZE,
+			limit: urlState.limit,
 			offset: urlState.offset,
 			search: debouncedSearch || undefined,
 			customer_id: urlState.customer_id || undefined,
@@ -153,8 +154,9 @@ export default function GovernanceVirtualKeysPage() {
 				teamFilter={urlState.team_id}
 				onTeamFilterChange={handleTeamFilterChange}
 				offset={urlState.offset}
-				limit={PAGE_SIZE}
+				limit={urlState.limit}
 				onOffsetChange={handleOffsetChange}
+				onLimitChange={(newLimit) => setUrlState({ limit: newLimit, offset: 0 })}
 				sortBy={urlState.sort_by}
 				order={urlState.order}
 				onSortChange={handleSortChange}

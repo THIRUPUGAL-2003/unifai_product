@@ -3,3 +3,5 @@ export { buildPinStyle, PIN_SHADOW_LEFT, PIN_SHADOW_RIGHT, useHeaderCellRefs, us
 export { DraggableColumnHeader, TH_CLASS } from "./draggableColumnHeader";
 export { useColumnConfig } from "./hooks/useColumnConfig";
 export type { ColumnConfigEntry } from "./hooks/useColumnConfig";
+export { DataTablePagination } from "./dataTablePagination";
+export type { DataTablePaginationProps } from "./dataTablePagination";

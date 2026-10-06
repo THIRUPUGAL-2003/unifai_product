@@ -22,6 +22,15 @@ echo "      -> Done. Directory listing on 8443 disabled."
 # 2. Configure UFW Firewall (CRITICAL FIX)
 # Only allow Port 22 (SSH), Port 80 (HTTP redirect), and Port 443 (HTTPS)
 echo "[2/4] Hardening Linux UFW Firewall..."
+
+# Load port variables from .env if present
+ENV_DB_PORT="32768"
+ENV_APP_PORT="6000"
+if [ -f .env ]; then
+    ENV_DB_PORT=$(grep -E '^\s*DB_PORT=' .env | cut -d '=' -f2 | tr -d ' "' || echo "32768")
+    ENV_APP_PORT=$(grep -E '^\s*APP_PORT=' .env | cut -d '=' -f2 | tr -d ' "' || echo "6000")
+fi
+
 if command -v ufw >/dev/null 2>&1; then
     # Ensure default policies
     ufw default deny incoming
@@ -30,12 +39,16 @@ if command -v ufw >/dev/null 2>&1; then
     # Essential public ports
     ufw allow 22/tcp comment 'SSH'
     ufw allow 80/tcp comment 'HTTP Redirect'
-    ufw allow 443/tcp comment 'HTTPS OpenResty'
+    ufw allow 443/tcp comment 'HTTPS Reverse Proxy'
 
     # Explicitly deny dangerous exposed internal/database ports
-    ufw deny 32768/tcp comment 'PostgreSQL (Internal only)'
+    if [ -n "$ENV_DB_PORT" ]; then
+        ufw deny ${ENV_DB_PORT}/tcp comment 'Database (Internal only)'
+    fi
+    if [ -n "$ENV_APP_PORT" ]; then
+        ufw deny ${ENV_APP_PORT}/tcp comment 'Backend port (Proxied by 443)'
+    fi
     ufw deny 8443/tcp comment 'Python SimpleHTTPServer'
-    ufw deny 6000/tcp comment 'UnifAI backend (Proxied by 443)'
     ufw deny 8001/tcp comment 'Internal microservice'
     ufw deny 8080/tcp comment 'Internal microservice'
     ufw deny 8084/tcp comment 'Internal microservice'

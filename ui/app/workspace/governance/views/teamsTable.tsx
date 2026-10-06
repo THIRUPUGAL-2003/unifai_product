@@ -1,3 +1,4 @@
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { PIN_SHADOW_RIGHT } from "@/components/table/columnPinning";
 import {
 	AlertDialog,
@@ -134,6 +135,7 @@ interface TeamsTableProps {
 	offset: number;
 	limit: number;
 	onOffsetChange: (offset: number) => void;
+	onLimitChange?: (limit: number) => void;
 	selectedTeamId: string | null;
 	onTeamAdd: () => void;
 	onTeamSelect: (team: Team | null) => void;
@@ -152,6 +154,7 @@ export default function TeamsTable({
 	offset,
 	limit,
 	onOffsetChange,
+	onLimitChange,
 	selectedTeamId,
 	onTeamAdd,
 	onTeamSelect,
@@ -473,45 +476,17 @@ export default function TeamsTable({
 						</Table>
 					</div>
 
-					{/* Pagination */}
-					{totalCount > 0 && (
-						<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
-							<div className="text-muted-foreground flex items-center gap-2">
-								{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-								entries
-							</div>
-
-							<div className="flex items-center gap-2">
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={() => onOffsetChange(Math.max(0, offset - limit))}
-									disabled={offset === 0}
-									data-testid="teams-pagination-prev-btn"
-									aria-label="Previous page"
-								>
-									<ChevronLeft className="size-3" />
-								</Button>
-
-								<div className="flex items-center gap-1">
-									<span>Page</span>
-									<span>{Math.floor(offset / limit) + 1}</span>
-									<span>of {Math.ceil(totalCount / limit)}</span>
-								</div>
-
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={() => onOffsetChange(offset + limit)}
-									disabled={offset + limit >= totalCount}
-									data-testid="teams-pagination-next-btn"
-									aria-label="Next page"
-								>
-									<ChevronRight className="size-3" />
-								</Button>
-							</div>
-						</div>
-					)}
+					{/* Standard DataTable Pagination Footer */}
+					<DataTablePagination
+						offset={offset}
+						limit={limit}
+						totalCount={totalCount}
+						onOffsetChange={onOffsetChange}
+						onLimitChange={onLimitChange}
+						itemLabel="teams"
+						perPageLabel="Teams per page"
+						dataTestId="teams-pagination"
+					/>
 				</div>
 			</TooltipProvider>
 		</>

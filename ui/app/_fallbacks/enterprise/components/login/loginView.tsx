@@ -231,7 +231,7 @@ export default function LoginView() {
 	};
 
 	return (
-		<div className="relative flex min-h-screen flex-col justify-between overflow-hidden bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
+		<div className="relative flex min-h-screen flex-col justify-between overflow-x-hidden overflow-y-auto bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
 			{/* Ambient Gradient Glows */}
 			<div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[500px] w-[800px] rounded-full bg-gradient-to-tr from-indigo-500/15 via-[#45f3ff]/15 to-transparent blur-[140px]" />
 			<div className="pointer-events-none absolute right-[-5%] bottom-[-10%] h-[420px] w-[420px] rounded-full bg-blue-600/10 blur-[130px]" />

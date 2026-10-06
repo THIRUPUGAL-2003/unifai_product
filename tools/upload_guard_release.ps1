@@ -10,13 +10,36 @@
   the dashboard serves the new files immediately; press Rebuild & Publish afterwards.
 #>
 param(
-    [Parameter(Mandatory = $false)][string]$Server = "root@76.13.243.253",
+    [Parameter(Mandatory = $false)][string]$Server = "",
     [Parameter(Mandatory = $false)][string]$RemoteDir = "/opt/projects/unifai_product/apps/browser-guard/release",
     [int]$Port = 22,
     [string]$IdentityFile = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+# Resolve deployment target from .env if not provided
+if (-not $Server) {
+    $envFile = Join-Path $PSScriptRoot "..\.env"
+    if (Test-Path $envFile) {
+        $envLines = Get-Content $envFile -ErrorAction SilentlyContinue
+        foreach ($line in $envLines) {
+            if ($line -match '^\s*DEPLOY_SERVER\s*=\s*(.+)$') {
+                $Server = $matches[1].Trim("'`" ")
+                break
+            }
+            if (-not $Server -and $line -match '^\s*DB_HOST\s*=\s*(.+)$') {
+                $hostCandidate = $matches[1].Trim("'`" ")
+                if ($hostCandidate -and $hostCandidate -notmatch 'localhost|127\.0\.0\.1') {
+                    $Server = "root@$hostCandidate"
+                }
+            }
+        }
+    }
+    if (-not $Server) {
+        $Server = "root@76.13.243.253"
+    }
+}
 $releaseDir = Join-Path $PSScriptRoot "..\apps\browser-guard\release"
 # Only untracked binaries: uploading git-tracked files would make `git pull` on the server fail.
 $names = @("Raksha_Guard_Setup.exe", "Raksha_Guard.exe", "Raksha_Guard_Windows.zip", "Raksha_Guard_macOS.zip", "Raksha_Guard_Setup.pkg")
@@ -57,5 +80,6 @@ foreach ($f in $files) {
 
 Write-Host "Syncing into running Docker container (unifai_version)..."
 & ssh @sshArgs $Server "docker cp '$remote/.' unifai_version:/app/release/ 2>/dev/null; docker cp '$remote/.' unifai_version:/app/apps/browser-guard/release/ 2>/dev/null; ls -la '$remote'"
-Write-Host ""
-Write-Host "Done! Open Browser AI > Setup (https://unifai.yespanchi.com), confirm Windows and macOS show Ready, then click 'Rebuild & Publish'."
+$dashUrl = if ($envLines) { ($envLines | Where-Object { $_ -match '^\s*SERVER_DOMAIN\s*=\s*(.+)$' } | ForEach-Object { $matches[1].Trim("'`" ") }) } else { "your server dashboard" }
+if (-not $dashUrl) { $dashUrl = "https://unifai.yespanchi.com" }
+Write-Host "Done! Open Browser AI > Setup ($dashUrl), confirm Windows and macOS show Ready, then click 'Rebuild & Publish'."

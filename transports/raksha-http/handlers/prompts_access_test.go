@@ -69,6 +69,14 @@ func (s *accessTestStore) GetSession(ctx context.Context, token string) (*tables
 	return &sess, nil
 }
 
+func (s *accessTestStore) GetPromptHistorySettings(ctx context.Context) (*tables.PromptHistoryRetentionSettings, error) {
+	return &tables.PromptHistoryRetentionSettings{AutoDelete: false, Retention: "7d"}, nil
+}
+
+func (s *accessTestStore) DeletePromptSessionsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	return 0, nil
+}
+
 func newTestCtx() *fasthttp.RequestCtx {
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Init(&fasthttp.Request{}, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 80}, nil)

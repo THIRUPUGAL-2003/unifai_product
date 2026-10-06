@@ -19,6 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { PIN_SHADOW_RIGHT } from "@/components/table/columnPinning";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
@@ -107,6 +108,7 @@ interface RoutingRulesTableProps {
 	offset: number;
 	limit: number;
 	onOffsetChange: (offset: number) => void;
+	onLimitChange?: (limit: number) => void;
 }
 
 export function RoutingRulesTable({
@@ -122,6 +124,7 @@ export function RoutingRulesTable({
 	offset,
 	limit,
 	onOffsetChange,
+	onLimitChange,
 }: RoutingRulesTableProps) {
 	const [deleteRuleId, setDeleteRuleId] = useState<string | null>(null);
 	const [deleteRoutingRule, { isLoading: isDeleting }] = useDeleteRoutingRuleMutation();
@@ -285,44 +288,17 @@ export function RoutingRulesTable({
 				</Table>
 			</div>
 
-			{/* Pagination */}
-			{totalCount > 0 && (
-				<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
-					<div className="text-muted-foreground flex items-center gap-2">
-						{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()} entries
-					</div>
-
-					<div className="flex items-center gap-2">
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => onOffsetChange(Math.max(0, offset - limit))}
-							disabled={offset === 0}
-							data-testid="routing-rules-pagination-prev-btn"
-							aria-label="Previous page"
-						>
-							<ChevronLeft className="size-3" />
-						</Button>
-
-						<div className="flex items-center gap-1">
-							<span>Page</span>
-							<span>{Math.floor(offset / limit) + 1}</span>
-							<span>of {Math.ceil(totalCount / limit)}</span>
-						</div>
-
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => onOffsetChange(offset + limit)}
-							disabled={offset + limit >= totalCount}
-							data-testid="routing-rules-pagination-next-btn"
-							aria-label="Next page"
-						>
-							<ChevronRight className="size-3" />
-						</Button>
-					</div>
-				</div>
-			)}
+			{/* Standard DataTable Pagination Footer */}
+			<DataTablePagination
+				offset={offset}
+				limit={limit}
+				totalCount={totalCount}
+				onOffsetChange={onOffsetChange}
+				onLimitChange={onLimitChange}
+				itemLabel="routing rules"
+				perPageLabel="Rules per page"
+				dataTestId="routing-rules-pagination"
+			/>
 
 			<AlertDialog open={!!deleteRuleId} onOpenChange={(open) => !open && setDeleteRuleId(null)}>
 				<AlertDialogContent>

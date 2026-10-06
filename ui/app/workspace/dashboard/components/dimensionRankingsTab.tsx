@@ -10,6 +10,7 @@ import { getModelColor } from "../utils/chartUtils";
 import { ChartCard } from "./charts/chartCard";
 import { ChartErrorBoundary } from "./charts/chartErrorBoundary";
 import { formatCost, SortableHeader, TrendBadge } from "./rankingsShared";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 type SortField = "total_requests" | "total_tokens" | "total_cost";
 type SortOrder = "asc" | "desc";
@@ -187,9 +188,12 @@ function TopDimensionChart({
 function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix, attributed }: DimensionRankingsTabProps) {
 	const [sortField, setSortField] = useState<SortField>("total_requests");
 	const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 
 	const handleSort = useCallback(
 		(field: SortField) => {
+			setOffset(0);
 			if (sortField === field) {
 				setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
 			} else {
@@ -208,6 +212,8 @@ function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix,
 			return sortOrder === "desc" ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number);
 		});
 	}, [data, sortField, sortOrder]);
+
+	const paginatedRankings = useMemo(() => sortedRankings.slice(offset, offset + limit), [sortedRankings, offset, limit]);
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -264,9 +270,9 @@ function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix,
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{sortedRankings.map((entry: DimensionRankingEntry, index: number) => (
+							{paginatedRankings.map((entry: DimensionRankingEntry, index: number) => (
 								<TableRow key={entry.id}>
-									<TableCell className="text-muted-foreground font-mono text-xs">{index + 1}</TableCell>
+									<TableCell className="text-muted-foreground font-mono text-xs">{offset + index + 1}</TableCell>
 									<TableCell>
 										<div className="flex flex-col">
 											<span className="font-medium">{entry.name || entry.id}</span>
@@ -295,6 +301,19 @@ function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix,
 							))}
 						</TableBody>
 					</Table>
+					<DataTablePagination
+						offset={offset}
+						limit={limit}
+						totalCount={sortedRankings.length}
+						onOffsetChange={setOffset}
+						onLimitChange={(newLimit) => {
+							setLimit(newLimit);
+							setOffset(0);
+						}}
+						itemLabel="entries"
+						perPageLabel="Rows per page"
+						dataTestId={`${testIdPrefix}-pagination`}
+					/>
 				</Card>
 			)}
 		</div>

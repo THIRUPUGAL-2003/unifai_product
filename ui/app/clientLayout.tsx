@@ -120,12 +120,12 @@ function AppContent({ children }: { children: React.ReactNode }) {
 				<StoreSyncInitializer />
 				<SidebarProvider>
 					<Sidebar />
-					<div className="dark:bg-card content-container my-[0.5rem] mr-[0.5rem] flex h-[calc(100dvh-1rem)] min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-gray-200 bg-white px-10 dark:border-zinc-800">
-						<div className="z-30 -mx-10 flex shrink-0 items-center justify-end px-6 py-2 border-b border-border/40 bg-background/85 backdrop-blur-md">
+					<div className="dark:bg-card content-container my-1 mr-1 md:my-[0.5rem] md:mr-[0.5rem] flex h-[calc(100dvh-1rem)] min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-gray-200 bg-white px-3 md:px-10 dark:border-zinc-800">
+						<div className="z-30 -mx-3 md:-mx-10 flex shrink-0 items-center justify-end px-4 md:px-6 py-2 border-b border-border/40 bg-background/85 backdrop-blur-md">
 							<LanguageSelector />
 						</div>
 						<TrialExpiryBanner />
-						<main className="no-scrollbar content-container-inner relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto p-4">
+						<main className="content-container-inner relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto p-2 md:p-4 touch-pan-y overscroll-contain">
 							{isLoading ? (
 								<FullPageLoader />
 							) : (
@@ -147,11 +147,11 @@ function AppContent({ children }: { children: React.ReactNode }) {
 // like the MCP per-user OAuth auth page.
 function MinimalShell({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="dark:bg-card content-container my-[0.5rem] flex h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-md border border-gray-200 bg-white px-10 dark:border-zinc-800">
-			<div className="z-30 -mx-10 flex shrink-0 items-center justify-end px-6 py-2 border-b border-border/40 bg-background/85 backdrop-blur-md">
+		<div className="dark:bg-card content-container my-1 md:my-[0.5rem] flex h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-md border border-gray-200 bg-white px-3 md:px-10 dark:border-zinc-800">
+			<div className="z-30 -mx-3 md:-mx-10 flex shrink-0 items-center justify-end px-4 md:px-6 py-2 border-b border-border/40 bg-background/85 backdrop-blur-md">
 				<LanguageSelector />
 			</div>
-			<main className="no-scrollbar content-container-inner relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto p-4">
+			<main className="content-container-inner relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto p-2 md:p-4 touch-pan-y overscroll-contain">
 				{children}
 			</main>
 		</div>

@@ -76,6 +76,7 @@ sleep 1
 # Try /Applications first; if permission denied, fallback to ~/Applications
 echo "Copying to /Applications ..."
 if [[ -d "$DEST" ]]; then
+  chflags -R nouchg "$DEST" 2>/dev/null || true
   rm -rf "$DEST" 2>/dev/null || true
 fi
 
@@ -83,6 +84,7 @@ if ! cp -R "$APP_SRC" "$DEST" 2>/dev/null; then
   echo "/Applications write not permitted, falling back to $HOME/Applications ..."
   DEST="$HOME/Applications/Raksha_Guard.app"
   mkdir -p "$HOME/Applications"
+  chflags -R nouchg "$DEST" 2>/dev/null || true
   rm -rf "$DEST" 2>/dev/null || true
   cp -R "$APP_SRC" "$DEST"
 fi

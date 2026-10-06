@@ -7,14 +7,19 @@ import { useListFeatureFlagsQuery, useUpdateFeatureFlagMutation } from "@/lib/st
 import type { FeatureFlagStatus } from "@/lib/types/featureFlag";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Crown, Lock } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 export default function FeatureFlagsView() {
 	const hasUpdateAccess = useRbac(RbacResource.FeatureFlags, RbacOperation.Update);
 	const { data, isLoading, isError, error } = useListFeatureFlagsQuery();
 	const [updateFeatureFlag] = useUpdateFeatureFlagMutation();
+	const [offset, setOffset] = useState(0);
+	const [limit, setLimit] = useState(10);
 
 	const flags = data?.flags ?? [];
+	const pagedFlags = flags.slice(offset, offset + limit);
 
 	async function handleToggle(flag: FeatureFlagStatus, checked: boolean) {
 		try {
@@ -57,10 +62,23 @@ export default function FeatureFlagsView() {
 									</TableCell>
 								</TableRow>
 							) : (
-								flags.map((flag) => <FeatureFlagRow key={flag.id} flag={flag} canUpdate={hasUpdateAccess} onToggle={handleToggle} />)
+								pagedFlags.map((flag) => <FeatureFlagRow key={flag.id} flag={flag} canUpdate={hasUpdateAccess} onToggle={handleToggle} />)
 							)}
 						</TableBody>
 					</Table>
+					<DataTablePagination
+						offset={offset}
+						limit={limit}
+						totalCount={flags.length}
+						onOffsetChange={setOffset}
+						onLimitChange={(newLimit) => {
+							setLimit(newLimit);
+							setOffset(0);
+						}}
+						itemLabel="feature flags"
+						perPageLabel="Flags per page"
+						dataTestId="feature-flags-pagination"
+					/>
 				</div>
 			)}
 		</div>
