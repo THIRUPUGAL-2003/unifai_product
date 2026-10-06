@@ -1381,8 +1381,8 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 			// Match the whitelist against the path only
 			url := string(ctx.Path())
 			method := string(ctx.Method())
-			// We skip authorization for the login route
-			if shouldSkip(authConfig, url) || isPublicBrowserAIRoute(method, url) {
+			// We skip authorization for the login route and public branding
+			if url == "/api/branding" || url == "/api/system/branding" || shouldSkip(authConfig, url) || isPublicBrowserAIRoute(method, url) {
 				next(ctx)
 				return
 			}
