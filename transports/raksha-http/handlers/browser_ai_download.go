@@ -104,6 +104,13 @@ func browserAISetupCandidates() map[string][]string {
 			"/app/release/Update_Raksha_Guard.ps1",
 			"/app/apps/browser-guard/release/Update_Raksha_Guard.ps1",
 		},
+		"Uninstall_Raksha_Guard.bat": {
+			filepath.Join("apps", "browser-guard", "release", "Uninstall_Raksha_Guard.bat"),
+			filepath.Join("apps", "browser-guard", "installer", "Uninstall_Raksha_Guard.bat"),
+			filepath.Join("release", "Uninstall_Raksha_Guard.bat"),
+			"/app/release/Uninstall_Raksha_Guard.bat",
+			"/app/apps/browser-guard/release/Uninstall_Raksha_Guard.bat",
+		},
 		"Update_Raksha_Guard_macOS.command": {
 			filepath.Join("apps", "browser-guard", "release", "Update_Raksha_Guard_macOS.command"),
 			filepath.Join("release", "Update_Raksha_Guard_macOS.command"),

@@ -15,6 +15,7 @@ from agent_pac_orchestration import clear_guard_runtime
 from guard_platform import (
     IS_MAC,
     IS_WIN,
+    data_dir,
     log_hint_path,
     prompt_uninstall_key as platform_prompt_uninstall_key,
     show_message as platform_show_message,
@@ -185,6 +186,8 @@ def schedule_install_removal() -> None:
                 f'(sleep 3; '
                 f'launchctl unload "{plist}" 2>/dev/null; '
                 f'rm -f "{plist}"; '
+                # Remove immutable lock before deletion (authorized uninstall only reaches here after key verified)
+                f'chflags -R nouchg {app_paths} 2>/dev/null; '
                 f'rm -rf {app_paths} "{guard_data}"; '
                 f'pkill -f "Raksha_Guard.app/Contents/MacOS/Raksha_Guard" 2>/dev/null; '
                 f'pkill -f "/MacOS/Raksha_Guard" 2>/dev/null) >/dev/null 2>&1 &'
@@ -233,6 +236,113 @@ def launch_windows_uninstaller() -> bool:
         return False
 
 
+def lock_install_dir_against_deletion() -> None:
+    """Protect installation directory against unauthorized deletion.
+
+    Windows: NTFS deny rules via icacls (blocks Explorer / PowerShell deletion).
+    macOS:   BSD immutable flag via chflags uchg (blocks rm -rf and Finder moves).
+    """
+    if IS_WIN:
+        try:
+            user = os.environ.get("USERNAME", "")
+            if not user:
+                return
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            app_dir = os.environ.get("LOCALAPPDATA", "")
+            dirs_to_lock = set()
+            if app_dir:
+                std_guard_dir = os.path.join(app_dir, "Programs", "Raksha", "Guard")
+                if os.path.isdir(std_guard_dir):
+                    dirs_to_lock.add(std_guard_dir)
+
+            exe_path = os.path.abspath(sys.executable)
+            exe_dir = os.path.dirname(exe_path)
+            temp_dir = os.environ.get("TEMP", "").lower()
+            if os.path.isdir(exe_dir) and (not temp_dir or not exe_dir.lower().startswith(temp_dir)):
+                dirs_to_lock.add(exe_dir)
+
+            for d in dirs_to_lock:
+                subprocess.run(["icacls", d, "/deny", f"{user}:(OI)(CI)(DE,DC)"], capture_output=True, text=True, creationflags=flags)
+        except Exception:
+            pass
+        return
+
+    if IS_MAC:
+        try:
+            home = os.path.expanduser("~")
+            candidates = [
+                "/Applications/Raksha_Guard.app",
+                os.path.join(home, "Applications", "Raksha_Guard.app"),
+            ]
+            if getattr(sys, "frozen", False):
+                exe = os.path.abspath(sys.executable)
+                marker = "/Contents/MacOS/"
+                if marker in exe:
+                    app_bundle = exe[: exe.index(marker)]
+                    if app_bundle.endswith(".app") and app_bundle not in candidates:
+                        candidates.append(app_bundle)
+            for app in candidates:
+                if os.path.isdir(app):
+                    # Set user-immutable flag recursively — prevents rm -rf and Finder deletion
+                    subprocess.run(["chflags", "-R", "uchg", app], capture_output=True)
+                    print(f"[Raksha Guard] macOS immutable lock applied: {app}")
+        except Exception:
+            pass
+
+
+def unlock_install_dir_for_uninstall() -> None:
+    """Remove protection lock before authorized uninstallation.
+
+    Windows: Remove NTFS deny rule via icacls.
+    macOS:   Remove BSD immutable flag via chflags nouchg.
+    """
+    if IS_WIN:
+        try:
+            user = os.environ.get("USERNAME", "")
+            if not user:
+                return
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            app_dir = os.environ.get("LOCALAPPDATA", "")
+            dirs_to_unlock = set()
+            if app_dir:
+                std_guard_dir = os.path.join(app_dir, "Programs", "Raksha", "Guard")
+                if os.path.isdir(std_guard_dir):
+                    dirs_to_unlock.add(std_guard_dir)
+
+            exe_path = os.path.abspath(sys.executable)
+            exe_dir = os.path.dirname(exe_path)
+            if os.path.isdir(exe_dir):
+                dirs_to_unlock.add(exe_dir)
+
+            for d in dirs_to_unlock:
+                subprocess.run(["icacls", d, "/remove:d", user], capture_output=True, text=True, creationflags=flags)
+        except Exception:
+            pass
+        return
+
+    if IS_MAC:
+        try:
+            home = os.path.expanduser("~")
+            candidates = [
+                "/Applications/Raksha_Guard.app",
+                os.path.join(home, "Applications", "Raksha_Guard.app"),
+            ]
+            if getattr(sys, "frozen", False):
+                exe = os.path.abspath(sys.executable)
+                marker = "/Contents/MacOS/"
+                if marker in exe:
+                    app_bundle = exe[: exe.index(marker)]
+                    if app_bundle.endswith(".app") and app_bundle not in candidates:
+                        candidates.append(app_bundle)
+            for app in candidates:
+                if os.path.isdir(app):
+                    # Clear immutable flag so authorized rm -rf succeeds
+                    subprocess.run(["chflags", "-R", "nouchg", app], capture_output=True)
+                    print(f"[Raksha Guard] macOS immutable lock removed: {app}")
+        except Exception:
+            pass
+
+
 def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
     """Verify company uninstall key, mark agent uninstalled, clear local proxy.
 
@@ -248,6 +358,13 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
     )
     if status == 200:
         print("[Raksha Guard] Uninstall authorized by backend.")
+        try:
+            tamper_flag = os.path.join(data_dir(), "tamper.flag")
+            if os.path.isfile(tamper_flag):
+                os.remove(tamper_flag)
+        except Exception:
+            pass
+        unlock_install_dir_for_uninstall()
         clear_guard_runtime(clear_startup=True)
         try:
             from agent_identity import agent_id_path
@@ -259,8 +376,27 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
         if schedule_cleanup:
             schedule_install_removal()
         return 0
-    if status == 403:
-        print("[Raksha Guard ERROR] Invalid uninstall key.")
+    if status in (403, 429):
+        msg = "Locked out for failed uninstall attempts" if status == 429 else "Unauthorized uninstall attempted with invalid key"
+        print(f"[Raksha Guard ERROR] {msg}.")
+        lock_install_dir_against_deletion()
+        try:
+            tamper_flag = os.path.join(data_dir(), "tamper.flag")
+            with open(tamper_flag, "w", encoding="utf-8") as tf:
+                tf.write("Unauthorized uninstall attempted with invalid key")
+        except Exception:
+            pass
+        try:
+            import agent_state
+            from agent_heartbeat import send_heartbeat
+            agent_state._LAST_HEALTH = {
+                "status": "tampered",
+                "details": ["Unauthorized uninstall attempted with invalid key"],
+                "pac_mode": "strict_proxy",
+            }
+            send_heartbeat(agent_id, status="active")
+        except Exception:
+            pass
         return 2
     if status == 0:
         print("[Raksha Guard ERROR] Backend unreachable — uninstall key not verified. PAC left on.")

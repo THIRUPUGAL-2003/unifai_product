@@ -230,6 +230,9 @@ func (h *BrowserAIHandler) verifyUninstall(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if !ok {
+		if strings.TrimSpace(req.AgentID) != "" && h.manager != nil {
+			_ = h.manager.RecordAgentTamper(ctx, req.AgentID, "Unauthorized key verification attempted with invalid key")
+		}
 		uninstallAttemptsMu.Lock()
 		state := uninstallAttempts[clientIP]
 		if time.Since(state.last) > uninstallLockoutPeriod {
@@ -283,6 +286,9 @@ func (h *BrowserAIHandler) uninstallAgent(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if !ok {
+		if strings.TrimSpace(req.AgentID) != "" && h.manager != nil {
+			_ = h.manager.RecordAgentTamper(ctx, req.AgentID, "Unauthorized uninstall attempted with invalid key")
+		}
 		// If neither company nor Guard key works — distinguish "no company key and no agent key"
 		agentOK := strings.TrimSpace(req.AgentID) != ""
 		if settings != nil && !settings.KeyConfigured && !agentOK {

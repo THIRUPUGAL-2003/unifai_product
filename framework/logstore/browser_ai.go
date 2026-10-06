@@ -2613,6 +2613,22 @@ func (m *BrowserAIManager) GetAgent(ctx context.Context, agentID string) (*Brows
 	return &agent, nil
 }
 
+func (m *BrowserAIManager) RecordAgentTamper(ctx context.Context, agentID, detail string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.db == nil || strings.TrimSpace(agentID) == "" {
+		return nil
+	}
+	now := time.Now()
+	return m.db.WithContext(ctx).Model(&BrowserAIAgent{}).
+		Where("id = ?", strings.TrimSpace(agentID)).
+		Updates(map[string]any{
+			"health_status": "tampered",
+			"health_detail": detail,
+			"updated_at":    now,
+		}).Error
+}
+
 func (m *BrowserAIManager) MarkAgentUninstalled(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

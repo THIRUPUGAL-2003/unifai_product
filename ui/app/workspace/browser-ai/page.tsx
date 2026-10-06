@@ -1969,8 +1969,17 @@ export default function BrowserAiPage() {
 		}
 	};
 
-	const getAgentStatusBadge = (status: string, uninstallRequested?: boolean) => {
+	const getAgentStatusBadge = (status: string, uninstallRequested?: boolean, lastSeenAt?: string, healthStatus?: string) => {
 		const s = (status || "").toLowerCase();
+		const hs = (healthStatus || "").toLowerCase();
+		if (s === "tampered" || hs === "tampered" || hs.includes("tamper") || hs.includes("unauthorized")) {
+			return (
+				<Badge className="bg-rose-950 text-rose-300 border border-rose-700 gap-1 inline-flex items-center">
+					<AlertTriangle className="h-3 w-3" />
+					Warning (Tamper Attempt)
+				</Badge>
+			);
+		}
 		if (s === "uninstalled") return <Badge className="bg-slate-800 text-slate-300 border border-slate-700">Uninstalled</Badge>;
 		if (s === "paused") {
 			return (
@@ -1983,7 +1992,18 @@ export default function BrowserAiPage() {
 		if (s === "uninstall_pending" || uninstallRequested) {
 			return <Badge className="bg-amber-950 text-amber-300 border border-amber-800">Uninstall pending</Badge>;
 		}
-		if (s === "active") return <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800">Active</Badge>;
+		if (s === "active") {
+			const isOffline = lastSeenAt ? Date.now() - new Date(lastSeenAt).getTime() > 3 * 60 * 1000 : false;
+			if (isOffline) {
+				return (
+					<Badge className="bg-amber-950 text-amber-300 border border-amber-800 gap-1 inline-flex items-center">
+						<AlertTriangle className="h-3 w-3" />
+						Warning (Process Killed / Offline)
+					</Badge>
+				);
+			}
+			return <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800">Active</Badge>;
+		}
 		return <Badge className="bg-slate-800 text-slate-300 border border-slate-700">{status || "unknown"}</Badge>;
 	};
 
@@ -4814,7 +4834,7 @@ export default function BrowserAiPage() {
 													);
 												})()}
 											</TableCell>
-											<TableCell className="align-top whitespace-nowrap">{getAgentStatusBadge(agent.status, agent.uninstall_requested)}</TableCell>
+											<TableCell className="align-top whitespace-nowrap">{getAgentStatusBadge(agent.status, agent.uninstall_requested, agent.last_seen_at, agent.health_status)}</TableCell>
 											<TableCell className="align-top text-xs text-muted-foreground whitespace-nowrap">
 												{agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : "—"}
 											</TableCell>

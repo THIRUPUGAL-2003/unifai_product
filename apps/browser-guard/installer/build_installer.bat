@@ -52,6 +52,7 @@ copy /Y release\raksha_guard_config.json installer\staging\raksha_guard_config.j
 copy /Y raksha_guard.ico installer\staging\raksha_guard.ico >nul
 copy /Y raksha_guard.ico installer\raksha_guard.ico >nul
 if exist installer\EMPLOYEE_README.txt copy /Y installer\EMPLOYEE_README.txt installer\staging\EMPLOYEE_README.txt >nul
+if exist installer\Uninstall_Raksha_Guard.bat copy /Y installer\Uninstall_Raksha_Guard.bat installer\staging\Uninstall_Raksha_Guard.bat >nul
 if exist release\INSTALL_WINDOWS.txt copy /Y release\INSTALL_WINDOWS.txt installer\staging\INSTALL_WINDOWS.txt >nul
 if exist release\VERSION.txt copy /Y release\VERSION.txt installer\staging\VERSION.txt >nul
 
@@ -94,6 +95,7 @@ if exist dist\Raksha_Guard.exe if not exist release\Raksha_Guard.exe copy /Y dis
 copy /Y release\raksha_guard_config.json "%ZIP_STAGE%\raksha_guard_config.json" >nul
 if exist release\INSTALL_WINDOWS.txt copy /Y release\INSTALL_WINDOWS.txt "%ZIP_STAGE%\INSTALL_WINDOWS.txt" >nul
 if exist installer\EMPLOYEE_README.txt copy /Y installer\EMPLOYEE_README.txt "%ZIP_STAGE%\EMPLOYEE_README.txt" >nul
+if exist installer\Uninstall_Raksha_Guard.bat copy /Y installer\Uninstall_Raksha_Guard.bat "%ZIP_STAGE%\Uninstall_Raksha_Guard.bat" >nul
 if exist release\Update_Raksha_Guard.ps1 copy /Y release\Update_Raksha_Guard.ps1 "%ZIP_STAGE%\Update_Raksha_Guard.ps1" >nul
 if exist release\VERSION.txt copy /Y release\VERSION.txt "%ZIP_STAGE%\VERSION.txt" >nul
 

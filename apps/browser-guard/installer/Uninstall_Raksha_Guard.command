@@ -38,9 +38,12 @@ fi
 
 CODE=0
 if [[ -n "${BIN}" ]]; then
-  # Same flow as Windows Inno: --uninstall-prompt (key dialog via osascript)
   set +e
-  "$BIN" --uninstall-prompt
+  if [[ -n "${1:-}" ]]; then
+    "$BIN" --uninstall "$1"
+  else
+    "$BIN" --uninstall-prompt
+  fi
   CODE=$?
   set -e
 else
@@ -82,6 +85,7 @@ for APP in \
 do
   if [[ -d "$APP" ]]; then
     echo "Removing $APP"
+    chflags -R nouchg "$APP" 2>/dev/null || true
     rm -rf "$APP"
   fi
 done

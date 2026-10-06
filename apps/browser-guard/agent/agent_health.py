@@ -193,6 +193,20 @@ def run_health_check(proxy_port: int | None = None) -> dict:
     else:
         status = "error"
 
+    tamper_flag = os.path.join(data_dir(), "tamper.flag")
+    if os.path.isfile(tamper_flag):
+        status = "tampered"
+        tamper_msg = "Unauthorized tamper attempt detected on device"
+        try:
+            with open(tamper_flag, "r", encoding="utf-8") as tf:
+                txt = tf.read().strip()
+                if txt:
+                    tamper_msg = txt
+        except Exception:
+            pass
+        details.insert(0, tamper_msg)
+        checks["tamper_detected"] = True
+
     report = {
         "status": status,
         "agent_version": AGENT_VERSION,

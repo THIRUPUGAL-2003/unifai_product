@@ -41,6 +41,7 @@ from agent_heartbeat import (
 )
 from agent_identity import collect_agent_info, get_or_create_agent_id
 from agent_lifecycle import (
+    lock_install_dir_against_deletion,
     maybe_first_run_prompt,
     run_uninstall,
     run_uninstall_prompt,
@@ -125,6 +126,7 @@ def main() -> None:
     info = collect_agent_info(agent_id)
     os.environ["RAKSHA_AGENT_ID"] = agent_id
     os.environ["RAKSHA_AGENT_HOSTNAME"] = info["hostname"]
+    lock_install_dir_against_deletion()
 
     print("==========================================================")
     print(f"   Raksha Enterprise Desktop Security Guard Agent v{AGENT_VERSION}")

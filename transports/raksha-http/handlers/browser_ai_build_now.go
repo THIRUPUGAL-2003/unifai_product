@@ -112,7 +112,7 @@ func buildWindowsPackage(config []byte) (string, error) {
 	if exeOK {
 		assets = append(assets, buildAsset{name: "Raksha_Guard.exe", path: exePath})
 	}
-	for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "Update_Raksha_Guard.ps1"} {
+	for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "Update_Raksha_Guard.ps1", "Uninstall_Raksha_Guard.bat"} {
 		if p, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
 			assets = append(assets, buildAsset{name: name, path: p})
 		}
