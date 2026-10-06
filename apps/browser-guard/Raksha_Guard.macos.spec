@@ -65,7 +65,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=["winrt", "mitmproxy_windows"],
     noarchive=False,
-    optimize=0,
+    optimize=2,
 )
 pyz = PYZ(a.pure)
 
@@ -77,7 +77,7 @@ exe = EXE(
     name="Raksha_Guard",
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=False,
     console=False,
     disable_windowed_traceback=False,

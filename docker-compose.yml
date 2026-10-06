@@ -41,7 +41,7 @@ services:
       - default
       - ollama
     ports:
-      - "${APP_PORT:?set APP_PORT in .env}:${APP_PORT:?set APP_PORT in .env}"
+      - "127.0.0.1:${APP_PORT:?set APP_PORT in .env}:${APP_PORT:?set APP_PORT in .env}"
     dns:
       - 8.8.8.8
       - 1.1.1.1

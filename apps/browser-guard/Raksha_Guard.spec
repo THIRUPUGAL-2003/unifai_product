@@ -67,7 +67,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
+    optimize=2,
 )
 pyz = PYZ(a.pure)
 
@@ -80,7 +80,7 @@ exe = EXE(
     name="Raksha_Guard",
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
