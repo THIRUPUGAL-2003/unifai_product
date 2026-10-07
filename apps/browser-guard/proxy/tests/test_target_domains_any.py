@@ -64,6 +64,18 @@ class AnyTargetDomainTests(unittest.TestCase):
         _set_targets(ADMIN_TARGETS)
         _set_block_rule()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            from .test_target_predict_e2e import TARGETS
+        except ImportError:
+            try:
+                from test_target_predict_e2e import TARGETS
+            except ImportError:
+                from tests.test_target_predict_e2e import TARGETS
+        _reset()
+        _set_targets([{"domain": d, "platform_name": p, "monitored": True} for d, p in TARGETS])
+
     def test_parent_subdomain_and_raw_admin_forms_match(self) -> None:
         dt = NS["detect_target"]
         for host, platform in [
