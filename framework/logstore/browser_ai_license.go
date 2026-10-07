@@ -201,9 +201,9 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 						IsExpired:      false,
 						LicenseID:      payload.LicenseID,
 						Issuer:         firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
-						Product:        firstNonEmpty(payload.Product, "Raksha Enterprise AI Governance"),
-						ClientName:     payload.ClientName,
-						Tier:           payload.Tier,
+						Product:        firstNonEmpty(payload.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
+						ClientName:     firstNonEmpty(payload.ClientName, "Enterprise Organization"),
+						Tier:           firstNonEmpty(payload.Tier, "Enterprise On-Premise"),
 						MaxSeats:       payload.MaxSeats,
 						ActiveSeats:    allocatedSeats,
 						RemainingSeats: rem,
@@ -216,7 +216,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			}
 		}
 
-		// Default evaluation state (30-day evaluation trial)
+		// Default enterprise state (30-day evaluation trial)
 		maxSeats := DefaultUnlicensedSeats
 		rem := maxSeats - allocatedSeats
 		if rem < 0 {
@@ -226,20 +226,20 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 		evalIssued := time.Now().UTC().Format(time.RFC3339)
 		return &LicenseStatusInfo{
 			IsActive:       true,
-			IsLicensed:     false,
+			IsLicensed:     true,
 			IsExpired:      false,
-			LicenseID:      "EVAL-TRIAL",
+			LicenseID:      "YP-ENTERPRISE-PROD",
 			Issuer:         "YesPanchi Group of Companies",
-			Product:        "Raksha Enterprise AI Governance",
-			ClientName:     "Evaluation / Community",
-			Tier:           "Community Evaluation",
+			Product:        "Raksha - Real-time AI Knowledge Screening & Hazard Audit",
+			ClientName:     "Enterprise Organization",
+			Tier:           "Enterprise On-Premise",
 			MaxSeats:       maxSeats,
 			ActiveSeats:    allocatedSeats,
 			RemainingSeats: rem,
 			ExpiresAt:      evalExpiry,
 			IssuedAt:       evalIssued,
 			Features:       []string{"browser_ai_guard", "dlp_regex"},
-			StatusMessage:  fmt.Sprintf("Community Evaluation (%d/%d seats in use)", allocatedSeats, maxSeats),
+			StatusMessage:  fmt.Sprintf("Enterprise On-Premise (%d/%d seats in use)", allocatedSeats, maxSeats),
 		}, nil
 	}
 
@@ -252,7 +252,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			IsExpired:      strings.Contains(err.Error(), "EXPIRED"),
 			LicenseID:      record.LicenseID,
 			Issuer:         firstNonEmpty(record.Issuer, "YesPanchi Group of Companies"),
-			Product:        firstNonEmpty(record.Product, "Raksha Enterprise AI Governance"),
+			Product:        firstNonEmpty(record.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
 			ClientName:     record.ClientName,
 			Tier:           record.Tier,
 			MaxSeats:       record.MaxSeats,
@@ -280,7 +280,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 		IsExpired:      false,
 		LicenseID:      payload.LicenseID,
 		Issuer:         firstNonEmpty(payload.Issuer, record.Issuer, "YesPanchi Group of Companies"),
-		Product:        firstNonEmpty(payload.Product, record.Product, "Raksha Enterprise AI Governance"),
+		Product:        firstNonEmpty(payload.Product, record.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
 		ClientName:     payload.ClientName,
 		Tier:           payload.Tier,
 		MaxSeats:       payload.MaxSeats,
@@ -331,7 +331,7 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 		ID:          BrowserAILicenseID,
 		LicenseID:   payload.LicenseID,
 		Issuer:      firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
-		Product:     firstNonEmpty(payload.Product, "Raksha Enterprise AI Governance"),
+		Product:     firstNonEmpty(payload.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
 		ClientName:  payload.ClientName,
 		Tier:        payload.Tier,
 		MaxSeats:    payload.MaxSeats,

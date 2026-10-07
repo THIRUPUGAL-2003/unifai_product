@@ -5004,15 +5004,19 @@ export default function BrowserAiPage() {
 									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
 										{licenseInfo?.issuer || "YesPanchi Group of Companies"}
 									</p>
-									<p className="text-[11px] text-sky-400 truncate">{licenseInfo?.product || "Raksha Enterprise AI"}</p>
+									<p className="text-[11px] text-sky-400 truncate">{licenseInfo?.product || "Raksha - Real-time AI Knowledge Screening & Hazard Audit"}</p>
 								</div>
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Licensed Organization</p>
 									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
-										{licenseInfo?.client_name || "Evaluation"}
+										{licenseInfo?.client_name && !licenseInfo.client_name.includes("Evaluation")
+											? licenseInfo.client_name
+											: "Enterprise Organization"}
 									</p>
 									<p className="text-[11px] text-muted-foreground">
-										{licenseInfo?.license_id ? `ID: ${licenseInfo.license_id}` : (licenseInfo?.tier || "Enterprise On-Premise")}
+										{licenseInfo?.license_id && !licenseInfo.license_id.includes("EVAL")
+											? `ID: ${licenseInfo.license_id}`
+											: (licenseInfo?.tier || "Enterprise On-Premise")}
 									</p>
 								</div>
 								<div>

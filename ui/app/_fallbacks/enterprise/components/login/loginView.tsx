@@ -5,6 +5,7 @@ import { COMPANY_LOGO, COMPANY_NAME, DEFAULT_FOOTER_TEXT } from "@/lib/constants
 import { useBranding } from "@/lib/hooks/useBranding";
 import {
 	getErrorMessage,
+	useChangeTemporaryPasswordMutation,
 	useForgotPasswordMutation,
 	useForgotUsernameMutation,
 	useLoginMutation,
@@ -31,7 +32,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type AuthMode = "login" | "forgot" | "reset" | "forgot_username";
+type AuthMode = "login" | "forgot" | "reset" | "forgot_username" | "force_change_password";
 
 // Must match the server's per-account forgot-password cooldown; a resend inside it is
 // silently dropped (generic response, no email).
@@ -66,6 +67,8 @@ export default function LoginView() {
 	const [verifyOtp, { isLoading: isVerifyingOtp }] = useVerifyOTPMutation();
 	const [resetPassword, { isLoading: isResetting }] = useResetPasswordMutation();
 	const [forgotUsername, { isLoading: isRetrievingUsername }] = useForgotUsernameMutation();
+	const [changeTemporaryPassword, { isLoading: isChangingTempPassword }] = useChangeTemporaryPasswordMutation();
+	const [pendingPostLoginTarget, setPendingPostLoginTarget] = useState("");
 
 	useEffect(() => {
 		if (resendCooldown <= 0) return;
@@ -179,7 +182,39 @@ export default function LoginView() {
 				const result = await login({ username: trimmedUsername, password }).unwrap();
 				const goto = getLoginGotoFromSearch(window.location.search);
 				const target = resolvePostLoginPath({ role: result.role, allowed_sections: result.allowed_sections }, goto);
+				if (result.must_change_password) {
+					setPendingPostLoginTarget(target);
+					setMode("force_change_password");
+					setNewPassword("");
+					setConfirmPassword("");
+					setErrorMessage("");
+					setInfoMessage("Temporary password verified. Please set your new permanent password below.");
+					return;
+				}
 				window.location.assign(target);
+				return;
+			}
+			if (mode === "force_change_password") {
+				if (!newPassword || !confirmPassword) {
+					setErrorMessage("Both new password and confirm password are required");
+					return;
+				}
+				if (newPassword !== confirmPassword) {
+					setErrorMessage("Passwords do not match");
+					return;
+				}
+				if (!has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial) {
+					setErrorMessage("Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol");
+					return;
+				}
+				const res = await changeTemporaryPassword({
+					new_password: newPassword,
+					confirm_password: confirmPassword,
+				}).unwrap();
+				setInfoMessage(res.message || "Password updated successfully! Entering dashboard...");
+				setTimeout(() => {
+					window.location.assign(pendingPostLoginTarget || "/workspace");
+				}, 600);
 				return;
 			}
 			if (mode === "forgot") {
@@ -341,7 +376,7 @@ export default function LoginView() {
 					{/* Right Column: Sleek Authentication Card */}
 					<section className="flex items-center justify-center lg:col-span-6">
 						<div className="w-full max-w-[440px] rounded-2xl border border-white/10 bg-[#0f121d]/90 p-8 shadow-[0_25px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-							{mode !== "login" && (
+							{mode !== "login" && mode !== "force_change_password" && (
 								<button
 									type="button"
 									onClick={() => {
@@ -368,7 +403,9 @@ export default function LoginView() {
 											? "Forgot Password"
 											: mode === "forgot_username"
 												? "Forgot Username"
-												: "Reset Password"}
+												: mode === "force_change_password"
+													? "Set New Password"
+													: "Reset Password"}
 								</h2>
 								<p className="text-xs leading-relaxed text-slate-400">
 									{mode === "login"
@@ -377,7 +414,9 @@ export default function LoginView() {
 											? "Enter your registered email or username. We'll send a one-time verification code."
 											: mode === "forgot_username"
 												? "Enter your registered email address to retrieve your username."
-												: "Enter the OTP sent to your email, verify it, and choose a new password."}
+												: mode === "force_change_password"
+													? "You logged in with a temporary password. Please set your new permanent password to continue."
+													: "Enter the OTP sent to your email, verify it, and choose a new password."}
 								</p>
 							</div>
 
@@ -514,73 +553,77 @@ export default function LoginView() {
 									</div>
 								)}
 
-								{/* Reset Password Mode */}
-								{mode === "reset" && (
+								{/* Reset Password & Force Change Password Mode */}
+								{(mode === "reset" || mode === "force_change_password") && (
 									<>
-										<div className="space-y-1.5">
-											<Label className="text-xs font-medium text-slate-200">Target Account</Label>
-											<div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3.5 py-2 text-xs text-slate-300">
-												<span className="truncate">{email || "Account"}</span>
-												<button
-													type="button"
-													onClick={() => {
-														setMode("forgot");
-														setErrorMessage("");
-														setInfoMessage("");
-													}}
-													className="text-xs font-semibold text-[#45f3ff] hover:underline cursor-pointer"
-												>
-													Change
-												</button>
-											</div>
-										</div>
-
-										<div className="space-y-1.5">
-											<div className="flex items-center justify-between">
-												<Label htmlFor="otp" className="text-xs font-medium text-slate-200">
-													Verification OTP Code
-												</Label>
-												{isOtpVerified ? (
-													<span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-														<CheckCircle2 className="h-3.5 w-3.5" /> Verified
-													</span>
-												) : (
-													<button
-														type="button"
-														disabled={isSendingOtp || resendCooldown > 0}
-														onClick={handleResendOtp}
-														className="text-[11px] font-medium text-[#45f3ff] hover:underline disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-													>
-														{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
-													</button>
-												)}
-											</div>
-											<div className="flex gap-2">
-												<div className="relative flex-1">
-													<KeyRound className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
-													<Input
-														id="otp"
-														type="text"
-														placeholder="6-digit code"
-														maxLength={6}
-														value={otp}
-														disabled={isOtpVerified}
-														onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-														className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 font-mono tracking-widest text-sm text-white placeholder:tracking-normal focus:border-[#45f3ff] disabled:opacity-50"
-													/>
+										{mode === "reset" && (
+											<>
+												<div className="space-y-1.5">
+													<Label className="text-xs font-medium text-slate-200">Target Account</Label>
+													<div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3.5 py-2 text-xs text-slate-300">
+														<span className="truncate">{email || "Account"}</span>
+														<button
+															type="button"
+															onClick={() => {
+																setMode("forgot");
+																setErrorMessage("");
+																setInfoMessage("");
+															}}
+															className="text-xs font-semibold text-[#45f3ff] hover:underline cursor-pointer"
+														>
+															Change
+														</button>
+													</div>
 												</div>
-												{!isOtpVerified && (
-													<Button
-														type="button"
-														disabled={otp.trim().length < 6 || isVerifyingOtp}
-														onClick={handleVerifyOtp}
-														className="h-10.5 px-4 rounded-xl bg-white/10 text-xs font-semibold text-white hover:bg-white/20 border border-white/15 cursor-pointer"
-													>
-														{isVerifyingOtp ? "Verifying..." : "Verify Code"}
-													</Button>
-												)}
-											</div>
-										</div>
+
+												<div className="space-y-1.5">
+													<div className="flex items-center justify-between">
+														<Label htmlFor="otp" className="text-xs font-medium text-slate-200">
+															Verification OTP Code
+														</Label>
+														{isOtpVerified ? (
+															<span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
+																<CheckCircle2 className="h-3.5 w-3.5" /> Verified
+															</span>
+														) : (
+															<button
+																type="button"
+																disabled={isSendingOtp || resendCooldown > 0}
+																onClick={handleResendOtp}
+																className="text-[11px] font-medium text-[#45f3ff] hover:underline disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+															>
+																{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
+															</button>
+														)}
+													</div>
+													<div className="flex gap-2">
+														<div className="relative flex-1">
+															<KeyRound className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
+															<Input
+																id="otp"
+																type="text"
+																placeholder="6-digit code"
+																maxLength={6}
+																value={otp}
+																disabled={isOtpVerified}
+																onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+																className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 font-mono tracking-widest text-sm text-white placeholder:tracking-normal focus:border-[#45f3ff] disabled:opacity-50"
+															/>
+														</div>
+														{!isOtpVerified && (
+															<Button
+																type="button"
+																disabled={otp.trim().length < 6 || isVerifyingOtp}
+																onClick={handleVerifyOtp}
+																className="h-10.5 px-4 rounded-xl bg-white/10 text-xs font-semibold text-white hover:bg-white/20 border border-white/15 cursor-pointer"
+															>
+																{isVerifyingOtp ? "Verifying..." : "Verify Code"}
+															</Button>
+														)}
+													</div>
+												</div>
+											</>
+										)}
 
 										<div className="space-y-1.5">
 											<Label htmlFor="newPassword" className="text-xs font-medium text-slate-200">
@@ -665,7 +708,8 @@ export default function LoginView() {
 										isLockedOut ||
 										isSendingOtp ||
 										isRetrievingUsername ||
-										(mode === "reset" && (!isOtpVerified || !has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial || !passwordsMatch || isResetting))
+										(mode === "reset" && (!isOtpVerified || !has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial || !passwordsMatch || isResetting)) ||
+										(mode === "force_change_password" && (!has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial || !passwordsMatch || isChangingTempPassword))
 									}
 								>
 									{mode === "login"
@@ -682,9 +726,13 @@ export default function LoginView() {
 												? isRetrievingUsername
 													? "Retrieving..."
 													: "Retrieve Username"
-												: isResetting
-													? "Updating password..."
-													: "Update Password"}
+												: mode === "force_change_password"
+													? isChangingTempPassword
+														? "Setting Password..."
+														: "Set Password & Continue"
+													: isResetting
+														? "Updating password..."
+														: "Update Password"}
 								</Button>
 
 								{mode === "login" && (

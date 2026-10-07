@@ -198,6 +198,7 @@ func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.DELETE("/api/session/users/{id}", lib.ChainMiddlewares(h.deleteUser, middlewares...))
 	r.POST("/api/session/users/{id}/approve", lib.ChainMiddlewares(h.approveUser, middlewares...))
 	r.POST("/api/session/users/{id}/reject", lib.ChainMiddlewares(h.rejectUser, middlewares...))
+	r.POST("/api/session/change-temporary-password", lib.ChainMiddlewares(h.changeTemporaryPassword, middlewares...))
 }
 
 // isAuthEnabled handles GET /api/session/is-auth-enabled - Check if auth is enabled
@@ -243,6 +244,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 	allowedSections := ""
 	userBudget := 0.0
 	budgetUsage := 0.0
+	mustChangePassword := false
 	if token != "" {
 		session, err := h.configStore.GetSession(ctx, token)
 		if err == nil && session != nil && session.ExpiresAt.After(time.Now()) {
@@ -255,6 +257,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 						hasValidToken = false
 						role = ""
 					} else {
+						mustChangePassword = dbUser.MustChangePassword
 						allowedSections = effectiveAllowedSections(ctx, h.configStore, dbUser)
 						email = dbUser.Email
 						userID = dbUser.ID
@@ -287,6 +290,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 		"allowed_sections":     allowedSections,
 		"budget":               userBudget,
 		"budget_current_usage": budgetUsage,
+		"must_change_password": mustChangePassword,
 	})
 }
 
@@ -547,10 +551,16 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 		h.promptLifecycle.OnUserLogin(ctx, activeDBUser)
 	}
 
+	mustChangePasswordLogin := false
+	if activeDBUser != nil && activeDBUser.MustChangePassword {
+		mustChangePasswordLogin = true
+	}
+
 	resp := map[string]any{
-		"message":          "Login successful",
-		"role":             sessionRole,
-		"allowed_sections": sessionAllowedSections,
+		"message":              "Login successful",
+		"role":                 sessionRole,
+		"allowed_sections":     sessionAllowedSections,
+		"must_change_password": mustChangePasswordLogin,
 	}
 	SendJSON(ctx, resp)
 }
@@ -951,6 +961,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		existing.RateLimit = payload.RateLimit
 		existing.AllowedPromptRepos = payload.AllowedPromptRepos
 		existing.AllowedSections = payload.AllowedSections
+		existing.MustChangePassword = true
 		existing.ReviewedAt = &now
 		existing.UpdatedAt = now
 		if err := h.persistUserWithGovernance(ctx, existing, false); err != nil {
@@ -1004,6 +1015,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		RateLimit:          payload.RateLimit,
 		AllowedPromptRepos: payload.AllowedPromptRepos,
 		AllowedSections:    payload.AllowedSections,
+		MustChangePassword: true,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
@@ -2050,3 +2062,76 @@ func (h *SessionHandler) rejectUser(ctx *fasthttp.RequestCtx) {
 		"email_error": emailErr,
 	})
 }
+
+// changeTemporaryPassword handles POST /api/session/change-temporary-password
+// Allows a user signing in with a temporary password to immediately set their permanent password.
+func (h *SessionHandler) changeTemporaryPassword(ctx *fasthttp.RequestCtx) {
+	if h.configStore == nil {
+		SendError(ctx, fasthttp.StatusForbidden, "Authentication is not enabled")
+		return
+	}
+	token := string(ctx.Request.Header.Peek("Authorization"))
+	token = strings.TrimPrefix(token, "Bearer ")
+	if token == "" {
+		token = string(ctx.Request.Header.Cookie("token"))
+	}
+	if token == "" {
+		SendError(ctx, fasthttp.StatusUnauthorized, "Authentication required")
+		return
+	}
+	sess, err := h.configStore.GetSession(ctx, token)
+	if err != nil || sess == nil || sess.ExpiresAt.Before(time.Now()) {
+		SendError(ctx, fasthttp.StatusUnauthorized, "Session expired or invalid")
+		return
+	}
+
+	var payload struct {
+		NewPassword     string `json:"new_password"`
+		ConfirmPassword string `json:"confirm_password"`
+	}
+	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
+		return
+	}
+	payload.NewPassword = strings.TrimSpace(payload.NewPassword)
+	payload.ConfirmPassword = strings.TrimSpace(payload.ConfirmPassword)
+	if payload.NewPassword == "" || payload.ConfirmPassword == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "New password and confirmation are required")
+		return
+	}
+	if payload.NewPassword != payload.ConfirmPassword {
+		SendError(ctx, fasthttp.StatusBadRequest, "Passwords do not match")
+		return
+	}
+	if failures := getPasswordPolicyFailures(payload.NewPassword); len(failures) > 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "Password must include "+strings.Join(failures, ", "))
+		return
+	}
+
+	dbUser, err := h.configStore.GetUserByUsername(ctx, sess.Username)
+	if err != nil || dbUser == nil {
+		SendError(ctx, fasthttp.StatusNotFound, "User not found")
+		return
+	}
+
+	hashedPassword, err := encrypt.Hash(payload.NewPassword)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to hash new password")
+		return
+	}
+
+	dbUser.Password = hashedPassword
+	dbUser.MustChangePassword = false
+	dbUser.UpdatedAt = time.Now()
+
+	if err := h.configStore.UpdateUser(ctx, dbUser); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to update password: "+err.Error())
+		return
+	}
+
+	SendJSON(ctx, map[string]any{
+		"status":  "success",
+		"message": "Password updated successfully",
+	})
+}
+

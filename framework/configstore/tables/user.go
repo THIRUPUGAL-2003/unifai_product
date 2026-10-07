@@ -30,6 +30,7 @@ type TableUser struct {
 	AllowedPromptRepos string     `gorm:"type:text" json:"allowed_prompt_repos"`                          // Comma-separated allowed prompt IDs
 	AllowedSections    string     `gorm:"type:text" json:"allowed_sections"`                              // Comma-separated sidebar section keys for role=user
 	ReviewedAt         *time.Time `json:"reviewed_at,omitempty"`
+	MustChangePassword bool       `gorm:"default:false" json:"must_change_password"`
 	ExternalID         string     `gorm:"type:varchar(255);index" json:"external_id,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`

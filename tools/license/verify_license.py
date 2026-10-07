@@ -85,7 +85,7 @@ def main():
         print(f" Overall Status:  {'[OK] VALID & OPERATIONAL' if res['is_valid'] else '[FAIL] REJECTED'}")
         print("-" * 60)
         print(f" Issuer:          {p.get('issuer', 'YesPanchi Group of Companies')}")
-        print(f" Product:         {p.get('product', 'Raksha Enterprise AI Governance')}")
+        print(f" Product:         {p.get('product', 'Raksha - Real-time AI Knowledge Screening & Hazard Audit')}")
         print(f" License ID:      {p.get('license_id', 'N/A')}")
         print(f" Issued To:       {p.get('client_name')}")
         print(f" Seats:           {p.get('max_seats')} Laptops")

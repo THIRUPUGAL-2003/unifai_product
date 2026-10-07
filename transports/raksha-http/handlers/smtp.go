@@ -298,10 +298,16 @@ func smtpEnabled(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) bool {
 	return err == nil && row != nil && row.Enabled && strings.TrimSpace(row.Host) != ""
 }
 
-func welcomeAccountEmailBody(username, email string) string {
+func welcomeAccountEmailBody(username, email, tempPassword string) string {
+	var passInfo string
+	if tempPassword != "" {
+		passInfo = fmt.Sprintf("\nTemporary Password: %s\n\nImportant: You will be required to set a new permanent password upon your first sign in.\n", tempPassword)
+	} else {
+		passInfo = "\nSign in with the temporary password provided by your administrator. You will be required to set a new permanent password upon your first sign in.\n"
+	}
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha account was created.\n\nEmail: %s\nUsername: %s\n\nSign in with the credentials provided by your administrator. If you need a password reset, use Forgot password on the login page (requires SMTP).\n\nDo not share your password. Raksha never emails temporary passwords in clear text.\n",
-		username, email, username,
+		"Hello %s,\n\nYour Raksha Enterprise account has been created.\n\nUsername: %s\nEmail: %s%s\nPlease keep your credentials confidential.\n",
+		username, username, email, passInfo,
 	)
 }
 
@@ -330,7 +336,7 @@ func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 
 // trySendWelcomeEmail sends create-user mail when SMTP notify-on-create is on.
 // Returns (sent, errorMessage). Missing email / disabled SMTP is not an error.
-func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email, _password string) (bool, string) {
+func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email, password string) (bool, string) {
 	email = strings.TrimSpace(email)
 	if email == "" || store == nil {
 		return false, ""
@@ -342,7 +348,7 @@ func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx
 	if smtpRow == nil || !smtpRow.Enabled || !smtpRow.NotifyOnUserCreate {
 		return false, ""
 	}
-	if err := sendAuthEmail(store, ctx, email, "Your Raksha account", welcomeAccountEmailBody(username, email)); err != nil {
+	if err := sendAuthEmail(store, ctx, email, "Your Raksha Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
 		return false, err.Error()
 	}
 	return true, ""

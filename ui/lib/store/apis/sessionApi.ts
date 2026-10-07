@@ -11,6 +11,7 @@ export interface LoginResponse {
 	message: string;
 	role?: string;
 	allowed_sections?: string;
+	must_change_password?: boolean;
 }
 
 export interface IsAuthEnabledResponse {
@@ -24,6 +25,7 @@ export interface IsAuthEnabledResponse {
 	allowed_sections?: string;
 	budget?: number;
 	budget_current_usage?: number;
+	must_change_password?: boolean;
 }
 
 export interface LogoutResponse {
@@ -138,6 +140,17 @@ export const sessionApi = baseApi.injectEndpoints({
 				}
 			},
 		}),
+		changeTemporaryPassword: builder.mutation<
+			{ message: string; status?: string },
+			{ new_password: string; confirm_password: string }
+		>({
+			query: (body) => ({
+				url: "/session/change-temporary-password",
+				method: "POST",
+				body,
+			}),
+			invalidatesTags: ["Sessions"],
+		}),
 	}),
 });
 
@@ -149,4 +162,5 @@ export const {
 	useVerifyOTPMutation,
 	useResetPasswordMutation,
 	useForgotUsernameMutation,
+	useChangeTemporaryPasswordMutation,
 } = sessionApi;

@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
 DEFAULT_ISSUER = "YesPanchi Group of Companies"
-DEFAULT_PRODUCT = "Raksha Enterprise AI Governance"
+DEFAULT_PRODUCT = "Raksha - Real-time AI Knowledge Screening & Hazard Audit"
 
 def issue_license(
     client_name: str,
