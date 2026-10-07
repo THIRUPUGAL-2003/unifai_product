@@ -58,6 +58,8 @@ def build_macos() -> Path:
     RELEASE.mkdir(parents=True, exist_ok=True)
     release_app = RELEASE / "Raksha_Guard.app"
     if release_app.exists():
+        if platform.system().lower() == "darwin":
+            subprocess.run(["chflags", "-R", "nouchg", str(release_app)], check=False)
         shutil.rmtree(release_app)
     shutil.copytree(app, release_app, symlinks=True)
     return release_app

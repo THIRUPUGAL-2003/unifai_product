@@ -19,6 +19,7 @@ fi
 
 STAGE="installer/pkg-root"
 SCRIPTS="installer/pkg-scripts"
+chflags -R nouchg "$STAGE" 2>/dev/null || true
 rm -rf "$STAGE" "$SCRIPTS"
 mkdir -p "$STAGE/Applications" "$SCRIPTS"
 

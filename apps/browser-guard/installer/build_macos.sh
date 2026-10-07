@@ -166,6 +166,7 @@ fi
 echo ""
 echo "4) Stage macOS employee package"
 STAGE="installer/staging-mac"
+chflags -R nouchg "$STAGE" 2>/dev/null || true
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 cp -R "$APP_REL" "$STAGE/Raksha_Guard.app"
