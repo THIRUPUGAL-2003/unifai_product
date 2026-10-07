@@ -207,3 +207,20 @@ func TestWriteMacZipWithHelpersAddsUpdaterAndExecBits(t *testing.T) {
 		t.Fatalf("existing entry content changed: %q", body)
 	}
 }
+
+func TestReleaseVersionsMatch(t *testing.T) {
+	t.Chdir("../../../")
+	winVer := readGuardReleaseVersion()
+	macVer := readGuardMacReleaseVersion()
+	t.Logf("Windows Guard Version: %q", winVer)
+	t.Logf("macOS Guard Version:   %q", macVer)
+	if winVer == "" {
+		t.Fatalf("readGuardReleaseVersion() returned empty — release/VERSION.txt missing or unreadable")
+	}
+	if macVer == "" {
+		t.Fatalf("readGuardMacReleaseVersion() returned empty — Info.plist missing or unreadable")
+	}
+	if winVer != macVer {
+		t.Errorf("Version mismatch: Windows is %q but macOS is %q. Both packages must stay aligned.", winVer, macVer)
+	}
+}

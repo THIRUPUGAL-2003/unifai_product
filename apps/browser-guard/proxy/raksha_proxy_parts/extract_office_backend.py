@@ -1334,9 +1334,9 @@ def _printable_runs(raw: bytes) -> list[str]:
         return []
     text = raw.decode("utf-8", errors="ignore")
     chunks: list[str] = []
-    for m in re.finditer(r"[\x20-\x7e\u00a0-\uffff]{1,4000}", text):
+    for m in re.finditer(r"[\x20-\x7e\u00a0-\uffff]{3,4000}", text):
         s = (m.group(0) or "").strip()
-        if s:
+        if s and len(s) >= 3:
             chunks.append(s)
     return chunks
 

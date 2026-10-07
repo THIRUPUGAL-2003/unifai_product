@@ -189,7 +189,7 @@ UPLOAD_CONTENT_TYPES = (
 
 # Paths to ignore (telemetry, analytics, pings, ChatGPT control-plane noise)
 IGNORE_PATH_PATTERNS = [
-    "/ces/v1/t", "/ces/", "/telemetry", "/analytics", "/segment",
+    "/ces/v1/t", "/ces/v1/rgstr", "/ces/v1", "/ces/", "/ces", "/telemetry", "/analytics", "/segment",
     "/log", "/ping", "/tracking", "/monitoring",
     "/metrics", "/web-reports", "/title", "/rgstr", "/beacon", "/health",
     # ChatGPT / OpenAI non-prompt API calls
@@ -199,7 +199,7 @@ IGNORE_PATH_PATTERNS = [
     "/generate_autocompletions", "/conversation/implicit",
     "/connectors/", "/files/library",
     "/domainreliability/", "/service/update2",
-    "/lat/r", "/backend-api/me", "/backend-api/accounts",
+    "/lat/r", "/backend-api/lat/r", "/backend-api/me", "/backend-api/accounts",
     "/backend-api/settings", "/backend-api/prompts",
     "/backend-api/shared_conversations", "/backend-api/gizmos",
     "/backend-api/system_hints", "/backend-api/conversation/init",
@@ -220,6 +220,8 @@ IGNORE_PATH_PATTERNS = [
     "/api/telemetry", "/api/analytics", "/api/stats",
     "/streamtimeline", "/reportviewing", "/report_viewing", "/event_logging",
     "/getconversation", "/listconversations", "/recordaction",
+    # Activity pings & browser heartbeat
+    "/activity", "/heartbeat", "/events",
 ]
 
 # Only these path markers are treated as real submitted chat prompts

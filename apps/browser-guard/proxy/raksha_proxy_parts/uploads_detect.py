@@ -669,9 +669,28 @@ def extract_all_attachment_filenames_from_send(raw_text: str) -> list[str]:
         return names
     # Nothing on the plain wire (ChatGPT-style keys): try nested / form-encoded wires.
     try:
-        return _prefer_real_filenames(_nested_json_send_names(raw_text))
+        nested = _prefer_real_filenames(_nested_json_send_names(raw_text))
+        if nested:
+            return nested
     except Exception:
-        return []
+        pass
+    # Protobuf / Connect-RPC payloads (Claude Web PerformAction, etc.)
+    try:
+        raw_b = raw_text.encode("utf-8", errors="ignore") if isinstance(raw_text, str) else raw_text
+        if len(raw_b) >= 8:
+            pb_strs = extract_protobuf_strings(raw_b)
+            if pb_strs:
+                pb_names = []
+                for s in pb_strs:
+                    s_clean = (s or "").strip()
+                    if _POSITIONAL_NAME_RE.match(s_clean) and _is_real_user_upload_name(s_clean):
+                        if s_clean.lower() not in [n.lower() for n in pb_names]:
+                            pb_names.append(s_clean)
+                if pb_names:
+                    return _prefer_real_filenames(pb_names)
+    except Exception:
+        pass
+    return []
 
 
 # file_id → real filename (ChatGPT often nameless at upload).
@@ -2120,6 +2139,8 @@ def _is_finished_user_file_send(
     """True only for a finished chat Send that may carry a file — not attach/create-file."""
     path_l = (path or "").lower().split("?", 1)[0]
     body = raw_text or ""
+    if _path_has_ignore_pattern(path_l) or is_noise(path_l, body):
+        return False
     if _path_looks_like_upload(path_l):
         return False
     if _is_typing_or_draft_path(path_l, body):
@@ -2625,6 +2646,9 @@ def chat_carries_attachment(raw_text: str) -> bool:
     if event_send_carries_binary_attach(raw_text):
         return True
 
+    if extract_all_attachment_filenames_from_send(raw_text):
+        return True
+
     return False
 
 
@@ -2744,6 +2768,23 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
         if out and pi == 0:
             # Structured blocks found — don't also re-scan generic fields (duplicates).
             return out
+    if not out:
+        # Protobuf / Connect-RPC payloads (Claude Web): document body text embedded in protobuf
+        try:
+            fname = extract_attachment_filename_from_send(raw_text)
+            if fname and _is_real_user_upload_name(fname):
+                raw_b = raw_text.encode("utf-8", errors="ignore") if isinstance(raw_text, str) else raw_text
+                if len(raw_b) >= 8:
+                    for s in extract_protobuf_strings(raw_b):
+                        s_clean = (s or "").strip()
+                        if _looks_like_document_body_dump(s_clean):
+                            doc_bytes = s_clean.encode("utf-8")
+                            ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else "txt"
+                            ct = "text/plain" if ext in ("txt", "md", "csv", "json", "py") else "application/octet-stream"
+                            out.append((doc_bytes, ct, fname))
+                            break
+        except Exception:
+            pass
     return out
 
 
@@ -2957,6 +2998,8 @@ def _file_policy_applies_on_send(
     cache for this Target Website family.
     """
     path_l = (path or "").lower().split("?", 1)[0]
+    if _path_has_ignore_pattern(path_l) or is_noise(path_l, raw_text or ""):
+        return False
     if "/realtime" in path_l:
         return False
     if _is_raksha_inject_frame(raw_text or ""):
@@ -2996,9 +3039,11 @@ def _file_policy_applies_on_send(
         return finished
 
     # Pending upload cache: ONLY on a finished user Send — never on intermediate
-    # ChatGPT JSON calls (those used to consume cache as "attachment" and log a
+    # ChatGPT JSON calls or telemetry (those used to consume cache as "attachment" and log a
     # phantom Blocked row 1–2s before the real named Send).
     if domain and _domain_has_pending_upload_cache(domain):
+        if not chatish:
+            return False
         if finished:
             return True
         peek = ""

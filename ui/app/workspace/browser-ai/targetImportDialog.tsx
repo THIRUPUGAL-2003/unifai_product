@@ -56,55 +56,15 @@ export const TARGETS_IMPORT_HEADERS = [
 export function downloadTargetsTemplate() {
 	const headers = [...TARGETS_IMPORT_HEADERS];
 	const sampleRows = [
-		[
-			"chatgpt.com",
-			"ChatGPT",
-			"ui",
-			"TRUE",
-			"FALSE",
-		],
-		[
-			"ab.chatgpt.com",
-			"ChatGPT",
-			"chat",
-			"TRUE",
-			"FALSE",
-		],
-		[
-			"claude.ai",
-			"Claude",
-			"ui",
-			"TRUE",
-			"FALSE",
-		],
-		[
-			"deepseek.com",
-			"DeepSeek",
-			"ui",
-			"TRUE",
-			"TRUE",
-		],
-		[
-			"gemini.google.com",
-			"Gemini",
-			"ui",
-			"TRUE",
-			"FALSE",
-		],
-		[
-			"copilot.microsoft.com",
-			"Copilot",
-			"ui",
-			"TRUE",
-			"FALSE",
-		],
-		[
-			"perplexity.ai",
-			"Perplexity",
-			"ui",
-			"TRUE",
-			"FALSE",
-		],
+		["chatgpt.com", "ChatGPT", "ui", "TRUE", "FALSE"],
+		["ab.chatgpt.com", "ChatGPT", "chat", "TRUE", "FALSE"],
+		["files.oaiusercontent.com", "ChatGPT", "file", "TRUE", "FALSE"],
+		["claude.ai", "Claude", "ui", "TRUE", "FALSE"],
+		["api.anthropic.com", "Claude", "chat", "TRUE", "FALSE"],
+		["files.claudeusercontent.com", "Claude", "file", "TRUE", "FALSE"],
+		["gemini.google.com", "Gemini", "ui", "TRUE", "FALSE"],
+		["clients6.google.com", "Gemini", "chat", "TRUE", "FALSE"],
+		["generativelanguage.googleapis.com", "Gemini", "chat", "TRUE", "FALSE"],
 	];
 
 	const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);

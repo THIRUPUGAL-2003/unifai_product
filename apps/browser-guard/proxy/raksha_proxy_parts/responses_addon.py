@@ -619,6 +619,17 @@ class BrowserAIInterceptor:
                 # Block Upload must kill CDN attach too (ChatGPT/Gemini often use noise hosts).
                 if bind and controls_active("block_upload"):
                     warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by admin policy."
+                    post_log_event(
+                        flow=flow,
+                        client_ip=client_ip,
+                        prompt=f"[FILE UPLOAD] {fname_n or 'attachment'} — Blocked (Block Upload)",
+                        platform=bind[1],
+                        status="Blocked",
+                        domain=bind[0],
+                        host=host,
+                        blocked_reason="Block Upload",
+                        rule_triggered="Block Upload",
+                    )
                     make_blocked_response(flow, "Block Upload", host, reply_text=warn)
                     return
                 confident_n = is_confident_file_upload(
@@ -764,6 +775,17 @@ class BrowserAIInterceptor:
                     # Block Upload also blocks non-target CDN attaches.
                     if bind and controls_active("block_upload"):
                         warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by admin policy."
+                        post_log_event(
+                            flow=flow,
+                            client_ip=client_ip,
+                            prompt=f"[FILE UPLOAD] {fname_nt or 'attachment'} — Blocked (Block Upload)",
+                            platform=bind[1],
+                            status="Blocked",
+                            domain=bind[0],
+                            host=host,
+                            blocked_reason="Block Upload",
+                            rule_triggered="Block Upload",
+                        )
                         make_blocked_response(flow, "Block Upload", host, reply_text=warn)
                         return
                     confident_nt = is_confident_file_upload(
@@ -913,6 +935,17 @@ class BrowserAIInterceptor:
             # If Block Upload control is actively enabled by admin:
             if controls_active("block_upload"):
                 warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by admin policy."
+                post_log_event(
+                    flow=flow,
+                    client_ip=client_ip,
+                    prompt=f"[FILE UPLOAD] {fname or 'attachment'} — Blocked (Block Upload)",
+                    platform=platform,
+                    status="Blocked",
+                    domain=domain,
+                    host=host,
+                    blocked_reason="Block Upload",
+                    rule_triggered="Block Upload",
+                )
                 make_blocked_response(flow, "Block Upload", host, reply_text=warn)
                 return
 

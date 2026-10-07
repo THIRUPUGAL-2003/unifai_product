@@ -413,6 +413,10 @@ def looks_like_user_prompt(text: str) -> bool:
     # Only drop lone path separators — keep user symbols like # @ ! ? $ %
     if len(t) == 1 and t in "/.\\|":
         return False
+    # Isolated single ASCII letters (e.g. 'b', 'r', 'x') are protobuf varints/tags or wire tokens, not user chat prompts.
+    # Preserve digits ('0'-'9'), user symbols ('?', '!', '#', '$', '%'), and non-ASCII characters (e.g. Chinese/Japanese kanji).
+    if len(t) == 1 and t.isalpha() and ord(t) < 128:
+        return False
 
     # Reject raw urlencoded wire parameters or batch execute bodies
     if any(wire in t for wire in ("count=", "&ofs=", "req0___data__", "f.req=", "soc-app=", "soc-platform=", "___data__=")):
@@ -424,6 +428,9 @@ def looks_like_user_prompt(text: str) -> bool:
 
     low = t.lower()
     if low in BATCHEXECUTE_LOCALE_JUNK or re.fullmatch(r"[a-z]{2}-[a-z]{2,3}", low):
+        return False
+    # Locale strings or locale tags with trailing wire noise (e.g. 'en-US', 'en-USz qBudp', 'fr-FR', 'zh-CN')
+    if re.match(r"^[a-z]{2}[-_][a-z]{2,4}", low):
         return False
     if low in _CONTROL_PLANE_PROMPT_TOKENS:
         return False
@@ -583,9 +590,14 @@ def _body_has_user_send_payload(data) -> bool:
     if "_dd" in data or "format_version" in data:
         return False
     event = str(data.get("event") or data.get("type") or "").lower()
-    if event in ("ping", "pong", "typing", "presence", "heartbeat", "metrics", "internal"):
+    if event in (
+        "ping", "pong", "typing", "presence", "heartbeat", "metrics", "internal",
+        "rgstr", "telemetry", "analytics", "rum", "activity", "beacon", "stat", "stats",
+    ):
         return False
-    if str(data.get("command") or "").lower() in ("ping", "pong", "metrics"):
+    if str(data.get("command") or data.get("action") or "").lower() in (
+        "ping", "pong", "metrics", "telemetry", "rgstr", "activity",
+    ):
         return False
 
     # GraphQL stringified or dictionary variables (Grok, Poe, custom AI GraphQL APIs)
@@ -711,6 +723,8 @@ def _is_confident_chat_send(path: str, raw_text: str, raw_bytes: bytes = b"") ->
     clear user message / parts[] payload (no product hostname hardcoding).
     """
     path_l = (path or "").lower().split("?", 1)[0]
+    if _path_has_ignore_pattern(path_l) or is_noise(path_l, raw_text or ""):
+        return False
     if _path_looks_like_upload(path_l):
         return False
     if _is_clear_chat_submit(path, "", raw_text, raw_bytes):
@@ -795,7 +809,11 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
             continue
         if _is_opaque_wire_blob(got) or _is_internal_wire_text(got) or _is_chat_metadata_token(got):
             continue
-        if _looks_like_document_body_dump(got):
+        if _looks_like_document_body_dump(got) or _looks_like_filename_only(got):
+            continue
+        if len(got) == 1 and got.isalpha() and ord(got) < 128:
+            continue
+        if re.match(r"^[a-z]{2}[-_][A-Za-z]{2,4}", got, re.I):
             continue
         if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", got, re.I):
             continue
@@ -807,6 +825,10 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
             score += 24
         if got.isdigit():
             score += 20
+        if 2 <= len(got) <= 4 and got.isalpha():
+            score += 12
+        if re.search(r"[a-zA-Z]", got) and re.search(r"\d", got):
+            score += 4
         # Conversational prompt keywords
         if any(w in got.lower() for w in ("please", "summarize", "explain", "what", "how", "why", "write", "analyze", "review", "check", "help", "create", "can you", "find", "compare")):
             score += 80
@@ -899,14 +921,17 @@ def _should_intercept_extracted_prompt(
         return False
     if is_noise(path, raw_text):
         return False
-    # File Send: keep short captions only in Prompt Logs.
-    if _send_carries_attachment(raw_text):
+    # File Send: keep short captions only in Prompt Logs (never document body dumps).
+    if _send_carries_attachment(raw_text) or (domain and _domain_has_pending_upload_cache(domain)):
         if _looks_like_document_body_dump(text) or len(text) > 320:
             return False
 
     confident = _is_confident_chat_send(path, raw_text, raw_bytes)
 
     if confident:
+        # Document body dump must NEVER become a user prompt when an upload exists
+        if _looks_like_document_body_dump(text):
+            return False
         # Exact user Send — do not drop number/symbol/short text via wire heuristics.
         if _is_clear_protocol_junk(text) or _is_google_wire_blob(text) or _is_opaque_wire_blob(text):
             return False
@@ -2070,6 +2095,31 @@ def _is_claude_wire_noise(s: str) -> bool:
     # Standard role and MIME tokens (numbers like '0', '1', '42' are real user inputs, never noise)
     if t.lower() in ("text", "text/plain", "user", "assistant", "human", "model", "application/json", "application/connect+proto", "true", "false", "null", "undefined"):
         return True
+    # Single non-digit characters (protobuf field tags, varint wire bytes like 'b', 'r')
+    if len(t) == 1 and t.isalpha() and ord(t) < 128:
+        return True
+    # Short 2-letter tokens that are not standard common English words
+    if len(t) <= 2 and not t.isdigit() and t.lower() not in (
+        "hi", "ok", "no", "go", "me", "we", "he", "it", "is", "in", "on", "at",
+        "to", "by", "if", "my", "or", "up", "so", "do", "am", "an", "as",
+    ):
+        return True
+    # Client locale tags with or without trailing wire characters (e.g. 'en-US', 'en-USz qBudp')
+    if re.match(r"^[a-z]{2}[-_][A-Za-z]{2,4}", t, re.IGNORECASE):
+        return True
+    # Claude RPC actions, event types, UI view tokens
+    if t.lower() in (
+        "performaction", "reportviewing", "getconversation", "listconversations",
+        "recordaction", "view", "click", "select", "focus", "blur", "scroll",
+        "change", "input", "submit", "ack", "sync",
+    ):
+        return True
+    # Filenames embedded in protobuf (not user chat prompts)
+    if _looks_like_filename_only(t) or _POSITIONAL_NAME_RE.match(t):
+        return True
+    # Document body dumps from attached files
+    if _looks_like_document_body_dump(t):
+        return True
     # Lone index brackets [0], [1]
     if re.fullmatch(r"\[\d+\]", t):
         return True
@@ -2085,7 +2135,13 @@ def _filter_and_pick_claude_prompt(candidates: list[str]) -> str | None:
     valid = []
     for s in candidates:
         s_clean = (s or "").strip()
-        if not s_clean or _is_claude_wire_noise(s_clean) or not looks_like_user_prompt(s_clean):
+        if (
+            not s_clean
+            or _is_claude_wire_noise(s_clean)
+            or _looks_like_document_body_dump(s_clean)
+            or _looks_like_filename_only(s_clean)
+            or not looks_like_user_prompt(s_clean)
+        ):
             continue
         valid.append(s_clean)
     if not valid:
