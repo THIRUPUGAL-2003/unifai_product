@@ -137,8 +137,8 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
 	r.HEAD("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
 	// Legacy download URLs (older employee docs / bookmarks)
-	r.GET("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
-	r.HEAD("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+	r.GET("/api/browser-ai/setup/Raksha_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+	r.HEAD("/api/browser-ai/setup/Raksha_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
 
 	r.GET("/api/browser-ai/agents", lib.ChainMiddlewares(h.listAgents, middlewares...))
 	r.POST("/api/browser-ai/agents/heartbeat", lib.ChainMiddlewares(h.agentHeartbeat, middlewares...))

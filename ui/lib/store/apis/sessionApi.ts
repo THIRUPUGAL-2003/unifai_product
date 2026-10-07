@@ -25,6 +25,7 @@ export interface IsAuthEnabledResponse {
 	allowed_sections?: string;
 	budget?: number;
 	budget_current_usage?: number;
+	rate_limit?: number;
 	must_change_password?: boolean;
 }
 

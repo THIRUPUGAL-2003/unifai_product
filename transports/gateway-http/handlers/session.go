@@ -248,6 +248,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 	allowedSections := ""
 	userBudget := 0.0
 	budgetUsage := 0.0
+	userRateLimit := 0
 	mustChangePassword := false
 	if token != "" {
 		session, err := h.configStore.GetSession(ctx, token)
@@ -266,6 +267,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 						email = dbUser.Email
 						userID = dbUser.ID
 						userBudget = dbUser.Budget
+						userRateLimit = dbUser.RateLimit
 						if dbUser.BudgetID != nil && *dbUser.BudgetID != "" {
 							if h.userGovernance != nil {
 								if usage, ok := h.userGovernance.GetBudgetUsage(ctx, *dbUser.BudgetID); ok {
@@ -294,6 +296,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 		"allowed_sections":     allowedSections,
 		"budget":               userBudget,
 		"budget_current_usage": budgetUsage,
+		"rate_limit":           userRateLimit,
 		"must_change_password": mustChangePassword,
 	})
 }
@@ -994,6 +997,11 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	payload.Role = role
+	// Admin and sub-admin accounts are not billed or rate-limited as end users.
+	if role == "admin" || role == "sub_admin" {
+		payload.Budget = 0
+		payload.RateLimit = 0
+	}
 
 	hashedPassword, err := encrypt.Hash(payload.Password)
 	if err != nil {
@@ -1772,6 +1780,10 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	}
 	if payload.AllowedSections != nil {
 		existingUser.AllowedSections = *payload.AllowedSections
+	}
+	if existingUser.Role == "admin" || existingUser.Role == "sub_admin" {
+		existingUser.Budget = 0
+		existingUser.RateLimit = 0
 	}
 	existingUser.UpdatedAt = time.Now()
 

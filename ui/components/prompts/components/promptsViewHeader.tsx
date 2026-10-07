@@ -292,6 +292,11 @@ export default function PromptsViewHeader() {
 								User: ${(authStatus.budget_current_usage ?? 0).toFixed(2)} / ${authStatus.budget.toFixed(2)}
 							</Badge>
 						)}
+						{authStatus?.rate_limit !== undefined && authStatus.rate_limit > 0 && (
+							<Badge variant="outline" className="font-mono text-xs border-primary/30 text-muted-foreground" title="Your request-per-minute limit">
+								{authStatus.rate_limit} RPM
+							</Badge>
+						)}
 						{vkBudget && vkBudget.max_limit > 0 && (
 							<Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400" title="Virtual Key Budget (Shared)">
 								Key: ${(vkBudget.current_usage ?? 0).toFixed(2)} / ${vkBudget.max_limit.toFixed(2)}
