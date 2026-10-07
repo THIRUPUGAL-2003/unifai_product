@@ -344,6 +344,14 @@ _UNIVERSAL_PROMPT_KEYS = (
     "dictated_text", "voice_prompt", "speech_prompt",
     # Character.ai turn candidates / Meta AI GraphQL message
     "raw_content", "sensitive_string_value",
+    # Streamlit widget states & modern UI fields
+    "string_value", "stringValue", "widget_state", "widget_states",
+    # Model Context Protocol (MCP), JSON-RPC & Tool Invocations
+    "arguments", "args", "tool_arguments", "function_call", "tool_calls",
+    # Prompt Engineering, DSPy, Flowise, Dify & Workflow Frameworks
+    "action_input", "thought_input", "template_inputs", "agent_task",
+    "goal", "user_goal", "user_query_string", "chat_prompt", "direct_prompt",
+    "user_text_input", "completion_input", "generate_input", "instances",
 )
 
 # Deduplicate identical events per domain within this window (seconds).
@@ -1200,18 +1208,29 @@ def log_prompt_async(platform: str, domain: str, prompt: str, client_ip: str, ur
 
 
 def is_noise_host(host: str) -> bool:
-    """Skip analytics / CDN / challenge hosts that share a parent AI domain."""
+    """Skip analytics / CDN / challenge hosts that are not under an admin Target.
+
+    cdn./assets./static. prefixes are noise only when the host is not the
+    domain the admin added and not a subdomain of one. Otherwise adding
+    claude.ai / chatgpt.com drops the real upload and API hosts.
+    """
     h = (host or "").lower().strip(".")
     if not h:
         return True
-    # A host the admin added itself (e.g. assets.acme-ai.io as the chat API) is never noise.
+    bare = h[4:] if h.startswith("www.") else h
     with _cache_lock:
-        if (h[4:] if h.startswith("www.") else h) in _cached_domains:
+        domains = list(_cached_domains.keys())
+    for domain in domains:
+        d = (domain or "").lower().strip(".")
+        if d.startswith("www."):
+            d = d[4:]
+        if not d:
+            continue
+        if bare == d or bare.endswith("." + d):
             return False
-    # Explicit noise hosts
-    if h.startswith(NOISE_HOST_PREFIXES):
+    if h.startswith(NOISE_HOST_PREFIXES) or bare.startswith(NOISE_HOST_PREFIXES):
         return True
-    if "cdn-cgi" in h or h.startswith("count."):
+    if "cdn-cgi" in h or h.startswith("count.") or bare.startswith("count."):
         return True
     return False
 

@@ -51,6 +51,9 @@ def _load():
         path = PARTS_DIR / name
         exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), ns)
     ns["_bg_config_refresh_started"] = True
+    # Module load already started the background refresher. A later test that
+    # stubs _fetch_json with a rules payload would otherwise wipe this cache.
+    ns["_refresh_targets_from_backend"] = lambda: None
     ns["_apply_targets_from_data"]({
         "targets": [
             {"domain": d, "platform_name": p, "monitored": True} for d, p in TARGETS
@@ -78,6 +81,16 @@ def _fake_upload_log(*args, **kwargs):
 NS["evaluate_prompt"] = _fake_evaluate
 NS["log_prompt_async"] = lambda *a, **k: None
 NS["post_upload_intercept"] = _fake_upload_log
+
+
+def _arm_targets() -> None:
+    """Put the suite target list back. Other tests share this namespace and replace it."""
+    NS["GATEWAY_BACKEND_URL"] = ""
+    NS["_apply_targets_from_data"]({
+        "targets": [
+            {"domain": d, "platform_name": p, "monitored": True} for d, p in TARGETS
+        ]
+    })
 
 
 def _install_rules() -> None:
@@ -194,6 +207,7 @@ def _send_bodies(text: str) -> list[tuple[str, str, str, bytes | str, str]]:
 class TargetPromptPredictTests(unittest.TestCase):
     def setUp(self) -> None:
         _reset()
+        _arm_targets()
         _install_rules()
 
     def test_detect_target_matches_any_admin_domain_and_subdomains(self) -> None:
@@ -278,6 +292,7 @@ def _multipart(field: str, filename: str, ctype: str, data: bytes) -> tuple[byte
 class TargetFileVoicePredictTests(unittest.TestCase):
     def setUp(self) -> None:
         _reset()
+        _arm_targets()
         _install_rules()
 
     def _upload_then_send(self, host: str, upload_path: str, filename: str, ctype: str, data: bytes,
@@ -369,6 +384,7 @@ def _ws_flow(host: str, path: str, text: str):
 class TargetWebSocketPredictTests(unittest.TestCase):
     def setUp(self) -> None:
         _reset()
+        _arm_targets()
         _install_rules()
 
     def _copilot_frame(self, text: str) -> str:

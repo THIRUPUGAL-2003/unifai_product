@@ -131,6 +131,14 @@ class AnyTargetDomainTests(unittest.TestCase):
             self.assertIsNotNone(f.response, f"{host} not locked")
             self.assertEqual(f.response.status_code, 403)
 
+    def test_cdn_subdomain_of_added_domain_is_still_monitored(self) -> None:
+        _set_targets([{"domain": "new-ai.example", "platform_name": "New AI", "monitored": True}])
+        self.assertFalse(NS["is_noise_host"]("cdn.new-ai.example"))
+        self.assertFalse(NS["is_noise_host"]("assets.new-ai.example"))
+        f = _flow("cdn.new-ai.example", "/v1/chat/completions", _chat_body(f"call {NUMBER}"))
+        _run(f)
+        self.assertIsNotNone(f.response, EVALS)
+
     def test_file_role_host_ignores_plain_chat(self) -> None:
         f = _flow("files.claudeusercontent.com", "/api/chat", _chat_body(f"call {NUMBER}"))
         _run(f)

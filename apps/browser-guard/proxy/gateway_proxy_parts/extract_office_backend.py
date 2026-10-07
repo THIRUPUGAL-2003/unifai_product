@@ -1278,38 +1278,59 @@ def extract_batchexecute_prompt(content: str) -> str:
             except Exception:
                 pass
 
-        # 2. batchexecute: ONLY check recognized chat RPCs
+        # 2. batchexecute: Check recognized chat RPCs first, then fallback to any other item
         if isinstance(data, list):
+            items_to_check = []
             for rpc in data:
                 item = None
                 if isinstance(rpc, list) and rpc and isinstance(rpc[0], list):
                     item = rpc[0]
                 elif isinstance(rpc, list) and len(rpc) > 1 and isinstance(rpc[1], str):
                     item = rpc
-                if not item or len(item) < 2:
-                    continue
-                rpc_id = str(item[0])
-                if rpc_id not in GEMINI_CHAT_RPCS:
-                    continue
-                payload_str = item[1]
-                if not isinstance(payload_str, str) or payload_str in ("", "[]", "[[]]"):
-                    continue
-                try:
-                    payload = json.loads(payload_str)
-                    if isinstance(payload, list):
-                        got = _from_stream_inner(payload)
-                        if got:
-                            return got
-                        if len(payload) >= 2 and isinstance(payload[1], str):
-                            try:
-                                sub = json.loads(payload[1])
-                                got = _from_stream_inner(sub)
+                if item and len(item) >= 2:
+                    items_to_check.append(item)
+            # Priority 1: Known Gemini RPC IDs
+            for item in items_to_check:
+                if str(item[0]) in GEMINI_CHAT_RPCS:
+                    payload_str = item[1]
+                    if isinstance(payload_str, str) and payload_str not in ("", "[]", "[[]]"):
+                        try:
+                            payload = json.loads(payload_str)
+                            if isinstance(payload, list):
+                                got = _from_stream_inner(payload)
                                 if got:
                                     return got
-                            except Exception:
-                                pass
-                except Exception:
-                    continue
+                                if len(payload) >= 2 and isinstance(payload[1], str):
+                                    try:
+                                        sub = json.loads(payload[1])
+                                        got = _from_stream_inner(sub)
+                                        if got:
+                                            return got
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+            # Priority 2: Fallback to any other RPC item in data (resilient to Google rotations)
+            for item in items_to_check:
+                if str(item[0]) not in GEMINI_CHAT_RPCS:
+                    payload_str = item[1]
+                    if isinstance(payload_str, str) and payload_str not in ("", "[]", "[[]]"):
+                        try:
+                            payload = json.loads(payload_str)
+                            if isinstance(payload, list):
+                                got = _from_stream_inner(payload)
+                                if got:
+                                    return got
+                                if len(payload) >= 2 and isinstance(payload[1], str):
+                                    try:
+                                        sub = json.loads(payload[1])
+                                        got = _from_stream_inner(sub)
+                                        if got:
+                                            return got
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
     except Exception:
         pass
 

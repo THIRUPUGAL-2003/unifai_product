@@ -317,7 +317,7 @@ export default function BrowserAiPage() {
 	// New Target Form
 	const [newTargetDomain, setNewTargetDomain] = useState("");
 	const [newTargetPlatform, setNewTargetPlatform] = useState("");
-	const [newTargetHostRole, setNewTargetHostRole] = useState<HostRole>("ui");
+	const [newTargetHostRole, setNewTargetHostRole] = useState<HostRole>("");
 	const [newTargetBlockSite, setNewTargetBlockSite] = useState(false);
 	const [customRelatedHosts, setCustomRelatedHosts] = useState<RelatedHostEntry[]>([{ host: "", role: "" }]);
 	const [extraHostDrafts, setExtraHostDrafts] = useState<Record<string, string>>({});
@@ -2032,7 +2032,7 @@ export default function BrowserAiPage() {
 			}
 			setNewTargetDomain("");
 			setNewTargetPlatform("");
-			setNewTargetHostRole("ui");
+			setNewTargetHostRole("");
 			setNewTargetBlockSite(false);
 			setCustomRelatedHosts([{ host: "", role: "" }]);
 			setTargetDialogOpen(false);

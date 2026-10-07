@@ -390,10 +390,11 @@ class BrowserAIInterceptor:
                         or path_l.startswith("/search")
                         or path_l in ("/", "/webhp")
                     )
-                    if is_search_path and self._is_committed_search_navigation(flow):
-                        raw_q = _q("q", "as_q", "query")
-                        if raw_q and not raw_q.startswith("http") and not self._is_junk_search_query(raw_q):
-                            searched_query = raw_q
+                    if is_search_path:
+                        if self._is_committed_search_navigation(flow) or (path_l.startswith("/search") and flow.request.method == "GET"):
+                            raw_q = _q("q", "as_q", "query")
+                            if raw_q and not self._is_junk_search_query(raw_q):
+                                searched_query = raw_q
                 # Result link click: /url?url=… or /url?q=https://…
                 if path_l.startswith("/url") or "/url?" in (flow.request.path or "").lower() or path_l == "/url":
                     target = _q("url", "q", "qurl")
@@ -445,10 +446,10 @@ class BrowserAIInterceptor:
                 if (
                     not is_msn
                     and self._is_bing_committed_search_path(path_l)
-                    and self._is_committed_search_navigation(flow)
+                    and (self._is_committed_search_navigation(flow) or path_l.startswith("/search"))
                 ):
                     raw_q = _q("q", "query")  # do not use pq
-                    if raw_q and not raw_q.startswith("http") and not self._is_junk_search_query(raw_q):
+                    if raw_q and not self._is_junk_search_query(raw_q):
                         searched_query = raw_q
 
                 # Edge/Bing result click redirects (keep click rows; drop query noise)
@@ -476,9 +477,9 @@ class BrowserAIInterceptor:
             elif engine == "DuckDuckGo":
                 if path_l.startswith("/ac/"):
                     return
-                if self._is_committed_search_navigation(flow):
+                if self._is_committed_search_navigation(flow) or path_l == "/" or path_l.startswith("/?"):
                     raw_q = _q("q", "query")
-                    if raw_q and not raw_q.startswith("http") and not self._is_junk_search_query(raw_q):
+                    if raw_q and not self._is_junk_search_query(raw_q):
                         searched_query = raw_q
                 if path_l.startswith("/l/") or path_l.startswith("/y.js"):
                     uddg = _q("uddg", "u")
@@ -487,9 +488,9 @@ class BrowserAIInterceptor:
                         searched_query = ""
 
             elif engine == "Brave Search":
-                if self._is_committed_search_navigation(flow):
+                if self._is_committed_search_navigation(flow) or path_l.startswith("/search"):
                     raw_q = _q("q", "query")
-                    if raw_q and not raw_q.startswith("http") and not self._is_junk_search_query(raw_q):
+                    if raw_q and not self._is_junk_search_query(raw_q):
                         searched_query = raw_q
                 # Brave often links out directly; capture redirect helpers when present
                 target = _q("url", "u")
@@ -498,9 +499,9 @@ class BrowserAIInterceptor:
                     searched_query = ""
 
             elif engine == "Yahoo":
-                if self._is_committed_search_navigation(flow):
+                if self._is_committed_search_navigation(flow) or path_l.startswith("/search"):
                     raw_q = _q("p", "q", "query")
-                    if raw_q and not raw_q.startswith("http") and not self._is_junk_search_query(raw_q):
+                    if raw_q and not self._is_junk_search_query(raw_q):
                         searched_query = raw_q
                 # Yahoo click redirects
                 if "/RU=" in (flow.request.url or "") or path_l.startswith("/click") or "rds.yahoo" in h_lower:
@@ -917,18 +918,29 @@ class BrowserAIInterceptor:
                 return
 
             file_ids = _extract_file_ids_from_chat(raw_text)
-            cache_upload_file(
-                domain,
-                file_name=fname or "attachment",
-                raw_bytes=raw_bytes,
-                content_type=content_type,
-                upload_reason=upload_reason or "upload_endpoint",
-                file_id=file_ids[0] if file_ids else "",
-            )
+            cache_domains = [domain]
+            # File CDN Target (e.g. files.claudeusercontent.com) must also land in the
+            # chat Target queue (claude.ai) so Send can extract + rule-check quickly.
+            try:
+                bind = _resolve_upload_bind_domain(flow, host)
+                if bind and _normalize_domain(bind) != _normalize_domain(domain):
+                    cache_domains.append(bind)
+            except Exception:
+                pass
+            for cache_dom in cache_domains:
+                cache_upload_file(
+                    cache_dom,
+                    file_name=fname or "attachment",
+                    raw_bytes=raw_bytes,
+                    content_type=content_type,
+                    upload_reason=upload_reason or "upload_endpoint",
+                    file_id=file_ids[0] if file_ids else "",
+                )
             print(
                 f"[Gateway Proxy] FILE CACHED (await Send — zero predict on upload) | {domain} | "
                 f"{fname or 'attachment'} | {len(raw_bytes)} bytes | "
                 f"{method} {host}{path.split('?', 1)[0][:90]}"
+                + (f" | also->{cache_domains[1]}" if len(cache_domains) > 1 else "")
             )
             # Upload/attach = cache only. Type detect → extract → Guard Rules →
             # Block/Allow/Warn runs on chat Send (any Target Website).

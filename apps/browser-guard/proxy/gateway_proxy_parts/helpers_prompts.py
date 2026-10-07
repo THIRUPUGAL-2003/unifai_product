@@ -402,6 +402,9 @@ def looks_like_user_prompt(text: str) -> bool:
         return False
     if _is_internal_wire_text(t):
         return False
+    # Claude Connect-RPC / protobuf crumbs must never become Prompt Logs mid-send.
+    if _is_claude_wire_noise(t):
+        return False
     if "what would you like to do with this file?" in t.lower():
         return False
     if t.startswith("gAAAA") or '"p":"gAAAA' in t:
@@ -1668,6 +1671,19 @@ def _deep_extract_from_json(data, depth: int = 0, max_depth: int = 10) -> str | 
                 got = _deep_extract_from_json(item, depth + 1, max_depth)
                 if got:
                     return got
+        # Also check direct string items in arrays (Gradio, HuggingFace, prompt lists)
+        for item in data:
+            if isinstance(item, str):
+                sval = item.strip()
+                if (
+                    len(sval) >= 2
+                    and looks_like_user_prompt(sval)
+                    and not _is_opaque_wire_blob(sval)
+                    and not _is_clear_protocol_junk(sval)
+                ):
+                    got = _clean_prompt_text(sval)
+                    if got:
+                        return got
         return None
 
 
@@ -2012,7 +2028,10 @@ def extract_prompt_from_query_string(url: str) -> str | None:
         for key in _UNIVERSAL_PROMPT_KEYS:
             vals = qs.get(key) or qs.get(key.lower())
             if vals and isinstance(vals[0], str):
-                got = _clean_prompt_text(vals[0])
+                raw_val = vals[0]
+                if "%25" in raw_val:
+                    raw_val = urllib.parse.unquote(raw_val)
+                got = _prompt_from_json_string(raw_val) or _clean_prompt_text(raw_val)
                 if got and looks_like_user_prompt(got):
                     return got
     except Exception:
@@ -2098,8 +2117,9 @@ def _is_claude_wire_noise(s: str) -> bool:
     # Single non-digit characters (protobuf field tags, varint wire bytes like 'b', 'r')
     if len(t) == 1 and t.isalpha() and ord(t) < 128:
         return True
-    # Short 2-letter tokens that are not standard common English words
-    if len(t) <= 2 and not t.isdigit() and t.lower() not in (
+    # Short alphabetic tokens that are not common English words (e.g. "zz").
+    # Keep user symbols/numbers: #1, c++, x=1, ?, +, $50 — those are real prompts.
+    if len(t) <= 2 and t.isalpha() and t.lower() not in (
         "hi", "ok", "no", "go", "me", "we", "he", "it", "is", "in", "on", "at",
         "to", "by", "if", "my", "or", "up", "so", "do", "am", "an", "as",
     ):
@@ -2235,39 +2255,289 @@ def extract_connect_rpc_prompt(body_bytes: bytes, content_type: str = "", host: 
     return None
 
 
+# ─────────────────────────────────────────────
+# Specialized AI Protocol & Wire Decoders
+# ─────────────────────────────────────────────
+
+def _printable_runs(raw: bytes) -> list[str]:
+    """Pull UTF-8 / ASCII strings out of protobuf or mixed binary bodies."""
+    if not raw:
+        return []
+    text = raw.decode("utf-8", errors="ignore")
+    chunks: list[str] = []
+    for m in re.finditer(r"[\x20-\x7e\u00a0-\uffff]{3,4000}", text):
+        s = (m.group(0) or "").strip()
+        if s and len(s) >= 3:
+            chunks.append(s)
+    return chunks
+
+
+def _extract_from_socketio(text: str) -> str | None:
+    """Extract user prompt from Socket.IO / Engine.IO packet streams (v2, v3, v4).
+    
+    Covers: OpenWebUI, LibreChat, Botpress, Flowise, Rasa, custom WebSocket bots.
+    Packets:
+      42["chat", {"message": "hello"}]
+      42/custom_ns,["event", {"content": "hello"}]
+      420["prompt", "hello world"]
+      43[{"reply": "..."}]
+    """
+    if not text:
+        return None
+    stripped = text.strip()
+    m = re.match(r'^\d+(?:/[^,]*,\s*)?', stripped)
+    if not m:
+        return None
+    payload_str = stripped[m.end():].strip()
+    if not payload_str.startswith(("[", "{")):
+        return None
+    try:
+        data = json.loads(payload_str)
+    except Exception:
+        return None
+    if isinstance(data, list):
+        args = data[1:] if len(data) > 1 else data
+        for arg in args:
+            if isinstance(arg, (dict, list)):
+                got = _deep_extract_from_json(arg)
+                if got:
+                    return got
+            elif isinstance(arg, str):
+                s = arg.strip()
+                if len(s) >= 2 and looks_like_user_prompt(s) and not _is_opaque_wire_blob(s) and not _is_clear_protocol_junk(s):
+                    got = _clean_prompt_text(s)
+                    if got:
+                        return got
+    elif isinstance(data, dict):
+        return _deep_extract_from_json(data)
+    return None
+
+
+def _extract_from_mcp_or_jsonrpc(data: dict) -> str | None:
+    """Extract prompt from Model Context Protocol (MCP) and JSON-RPC 2.0 payloads.
+    
+    Covers: Claude Desktop MCP, Cursor MCP, Zed, Continue, Sourcegraph Cody, OpenAI Tools.
+    Handles:
+      {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "...", "arguments": {"query": "..."}}}
+      {"jsonrpc": "2.0", "method": "prompts/get", "params": {"name": "...", "arguments": {"user_input": "..."}}}
+      {"jsonrpc": "2.0", "method": "sampling/createMessage", "params": {"messages": [...]}}
+    """
+    if not isinstance(data, dict):
+        return None
+    if "jsonrpc" not in data and "method" not in data:
+        return None
+    params = data.get("params")
+    if isinstance(params, str) and params.strip().startswith("{"):
+        try:
+            params = json.loads(params)
+        except Exception:
+            pass
+    if isinstance(params, dict):
+        args = params.get("arguments") or params.get("args")
+        if isinstance(args, str) and args.strip().startswith("{"):
+            try:
+                args = json.loads(args)
+            except Exception:
+                pass
+        if isinstance(args, dict):
+            got = _deep_extract_from_json(args)
+            if got:
+                return got
+            for val in args.values():
+                if isinstance(val, str) and len(val.strip()) >= 2 and looks_like_user_prompt(val.strip()):
+                    return _clean_prompt_text(val.strip())
+        if "messages" in params or "message" in params:
+            got = _deep_extract_from_json(params)
+            if got:
+                return got
+        return _deep_extract_from_json(params)
+    return None
+
+
+def _extract_from_gradio(data: dict) -> str | None:
+    """Extract prompt from Gradio / Hugging Face Spaces API calls.
+    
+    Covers: /api/predict, /gradio_api/call, /run/predict, HF Spaces, SD WebUI.
+    Payload:
+      {"data": ["how to train a model", 0.7, 50, true], "fn_index": 0}
+    """
+    if not isinstance(data, dict) or "data" not in data or not isinstance(data["data"], list):
+        return None
+    items = data["data"]
+    for item in items:
+        if isinstance(item, str):
+            s = item.strip()
+            if (
+                len(s) >= 2
+                and looks_like_user_prompt(s)
+                and not _is_opaque_wire_blob(s)
+                and not _is_clear_protocol_junk(s)
+            ):
+                return _clean_prompt_text(s)
+        elif isinstance(item, dict):
+            got = _deep_extract_from_json(item)
+            if got:
+                return got
+    return None
+
+
+def _extract_from_streamlit(data: dict) -> str | None:
+    """Extract prompt from Streamlit session WebSocket rerun packets.
+    
+    Covers: Streamlit AI apps, ChatBot UI components, st.chat_input.
+    Payload:
+      {"type": "backMsg", "rerun": {"clientState": {"widgetStates": [{"stringValue": "..."}]}}}
+      {"widgetStates": [{"id": "...", "stringValue": "user prompt"}]}
+    """
+    if not isinstance(data, dict):
+        return None
+    widget_states = None
+    if "widgetStates" in data:
+        widget_states = data["widgetStates"]
+    elif "rerun" in data and isinstance(data["rerun"], dict):
+        cs = data["rerun"].get("clientState")
+        if isinstance(cs, dict) and "widgetStates" in cs:
+            widget_states = cs["widgetStates"]
+    elif "clientState" in data and isinstance(data["clientState"], dict):
+        widget_states = data["clientState"].get("widgetStates")
+        
+    if isinstance(widget_states, list):
+        for w in widget_states:
+            if isinstance(w, dict):
+                for val_key in ("stringValue", "string_value", "value", "prompt", "text", "query"):
+                    v = w.get(val_key)
+                    if isinstance(v, str) and len(v.strip()) >= 1 and looks_like_user_prompt(v.strip()):
+                        return _clean_prompt_text(v.strip())
+    return None
+
+
+def _extract_from_msgpack(body_bytes: bytes) -> str | None:
+    """Extract prompt from MessagePack (msgpack) binary format.
+    
+    Covers: Python/FastAPI/Node AI backends, Celery AI pipelines, Neovim LLMs,
+            application/x-msgpack, application/msgpack.
+    """
+    if not body_bytes or len(body_bytes) < 3:
+        return None
+    first = body_bytes[0]
+    is_msgpack_shape = (0x80 <= first <= 0x8f) or (0x90 <= first <= 0x9f) or first in (0xde, 0xdf, 0xdc, 0xdd)
+    if not is_msgpack_shape:
+        return None
+    try:
+        import msgpack
+        unpacked = msgpack.unpackb(body_bytes, raw=False, strict_map_key=False)
+        if isinstance(unpacked, (dict, list)):
+            return _deep_extract_from_json(unpacked)
+    except Exception:
+        pass
+    return None
+
+
+def _extract_from_base64_payload(text: str) -> str | None:
+    """Extract prompt from Base64 data URLs or Base64 wrapped strings.
+    
+    Covers: data:application/json;base64,... or pure base64-encoded request bodies.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    payload = None
+    if s.startswith("data:") and ";base64," in s:
+        payload = s.split(";base64,", 1)[1].strip()
+    elif len(s) >= 16 and len(s) % 4 == 0 and re.match(r'^[A-Za-z0-9+/]+={0,2}$', s):
+        payload = s
+    if not payload:
+        return None
+    try:
+        import base64
+        decoded = base64.b64decode(payload)
+        d_text = decoded.decode("utf-8", errors="ignore").strip()
+        if d_text.startswith(("{", "[")):
+            data = json.loads(d_text)
+            if isinstance(data, (dict, list)):
+                return _deep_extract_from_json(data)
+        elif len(d_text) >= 2 and looks_like_user_prompt(d_text) and not _is_opaque_wire_blob(d_text):
+            return _clean_prompt_text(d_text)
+    except Exception:
+        pass
+    return None
+
+
+def _extract_from_binary_stream_heuristics(body_bytes: bytes) -> str | None:
+    """Universal string scanner fallback for ANY unknown binary protocol worldwide.
+    
+    Covers: CBOR, BSON, Cap'n Proto, Thrift, Avro, proprietary TCP/WebSocket AI binary wire.
+    Scans printable UTF-8 chunks, filters binary headers, UUIDs, type names, and wire noise.
+    """
+    if not body_bytes or len(body_bytes) < 4:
+        return None
+    runs = _printable_runs(body_bytes)
+    if not runs:
+        return None
+    candidates = []
+    for r in runs:
+        s = r.strip()
+        if (
+            len(s) >= 2
+            and looks_like_user_prompt(s)
+            and not _is_claude_wire_noise(s)
+            and not _is_google_wire_blob(s)
+            and not _is_opaque_wire_blob(s)
+            and not _is_clear_protocol_junk(s)
+            and not _looks_like_document_body_dump(s)
+            and not _looks_like_filename_only(s)
+        ):
+            candidates.append(s)
+    if candidates:
+        return _pick_best_user_text(candidates) or candidates[-1]
+    return None
+
+
 def extract_prompt_universal(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:
     return _unwrap_json_prompt(_extract_prompt_universal_raw(body_bytes, content_type, host, url))
 
 
 def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:
-    """Universal prompt extraction for ANY admin Target Website — any format.
+    """Universal prompt extraction for ANY admin Target Website — any protocol, any format worldwide.
 
-    Tries ALL known AI request formats in priority order:
-      0. Connect-RPC / gRPC-Web / Protobuf (Claude Web PerformAction, etc.)
-      1. Platform-specific parsers (OpenAI/ChatGPT/Claude/Gemini/Grok/Copilot)
-      2. GET query string parameters
-      3. JSON — deep recursive walk (10 levels, all _UNIVERSAL_PROMPT_KEYS)
-      4. GraphQL variables / operation inputs
-      5. URL-encoded form body (application/x-www-form-urlencoded)
-      6. Multipart form-data (text fields only, skip file parts)
-      7. XML / SOAP (tag name matched against _UNIVERSAL_PROMPT_KEYS)
-      8. NDJSON / JSON Lines (one JSON object per line)
-      9. Plain text body (text/plain or short unstructured body IS the prompt)
-      10. Regex last resort (partial JSON, malformed bodies)
-
-    Any AI website — ChatGPT, Claude, Gemini, Grok, Perplexity, DeepSeek,
-    Copilot, Poe, HuggingFace, Ollama, LMStudio, enterprise custom AI —
-    will be caught by at least one of the above layers.
+    16 Comprehensive Layers in Priority Order:
+      0. Connect-RPC / gRPC-Web / Protobuf (Claude Web PerformAction, Buf Connect, Envoy)
+      1. SignalR / ASP.NET Core Hubs (Copilot, Bing Chat, Azure OpenAI Studio 0x1E)
+      2. Socket.IO / Engine.IO v2, v3, v4 (OpenWebUI, LibreChat, Botpress, Flowise 42[...])
+      3. Model Context Protocol (MCP) & JSON-RPC 2.0 (Claude MCP, Cursor, Zed tools/call)
+      4. Platform-Specific Parsers (ChatGPT, Claude, Gemini batchexecute, Perplexity, DeepSeek, Copilot)
+      5. Gradio & Hugging Face Spaces (/api/predict, /gradio_api/call, {"data": [...]})
+      6. Streamlit AI Session (backMsg, widgetStates, stringValue)
+      7. Base64 & Data URLs (data:application/json;base64, pure base64 payloads)
+      8. URL Query String (GET params, nested JSON strings, %2520 unquote)
+      9. Deep Recursive JSON (12 Levels, all _UNIVERSAL_PROMPT_KEYS, list scanning)
+      10. GraphQL Queries & Mutations (Meta AI, Poe, GraphQL Apollo variables/inputs)
+      11. Binary Serialization (MessagePack msgpack.unpackb)
+      12. URL-Encoded Form (application/x-www-form-urlencoded, %25 unquoting)
+      13. Multipart Form-Data (boundary parsing, text fields & upload captions)
+      14. XML / SOAP / XHTML Envelopes (<prompt>, <query>, <message>)
+      15. NDJSON / JSON Lines / JSON-Seq (RFC 7464, Ollama, vLLM, TGI streaming)
+      16. Plain Text & Universal Binary Heuristic Fallback (Raw text, regex, UTF-8 scanner)
     """
-    # ── Step 0: Connect-RPC / gRPC-Web / Protobuf (Claude Web PerformAction, etc.) ──
+    if not body_bytes:
+        return None
+
+    ct = (content_type or "").lower()
+
+    # ── Layer 0: Connect-RPC / gRPC-Web / Protobuf (Claude Web PerformAction, etc.) ──
     rpc_prompt = extract_connect_rpc_prompt(body_bytes, content_type, host, url)
     if rpc_prompt:
         return rpc_prompt
 
-    # ── Step 1: Platform-specific parsers (most accurate) ─────────────────
+    # ── Layer 11 (Early Binary): MessagePack (msgpack) ─────────────────────
+    if "msgpack" in ct or (len(body_bytes) >= 3 and ((0x80 <= body_bytes[0] <= 0x8f) or (0x90 <= body_bytes[0] <= 0x9f) or body_bytes[0] in (0xde, 0xdf, 0xdc, 0xdd))):
+        mp_prompt = _extract_from_msgpack(body_bytes)
+        if mp_prompt:
+            return mp_prompt
+
+    # ── Layer 4: Platform-specific parsers (most accurate for known shapes) ─
     got = extract_prompt(body_bytes, content_type, host=host)
     if got:
-        # Validate: reject if it looks like raw XML/multipart/wire (not user text)
         got_s = (got or "").strip()
         if (
             got_s
@@ -2276,90 +2546,114 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
             and not _is_clear_protocol_junk(got_s)
         ):
             return got
-        # Fall through to format-specific layers for XML/wire results
 
-    # ── Step 2: URL query string ───────────────────────────────────────────
+    # ── Layer 8: URL query string ───────────────────────────────────────────
     if url:
         got = extract_prompt_from_query_string(url)
         if got:
             return got
 
-    if not body_bytes:
-        return None
     try:
         text = body_bytes.decode("utf-8", errors="ignore")
     except Exception:
-        return None
-    if not text.strip():
-        return None
+        text = ""
 
-    ct = (content_type or "").lower()
+    if not text.strip():
+        # Binary payload that failed UTF-8 decode — try Layer 16 binary heuristic
+        return _extract_from_binary_stream_heuristics(body_bytes)
+
     stripped = text.lstrip()
 
-    # ── Step 3: JSON — deep recursive walk (incl. Copilot SignalR \x1e) ──
-    if stripped.startswith(("{", "[")) or "\x1e" in text:
+    # ── Layer 1: SignalR / ASP.NET Hubs (\x1e record separator) ───────────
+    if "\x1e" in text:
+        event_got = extract_event_send_prompt(text)
+        if event_got:
+            return _clean_prompt_text(event_got)
+
+    # ── Layer 2: Socket.IO / Engine.IO (42[...], 420[...], 42/ns,[...]) ────
+    if re.match(r'^\d+(?:/[^,]*,\s*)?[\[\{]', stripped):
+        sio_prompt = _extract_from_socketio(stripped)
+        if sio_prompt:
+            return sio_prompt
+
+    # ── Layer 7: Base64 & Data URLs ─────────────────────────────────────────
+    if stripped.startswith("data:") or (len(stripped) >= 16 and re.match(r'^[A-Za-z0-9+/=]{16,}$', stripped.strip())):
+        b64_prompt = _extract_from_base64_payload(stripped)
+        if b64_prompt:
+            return b64_prompt
+
+    # ── Layer 9, 3, 5, 6, 10: JSON — deep recursive walk & sub-protocols ───
+    if stripped.startswith(("{", "[")):
         try:
-            if "\x1e" in text:
-                event_got = extract_event_send_prompt(text)
-                if event_got:
-                    return _clean_prompt_text(event_got)
             data = _loads_json_maybe_signalr(text)
             if data is not None:
-                # GraphQL: extract prompt from variables first.
-                if isinstance(data, dict) and "variables" in data:
-                    got = _extract_from_graphql(data)
-                    if got:
-                        return got
+                if isinstance(data, dict):
+                    # Layer 3: Model Context Protocol (MCP) & JSON-RPC
+                    mcp_got = _extract_from_mcp_or_jsonrpc(data)
+                    if mcp_got:
+                        return mcp_got
+                    # Layer 5: Gradio / Hugging Face Spaces
+                    gradio_got = _extract_from_gradio(data)
+                    if gradio_got:
+                        return gradio_got
+                    # Layer 6: Streamlit AI Session
+                    st_got = _extract_from_streamlit(data)
+                    if st_got:
+                        return st_got
+                    # Layer 10: GraphQL variables
+                    if "variables" in data:
+                        got = _extract_from_graphql(data)
+                        if got:
+                            return got
+
+                # Layer 9: Deep recursive walk (12 levels, all _UNIVERSAL_PROMPT_KEYS)
                 got = _deep_extract_from_json(data)
                 if got:
                     return got
-                # ── Step 4: GraphQL inside JSON ────────────────────────────────
-                got = _extract_from_graphql(data)
-                if got:
-                    return got
-                got = _extract_from_json(data)
-                if got:
-                    return got
+                if isinstance(data, dict):
+                    got = _extract_from_graphql(data)
+                    if got:
+                        return got
+                    got = _extract_from_json(data)
+                    if got:
+                        return got
         except Exception as _json_ex:
-            # Log so new platforms with unusual encoding are visible (don't silently miss DLP).
             print(f"[Gateway Proxy DEBUG] prompt JSON extract failed ({type(_json_ex).__name__}): {_json_ex}")
 
-    # ── Step 5: URL-encoded form ───────────────────────────────────────────
+    # ── Layer 12: URL-encoded form body ────────────────────────────────────
     if (
         "urlencoded" in ct
         or "form" in ct
         or ("=" in text and "&" in text and not stripped.startswith(("{", "[", "<")))
     ):
-        got = _extract_from_urlencoded(text)
+        norm_text = urllib.parse.unquote(text) if "%25" in text else text
+        got = _extract_from_urlencoded(norm_text)
         if got:
             return got
 
-    # ── Step 6: Multipart form-data ────────────────────────────────────────
+    # ── Layer 13: Multipart form-data ───────────────────────────────────────
     if "multipart" in ct or "boundary" in ct or "webkitformboundary" in text[:400].lower():
         got = _extract_from_multipart(text)
         if got:
             return got
 
-    # ── Step 7: XML / SOAP ─────────────────────────────────────────────────
+    # ── Layer 14: XML / SOAP ────────────────────────────────────────────────
     if stripped.startswith("<") or "xml" in ct or "soap" in ct:
         got = _extract_from_xml(text)
         if got:
             return got
 
-    # ── Step 8: NDJSON / JSON Lines ───────────────────────────────────────
-    # Only when body has multiple lines and at least one looks like JSON
+    # ── Layer 15: NDJSON / JSON Lines / JSON-Seq ───────────────────────────
     if "\n" in text.strip() and not stripped.startswith(("{", "[", "<")):
         got = _extract_from_ndjson(text)
         if got:
             return got
     elif "\n" in text.strip() and stripped.startswith(("{", "[")):
-        # Could be NDJSON even if first char is JSON bracket — try it
         got = _extract_from_ndjson(text)
         if got:
             return got
 
-    # ── Step 9: Plain text body ────────────────────────────────────────────
-    # Some simple AI APIs POST raw text directly (no wrapper)
+    # ── Layer 16: Plain text body ───────────────────────────────────────────
     if (
         "text/plain" in ct
         or "text/xml" in ct
@@ -2379,9 +2673,13 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
         ):
             return cleaned
 
-    # ── Step 10: Regex last resort ─────────────────────────────────────────
-    # Partial JSON, malformed bodies, or mixed text+JSON
-    return _regex_extract_prompt_from_text(text)
+    # ── Regex last resort ──────────────────────────────────────────────────
+    regex_cand = _regex_extract_prompt_from_text(text)
+    if regex_cand:
+        return regex_cand
+
+    # ── Universal Binary Heuristic Fallback (CBOR, BSON, unknown wire) ─────
+    return _extract_from_binary_stream_heuristics(body_bytes)
 
 
 

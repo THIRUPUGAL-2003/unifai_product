@@ -2271,8 +2271,16 @@ def wait_bind_real_upload_names(
     _try_bind()
     if all(_named(e) for e in cached_list):
         return cached_list
-    for _ in range(max(1, int(retries))):
-        time.sleep(max(0.05, float(delay)))
+    # Send body already names the files (Claude/Gemini JSON) — one short retry only.
+    # Long waits made Prompt Logs feel stuck even when extract already finished.
+    send_has_names = any(
+        _is_real_user_upload_name(n)
+        for n in extract_all_attachment_filenames_from_send(raw_text or "")
+    )
+    max_retries = 2 if send_has_names else max(1, int(retries))
+    sleep_s = 0.08 if send_has_names else max(0.05, float(delay))
+    for _ in range(max_retries):
+        time.sleep(sleep_s)
         try:
             ingest_upload_filenames_from_body(raw_text or "", domain or "")
         except Exception:
@@ -2893,10 +2901,15 @@ def _resolve_upload_bind_domain(flow: http.HTTPFlow, upload_host: str) -> str:
 
 
 def remember_client_target_domain(client_ip: str, domain: str) -> None:
-    """Remember which Target Website this client is actively using (for CDN bind)."""
+    """Remember which Target Website this client is actively using (for CDN bind).
+
+    Endpoint Guard (laptop) peers are almost always 127.0.0.1 / ::1 — must keep
+    sticky so Claude/Gemini CDN uploads without Referer still bind to the chat
+    Target Website the employee just used.
+    """
     ip = (client_ip or "").strip()
     d = _normalize_domain(domain or "")
-    if not ip or not d or ip in ("-", "unknown", "127.0.0.1", "::1"):
+    if not ip or not d or ip in ("-", "unknown"):
         return
     with _CLIENT_TARGET_STICKY_LOCK:
         _CLIENT_TARGET_STICKY[ip] = (d, time.time())
