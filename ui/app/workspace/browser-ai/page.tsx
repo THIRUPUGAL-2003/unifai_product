@@ -197,13 +197,7 @@ export default function BrowserAiPage() {
 		"tab",
 		parseAsStringLiteral(BROWSER_AI_TABS).withDefault("overview"),
 	);
-	// Immediately inspect URL query param on mount to prevent flash to overview on hard reload
-	const initialUrlTab = useMemo(() => {
-		if (typeof window === "undefined") return null;
-		const raw = new URLSearchParams(window.location.search).get("tab");
-		return raw && (BROWSER_AI_TABS as readonly string[]).includes(raw) ? (raw as BrowserAiTab) : null;
-	}, []);
-	const activeTab: BrowserAiTab = tabParam === "overview" && initialUrlTab ? initialUrlTab : tabParam;
+	const activeTab: BrowserAiTab = tabParam;
 	const setActiveTab = useCallback(
 		(value: string) => {
 			const next = (BROWSER_AI_TABS as readonly string[]).includes(value)
