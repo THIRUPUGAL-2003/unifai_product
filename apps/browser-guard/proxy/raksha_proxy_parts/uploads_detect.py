@@ -5,7 +5,7 @@ import hashlib
 
 _FAKE_UPLOAD_NAMES = frozenset({
     "", "attachment", "attachment.txt", "attachment.bin", "blob", "blob.txt",
-    "null", "undefined", "unknown",
+    "null", "undefined", "unknown", "screenshot", "voice",
 })
 
 # Generic media stems are no longer blacklisted — if a user uploads screenshot.png, photo.jpg,

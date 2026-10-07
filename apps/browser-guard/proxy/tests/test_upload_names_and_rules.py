@@ -111,12 +111,15 @@ class UploadNameAndRuleTests(unittest.TestCase):
     def test_generic_screenshot_is_fake_but_real_names_are_kept(self) -> None:
         fake = NS["_is_fake_upload_name"]
         real = NS["_is_real_user_upload_name"]
-        for n in (
-            "screenshot", "screenshot.png", "Screenshot.JPG", "image.png",
-            "audio.m4a", "voice", "recording.mp3", "pasted-image.png",
-        ):
+        for n in ("screenshot", "voice", "attachment", "blob", "null", "undefined"):
             self.assertTrue(fake(n), n)
             self.assertFalse(real(n), n)
+        for n in (
+            "screenshot.png", "Screenshot.JPG", "image.png",
+            "audio.m4a", "recording.mp3", "pasted-image.png",
+        ):
+            self.assertFalse(fake(n), n)
+            self.assertTrue(real(n), n)
         # Chat/product labels must NEVER become Prompt Log filenames.
         for n in ("Raksha", "Greeting", "New chat", "Raksha Manual Overview"):
             self.assertFalse(real(n), n)
