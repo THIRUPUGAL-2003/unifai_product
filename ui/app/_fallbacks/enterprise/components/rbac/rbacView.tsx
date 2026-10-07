@@ -332,26 +332,20 @@ export default function RBACView() {
 
 			const allowed = new Set(userSections);
 			const userPermIds = new Set<number>();
+			const isViewOp = (op: string) => op === "View" || op === "Read";
 
+			// Per-user assignment is View-only (sidebar features). Edit/Delete live on the role.
 			if (userSections.length > 0) {
 				for (const p of permissions) {
+					if (!isViewOp(p.operation)) continue;
 					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
 					if (sections.some((s) => sectionGranted(allowed, s))) {
 						userPermIds.add(p.id);
 					}
 				}
-			}
-
-			if (rolePermData?.permissions) {
+			} else if (rolePermData?.permissions) {
 				for (const p of rolePermData.permissions) {
-					if (userSections.length > 0) {
-						const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
-						if (sections.length === 0 || sections.some((s) => sectionGranted(allowed, s)) || p.resource === "PromptRepository") {
-							userPermIds.add(p.id);
-						}
-					} else {
-						userPermIds.add(p.id);
-					}
+					if (isViewOp(p.operation)) userPermIds.add(p.id);
 				}
 			}
 
@@ -495,7 +489,12 @@ export default function RBACView() {
 					toast.info("Admins always have full access.");
 					return;
 				}
-				const sectionsStr = computeAllowedSections(selectedPerms);
+				// Only View/Read selections map to Workspace Access — users get view-only features.
+				const viewOnly = selectedPerms.filter((id) => {
+					const p = permissions.find((x) => x.id === id);
+					return p && (p.operation === "View" || p.operation === "Read");
+				});
+				const sectionsStr = computeAllowedSections(viewOnly);
 				await updateSessionUser({
 					id: user.id,
 					updates: {
@@ -505,7 +504,7 @@ export default function RBACView() {
 					},
 				}).unwrap();
 				setLastSyncedKey("");
-				toast.success(`Permissions and sidebar access updated for user '${user.username}'`);
+				toast.success(`View access updated for '${user.username}' — they will see these pages in the sidebar`);
 				return;
 			}
 
@@ -1070,7 +1069,17 @@ export default function RBACView() {
 					<div className="border-b bg-muted/30 px-4 py-2 text-xs flex items-center gap-2 text-muted-foreground">
 						<Info className="h-4 w-4 shrink-0 text-emerald-500" />
 						<span>
-							Permissions are simplified into 4 clear levels: <strong>View</strong> (read-only), <strong>Edit</strong> (view + create/update), <strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control).
+							{target.type === "user" && targetUser && sectionScopeApplies(targetUser.role) ? (
+								<>
+									Assigning a <strong>user</strong>: tick <strong>View</strong> only. They see those pages in the sidebar and can open them
+									read-only. Edit/Delete are controlled on the role (All Users / Roles), not per user.
+								</>
+							) : (
+								<>
+									Permissions are simplified into 4 clear levels: <strong>View</strong> (read-only), <strong>Edit</strong> (view +
+									create/update), <strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control).
+								</>
+							)}
 						</span>
 					</div>
 
@@ -1080,6 +1089,8 @@ export default function RBACView() {
 							<p className="text-muted-foreground py-8 text-center text-sm">No resources matching filter.</p>
 						) : (
 							groupedPermissions.map(([resource, perms]) => {
+								const viewOnlyUser =
+									target.type === "user" && !!targetUser && sectionScopeApplies(targetUser.role);
 								const viewPerms = perms.filter((p) => p.operation === "Read" || p.operation === "View");
 								const editPerms = perms.filter((p) => p.operation === "Create" || p.operation === "Update");
 								const deletePerms = perms.filter((p) => p.operation === "Delete");
@@ -1089,9 +1100,11 @@ export default function RBACView() {
 								const deleteIds = deletePerms.map((p) => p.id);
 
 								const isViewActive = viewIds.length > 0 && viewIds.some((id) => selectedPerms.includes(id));
-								const isEditActive = editIds.length > 0 && editIds.some((id) => selectedPerms.includes(id)) && isViewActive;
-								const isDeleteActive = deleteIds.length > 0 && deleteIds.every((id) => selectedPerms.includes(id));
-								const isFullAccessActive = allPermIds.length > 0 && allPermIds.every((id) => selectedPerms.includes(id));
+								const isEditActive =
+									!viewOnlyUser && editIds.length > 0 && editIds.some((id) => selectedPerms.includes(id)) && isViewActive;
+								const isDeleteActive = !viewOnlyUser && deleteIds.length > 0 && deleteIds.every((id) => selectedPerms.includes(id));
+								const isFullAccessActive =
+									!viewOnlyUser && allPermIds.length > 0 && allPermIds.every((id) => selectedPerms.includes(id));
 
 								const toggleView = () => {
 									if (isViewActive) {
@@ -1193,29 +1206,37 @@ export default function RBACView() {
 												{renderStatusBadge()}
 											</div>
 
-											<div className="flex items-center gap-2">
-												{isFullAccessActive ? (
-													<button
-														type="button"
-														onClick={toggleFullAccess}
-														className="text-xs text-muted-foreground hover:text-destructive transition-colors font-medium cursor-pointer"
-													>
-														Clear Access
-													</button>
-												) : (
-													<button
-														type="button"
-														onClick={toggleFullAccess}
-														className="text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold cursor-pointer"
-													>
-														Grant Full Access
-													</button>
-												)}
-											</div>
+											{!viewOnlyUser && (
+												<div className="flex items-center gap-2">
+													{isFullAccessActive ? (
+														<button
+															type="button"
+															onClick={toggleFullAccess}
+															className="text-xs text-muted-foreground hover:text-destructive transition-colors font-medium cursor-pointer"
+														>
+															Clear Access
+														</button>
+													) : (
+														<button
+															type="button"
+															onClick={toggleFullAccess}
+															className="text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold cursor-pointer"
+														>
+															Grant Full Access
+														</button>
+													)}
+												</div>
+											)}
 										</div>
 
-										{/* 4-Tier Interactive Controls */}
-										<div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+										{/* View-only for per-user; 4-tier for roles / All Users / scopes */}
+										<div
+											className={
+												viewOnlyUser
+													? "grid grid-cols-1 gap-2 pt-1 sm:max-w-xs"
+													: "grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1"
+											}
+										>
 											{/* 1. VIEW */}
 											<button
 												type="button"
@@ -1239,74 +1260,86 @@ export default function RBACView() {
 												</div>
 											</button>
 
-											{/* 2. EDIT */}
-											<button
-												type="button"
-												onClick={toggleEdit}
-												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-													isEditActive
-														? "border-blue-500/50 bg-blue-500/15 text-blue-900 dark:text-blue-200 shadow-2xs"
-														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-												}`}
-											>
-												<div className="flex items-center gap-2">
-													<Edit2 className={`h-3.5 w-3.5 ${isEditActive ? "text-blue-500" : "text-muted-foreground"}`} />
-													<span>Edit</span>
-												</div>
-												<div
-													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-														isEditActive ? "border-blue-500 bg-blue-500 text-white" : "border-muted-foreground/40 bg-background"
-													}`}
-												>
-													{isEditActive && <Check className="h-3 w-3 stroke-[3]" />}
-												</div>
-											</button>
+											{!viewOnlyUser && (
+												<>
+													{/* 2. EDIT */}
+													<button
+														type="button"
+														onClick={toggleEdit}
+														className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+															isEditActive
+																? "border-blue-500/50 bg-blue-500/15 text-blue-900 dark:text-blue-200 shadow-2xs"
+																: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+														}`}
+													>
+														<div className="flex items-center gap-2">
+															<Edit2 className={`h-3.5 w-3.5 ${isEditActive ? "text-blue-500" : "text-muted-foreground"}`} />
+															<span>Edit</span>
+														</div>
+														<div
+															className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+																isEditActive
+																	? "border-blue-500 bg-blue-500 text-white"
+																	: "border-muted-foreground/40 bg-background"
+															}`}
+														>
+															{isEditActive && <Check className="h-3 w-3 stroke-[3]" />}
+														</div>
+													</button>
 
-											{/* 3. DELETE */}
-											<button
-												type="button"
-												onClick={toggleDelete}
-												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-													isDeleteActive
-														? "border-rose-500/50 bg-rose-500/15 text-rose-900 dark:text-rose-200 shadow-2xs"
-														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-												}`}
-											>
-												<div className="flex items-center gap-2">
-													<Trash2 className={`h-3.5 w-3.5 ${isDeleteActive ? "text-rose-500" : "text-muted-foreground"}`} />
-													<span>Delete</span>
-												</div>
-												<div
-													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-														isDeleteActive ? "border-rose-500 bg-rose-500 text-white" : "border-muted-foreground/40 bg-background"
-													}`}
-												>
-													{isDeleteActive && <Check className="h-3 w-3 stroke-[3]" />}
-												</div>
-											</button>
+													{/* 3. DELETE */}
+													<button
+														type="button"
+														onClick={toggleDelete}
+														className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+															isDeleteActive
+																? "border-rose-500/50 bg-rose-500/15 text-rose-900 dark:text-rose-200 shadow-2xs"
+																: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+														}`}
+													>
+														<div className="flex items-center gap-2">
+															<Trash2 className={`h-3.5 w-3.5 ${isDeleteActive ? "text-rose-500" : "text-muted-foreground"}`} />
+															<span>Delete</span>
+														</div>
+														<div
+															className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+																isDeleteActive
+																	? "border-rose-500 bg-rose-500 text-white"
+																	: "border-muted-foreground/40 bg-background"
+															}`}
+														>
+															{isDeleteActive && <Check className="h-3 w-3 stroke-[3]" />}
+														</div>
+													</button>
 
-											{/* 4. FULL ACCESS */}
-											<button
-												type="button"
-												onClick={toggleFullAccess}
-												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
-													isFullAccessActive
-														? "border-emerald-500/60 bg-emerald-500/20 text-emerald-950 dark:text-emerald-100 shadow-2xs"
-														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-												}`}
-											>
-												<div className="flex items-center gap-2">
-													<ShieldCheck className={`h-3.5 w-3.5 ${isFullAccessActive ? "text-emerald-500" : "text-muted-foreground"}`} />
-													<span>Full Access</span>
-												</div>
-												<div
-													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-														isFullAccessActive ? "border-emerald-500 bg-emerald-500 text-white" : "border-muted-foreground/40 bg-background"
-													}`}
-												>
-													{isFullAccessActive && <Check className="h-3 w-3 stroke-[3]" />}
-												</div>
-											</button>
+													{/* 4. FULL ACCESS */}
+													<button
+														type="button"
+														onClick={toggleFullAccess}
+														className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
+															isFullAccessActive
+																? "border-emerald-500/60 bg-emerald-500/20 text-emerald-950 dark:text-emerald-100 shadow-2xs"
+																: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+														}`}
+													>
+														<div className="flex items-center gap-2">
+															<ShieldCheck
+																className={`h-3.5 w-3.5 ${isFullAccessActive ? "text-emerald-500" : "text-muted-foreground"}`}
+															/>
+															<span>Full Access</span>
+														</div>
+														<div
+															className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+																isFullAccessActive
+																	? "border-emerald-500 bg-emerald-500 text-white"
+																	: "border-muted-foreground/40 bg-background"
+															}`}
+														>
+															{isFullAccessActive && <Check className="h-3 w-3 stroke-[3]" />}
+														</div>
+													</button>
+												</>
+											)}
 										</div>
 									</div>
 								);

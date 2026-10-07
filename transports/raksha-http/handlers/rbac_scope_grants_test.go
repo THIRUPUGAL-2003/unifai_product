@@ -96,8 +96,15 @@ func TestSessionSectionsAllow_UsesOwnAndInheritedSections(t *testing.T) {
 	if sessionSectionsAllow(nil, store, "auditor", "viewer", rawLogs) {
 		t.Fatalf("dashboard section must not reach raw logs")
 	}
-	if !sessionSectionsAllow(nil, store, "admin", "viewer", rawLogs) || !sessionSectionsAllow(nil, store, "user", "viewer", rawLogs) {
-		t.Fatalf("admin and the built-in user role are not section-scoped")
+	if !sessionSectionsAllow(nil, store, "admin", "viewer", rawLogs) {
+		t.Fatalf("admin must not be section-scoped")
+	}
+	// Built-in user role is section-scoped: this viewer only has observability/dashboard.
+	if sessionSectionsAllow(nil, store, "user", "viewer", rawLogs) {
+		t.Fatalf("built-in user role must honor allowed_sections (llm-logs not granted)")
+	}
+	if !sessionSectionsAllow(nil, store, "user", "viewer", charts) {
+		t.Fatalf("built-in user role must allow their granted dashboard section")
 	}
 	if sessionSectionsAllow(nil, store, "auditor", "ghost", charts) {
 		t.Fatalf("an unknown user must not pass the section check")

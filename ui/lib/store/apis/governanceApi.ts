@@ -53,7 +53,7 @@ type PricingOverrideQueryArgs = {
 	search?: string;
 };
 
-export type VirtualKeyBillingBlock = { scope: "team" | "customer"; name: string };
+export type VirtualKeyBillingBlock = { scope: "vk" | "team" | "customer"; name: string };
 
 export type VirtualKeyBillingBlocksResponse = { blocks: Record<string, VirtualKeyBillingBlock> };
 

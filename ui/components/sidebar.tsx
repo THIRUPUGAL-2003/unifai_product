@@ -1497,11 +1497,30 @@ export default function AppSidebar() {
 					</button>
 				</div>
 				{/* Collapsed state: vertical layout */}
-				<div
-					className="hidden w-full cursor-pointer flex-col items-center gap-2 py-2 group-data-[collapsible=icon]:flex"
-					onClick={toggleSidebar}
-				>
-					<img className="h-7 w-auto max-w-[28px] object-contain" src={iconSrc} alt={branding.companyShortName} width={28} height={28} />
+				<div className="hidden w-full flex-col items-center gap-2 py-2 group-data-[collapsible=icon]:flex">
+					<button type="button" className="cursor-pointer" onClick={toggleSidebar} aria-label="Expand sidebar">
+						<img className="h-7 w-auto max-w-[28px] object-contain" src={iconSrc} alt={branding.companyShortName} width={28} height={28} />
+					</button>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<button
+								type="button"
+								data-testid="sidebar-search-collapsed-btn"
+								aria-label="Search navigation"
+								className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+								onClick={(e) => {
+									e.stopPropagation();
+									if (sidebarState === "collapsed") {
+										toggleSidebar();
+									}
+									requestAnimationFrame(() => searchInputRef.current?.focus());
+								}}
+							>
+								<Search className="h-3.5 w-3.5" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent side="right">Search (⌘K)</TooltipContent>
+					</Tooltip>
 				</div>
 			</SidebarHeader>
 			{envLabel && (
@@ -1535,8 +1554,9 @@ export default function AppSidebar() {
 						data-1p-ignore="true"
 						data-lpignore="true"
 						data-form-type="other"
+						data-testid="sidebar-nav-search"
 						aria-label="Search sidebar navigation"
-						placeholder="Search..."
+						placeholder="Search pages..."
 						value={searchQuery}
 						onChange={(e) => {
 							// Browser password managers ignore autoComplete="off" and may inject a saved
@@ -1546,7 +1566,7 @@ export default function AppSidebar() {
 							setFocusedIndex(-1);
 						}}
 						onKeyDown={handleSearchKeyDown}
-						className="border-input text-foreground placeholder:text-shadow-muted-foreground focus:ring-ring h-8 w-full rounded-sm border bg-transparent pr-14 pl-8 text-sm outline-none focus:bg-transparent"
+						className="border-input text-foreground placeholder:text-muted-foreground focus:ring-ring h-8 w-full rounded-sm border bg-transparent pr-14 pl-8 text-sm outline-none focus:bg-transparent"
 					/>
 					<kbd className="text-muted-foreground pointer-events-none absolute top-1/2 right-2 flex -translate-y-1/2 gap-0.5 text-[10px]">
 						<span className="border-border bg-muted rounded-sm px-1 font-mono shadow-sm">⌘</span>

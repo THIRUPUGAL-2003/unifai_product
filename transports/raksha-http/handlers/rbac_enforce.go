@@ -108,11 +108,12 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 	}
 }
 
-// sessionSectionsAllow applies the sidebar section grants to the API for the roles the UI
-// scopes (sub_admin and custom roles). Admin and the built-in "user" role are not scoped.
+// sessionSectionsAllow applies sidebar / Workspace Access section grants to the API.
+// Admin is unrestricted. Built-in "user", sub_admin, and custom roles are scoped so a
+// user only reaches the features assigned to them (view via RBAC + section grant).
 func sessionSectionsAllow(ctx context.Context, store configstore.ConfigStore, role, username string, required []string) bool {
 	r := strings.ToLower(strings.TrimSpace(role))
-	if r == "" || r == "admin" || r == "user" {
+	if r == "" || r == "admin" {
 		return true
 	}
 	if username == "" {
@@ -122,7 +123,12 @@ func sessionSectionsAllow(ctx context.Context, store configstore.ConfigStore, ro
 	if err != nil || user == nil {
 		return false
 	}
-	return rbac.SectionsAllow(effectiveAllowedSections(ctx, store, user), required)
+	granted := effectiveAllowedSections(ctx, store, user)
+	// Empty grants: prompt-repository only (matches UI workspaceAccess for role=user).
+	if strings.TrimSpace(granted) == "" && r == "user" {
+		granted = "prompt-repository"
+	}
+	return rbac.SectionsAllow(granted, required)
 }
 
 func sessionToken(ctx *fasthttp.RequestCtx) string {

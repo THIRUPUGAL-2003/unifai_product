@@ -110,7 +110,8 @@ func sanitizeSectionList(list string) (string, bool) {
 
 // effectiveAllowedSections is the user's own allowed_sections plus the sections granted
 // to their teams, those teams' customers, and the all-teams / all-customers policies.
-// Admin and the built-in "user" role are not section-scoped, so they are returned as-is.
+// Admin is unrestricted (caller skips section checks). All other roles merge own
+// allowed_sections with team/customer scope grants.
 func effectiveAllowedSections(ctx context.Context, store configstore.ConfigStore, user *tables.TableUser) string {
 	if user == nil {
 		return ""

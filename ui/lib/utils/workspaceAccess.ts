@@ -78,9 +78,9 @@ export function isPublicWorkspacePath(pathname: string): boolean {
 /**
  * Section grants that apply to this session, or null for "no section filter".
  * Admins (and sessions without a role, e.g. auth disabled) are unrestricted.
- * The built-in "user" role is server-locked to Prompt Repository (any other /api
- * path is rejected), so its stored allowed_sections are ignored here.
- * Every other role sees only the sections it was granted — none by default.
+ * Built-in "user" sees granted Workspace Access sections (plus Prompt Repository);
+ * with no grants they only get Prompt Repository. sub_admin / custom roles use
+ * their allowed_sections only.
  */
 export function getScopedWorkspaceSections(
 	auth: Pick<SessionAuth, "role" | "allowed_sections"> | null | undefined,

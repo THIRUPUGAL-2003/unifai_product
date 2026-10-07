@@ -220,11 +220,11 @@ func (s *RDBConfigStore) EnsureRBACRoles(ctx context.Context) error {
 	subAdminIDs := make([]uint, 0)
 	for _, perm := range RBACPermissions() {
 		allIDs = append(allIDs, perm.ID)
+		// Built-in "user" role: View/Read on every resource so Workspace Access sections
+		// (Users page / Roles & Permissions) can show in the sidebar and open read-only.
+		// Mutations stay blocked — Create/Update/Delete are not granted here.
 		if perm.Operation == "View" || perm.Operation == "Read" {
-			switch perm.Resource {
-			case "Dashboard", "Logs", "Inference", "PromptRepository", "Observability", "MCPGateway", "VirtualKeys", "ModelProvider", "RoutingRules", "CircuitBreaker", "GuardrailsConfig", "GuardrailsProviders", "Cluster", "Settings", "Governance", "AuditLogs", "AdaptiveRouter", "Plugins", "SkillsRepository", "MCPToolGroups":
-				readIDs = append(readIDs, perm.ID)
-			}
+			readIDs = append(readIDs, perm.ID)
 		}
 
 		// Sub-Admin permissions:

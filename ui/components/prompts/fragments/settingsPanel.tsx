@@ -207,15 +207,18 @@ export function SettingsPanel() {
 	// Members start from their assigned key: it sets the provider and limits Model to the key's models.
 	const keyFirst = isMemberOnly && providerVirtualKeys.length > 0;
 	const showKeySelector = (providerKeys.length > 0 || providerVirtualKeys.length > 0) && (keyFirst || !!provider);
-	const keySelector = showKeySelector ? (
-		<ApiKeySelectorView
-			providerKeys={providerKeys}
-			virtualKeys={providerVirtualKeys}
-			value={apiKeyId}
-			onValueChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
-			disabled={!keyFirst && !provider}
-		/>
-	) : null;
+	// Members always get the budget strip (user budget always; VK meters only when a key is assigned).
+	const showMemberBudgetStrip = isMemberOnly;
+	const keySelector =
+		showKeySelector || showMemberBudgetStrip ? (
+			<ApiKeySelectorView
+				providerKeys={providerKeys}
+				virtualKeys={providerVirtualKeys}
+				value={apiKeyId}
+				onValueChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
+				disabled={!keyFirst && !provider && showKeySelector}
+			/>
+		) : null;
 
 	type SettingsSection = "parameters" | "deployments";
 	const [openSection, setOpenSection] = useState<SettingsSection | undefined>("parameters");
@@ -268,7 +271,7 @@ export function SettingsPanel() {
 							className="min-h-0 flex-1 overflow-y-auto pt-0 pb-2"
 						>
 							<div className="space-y-6">
-								{keyFirst && keySelector}
+								{(keyFirst || (showMemberBudgetStrip && !showKeySelector)) && keySelector}
 								<div className="flex flex-col gap-2" data-testid="settings-provider">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
 									<ComboboxSelect
@@ -297,7 +300,7 @@ export function SettingsPanel() {
 									/>
 								</div>
 
-								{!keyFirst && keySelector}
+								{!keyFirst && showKeySelector && keySelector}
 								{isMemberOnly && providerVirtualKeys.length === 0 && (
 									<p className="text-amber-600 text-xs" data-testid="settings-no-member-key">
 										No virtual key is available to you yet. Ask your admin to assign one to you, your team or your customer.

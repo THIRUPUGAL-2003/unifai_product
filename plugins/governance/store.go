@@ -2949,7 +2949,9 @@ func vkCustomerIDs(vk *configstoreTables.TableVirtualKey) []string {
 
 // billedTeamID returns the single team a VK request is attributed to. Linking a key to several
 // teams shares the key between them; it must not multiply the cost of one request. The first
-// VK team the requesting user is a member of wins, otherwise the VK's primary team.
+// VK team the requesting user is a member of wins. When the user is known but not on any of
+// the VK's teams (user-only key, or foreign team), do not bill a team. Without membership
+// context (raw API bearer), fall back to the VK's primary team.
 func billedTeamID(ctx context.Context, vk *configstoreTables.TableVirtualKey) string {
 	teams := vkTeamIDs(vk)
 	if len(teams) == 0 {
@@ -2962,6 +2964,7 @@ func billedTeamID(ctx context.Context, vk *configstoreTables.TableVirtualKey) st
 					return tid
 				}
 			}
+			return ""
 		}
 	}
 	return teams[0]
@@ -3074,9 +3077,9 @@ func (gs *LocalGovernanceStore) BilledEntities(ctx context.Context, vk *configst
 	return teamID, gs.billedCustomerIDs(ctx, vk, teamID)
 }
 
-// ExhaustedBilledEntity reports the billed team or customer whose budget is used up when a member
-// of userTeamIDs calls vk, as ("team"|"customer", name), or empty strings when the key is usable.
-// It mirrors the pre-request team/customer budget checks so the UI can steer users to another key.
+// ExhaustedBilledEntity reports the VK / team / customer whose budget is used up when a member
+// of userTeamIDs calls vk, as ("vk"|"team"|"customer", name), or empty strings when the key is usable.
+// Order matches pre-request checks: VK first, then team, then customer.
 func (gs *LocalGovernanceStore) ExhaustedBilledEntity(ctx context.Context, vk *configstoreTables.TableVirtualKey, userTeamIDs []string) (string, string) {
 	if vk == nil {
 		return "", ""
@@ -3085,6 +3088,9 @@ func (gs *LocalGovernanceStore) ExhaustedBilledEntity(ctx context.Context, vk *c
 		ctx = context.Background()
 	}
 	ctx = context.WithValue(ctx, governanceUserTeamIDsContextKey, userTeamIDs)
+	if gs.anyBudgetExhausted(vk.Budgets) {
+		return "vk", vk.Name
+	}
 	teamID, customers := gs.BilledEntities(ctx, vk)
 	if teamID != "" {
 		if v, ok := gs.teams.Load(teamID); ok && v != nil {

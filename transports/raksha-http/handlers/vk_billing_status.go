@@ -14,8 +14,8 @@ type exhaustedBilledEntityResolver interface {
 }
 
 // getVirtualKeyBillingBlocks handles GET /api/governance/virtual-keys/billing-blocks.
-// For the signed-in user it lists usable-looking keys that governance would still reject
-// because the team or customer they bill has used up its budget, so the UI can offer another key.
+// For the signed-in user it lists keys governance would reject because the VK, team, or
+// customer budget is used up, so the UI can steer them to another key or wait for admin reset.
 func (h *GovernanceHandler) getVirtualKeyBillingBlocks(ctx *fasthttp.RequestCtx) {
 	blocks := map[string]map[string]string{}
 	resolver, ok := h.governanceManager.(exhaustedBilledEntityResolver)

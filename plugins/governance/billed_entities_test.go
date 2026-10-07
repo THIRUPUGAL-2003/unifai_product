@@ -11,6 +11,87 @@ import (
 
 func strPtr(s string) *string { return &s }
 
+func TestUserOnlyKeyChargesUserAndVKOnly(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-dev"}})
+	gs.teams.Store("team-dev", &configstoreTables.TableTeam{
+		ID: "team-dev", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	// Direct user assignment only — no team / customer links on the VK.
+	vk := &configstoreTables.TableVirtualKey{
+		ID:      "vk-user",
+		Budgets: []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-user", vk)
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-user", UserID: "user-1", Success: true, Cost: 5,
+		UserTeamIDs: []string{"team-dev"},
+	})
+
+	want := map[string]float64{"b-user": 5, "b-vk": 5, "b-team": 0, "b-cust": 0}
+	for id, expected := range want {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != expected {
+			t.Errorf("budget %s usage = %v, want %v", id, got, expected)
+		}
+	}
+}
+
+func TestTeamOnlyKeyChargesTeamUserAndVKNotCustomer(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-dev"}})
+	gs.teams.Store("team-dev", &configstoreTables.TableTeam{
+		ID: "team-dev", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID:      "vk-team",
+		TeamID:  strPtr("team-dev"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-team", vk)
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-team", UserID: "user-1", Success: true, Cost: 5,
+		UserTeamIDs: []string{"team-dev"},
+	})
+
+	want := map[string]float64{"b-user": 5, "b-vk": 5, "b-team": 5, "b-cust": 0}
+	for id, expected := range want {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != expected {
+			t.Errorf("budget %s usage = %v, want %v", id, got, expected)
+		}
+	}
+}
+
+func TestBilledTeamIDDoesNotBillForeignTeamWhenUserKnown(t *testing.T) {
+	vk := &configstoreTables.TableVirtualKey{ID: "vk-multi", TeamIDs: []string{"team-a", "team-b"}}
+	ctx := context.WithValue(context.Background(), governanceUserTeamIDsContextKey, []string{"team-other"})
+	if got := billedTeamID(ctx, vk); got != "" {
+		t.Fatalf("billedTeamID = %q, want empty when user is not on any VK team", got)
+	}
+	if got := billedTeamID(context.Background(), vk); got != "team-a" {
+		t.Fatalf("billedTeamID without membership = %q, want team-a", got)
+	}
+}
+
 func TestTeamOnlyKeyDoesNotBillParentCustomer(t *testing.T) {
 	gs := &LocalGovernanceStore{}
 	gs.teams.Store("team-dev", &configstoreTables.TableTeam{ID: "team-dev", CustomerID: strPtr("cust-bank")})
@@ -157,6 +238,15 @@ func TestExhaustedBilledEntity(t *testing.T) {
 	directKey := &configstoreTables.TableVirtualKey{ID: "vk-direct"}
 	if scope, _ := gs.ExhaustedBilledEntity(context.Background(), directKey, []string{"team-dev"}); scope != "" {
 		t.Fatalf("direct key billed to no team/customer blocked by %q", scope)
+	}
+
+	gs.budgets.Store("b-vk", &configstoreTables.TableBudget{ID: "b-vk", MaxLimit: 5, CurrentUsage: 5, ResetDuration: "1M", LastReset: now})
+	spentVK := &configstoreTables.TableVirtualKey{
+		ID: "vk-spent", Name: "SpentKey",
+		Budgets: []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	if scope, name := gs.ExhaustedBilledEntity(context.Background(), spentVK, []string{"team-qa"}); scope != "vk" || name != "SpentKey" {
+		t.Fatalf("spent VK budget = %q/%q, want vk/SpentKey", scope, name)
 	}
 }
 

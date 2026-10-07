@@ -52,7 +52,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
-import { Info, Lock, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { Info, Lock, RotateCcw, Search, Trash2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FieldErrors, useForm } from "react-hook-form";
 import { components, MultiValueProps, OptionProps } from "react-select";
@@ -279,6 +279,12 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 
 	const availableKeys = keysData || [];
 	const availableProviders = providersData || [];
+	const sheetSearchQuery = sheetSearch.trim().toLowerCase();
+	const providerMatchesSearch = (providerName: string) => {
+		if (!sheetSearchQuery) return true;
+		const label = ProviderLabels[providerName as ProviderName] || providerName;
+		return providerName.toLowerCase().includes(sheetSearchQuery) || label.toLowerCase().includes(sheetSearchQuery);
+	};
 
 	// Form setup
 	const form = useForm<z.input<typeof formSchema>, unknown, FormData>({
@@ -449,6 +455,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 
 	// Provider configuration state
 	const [selectedProvider, setSelectedProvider] = useState<string>("");
+	const [sheetSearch, setSheetSearch] = useState("");
 
 	// MCP client configuration state
 	const [selectedMCPClient, setSelectedMCPClient] = useState<string>("");
@@ -491,9 +498,9 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 		const newConfig = {
 			provider: provider,
 			weight: undefined as number | undefined, // undefined = excluded from weighted routing until user sets a weight
-			allowed_models: ["*"],
-			blacklisted_models: [],
-			key_ids: ["*"],
+			allowed_models: [] as string[],
+			blacklisted_models: [] as string[],
+			key_ids: [] as string[],
 		};
 
 		form.setValue("providerConfigs", [...providerConfigs, newConfig], {
@@ -986,6 +993,18 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 							</>
 						) : null}
 					</SheetDescription>
+					<div className="relative mt-3 w-full">
+						<Search className="text-muted-foreground absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
+						<Input
+							type="search"
+							value={sheetSearch}
+							onChange={(e) => setSheetSearch(e.target.value)}
+							placeholder="Search providers in this key..."
+							className="h-8 pl-8"
+							data-testid="vk-sheet-search"
+							aria-label="Search providers on this virtual key"
+						/>
+					</div>
 				</SheetHeader>
 
 				<Form {...form}>
@@ -1233,13 +1252,10 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 																				<ModelMultiselect
 																					data-testid={`vk-models-multiselect-${index}`}
 																					provider={config.provider}
-																					keys={(() => {
-																						const providerKeys = availableKeys.filter((key) => key.provider === config.provider);
-																						const configKeyIds = config.key_ids || [];
-																						return configKeyIds.includes("*")
-																							? providerKeys.map((key) => key.key_id)
-																							: providerKeys.filter((key) => configKeyIds.includes(key.key_id)).map((key) => key.key_id);
-																					})()}
+																					keys={availableKeys
+																						.filter((key) => key.provider === config.provider)
+																						.map((key) => key.key_id)}
+																					unfiltered
 																					allowAllOption={true}
 																					value={hasWildcardModels ? ["*"] : config.allowed_models || []}
 																					onChange={(models: string[]) => {
@@ -1261,7 +1277,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 																						hasWildcardModels
 																							? "All models allowed"
 																							: (config.allowed_models || []).length === 0
-																								? "No models (deny all)"
+																								? "Choose models for this key"
 																								: config.provider
 																									? ModelPlaceholders[config.provider as keyof typeof ModelPlaceholders] ||
 																										ModelPlaceholders.default
@@ -1272,7 +1288,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 																			);
 																		})()}
 																		<p className="text-muted-foreground text-xs">
-																			Select specific models or choose “Allow All Models” to allow all. Leave empty to deny all.
+																			Users with this VK only see these models. Leave empty to deny all, or choose “Allow All Models”.
 																		</p>
 																	</div>
 																</div>
@@ -1383,7 +1399,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 																		<div className="mx-0.5 space-y-2">
 																			<Label className="text-sm font-medium">Allowed Keys</Label>
 																			<p className="text-muted-foreground text-xs">
-																				Select specific keys or allow all. Leave empty to block all keys for this provider.
+																				Select specific keys or allow all. Leave empty to assign none for this provider.
 																			</p>
 																			<AsyncMultiSelect
 																				hideSelectedOptions
