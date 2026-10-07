@@ -12,9 +12,17 @@ PROXY = ROOT / "proxy" / "browser_ai_proxy.py"
 PROXY_PARTS = ROOT / "proxy" / "raksha_proxy_parts"
 CONFIG = ROOT / "config" / "raksha_guard_config.json"
 
+# Auto-encrypt proxy engine bundle before packaging (zero plain-text code leak)
+import sys
+sys.path.insert(0, str(PROXY_PARTS))
+import bundle_crypto
+bundle_crypto.encrypt_parts_bundle(PROXY_PARTS, PROXY_PARTS / "raksha_proxy_parts.enc")
+
 datas = [
     (str(PROXY), "."),
-    (str(PROXY_PARTS), "raksha_proxy_parts"),
+    (str(PROXY_PARTS / "raksha_proxy_parts.enc"), "raksha_proxy_parts"),
+    (str(PROXY_PARTS / "bundle_crypto.py"), "raksha_proxy_parts"),
+    (str(PROXY_PARTS / "MANIFEST.txt"), "raksha_proxy_parts"),
     (str(CONFIG), "."),
 ]
 binaries = []

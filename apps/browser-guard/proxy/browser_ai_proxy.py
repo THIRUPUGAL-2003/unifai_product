@@ -45,6 +45,41 @@ def _parts_dir() -> Path:
 
 def _load_parts() -> None:
     parts = _parts_dir()
+    ns = globals()
+
+    # 1. Prefer encrypted bundle if present (Production / Client build - zero plain text code)
+    enc_path = parts / "raksha_proxy_parts.enc"
+    if not enc_path.is_file():
+        enc_path = parts.parent / "raksha_proxy_parts.enc"
+
+    if enc_path.is_file():
+        try:
+            sys.path.insert(0, str(parts))
+            import bundle_crypto
+            code_map = bundle_crypto.decrypt_parts_bundle(enc_path)
+
+            manifest = parts / "MANIFEST.txt"
+            if manifest.is_file():
+                order = [
+                    ln.strip().lstrip("\ufeff")
+                    for ln in manifest.read_text(encoding="utf-8-sig").splitlines()
+                    if ln.strip().lstrip("\ufeff") and not ln.strip().startswith("#")
+                ]
+            else:
+                order = sorted(code_map.keys())
+
+            loaded_count = 0
+            for name in order:
+                if name in code_map:
+                    exec(code_map[name], ns)
+                    loaded_count += 1
+
+            print(f"[Raksha Proxy] Secure in-memory bundle loaded: {loaded_count} encrypted parts active (zero disk leak).")
+            return
+        except Exception as e:
+            print(f"[Raksha Proxy WARNING] Failed to load encrypted bundle: {e}, attempting source fallback...")
+
+    # 2. Source fallback (Development / unit testing)
     manifest = parts / "MANIFEST.txt"
     if manifest.is_file():
         names = [
@@ -53,15 +88,15 @@ def _load_parts() -> None:
             if ln.strip().lstrip("\ufeff")
         ]
     else:
-        names = sorted(p.name for p in parts.glob("*.py") if not p.name.startswith("_"))
+        names = sorted(p.name for p in parts.glob("*.py") if not p.name.startswith("_") and p.name != "bundle_crypto.py")
     if not names:
         raise RuntimeError(f"No proxy parts found in {parts}")
 
-    ns = globals()
     for name in names:
         path = parts / name
-        code = path.read_text(encoding="utf-8")
-        exec(compile(code, str(path), "exec"), ns)
+        if path.is_file():
+            code = path.read_text(encoding="utf-8")
+            exec(compile(code, str(path), "exec"), ns)
 
 
 _load_parts()

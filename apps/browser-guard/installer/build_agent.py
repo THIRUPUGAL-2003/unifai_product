@@ -46,7 +46,39 @@ def build_windows() -> Path:
     return exe
 
 
+def strip_plain_text_sources_from_bundle(app_path: Path) -> None:
+    """Ensure release bundle contains ONLY the encrypted container, removing plain text .py files."""
+    enc_src = ROOT / "proxy" / "raksha_proxy_parts" / "raksha_proxy_parts.enc"
+    if not enc_src.is_file():
+        return
+
+    # Check Frameworks, Resources, and app root
+    for base in [app_path / "Contents" / "Frameworks", app_path / "Contents" / "Resources", app_path]:
+        parts_target = base / "raksha_proxy_parts"
+        if parts_target.is_dir():
+            shutil.copy2(enc_src, parts_target / "raksha_proxy_parts.enc")
+            # Strip all plain text source files
+            for py_name in [
+                "config_caches_rules.py",
+                "helpers_prompts.py",
+                "uploads_detect.py",
+                "file_policy.py",
+                "extract_office_backend.py",
+                "responses_inject.py",
+                "responses_addon.py",
+            ]:
+                target_py = parts_target / py_name
+                if target_py.is_file():
+                    target_py.unlink()
+                    print(f"  [Security] Stripped plain text source from bundle: {py_name}")
+
+
 def build_macos() -> Path:
+    # Ensure proxy parts are encrypted before packaging
+    enc_script = ROOT / "installer" / "encrypt_proxy_bundle.py"
+    if enc_script.is_file():
+        subprocess.run([sys.executable, str(enc_script)], check=True)
+
     spec = ROOT / "Raksha_Guard.macos.spec"
     if not spec.is_file():
         raise SystemExit(f"Missing {spec}")
@@ -55,6 +87,8 @@ def build_macos() -> Path:
     if not app.is_dir():
         raise SystemExit(f"Expected {app} after PyInstaller")
     copy_config_into_app(app)
+    strip_plain_text_sources_from_bundle(app)
+
     RELEASE.mkdir(parents=True, exist_ok=True)
     release_app = RELEASE / "Raksha_Guard.app"
     if release_app.exists():
@@ -62,6 +96,7 @@ def build_macos() -> Path:
             subprocess.run(["chflags", "-R", "nouchg", str(release_app)], check=False)
         shutil.rmtree(release_app)
     shutil.copytree(app, release_app, symlinks=True)
+    strip_plain_text_sources_from_bundle(release_app)
     return release_app
 
 
