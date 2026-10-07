@@ -41,7 +41,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "autostart"; Description: "Start Raksha Guard automatically at Windows login (recommended)"; Flags: checkedonce
 
 [Files]
-Source: "staging\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "staging\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs restartreplace
 ; Browser AI → Setup → Build now ships a server-fresh config next to Setup.exe; it wins over the compiled-in one.
 Source: "{src}\raksha_guard_config.json"; DestDir: "{app}"; Flags: external skipifsourcedoesntexist ignoreversion
 
