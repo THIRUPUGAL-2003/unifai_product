@@ -394,6 +394,7 @@ def looks_like_user_prompt(text: str) -> bool:
         or "/contrib service" in t
         or (t.startswith('{"type":"action"') and "_dd" in t)
         or (t.startswith("{") and '"_dd":' in t)
+        or bool(re.match(r'^\d+(?:/[^,]*,\s*)?[\[\{]', t))
     ):
         return False
     if any(rpc in t for rpc in ("xyhAld", "umJEY", "k06x8e", "wrb.fr", "batchexecute", "GmailHttp")):
@@ -2029,11 +2030,19 @@ def extract_prompt_from_query_string(url: str) -> str | None:
             vals = qs.get(key) or qs.get(key.lower())
             if vals and isinstance(vals[0], str):
                 raw_val = vals[0]
-                if "%25" in raw_val:
+                if "%" in raw_val:
                     raw_val = urllib.parse.unquote(raw_val)
                 got = _prompt_from_json_string(raw_val) or _clean_prompt_text(raw_val)
                 if got and looks_like_user_prompt(got):
                     return got
+        for k, vals in qs.items():
+            for raw_val in vals:
+                if "%" in raw_val:
+                    raw_val = urllib.parse.unquote(raw_val)
+                if raw_val.strip().startswith(("{", "[")):
+                    got = _prompt_from_json_string(raw_val)
+                    if got and looks_like_user_prompt(got):
+                        return got
     except Exception:
         pass
     return None
@@ -2134,8 +2143,12 @@ def _is_claude_wire_noise(s: str) -> bool:
         "change", "input", "submit", "ack", "sync",
     ):
         return True
-    # Filenames embedded in protobuf (not user chat prompts)
-    if _looks_like_filename_only(t) or _POSITIONAL_NAME_RE.match(t):
+    # Filenames embedded in protobuf (not user chat prompts).
+    # Do NOT treat full sentences that merely end with .pdf/.txt as filenames —
+    # e.g. "Please review quarterly_report.pdf" is a real Claude caption.
+    if _looks_like_filename_only(t):
+        return True
+    if " " not in t and "\n" not in t and _POSITIONAL_NAME_RE.match(t):
         return True
     # Document body dumps from attached files
     if _looks_like_document_body_dump(t):
@@ -2364,6 +2377,7 @@ def _extract_from_gradio(data: dict) -> str | None:
     if not isinstance(data, dict) or "data" not in data or not isinstance(data["data"], list):
         return None
     items = data["data"]
+    candidates = []
     for item in items:
         if isinstance(item, str):
             s = item.strip()
@@ -2373,11 +2387,15 @@ def _extract_from_gradio(data: dict) -> str | None:
                 and not _is_opaque_wire_blob(s)
                 and not _is_clear_protocol_junk(s)
             ):
-                return _clean_prompt_text(s)
+                cand = _clean_prompt_text(s)
+                if cand:
+                    candidates.append(cand)
         elif isinstance(item, dict):
             got = _deep_extract_from_json(item)
             if got:
-                return got
+                candidates.append(got)
+    if candidates:
+        return _pick_best_user_text(candidates) or candidates[0]
     return None
 
 
@@ -2519,6 +2537,12 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
       15. NDJSON / JSON Lines / JSON-Seq (RFC 7464, Ollama, vLLM, TGI streaming)
       16. Plain Text & Universal Binary Heuristic Fallback (Raw text, regex, UTF-8 scanner)
     """
+    # ── Layer 8: URL query string (check FIRST for GET requests) ────────────
+    if url:
+        got = extract_prompt_from_query_string(url)
+        if got:
+            return got
+
     if not body_bytes:
         return None
 
@@ -2534,24 +2558,6 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
         mp_prompt = _extract_from_msgpack(body_bytes)
         if mp_prompt:
             return mp_prompt
-
-    # ── Layer 4: Platform-specific parsers (most accurate for known shapes) ─
-    got = extract_prompt(body_bytes, content_type, host=host)
-    if got:
-        got_s = (got or "").strip()
-        if (
-            got_s
-            and not got_s.startswith("<")
-            and "webkitformboundary" not in got_s.lower()[:80]
-            and not _is_clear_protocol_junk(got_s)
-        ):
-            return got
-
-    # ── Layer 8: URL query string ───────────────────────────────────────────
-    if url:
-        got = extract_prompt_from_query_string(url)
-        if got:
-            return got
 
     try:
         text = body_bytes.decode("utf-8", errors="ignore")
@@ -2575,6 +2581,51 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
         sio_prompt = _extract_from_socketio(stripped)
         if sio_prompt:
             return sio_prompt
+
+    # ── Layer 5: Gradio / Hugging Face Spaces (check before generic JSON walk) ─
+    if stripped.startswith("{") and '"data"' in stripped:
+        try:
+            g_data = json.loads(text)
+            if isinstance(g_data, dict) and "data" in g_data and isinstance(g_data["data"], list):
+                g_got = _extract_from_gradio(g_data)
+                if g_got:
+                    return g_got
+        except Exception:
+            pass
+
+    # ── Layer 3: Model Context Protocol (MCP) & JSON-RPC 2.0 ───────────────
+    if stripped.startswith("{") and ('"jsonrpc"' in stripped or '"method"' in stripped):
+        try:
+            mcp_data = json.loads(text)
+            if isinstance(mcp_data, dict):
+                mcp_got = _extract_from_mcp_or_jsonrpc(mcp_data)
+                if mcp_got:
+                    return mcp_got
+        except Exception:
+            pass
+
+    # ── Layer 6: Streamlit AI Session ──────────────────────────────────────
+    if stripped.startswith("{") and ('"backMsg"' in stripped or '"widgetStates"' in stripped):
+        try:
+            st_data = json.loads(text)
+            if isinstance(st_data, dict):
+                st_got = _extract_from_streamlit(st_data)
+                if st_got:
+                    return st_got
+        except Exception:
+            pass
+
+    # ── Layer 4: Platform-specific parsers (most accurate for known shapes) ─
+    got = extract_prompt(body_bytes, content_type, host=host)
+    if got:
+        got_s = (got or "").strip()
+        if (
+            got_s
+            and not got_s.startswith("<")
+            and "webkitformboundary" not in got_s.lower()[:80]
+            and not _is_clear_protocol_junk(got_s)
+        ):
+            return got
 
     # ── Layer 7: Base64 & Data URLs ─────────────────────────────────────────
     if stripped.startswith("data:") or (len(stripped) >= 16 and re.match(r'^[A-Za-z0-9+/=]{16,}$', stripped.strip())):

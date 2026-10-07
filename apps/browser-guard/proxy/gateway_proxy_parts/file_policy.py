@@ -1322,7 +1322,10 @@ def _extract_pdf_pymupdf_ocr(data: bytes, max_pages: int = 10) -> str:
     if not data:
         return ""
     try:
-        import fitz  # pymupdf
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
     except ImportError:
         return ""
     parts: list[str] = []

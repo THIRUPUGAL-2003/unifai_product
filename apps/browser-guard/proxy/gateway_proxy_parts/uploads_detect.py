@@ -2187,7 +2187,11 @@ def _is_finished_user_file_send(
             r'|"session_id"'
             r'|"sessionid"'
             r'|"inputs"'
-            r'|"model"',
+            r'|"model"'
+            r'|"parent_message_uuid"'
+            r'|"parentmessageuuid"'
+            r'|"rendering_mode"'
+            r'|"prompt"\s*:\s*"',
             low,
         ))
         if userish and (

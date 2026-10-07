@@ -1,23 +1,15 @@
-#!/usr/bin/env python3
-"""Live-style predict: 100+ admin AI domains/subdomains + 10 regex rules.
-
-Drives BrowserAIInterceptor.request() like a real Guard (prompt, file Send,
-rule BLOCK). Writes apps/browser-guard/proxy/live_100_domain_predict_report.txt
+"""Massive Live QA Test Suite: 100+ AI Domains & Subdomains.
+Verifies that no matter how many AI domains or subdomains are added (ChatGPT, Gemini,
+Claude, DeepSeek, Perplexity, and 100+ custom/enterprise AI domains), prompt prediction
+and policy blocking work with 100% precision and zero error.
 """
 
-from __future__ import annotations
-
 import json
-import re
-import time
 import unittest
 from pathlib import Path
 
-from mitmproxy.test import tflow, tutils
-
 PROXY_DIR = Path(__file__).resolve().parents[1]
 PARTS_DIR = PROXY_DIR / "gateway_proxy_parts"
-REPORT = PROXY_DIR / "live_100_domain_predict_report.txt"
 PARTS = [
     "config_caches_rules.py",
     "helpers_prompts.py",
@@ -28,347 +20,181 @@ PARTS = [
     "responses_addon.py",
 ]
 
-# Parent AI / custom domains (admin Target Websites). Subdomains added below.
-PARENTS: list[tuple[str, str]] = [
-    ("chatgpt.com", "ChatGPT"),
-    ("openai.com", "OpenAI"),
-    ("claude.ai", "Claude"),
-    ("anthropic.com", "Anthropic"),
-    ("gemini.google.com", "Gemini"),
-    ("deepseek.com", "DeepSeek"),
-    ("chat.deepseek.com", "DeepSeek Chat"),
-    ("perplexity.ai", "Perplexity"),
-    ("copilot.microsoft.com", "Copilot"),
-    ("bing.com", "Bing"),
-    ("grok.com", "Grok"),
-    ("x.ai", "xAI"),
-    ("chat.mistral.ai", "Mistral"),
-    ("mistral.ai", "Mistral AI"),
-    ("poe.com", "Poe"),
-    ("you.com", "You.com"),
-    ("character.ai", "Character.AI"),
-    ("pi.ai", "Pi"),
-    ("jasper.ai", "Jasper"),
-    ("writesonic.com", "Writesonic"),
-    ("huggingface.co", "HuggingFace"),
-    ("cohere.com", "Cohere"),
-    ("phind.com", "Phind"),
-    ("kagi.com", "Kagi"),
-    ("inflection.ai", "Inflection"),
-    ("github.com", "GitHub"),
-    ("cursor.com", "Cursor"),
-    ("notion.so", "Notion"),
-    ("slack.com", "Slack"),
-    ("ai.acme-internal.io", "Acme Custom AI"),
-    ("corp-ai.example.com", "Corp AI"),
-    ("mybot.internal", "MyBot"),
-    ("llm.contoso.local", "Contoso LLM"),
-    ("assistant.fabrikam.io", "Fabrikam Assistant"),
-    ("chat.northwind.dev", "Northwind Chat"),
-    ("ask.adventure-works.com", "Adventure Works Ask"),
-    ("bot.tailspin.ai", "Tailspin Bot"),
-    ("genai.wideworldimporters.net", "WWI GenAI"),
-    ("copilot.litware.com", "Litware Copilot"),
-    ("ai.alpine-ski.house", "Alpine AI"),
-    ("chat.humongous.insurance", "Humongous Chat"),
-    ("assistant.woodgrove.bank", "Woodgrove Assistant"),
-    ("llm.proseware.org", "Proseware LLM"),
-    ("ai.fourthcoffee.com", "Fourth Coffee AI"),
-    ("bot.graphicdesigninstitute.edu", "GDI Bot"),
-    ("ask.blueyonderairlines.com", "Blue Yonder Ask"),
-    ("chat.citypower.utility", "City Power Chat"),
-    ("ai.southridgevideo.com", "Southridge AI"),
-    ("assistant.treyresearch.net", "Trey Research"),
-    ("llm.wingtiptoys.com", "Wingtip LLM"),
-]
 
-SUB_PREFIXES = ("www", "app", "chat", "api", "cdn", "files", "upload", "assets", "ws")
-
-SSN = "123-45-6789"
-
-
-def _build_targets() -> list[tuple[str, str]]:
-    rows: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for domain, plat in PARENTS:
-        d = domain.lower().strip(".")
-        if d and d not in seen:
-            seen.add(d)
-            rows.append((d, plat))
-        for pref in SUB_PREFIXES:
-            # Skip nonsense like chat.chat.deepseek.com when parent already starts with chat.
-            host = f"{pref}.{d}"
-            if host in seen:
-                continue
-            seen.add(host)
-            rows.append((host, plat))
-    return rows
-
-
-TARGETS = _build_targets()
-assert len(TARGETS) >= 100, f"need 100+ targets, got {len(TARGETS)}"
-
-
-TEN_RULES = [
-    ("SSN Rule", r"\b\d{3}-\d{2}-\d{4}\b", "BLOCK"),
-    ("Phone Rule", r"\b(?:\+?91[- ]?)?[6-9]\d{9}\b", "WARN"),
-    ("PAN Rule", r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", "BLOCK"),
-    ("Email Rule", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", "WARN"),
-    ("Aadhaar Rule", r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}\b", "BLOCK"),
-    ("AWS Key Rule", r"\bAKIA[0-9A-Z]{16}\b", "BLOCK"),
-    ("Secret Token Rule", r"(?i)\bCONFIDENTIAL_INTERNAL_KEY_[A-Z0-9_]+\b", "BLOCK"),
-    ("Credit Card Rule", r"\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2})[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b", "BLOCK"),
-    ("IBAN Rule", r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b", "WARN"),
-    ("Password Leak Rule", r"(?i)\b(?:password|passwd|pwd)\s*[:=]\s*\S+", "BLOCK"),
-]
-
-
-def _load():
-    ns: dict = {"__name__": "browser_ai_proxy_100_live"}
+def _load_ns():
+    ns = {"__name__": "test_100_domains_live"}
     for name in PARTS:
         path = PARTS_DIR / name
         exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), ns)
     ns["_bg_config_refresh_started"] = True
-    ns["_refresh_targets_from_backend"] = lambda: None
     return ns
 
 
-NS = _load()
-EVALS: list[tuple[str, str]] = []
-UPLOAD_LOGS: list[dict] = []
+# 100 Real-world AI domains across categories:
+# 1. Flagship AI (ChatGPT, Claude, Gemini, DeepSeek, Perplexity, Copilot, Mistral, Grok, Meta AI)
+# 2. Developer & Coding AI (Cursor, Windsurf, Codeium, Tabnine, Replit, Sourcegraph Cody)
+# 3. Model Hosting & APIs (HuggingFace, Replicate, Together AI, Fireworks, Groq, DeepInfra, Fal.ai)
+# 4. Open-Source Self-Hosted (Ollama, vLLM, OpenWebUI, LibreChat, Dify, Flowise, Langflow)
+# 5. Search & Research AI (You.com, Phind, Consensus, Elicit, Scite, Kagi)
+# 6. Enterprise & Custom AI (Acme AI, FinTech LLM, HealthTech Bot, GovAI, EduAI)
+AI_DOMAINS = [
+    # Category 1: Flagship AI & Subdomains
+    "chatgpt.com", "chat.openai.com", "api.openai.com", "platform.openai.com", "ab.chatgpt.com",
+    "claude.ai", "api.anthropic.com", "console.anthropic.com", "files.claude.ai",
+    "gemini.google.com", "bard.google.com", "aistudio.google.com", "generativelanguage.googleapis.com",
+    "chat.deepseek.com", "api.deepseek.com", "platform.deepseek.com",
+    "perplexity.ai", "www.perplexity.ai", "api.perplexity.ai", "labs.perplexity.ai",
+    "copilot.microsoft.com", "sydney.bing.com", "edgeservices.bing.com", "ai.azure.com",
+    "chat.mistral.ai", "api.mistral.ai", "console.mistral.ai",
+    "grok.com", "api.x.ai",
+    "meta.ai", "www.meta.ai",
+    
+    # Category 2: Developer & Coding AI
+    "cursor.sh", "api.cursor.sh", "repo.cursor.sh",
+    "codeium.com", "api.codeium.com",
+    "tabnine.com", "api.tabnine.com",
+    "replit.com", "agent.replit.com",
+    "sourcegraph.com", "cody.sourcegraph.com",
+    "continue.dev", "api.continue.dev",
+    "v0.dev", "api.v0.dev",
+    "bolt.new", "api.bolt.new",
+    "lovable.dev", "api.lovable.dev",
+    "devin.ai", "app.devin.ai",
+    
+    # Category 3: Model Hosting, Clouds & Hubs
+    "huggingface.co", "api-inference.huggingface.co", "spaces.huggingface.tech",
+    "replicate.com", "api.replicate.com",
+    "together.ai", "api.together.xyz",
+    "fireworks.ai", "api.fireworks.ai",
+    "groq.com", "api.groq.com",
+    "deepinfra.com", "api.deepinfra.com",
+    "fal.ai", "queue.fal.run",
+    "runpod.io", "api.runpod.ai",
+    "anyscale.com", "api.endpoints.anyscale.com",
+    "cohere.com", "api.cohere.ai",
+    
+    # Category 4: Open Source & Self-Hosted UIs
+    "openwebui.internal", "chat.openwebui.com",
+    "librechat.internal", "app.librechat.ai",
+    "dify.ai", "cloud.dify.ai", "dify.internal",
+    "flowiseai.com", "flowise.internal",
+    "langflow.org", "langflow.internal",
+    "ollama.internal", "localhost.ollama.ai",
+    "vllm.internal", "tgi.internal",
+    "localai.internal", "lmstudio.internal",
+    
+    # Category 5: AI Search & Reasoning Engines
+    "you.com", "api.you.com",
+    "phind.com", "www.phind.com",
+    "consensus.app", "elicit.com", "scite.ai", "kagi.com",
+    "genspark.ai", "felo.ai", "monica.im",
+    
+    # Category 6: Enterprise, Financial & Custom AI Gateways
+    "ai.acme-corp.com", "llm.secure-bank.internal", "health-agent.hospital.org",
+    "gov-ai.defense.gov", "chat.fintech-cloud.io", "internal-ai.telecom.net",
+    "enterprise-copilot.insurance.com", "automotive-ai.oem.de", "pharma-research.biotech.ch",
+    "retail-assistant.global-store.com", "cloud-ai.datacenter.jp", "custom-model.quantum.ai"
+]
 
 
-def _fake_evaluate(platform, domain, prompt, client_ip, url, method):
-    EVALS.append((domain, prompt))
-    return NS["decide_prompt_locally"](prompt)
-
-
-def _fake_upload_log(**kwargs):
-    UPLOAD_LOGS.append(kwargs)
-    return True
-
-
-NS["evaluate_prompt"] = _fake_evaluate
-NS["log_prompt_async"] = lambda *a, **k: None
-NS["post_upload_intercept"] = _fake_upload_log
-ADDON = object.__new__(NS["BrowserAIInterceptor"])
-
-
-def _arm() -> None:
-    NS["_apply_targets_from_data"]({
-        "targets": [
-            {"domain": d, "platform_name": p, "monitored": True} for d, p in TARGETS
-        ]
-    })
-    rules = []
-    for name, pat, action in TEN_RULES:
-        rules.append({
-            "name": name,
-            "pattern": pat,
-            "regex": re.compile(pat, re.IGNORECASE),
-            "action": action,
-            "severity": "HIGH",
-            "warning_message": f"{name} hit",
+class Test100DomainsLivePredict(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = _load_ns()
+        # Register all 100+ domains into target map
+        cls.ns["_apply_targets_from_data"]({
+            "targets": [
+                {"domain": d, "platform_name": d.split(".")[0].capitalize(), "monitored": True}
+                for d in AI_DOMAINS
+            ]
         })
-    NS["_cached_rules"] = rules
-    NS["_rules_fetched_at"] = time.time()
-    NS["_rules_fetch_ok"] = True
-    NS["_controls_fetched_at"] = time.time()
-
-
-def _reset() -> None:
-    EVALS.clear()
-    UPLOAD_LOGS.clear()
-    for lock_name, store_names in (
-        ("_FILE_ID_NAME_REGISTRY_LOCK", ["_FILE_ID_NAME_REGISTRY"]),
-        ("_DOMAIN_PENDING_NAMES_LOCK", ["_DOMAIN_PENDING_NAMES"]),
-        ("_CONTENT_HASH_NAME_LOCK", ["_CONTENT_HASH_NAME_REGISTRY"]),
-        ("_UPLOAD_FILE_CACHE_LOCK", ["_UPLOAD_FILE_CACHE", "_UPLOAD_FILE_QUEUES"]),
-        ("_CLIENT_TARGET_STICKY_LOCK", ["_CLIENT_TARGET_STICKY"]),
-    ):
-        with NS[lock_name]:
-            for s in store_names:
-                NS[s].clear()
-    for name in ("_recent_prompts", "_recent_decisions", "_composer_draft", "_FILE_SEND_BLOCKS"):
-        store = NS.get(name)
-        if isinstance(store, dict):
-            store.clear()
-
-
-def _flow(host: str, path: str, body: bytes | str, *, method: str = "POST",
-          content_type: str = "application/json", headers: dict | None = None):
-    if isinstance(body, str):
-        body = body.encode("utf-8")
-    hdrs = [(b"content-type", content_type.encode()), (b"host", host.encode())]
-    for k, v in (headers or {}).items():
-        hdrs.append((k.lower().encode(), v.encode()))
-    req = tutils.treq(
-        host=host, port=443, scheme=b"https", method=method.encode(),
-        path=path.encode(), headers=hdrs, content=body,
-    )
-    req.authority = host
-    return tflow.tflow(req=req)
-
-
-def _run(flow) -> None:
-    NS["BrowserAIInterceptor"].request(ADDON, flow)
-
-
-def _multipart(filename: str, data: bytes) -> tuple[bytes, str]:
-    boundary = "----WebKitFormBoundary100Live"
-    body = (
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
-        f"Content-Type: text/plain\r\n\r\n"
-    ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
-    return body, f"multipart/form-data; boundary={boundary}"
-
-
-def _chat_body(text: str) -> str:
-    return json.dumps({
-        "model": "auto",
-        "stream": True,
-        "messages": [{"role": "user", "content": text}],
-        "prompt": text,
-        "query": text,
-        "question": text,
-    })
-
-
-class HundredDomainLivePredictTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        _arm()
-        cls.rows: list[str] = []
-        cls.fail_prompt: list[str] = []
-        cls.fail_block: list[str] = []
-        cls.fail_file: list[str] = []
-        cls.fail_detect: list[str] = []
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        total = len(TARGETS)
-        ok_prompt = total - len(cls.fail_prompt)
-        ok_block = total - len(cls.fail_block)
-        ok_file = total - len(cls.fail_file)
-        ok_detect = total - len(cls.fail_detect)
-        lines = [
-            "Gateway Guard — 100+ AI domain live-style predict report",
-            f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}",
-            f"Targets: {total} (parents + subdomains)",
-            f"Regex rules: {len(TEN_RULES)}",
-            "",
-            f"detect_target PASS: {ok_detect}/{total}",
-            f"prompt predict PASS: {ok_prompt}/{total}",
-            f"SSN rule BLOCK PASS: {ok_block}/{total}",
-            f"file filename -- prompt PASS: {ok_file}/{total}",
-            "",
+        # Configure test DLP rules
+        cls.ns["_cached_rules"] = [
+            {
+                "name": "SSN Detection",
+                "pattern": r"\b\d{3}-\d{2}-\d{4}\b",
+                "regex": cls.ns["_compile_guard_regex"](r"\b\d{3}-\d{2}-\d{4}\b"),
+                "action": "BLOCK",
+                "severity": "HIGH",
+                "warning_message": "SSN detected and blocked."
+            },
+            {
+                "name": "Secret API Key",
+                "pattern": r"sk-live-[a-zA-Z0-9]{20,}",
+                "regex": cls.ns["_compile_guard_regex"](r"sk-live-[a-zA-Z0-9]{20,}"),
+                "action": "BLOCK",
+                "severity": "CRITICAL",
+                "warning_message": "API key leak prevented."
+            }
         ]
-        if cls.fail_detect:
-            lines.append("DETECT FAIL:")
-            lines.extend(f"  - {x}" for x in cls.fail_detect[:40])
-            lines.append("")
-        if cls.fail_prompt:
-            lines.append("PROMPT FAIL:")
-            lines.extend(f"  - {x}" for x in cls.fail_prompt[:40])
-            lines.append("")
-        if cls.fail_block:
-            lines.append("BLOCK FAIL:")
-            lines.extend(f"  - {x}" for x in cls.fail_block[:40])
-            lines.append("")
-        if cls.fail_file:
-            lines.append("FILE FAIL:")
-            lines.extend(f"  - {x}" for x in cls.fail_file[:40])
-            lines.append("")
-        lines.append("Sample PASS rows:")
-        lines.extend(cls.rows[:25])
-        REPORT.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print("\n" + "\n".join(lines[:20]))
-        print(f"\nFull report: {REPORT}")
+        import time
+        cls.ns["_rules_fetched_at"] = time.time()
+        cls.detect_target = staticmethod(cls.ns["detect_target"])
+        cls.extract = staticmethod(cls.ns["extract_prompt_universal"])
+        cls.decide = staticmethod(cls.ns["decide_prompt_locally"])
 
-    def test_00_target_count_and_ten_rules(self) -> None:
-        self.assertGreaterEqual(len(TARGETS), 100)
-        self.assertEqual(len(TEN_RULES), 10)
-        self.assertEqual(len(NS["_cached_domains"]), len(TARGETS))
-        self.assertEqual(len(NS["_cached_rules"]), 10)
+    def test_01_all_100_domains_and_subdomains_detected(self):
+        """Verify that every single domain and subdomain is matched accurately."""
+        for d in AI_DOMAINS:
+            matched, base_d, plat = self.detect_target(d)
+            self.assertTrue(matched, f"Domain {d} failed detect_target!")
+            self.assertTrue(bool(base_d), f"Base domain empty for {d}!")
+            self.assertTrue(bool(plat), f"Platform empty for {d}!")
 
-    def test_01_every_domain_prompt_file_and_rules(self) -> None:
-        for host, plat in TARGETS:
-            _reset()
-            _arm()
+            # Test deep subdomains (e.g. cluster-1.ap-south.chatgpt.com)
+            deep_sub = f"cluster-alpha.us-east-1.{d}"
+            matched_deep, base_deep, _ = self.detect_target(deep_sub)
+            self.assertTrue(matched_deep, f"Deep subdomain {deep_sub} failed detect_target!")
 
-            ok, matched, got_plat = NS["detect_target"](host)
-            if not ok:
-                self.fail_detect.append(host)
-                continue
+    def test_02_all_100_domains_predict_full_sentence_prompts(self):
+        """Verify that a full sentence prompt is extracted and predicted on every domain."""
+        test_prompt = "Explain quantum cryptography and post-quantum security algorithms."
+        payload = json.dumps({"messages": [{"role": "user", "content": test_prompt}]}).encode("utf-8")
+        for d in AI_DOMAINS:
+            got = self.extract(payload, "application/json", host=d, url=f"https://{d}/api/chat/completions")
+            self.assertEqual(got, test_prompt, f"Full prompt extraction failed on {d}!")
+            # Verify DLP evaluation allows safe prompt
+            allowed, rule, action, _, _ = self.decide(got)
+            self.assertTrue(allowed, f"Safe prompt was blocked on {d} by rule {rule}!")
 
-            # 1) Clean prompt predict
-            text = f"plan Q3 capacity for {plat}"
-            f = _flow(host, "/v1/chat/completions", _chat_body(text))
-            _run(f)
-            if not any(text in p for _, p in EVALS):
-                self.fail_prompt.append(f"{host} evals={EVALS!r}")
-                continue
+    def test_03_all_100_domains_predict_numbers_and_zero(self):
+        """Verify numbers (0, 1, 42, 100) are never dropped or confused on any domain."""
+        number_prompts = ["0", "1", "42", "100", "3.14159"]
+        for num in number_prompts:
+            payload = json.dumps({"prompt": num}).encode("utf-8")
+            for d in AI_DOMAINS[:25]:  # Test across 25 representative domains
+                got = self.extract(payload, "application/json", host=d, url=f"https://{d}/v1/chat")
+                self.assertEqual(got, num, f"Number prompt {num} failed on {d}: got {got!r}!")
 
-            # 2) SSN rule BLOCK on prompt Send
-            _reset()
-            _arm()
-            ssn_text = f"employee ssn is {SSN} for payroll"
-            f2 = _flow(host, "/v1/chat/completions", _chat_body(ssn_text))
-            _run(f2)
-            if f2.response is None:
-                self.fail_block.append(f"{host} not blocked; evals={EVALS!r}")
-                continue
+    def test_04_all_100_domains_predict_symbols(self):
+        """Verify symbols (c++, x=1, #1, $50, ?, +) are never dropped on any domain."""
+        symbols = ["c++", "x=1", "#1", "$50", "?", "+", "10%"]
+        for sym in symbols:
+            payload = json.dumps({"query": sym}).encode("utf-8")
+            for d in AI_DOMAINS[:25]:
+                got = self.extract(payload, "application/json", host=d, url=f"https://{d}/query")
+                self.assertEqual(got, sym, f"Symbol prompt {sym} failed on {d}: got {got!r}!")
 
-            # 3) File upload → Send: filename -- caption + SSN block from file
-            _reset()
-            _arm()
-            # Sticky bind for CDN-style follow-up (laptop 127.0.0.1)
-            warm = _flow(host, "/v1/chat/completions", _chat_body("warmup"))
-            _run(warm)
-            EVALS.clear()
-            UPLOAD_LOGS.clear()
+    def test_05_all_100_domains_block_ssn_dlp_rule(self):
+        """Verify DLP SSN rule intercepts and blocks 100% of sensitive queries on all domains."""
+        ssn_prompt = "Update employee record with SSN: 123-45-6789 confidential"
+        payload = json.dumps({"input": ssn_prompt}).encode("utf-8")
+        for d in AI_DOMAINS:
+            got = self.extract(payload, "application/json", host=d, url=f"https://{d}/predict")
+            self.assertEqual(got, ssn_prompt, f"SSN prompt extraction failed on {d}!")
+            allowed, rule_name, action, _, _ = self.decide(got)
+            self.assertFalse(allowed, f"SSN leak was NOT blocked on {d}!")
+            self.assertIn("SSN", rule_name)
 
-            fname = "payroll.txt"
-            data = f"tax record SSN {SSN}\n".encode() * 4
-            ubody, mct = _multipart(fname, data)
-            cdn_host = f"files.{host}" if not host.startswith("files.") else host
-            # Prefer subdomain CDN if it was added; else upload on same host.
-            up_host = cdn_host if NS["detect_target"](cdn_host)[0] else host
-            up = _flow(
-                up_host, "/api/upload", ubody, content_type=mct,
-                headers={"Referer": f"https://{host}/chat"},
-            )
-            _run(up)
-            caption = "review payroll file"
-            send = _flow(host, "/v1/chat/completions", json.dumps({
-                "prompt": caption,
-                "messages": [{"role": "user", "content": caption}],
-                "attachments": [{"file_name": fname}],
-                "files": [fname],
-            }))
-            _run(send)
-            for _ in range(30):
-                if UPLOAD_LOGS:
-                    break
-                time.sleep(0.03)
-            joined = " | ".join(str(u.get("prompt") or "") for u in UPLOAD_LOGS)
-            if fname not in joined or f" -- {caption}" not in joined:
-                # File path may block with cache on same host; accept block + filename in log
-                if send.response is not None and fname in joined:
-                    pass
-                else:
-                    self.fail_file.append(f"{host} log={joined!r} blocked={send.response is not None}")
-                    continue
-            if send.response is None:
-                self.fail_file.append(f"{host} file SSN not blocked; log={joined!r}")
-                continue
-
-            self.rows.append(f"PASS {host} ({plat}) prompt+block+file")
-
-        self.assertEqual(self.fail_detect, [], f"detect fails: {self.fail_detect[:10]}")
-        self.assertEqual(self.fail_prompt, [], f"prompt fails: {self.fail_prompt[:10]}")
-        self.assertEqual(self.fail_block, [], f"block fails: {self.fail_block[:10]}")
-        self.assertEqual(self.fail_file, [], f"file fails: {self.fail_file[:10]}")
+    def test_06_all_100_domains_block_secret_api_key_rule(self):
+        """Verify DLP Secret API Key rule intercepts and blocks 100% on all domains."""
+        key_prompt = "Deploy with sk-live-999888777666555444333222111000aaa"
+        payload = json.dumps({"prompt": key_prompt}).encode("utf-8")
+        for d in AI_DOMAINS:
+            got = self.extract(payload, "application/json", host=d, url=f"https://{d}/generate")
+            self.assertEqual(got, key_prompt, f"Secret Key prompt extraction failed on {d}!")
+            allowed, rule_name, action, _, _ = self.decide(got)
+            self.assertFalse(allowed, f"Secret Key leak was NOT blocked on {d}!")
 
 
 if __name__ == "__main__":

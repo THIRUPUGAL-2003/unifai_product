@@ -41,6 +41,7 @@ def _load():
         path = PARTS_DIR / name
         exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), ns)
     ns["_bg_config_refresh_started"] = True
+    ns["_refresh_targets_from_backend"] = lambda: None
     return ns
 
 NS = _load()
@@ -146,6 +147,12 @@ class AllAIPlatformsComprehensiveTests(unittest.TestCase):
         })
 
     def setUp(self):
+        NS["_apply_targets_from_data"]({
+            "targets": [
+                {"domain": host, "platform_name": name, "monitored": True}
+                for name, host, _ in PLATFORMS
+            ]
+        })
         for lock_name, store_names in (
             ("_FILE_ID_NAME_REGISTRY_LOCK", ["_FILE_ID_NAME_REGISTRY"]),
             ("_DOMAIN_PENDING_NAMES_LOCK", ["_DOMAIN_PENDING_NAMES"]),

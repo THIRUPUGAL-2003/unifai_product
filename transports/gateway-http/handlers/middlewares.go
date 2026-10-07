@@ -1069,7 +1069,7 @@ func customRoleMayReach(store configstore.ConfigStore, role, method, path string
 
 func roleUsesRBACDelegation(role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
-	return role != "" && !isWorkspaceAdminRole(role)
+	return role != "" && role != "user" && !isWorkspaceAdminRole(role)
 }
 
 func customRolePathDelegable(method, path string) bool {

@@ -347,7 +347,7 @@ _UNIVERSAL_PROMPT_KEYS = (
     # Streamlit widget states & modern UI fields
     "string_value", "stringValue", "widget_state", "widget_states",
     # Model Context Protocol (MCP), JSON-RPC & Tool Invocations
-    "arguments", "args", "tool_arguments", "function_call", "tool_calls",
+    "arguments", "args", "tool_arguments", "function_call", "tool_calls", "params", "parameters",
     # Prompt Engineering, DSPy, Flowise, Dify & Workflow Frameworks
     "action_input", "thought_input", "template_inputs", "agent_task",
     "goal", "user_goal", "user_query_string", "chat_prompt", "direct_prompt",
