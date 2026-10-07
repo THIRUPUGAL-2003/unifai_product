@@ -22,6 +22,7 @@ export interface SessionUserPayload {
 	username: string;
 	email?: string;
 	password?: string;
+	send_temporary_password?: boolean;
 	role: string;
 	budget?: number;
 	rate_limit?: number;

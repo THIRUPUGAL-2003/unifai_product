@@ -77,7 +77,12 @@ def _load_parts() -> None:
             print(f"[Raksha Proxy] Secure in-memory bundle loaded: {loaded_count} encrypted parts active (zero disk leak).")
             return
         except Exception as e:
+            if getattr(sys, "frozen", False):
+                raise RuntimeError(f"Encrypted proxy bundle failed to load: {e}") from e
             print(f"[Raksha Proxy WARNING] Failed to load encrypted bundle: {e}, attempting source fallback...")
+
+    if getattr(sys, "frozen", False):
+        raise RuntimeError("Frozen Guard requires raksha_proxy_parts.enc; plain proxy sources are not loaded.")
 
     # 2. Source fallback (Development / unit testing)
     manifest = parts / "MANIFEST.txt"

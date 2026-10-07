@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"regexp"
@@ -540,8 +541,16 @@ func (m *BrowserAIManager) SetDB(db *gorm.DB) {
 	m.mu.Unlock()
 
 	if needsMigrate {
-		_ = m.AutoMigrate(context.Background())
+		if err := m.AutoMigrate(context.Background()); err != nil {
+			log.Printf("browser AI schema migrate failed: %v", err)
+		}
 	}
+}
+
+func (m *BrowserAIManager) SchemaReady() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.db != nil && m.migrated
 }
 
 func (m *BrowserAIManager) GetDB() *gorm.DB {
@@ -633,7 +642,7 @@ func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action
 
 	db := m.GetDB()
 	if db == nil {
-		return logs, 0, nil
+		return nil, 0, fmt.Errorf("browser AI database is not connected")
 	}
 
 	query := db.WithContext(ctx).Model(&BrowserAILog{})
@@ -697,7 +706,7 @@ func (m *BrowserAIManager) GetLogStats(ctx context.Context) (BrowserAILogStats, 
 	var out BrowserAILogStats
 	db := m.GetDB()
 	if db == nil {
-		return out, nil
+		return out, fmt.Errorf("browser AI database is not connected")
 	}
 	var row struct {
 		Total    int64
@@ -773,7 +782,7 @@ func (m *BrowserAIManager) GetSearchLogs(ctx context.Context, engine, browser, i
 
 	db := m.GetDB()
 	if db == nil {
-		return logs, 0, 0, 0, 0, nil
+		return nil, 0, 0, 0, 0, fmt.Errorf("browser AI database is not connected")
 	}
 
 	// Overall KPI metrics (unfiltered totals)
@@ -946,7 +955,7 @@ func (m *BrowserAIManager) GetRules(ctx context.Context) ([]BrowserGuardRule, er
 	var rules []BrowserGuardRule
 	db := m.GetDB()
 	if db == nil {
-		return rules, nil
+		return nil, fmt.Errorf("browser AI database is not connected")
 	}
 	err := db.WithContext(ctx).Order("created_at ASC").Find(&rules).Error
 	if err != nil {
@@ -1184,7 +1193,7 @@ func (m *BrowserAIManager) GetTargets(ctx context.Context) ([]BrowserTargetWebsi
 	var targets []BrowserTargetWebsite
 	db := m.GetDB()
 	if db == nil {
-		return targets, nil
+		return nil, fmt.Errorf("browser AI database is not connected")
 	}
 	if err := db.WithContext(ctx).Order("domain ASC").Find(&targets).Error; err != nil {
 		return targets, err
@@ -2069,11 +2078,34 @@ func sealAgentUninstallKey(plain string) string {
 		return ""
 	}
 	if encrypt.IsEnabled() {
-		if enc, err := encrypt.Encrypt(plain); err == nil {
+		if enc, err := encrypt.Encrypt(plain); err == nil && enc != "" && enc != plain {
 			return "enc:" + enc
 		}
 	}
 	return "b64:" + base64.StdEncoding.EncodeToString([]byte(plain))
+}
+
+// promoteUninstallKeySeal rewrites a reversible b64 copy to AES-GCM once server encryption is on.
+func promoteUninstallKeySeal(sealed, plain string) string {
+	if !strings.HasPrefix(strings.TrimSpace(sealed), "b64:") || !encrypt.IsEnabled() {
+		return ""
+	}
+	next := sealAgentUninstallKey(plain)
+	if strings.HasPrefix(next, "enc:") {
+		return next
+	}
+	return ""
+}
+
+func validateCompanyUninstallKey(plain string) error {
+	plain = strings.TrimSpace(plain)
+	if len(plain) < 12 {
+		return fmt.Errorf("company uninstall key must be at least 12 characters")
+	}
+	if plain == "12345678" {
+		return fmt.Errorf("that uninstall key is not allowed")
+	}
+	return nil
 }
 
 func openAgentUninstallKey(sealed string) (string, error) {
@@ -2169,6 +2201,9 @@ func (m *BrowserAIManager) SaveUninstallKey(ctx context.Context, plaintext, upda
 		"require_uninstall_key": true,
 	}
 	if plaintext = strings.TrimSpace(plaintext); plaintext != "" {
+		if err := validateCompanyUninstallKey(plaintext); err != nil {
+			return nil, err
+		}
 		updates["uninstall_key_hash"] = hashUninstallKey(plaintext)
 		updates["uninstall_key_enc"] = sealAgentUninstallKey(plaintext)
 	}
@@ -2192,14 +2227,11 @@ func (m *BrowserAIManager) GetCompanyUninstallKeyReveal(ctx context.Context) (st
 	if strings.TrimSpace(settings.UninstallKeyEnc) != "" {
 		plain, err := openAgentUninstallKey(settings.UninstallKeyEnc)
 		if err == nil && plain != "" {
+			if upgraded := promoteUninstallKeySeal(settings.UninstallKeyEnc, plain); upgraded != "" {
+				_ = db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Update("uninstall_key_enc", upgraded)
+			}
 			return plain, nil
 		}
-	}
-	if settings.UninstallKeyHash == hashUninstallKey("12345678") {
-		enc := sealAgentUninstallKey("12345678")
-		_ = db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Update("uninstall_key_enc", enc)
-		settings.UninstallKeyEnc = enc
-		return "12345678", nil
 	}
 	return "", fmt.Errorf("no company uninstall key stored")
 }
@@ -2234,9 +2266,9 @@ func (m *BrowserAIManager) VerifyAgentUninstallKey(ctx context.Context, agentID,
 
 	// Prefer per-Guard key when agent_id is known.
 	if agentID != "" && db != nil {
-			var agent BrowserAIAgent
+		var agent BrowserAIAgent
 		err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error
-			if err == nil && strings.TrimSpace(agent.UninstallKeyHash) != "" {
+		if err == nil && strings.TrimSpace(agent.UninstallKeyHash) != "" {
 			// Same expiry rule as reveal/auto-rotate, so yesterday's key stops working
 			// the moment the admin UI shows today's key.
 			if !IsAgentUninstallKeyExpired(agent.UninstallKeyRotatedAt) && hashUninstallKey(plaintext) == agent.UninstallKeyHash {
@@ -2268,6 +2300,10 @@ func (m *BrowserAIManager) GetAgentUninstallKeyReveal(ctx context.Context, agent
 	if strings.TrimSpace(row.UninstallKeyEnc) != "" && !IsAgentUninstallKeyExpired(row.UninstallKeyRotatedAt) {
 		plain, openErr := openAgentUninstallKey(row.UninstallKeyEnc)
 		if openErr == nil && plain != "" {
+			if upgraded := promoteUninstallKeySeal(row.UninstallKeyEnc, plain); upgraded != "" {
+				row.UninstallKeyEnc = upgraded
+				_ = db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", row.ID).Update("uninstall_key_enc", upgraded)
+			}
 			markAgentUninstallKeyFlag(&row)
 			return plain, &row, nil
 		}
@@ -2422,8 +2458,13 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	existing.LastSeenAt = now
 	existing.UpdatedAt = now
 	if existing.Status == AgentStatusUninstalled {
-		// Agent has already been uninstalled. Do not resurrect it back to active on trailing heartbeats.
-		// Status remains AgentStatusUninstalled and UninstalledAt timestamp is preserved.
+		// Trailing heartbeats during uninstall stay uninstalled. A later install of the
+		// same Guard ID (agent_id.txt survived) becomes active again after the grace window.
+		if existing.UninstalledAt != nil && now.Sub(*existing.UninstalledAt) > 2*time.Minute {
+			existing.Status = AgentStatusActive
+			existing.UninstallRequested = false
+			existing.UninstalledAt = nil
+		}
 	} else if existing.Status == AgentStatusPaused {
 		// Agent is in temporary standby / paused mode.
 		existing.Status = AgentStatusPaused
@@ -2534,7 +2575,7 @@ func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string
 	var total int64
 	db := m.GetDB()
 	if db == nil {
-		return agents, 0, nil
+		return nil, 0, fmt.Errorf("browser AI database is not connected")
 	}
 
 	query := db.WithContext(ctx).Model(&BrowserAIAgent{})

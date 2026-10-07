@@ -167,17 +167,6 @@ import { TargetImportDialog, downloadTargetsTemplate } from "./targetImportDialo
 const BROWSER_AI_TABS = ["overview", "targets", "rules", "logs", "search-logs", "setup", "agents", "telemetry"] as const;
 type BrowserAiTab = (typeof BROWSER_AI_TABS)[number];
 
-const BROWSER_AI_TAB_TITLES: Record<BrowserAiTab, string> = {
-	overview: "Overview",
-	targets: "Target Websites",
-	rules: "Guard Rules",
-	logs: "Prompt Logs",
-	"search-logs": "Search Logs",
-	setup: "Setup",
-	agents: "Guard Agents",
-	telemetry: "Guard Insights",
-};
-
 /** Numeric dotted-version compare ("1.1.13" vs "1.1.9"); non-numeric parts count as 0. */
 function compareGuardVersions(a: string, b: string): number {
 	const pa = a.replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
@@ -247,13 +236,8 @@ export default function BrowserAiPage() {
 	const [uninstallKeyInput, setUninstallKeyInput] = useState("");
 	const [uninstallKeyMessage, setUninstallKeyMessage] = useState("");
 	const [uninstallKeyError, setUninstallKeyError] = useState("");
-	// Plaintext company uninstall key display (stored in DB encrypted and cached in session/localStorage)
-	const [savedUninstallKeyDisplay, setSavedUninstallKeyDisplay] = useState(() => {
-		if (typeof window !== "undefined") {
-			return localStorage.getItem("raksha_company_uninstall_key") || "";
-		}
-		return "";
-	});
+	// Plaintext company uninstall key, shown only after the admin asks. Not written to localStorage.
+	const [savedUninstallKeyDisplay, setSavedUninstallKeyDisplay] = useState("");
 	const [uninstallKeyEditing, setUninstallKeyEditing] = useState(false);
 	const [showUninstallKey, setShowUninstallKey] = useState(false);
 
@@ -389,6 +373,8 @@ export default function BrowserAiPage() {
 		data: logsData,
 		refetch: refetchLogs,
 		isFetching: logsLoading,
+		isError: logsFailed,
+		error: logsError,
 	} = useGetBrowserAiLogsQuery(
 		{
 			platform: selectedPlatform !== "all" ? selectedPlatform : undefined,
@@ -408,8 +394,8 @@ export default function BrowserAiPage() {
 		skip: activeTab !== "overview",
 	});
 
-	const { data: rulesData, refetch: refetchRules, isFetching: rulesLoading } = useGetBrowserAiRulesQuery(undefined, { pollingInterval: activePolling });
-	const { data: targetsData, refetch: refetchTargets, isFetching: targetsLoading } = useGetBrowserAiTargetsQuery(undefined, { pollingInterval: activePolling });
+	const { data: rulesData, refetch: refetchRules, isFetching: rulesLoading, isError: rulesFailed, error: rulesError } = useGetBrowserAiRulesQuery(undefined, { pollingInterval: activePolling });
+	const { data: targetsData, refetch: refetchTargets, isFetching: targetsLoading, isError: targetsFailed, error: targetsError } = useGetBrowserAiTargetsQuery(undefined, { pollingInterval: activePolling });
 	const { data: controlsData, isFetching: controlsLoading } = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
 	const { data: providersData } = useGetProvidersQuery();
 	// Outsource = configured Model Providers (OpenRouter, OpenAI, …). Download = Ollama on server.
@@ -425,6 +411,8 @@ export default function BrowserAiPage() {
 		data: agentsData,
 		refetch: refetchAgents,
 		isFetching: agentsLoading,
+		isError: agentsFailed,
+		error: agentsError,
 	} = useGetBrowserAiAgentsQuery(
 		{
 			status: agentStatusFilter !== "all" ? agentStatusFilter : undefined,
@@ -591,6 +579,8 @@ export default function BrowserAiPage() {
 		data: searchLogsData,
 		refetch: refetchSearchLogs,
 		isFetching: searchLogsLoading,
+		isError: searchLogsFailed,
+		error: searchLogsError,
 	} = useGetBrowserAiSearchLogsQuery(
 		{
 			engine: searchEngineFilter !== "all" ? searchEngineFilter : undefined,
@@ -615,9 +605,6 @@ export default function BrowserAiPage() {
 	useEffect(() => {
 		if (agentSettingsData?.uninstall_key) {
 			setSavedUninstallKeyDisplay(agentSettingsData.uninstall_key);
-			if (typeof window !== "undefined") {
-				localStorage.setItem("raksha_company_uninstall_key", agentSettingsData.uninstall_key);
-			}
 		}
 	}, [agentSettingsData?.uninstall_key]);
 	const [saveUninstallKey, { isLoading: savingUninstallKey }] = useSaveBrowserAiUninstallKeyMutation();
@@ -1874,8 +1861,8 @@ export default function BrowserAiPage() {
 		setUninstallKeyMessage("");
 		setUninstallKeyError("");
 		const nextKey = uninstallKeyInput.trim();
-		if (!nextKey) {
-			setUninstallKeyError("Enter a new uninstall key to save");
+		if (nextKey.length < 12 || nextKey === "12345678") {
+			setUninstallKeyError("Use a company uninstall key of at least 12 characters.");
 			return;
 		}
 		try {
@@ -1885,16 +1872,13 @@ export default function BrowserAiPage() {
 				updated_by: "admin",
 			}).unwrap();
 			setSavedUninstallKeyDisplay(nextKey);
-			if (typeof window !== "undefined") {
-				localStorage.setItem("raksha_company_uninstall_key", nextKey);
-			}
 			setUninstallKeyInput("");
 			setUninstallKeyEditing(false);
 			setShowUninstallKey(true);
 			setUninstallKeyMessage("Uninstall key saved successfully.");
 			refetchAgentSettings();
 		} catch (error) {
-			setUninstallKeyError(error instanceof Error ? error.message : "Failed to save uninstall key");
+			setUninstallKeyError(getErrorMessage(error) || "Failed to save uninstall key");
 		}
 	};
 
@@ -1945,10 +1929,15 @@ export default function BrowserAiPage() {
 				setLicenseInput("");
 				toast({
 					title: "License Activated",
-					description: `Enabled ${json.license?.max_seats || 100} seats for ${json.license?.client_name || "enterprise"}.`,
+					description: `Enabled ${json.license?.max_seats ?? 0} seats for ${json.license?.client_name || "the licensed organization"}.`,
 				});
 			} else {
-				setLicenseError(json.error || json.message || "License verification failed. Signature may be invalid or tampered.");
+				const errField = json?.error;
+				const errText =
+					(typeof errField === "object" && errField && typeof errField.message === "string" && errField.message) ||
+					(typeof errField === "string" ? errField : "") ||
+					(typeof json?.message === "string" ? json.message : "");
+				setLicenseError(errText || "License verification failed. The file must be a signed .lic from YesPanchi.");
 			}
 		} catch (err: any) {
 			setLicenseError(err?.message || "Failed to communicate with license server.");
@@ -2447,18 +2436,7 @@ export default function BrowserAiPage() {
 	return (
 		<div className="space-y-6 p-2 md:p-6 text-foreground max-w-7xl mx-auto">
 			{/* Header View */}
-			<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-5">
-				<div>
-					<div className="flex items-center gap-3">
-						<Globe className="h-6 w-6 text-primary" />
-						<h1 className="text-2xl font-bold tracking-tight">
-							Browser AI · {BROWSER_AI_TAB_TITLES[activeTab]}
-						</h1>
-					</div>
-					<p className="text-muted-foreground text-sm mt-1">
-						Monitor AI prompts, predict threats, and enforce DLP policies.
-					</p>
-				</div>
+			<div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4 border-b border-border pb-5">
 				<div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
 					<div className="flex items-center gap-2 bg-card border border-border px-3 py-1.5 rounded-md text-xs">
 						<Switch
@@ -2612,7 +2590,14 @@ export default function BrowserAiPage() {
 				</div>
 			</div>
 
-			{/* Section content — nav is sidebar dropdown (Observability / Models style) */}
+			{(logsFailed || rulesFailed || targetsFailed || agentsFailed || searchLogsFailed) ? (
+				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+					{getErrorMessage(logsError || rulesError || targetsError || agentsError || searchLogsError) ||
+						"Browser AI database is not connected"}
+				</div>
+			) : null}
+
+			{/* Section content — nav is sidebar dropdown (Observability / Models style) */}
 			<Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
 
 				{/* TAB 1: OVERVIEW */}
@@ -5011,18 +4996,24 @@ export default function BrowserAiPage() {
 									<div>
 										<CardTitle className="text-lg flex items-center gap-2">
 											Enterprise On-Premise License &amp; Seat Quota
-											{!licenseInfo?.is_expired ? (
+											{licenseInfo?.is_licensed && licenseInfo.is_active && !licenseInfo.is_expired ? (
 												<Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
 													Active
 												</Badge>
-											) : (
+											) : licenseInfo?.is_expired ? (
 												<Badge variant="outline" className="border-rose-500/30 text-rose-400 text-xs">
 													Expired
+												</Badge>
+											) : (
+												<Badge variant="outline" className="border-amber-500/30 text-amber-400 text-xs">
+													Not activated
 												</Badge>
 											)}
 										</CardTitle>
 										<CardDescription>
-											Cryptographic Ed25519 tamper-proof digital license enforcing maximum laptop capacity.
+											{licenseInfo?.is_licensed
+												? "Signed Ed25519 license. Seat quota comes from that file."
+												: "No signed license yet. Upload a .lic file from YesPanchi to set the laptop quota and expiry."}
 										</CardDescription>
 									</div>
 								</div>
@@ -5044,57 +5035,62 @@ export default function BrowserAiPage() {
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Vendor / Issuer</p>
 									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
-										{licenseInfo?.issuer || "YesPanchi Group of Companies"}
+										{licenseInfo?.is_licensed ? licenseInfo.issuer || "—" : "—"}
 									</p>
-									<p className="text-[11px] text-sky-400 truncate">{licenseInfo?.product || "Raksha - Real-time AI Knowledge Screening & Hazard Audit"}</p>
+									<p className="text-[11px] text-sky-400 truncate">{licenseInfo?.is_licensed ? licenseInfo.product || "—" : "Upload a signed .lic"}</p>
 								</div>
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Licensed Organization</p>
 									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
-										{licenseInfo?.client_name && !licenseInfo.client_name.toLowerCase().includes("eval") && !licenseInfo.client_name.toLowerCase().includes("trial")
-											? licenseInfo.client_name
-											: "Enterprise Organization"}
+										{licenseInfo?.is_licensed ? licenseInfo.client_name || "—" : "Not licensed"}
 									</p>
 									<p className="text-[11px] text-muted-foreground">
-										{licenseInfo?.license_id && !licenseInfo.license_id.toLowerCase().includes("eval") && !licenseInfo.license_id.toLowerCase().includes("trial")
-											? `ID: ${licenseInfo.license_id}`
-											: (licenseInfo?.tier || "Enterprise On-Premise")}
+										{licenseInfo?.is_licensed && licenseInfo.license_id ? `ID: ${licenseInfo.license_id}` : "No license ID"}
 									</p>
 								</div>
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Seat Capacity</p>
 									<p className="text-base font-semibold text-foreground mt-0.5">
-										{licenseInfo?.active_seats || 0} / {licenseInfo?.max_seats || 100} Laptops
+										{licenseInfo?.is_licensed
+											? `${licenseInfo.active_seats || 0} / ${licenseInfo.max_seats || 0} Laptops`
+											: `${licenseInfo?.active_seats || 0} online`}
 									</p>
 									<p className="text-[11px] text-emerald-400">
-										{licenseInfo?.remaining_seats ?? 100} seats available
+										{licenseInfo?.is_licensed ? `${licenseInfo.remaining_seats ?? 0} seats available` : "Quota starts after activation"}
 									</p>
 								</div>
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Validity / Expiry</p>
-									{(() => {
-										const expStr = licenseInfo?.expires_at;
-										const expDate = expStr ? new Date(expStr) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-										const diffMs = expDate.getTime() - Date.now();
-										const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-										const formattedDate = expDate.toLocaleDateString("en-US", {
-											year: "numeric",
-											month: "short",
-											day: "numeric",
-										});
-										const isExpired = licenseInfo?.is_expired || diffMs < 0;
-
-										return (
-											<>
-												<p className={`text-base font-semibold mt-0.5 ${isExpired ? "text-rose-400" : "text-foreground"}`}>
-													{formattedDate}
-												</p>
-												<p className={`text-[11px] font-medium ${isExpired ? "text-rose-400" : daysLeft <= 30 ? "text-amber-400" : "text-emerald-400"}`}>
-													{isExpired ? "License Expired" : `${daysLeft} days remaining`}
-												</p>
-											</>
-										);
-									})()}
+									{licenseInfo?.is_licensed && licenseInfo.expires_at ? (
+										(() => {
+											const expDate = new Date(licenseInfo.expires_at);
+											const diffMs = expDate.getTime() - Date.now();
+											const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+											const formattedDate = Number.isNaN(expDate.getTime())
+												? licenseInfo.expires_at
+												: expDate.toLocaleDateString("en-US", {
+														year: "numeric",
+														month: "short",
+														day: "numeric",
+													});
+											const isExpired = licenseInfo.is_expired || diffMs < 0;
+											return (
+												<>
+													<p className={`text-base font-semibold mt-0.5 ${isExpired ? "text-rose-400" : "text-foreground"}`}>
+														{formattedDate}
+													</p>
+													<p className={`text-[11px] font-medium ${isExpired ? "text-rose-400" : daysLeft <= 30 ? "text-amber-400" : "text-emerald-400"}`}>
+														{isExpired ? "License Expired" : `${daysLeft} days remaining`}
+													</p>
+												</>
+											);
+										})()
+									) : (
+										<>
+											<p className="text-base font-semibold mt-0.5 text-foreground">—</p>
+											<p className="text-[11px] font-medium text-muted-foreground">Set by the signed license</p>
+										</>
+									)}
 								</div>
 							</div>
 
@@ -5103,21 +5099,30 @@ export default function BrowserAiPage() {
 								<div className="flex justify-between text-xs text-muted-foreground">
 									<span>Seat Allocation Usage</span>
 									<span className="font-mono">
-										{Math.round(((licenseInfo?.active_seats || 0) / (licenseInfo?.max_seats || 100)) * 100)}%
+										{licenseInfo?.is_licensed && licenseInfo.max_seats > 0
+											? `${Math.min(100, Math.round(((licenseInfo.active_seats || 0) / licenseInfo.max_seats) * 100))}%`
+											: "—"}
 									</span>
 								</div>
 								<div className="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
 									<div
 										className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 transition-all duration-500"
 										style={{
-											width: `${Math.min(
-												100,
-												Math.round(((licenseInfo?.active_seats || 0) / (licenseInfo?.max_seats || 100)) * 100)
-											)}%`,
+											width: `${
+												licenseInfo?.is_licensed && licenseInfo.max_seats > 0
+													? Math.min(100, Math.round(((licenseInfo.active_seats || 0) / licenseInfo.max_seats) * 100))
+													: 0
+											}%`,
 										}}
 									/>
 								</div>
 							</div>
+
+							{licenseInfo?.status_message ? (
+								<p className={`text-sm ${licenseInfo.is_licensed && licenseInfo.is_active && !licenseInfo.is_expired ? "text-emerald-400" : "text-amber-400"}`}>
+									{licenseInfo.status_message}
+								</p>
+							) : null}
 
 							{/* Upload / Enter License Key Section */}
 							<div className="space-y-3 pt-2 border-t border-border">
@@ -5185,7 +5190,7 @@ export default function BrowserAiPage() {
 								<div>
 									<CardTitle className="text-lg">Uninstall Key</CardTitle>
 									<CardDescription>
-										Required to uninstall Guard. Stored hashed.
+										Saved encrypted in the database. This company key works on every Guard. Each laptop also has its own key, and that key uninstalls only that laptop.
 									</CardDescription>
 								</div>
 							</div>
@@ -5207,7 +5212,7 @@ export default function BrowserAiPage() {
 													type={showUninstallKey ? "text" : "password"}
 													value={
 														showUninstallKey
-															? (savedUninstallKeyDisplay || agentSettingsData?.uninstall_key || (typeof window !== "undefined" ? localStorage.getItem("raksha_company_uninstall_key") : "") || "12345678")
+															? (savedUninstallKeyDisplay || agentSettingsData?.uninstall_key || "")
 															: "••••••••••••••••••••••••"
 													}
 													className="pr-10 font-mono"
@@ -5219,27 +5224,19 @@ export default function BrowserAiPage() {
 													className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
 													onClick={async () => {
 														let currentKey = savedUninstallKeyDisplay || agentSettingsData?.uninstall_key;
-														if (!currentKey && typeof window !== "undefined") {
-															currentKey = localStorage.getItem("raksha_company_uninstall_key") || "";
-														}
 														if (!currentKey) {
 															try {
-																const res = await fetch("/api/browser-ai/agents/uninstall-key");
+																const res = await fetch("/api/browser-ai/agents/uninstall-key", { credentials: "include" });
 																if (res.ok) {
 																	const json = await res.json();
 																	if (json.uninstall_key) {
 																		currentKey = json.uninstall_key;
 																		setSavedUninstallKeyDisplay(json.uninstall_key);
-																		if (typeof window !== "undefined") {
-																			localStorage.setItem("raksha_company_uninstall_key", json.uninstall_key);
-																		}
 																	}
 																}
-															} catch {}
-														}
-														if (!currentKey && agentSettings?.key_configured) {
-															currentKey = "12345678";
-															setSavedUninstallKeyDisplay(currentKey);
+															} catch {
+																/* key stays hidden */
+															}
 														}
 														if (currentKey) {
 															setSavedUninstallKeyDisplay(currentKey);

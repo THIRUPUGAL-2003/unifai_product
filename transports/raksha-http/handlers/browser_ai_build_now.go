@@ -203,13 +203,18 @@ func (h *BrowserAIHandler) buildAndServeSetupPackage(ctx *fasthttp.RequestCtx, p
 		zipPath, err = buildWindowsPackage(config)
 		fileName, version = "Raksha_Guard_Windows.zip", readGuardReleaseVersion()
 	}
+	_, winOK := findFirstExisting(append(
+		browserAISetupCandidates()["Raksha_Guard_Setup.exe"],
+		browserAISetupCandidates()["Raksha_Guard.exe"]...,
+	))
+	_, macOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_macOS.zip"])
 	bundle, bundleMsg := publishProxyBundleSummary()
 	resp := map[string]any{
 		"mode":          "build-now",
 		"version":       readGuardReleaseVersion(),
 		"mac_version":   readGuardMacReleaseVersion(),
-		"windows_ready": !isMac && err == nil,
-		"macos_ready":   isMac && err == nil,
+		"windows_ready": winOK && (isMac || err == nil),
+		"macos_ready":   macOK && (!isMac || err == nil),
 		"proxy_bundle":  bundle,
 	}
 	if err != nil {

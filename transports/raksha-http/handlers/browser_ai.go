@@ -81,13 +81,15 @@ func (h *BrowserAIHandler) initDB() {
 }
 
 func (h *BrowserAIHandler) ensureDB(ctx *fasthttp.RequestCtx) {
-	if h.manager == nil {
+	if h.manager == nil || h.configStore == nil {
 		return
 	}
-	if h.configStore != nil {
-		if db := h.configStore.DB(); db != nil && h.manager.GetDB() != db {
-			h.manager.SetDB(db)
-		}
+	db := h.configStore.DB()
+	if db == nil {
+		return
+	}
+	if h.manager.GetDB() != db || !h.manager.SchemaReady() {
+		h.manager.SetDB(db)
 	}
 }
 

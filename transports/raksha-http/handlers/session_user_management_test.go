@@ -375,3 +375,69 @@ func TestUserManagement_ApproveUser_Workflow(t *testing.T) {
 		t.Fatalf("Expected 200 OK after approval, got %d: %s", loginSuccessCtx.Response.StatusCode(), string(loginSuccessCtx.Response.Body()))
 	}
 }
+
+func TestGenerateTemporaryPasswordMeetsPolicy(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		password, err := generateTemporaryPassword()
+		if err != nil {
+			t.Fatalf("generate failed: %v", err)
+		}
+		if failures := getPasswordPolicyFailures(password); len(failures) > 0 {
+			t.Fatalf("generated password %q failed policy: %v", password, failures)
+		}
+	}
+}
+
+func TestCreateUserWithoutPasswordRequiresSMTP(t *testing.T) {
+	store := setupTestStore(t)
+	handler := NewSessionHandler(store, nil)
+	adminToken := getAdminSessionToken(t, handler)
+
+	ctx := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
+		"username": "temp_user",
+		"email":    "temp.user@rakshatech.io",
+		"role":     "user",
+	}, "192.168.1.1")
+	ctx.Request.Header.Set("Authorization", "Bearer "+adminToken)
+	handler.createUser(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusBadRequest {
+		t.Fatalf("expected 400 when SMTP is off, got %d: %s", ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	}
+	if !strings.Contains(string(ctx.Response.Body()), "SMTP") {
+		t.Fatalf("expected SMTP guidance, got %s", string(ctx.Response.Body()))
+	}
+}
+
+func TestLoginAcceptsEmail(t *testing.T) {
+	store := setupTestStore(t)
+	handler := NewSessionHandler(store, nil)
+	adminToken := getAdminSessionToken(t, handler)
+
+	ctx := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
+		"username": "mail_login_user",
+		"email":    "mail.login@rakshatech.io",
+		"password": "ComplexPass2026!",
+		"role":     "user",
+	}, "192.168.1.1")
+	ctx.Request.Header.Set("Authorization", "Bearer "+adminToken)
+	handler.createUser(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("create failed: %d %s", ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	}
+
+	loginCtx := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
+		"username": "mail.login@rakshatech.io",
+		"password": "ComplexPass2026!",
+	}, "192.168.1.40")
+	handler.login(loginCtx)
+	if loginCtx.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("email login failed: %d %s", loginCtx.Response.StatusCode(), string(loginCtx.Response.Body()))
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(loginCtx.Response.Body(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["must_change_password"] != true {
+		t.Fatalf("expected forced password change, got %#v", resp["must_change_password"])
+	}
+}

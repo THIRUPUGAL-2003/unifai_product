@@ -334,6 +334,41 @@ func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 	}
 }
 
+// temporaryPasswordMailReady reports why a generated password cannot be emailed yet.
+func temporaryPasswordMailReady(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) string {
+	if store == nil {
+		return "SMTP is not configured. Turn it on under Security settings so the temporary password can be emailed."
+	}
+	smtpRow, err := store.GetSMTPConfig(ctx)
+	if err != nil {
+		return err.Error()
+	}
+	if smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
+		return "SMTP is not enabled. Turn it on under Security settings so the temporary password can be emailed."
+	}
+	return ""
+}
+
+// trySendTemporaryPasswordEmail always attempts delivery when SMTP is enabled.
+// A generated password is useless if the mail never leaves the server.
+func trySendTemporaryPasswordEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email, password string) (bool, string) {
+	email = strings.TrimSpace(email)
+	if email == "" || store == nil {
+		return false, "No email address — temporary password was not sent"
+	}
+	smtpRow, err := store.GetSMTPConfig(ctx)
+	if err != nil {
+		return false, err.Error()
+	}
+	if smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
+		return false, "SMTP is not enabled. Turn it on under Security settings so the temporary password can be emailed."
+	}
+	if err := sendAuthEmail(store, ctx, email, "Your Raksha Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
+		return false, err.Error()
+	}
+	return true, ""
+}
+
 // trySendWelcomeEmail sends create-user mail when SMTP notify-on-create is on.
 // Returns (sent, errorMessage). Missing email / disabled SMTP is not an error.
 func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email, password string) (bool, string) {

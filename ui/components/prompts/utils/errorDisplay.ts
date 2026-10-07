@@ -24,11 +24,22 @@ const PROVIDER_WARNING_PATTERNS = [
 /**
  * Playground/provider failures that should render as a soft warning (not a hard error block).
  */
+export function isGuardrailMessage(message?: string | null): boolean {
+	if (!message) {
+		return false;
+	}
+	return /guardrail|guardrail_violation|restricted content detected/i.test(message);
+}
+
 export function isPromptWarningMessage(message?: string | null): boolean {
 	if (!message) {
 		return false;
 	}
 	if (isRateLimitMessage(message)) {
+		return true;
+	}
+	// Rule / provider hits (e.g. phone regex) should read as Warning, not a hard Error block.
+	if (isGuardrailMessage(message)) {
 		return true;
 	}
 	return PROVIDER_WARNING_PATTERNS.some((pattern) => pattern.test(message));
@@ -45,6 +56,10 @@ export function formatPromptWarningMessage(message?: string | null): string {
 
 	if (BUDGET_WARNING_PATTERN.test(message)) {
 		return message;
+	}
+
+	if (isGuardrailMessage(message)) {
+		return formatCleanGuardrailMessage(message);
 	}
 
 	const statusMatch = message.match(/status\s*(\d{3})/i);

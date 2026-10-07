@@ -9,9 +9,7 @@ import { AlertTriangle, XIcon } from "lucide-react";
  */
 export default function ErrorMessageView({ message, disabled, onRemove }: { message: Message; disabled?: boolean; onRemove?: () => void }) {
 	const isWarning = isPromptWarningMessage(message.content);
-	const text = isWarning
-		? formatPromptWarningMessage(message.content)
-		: formatCleanGuardrailMessage(message.content);
+	const text = isWarning ? formatPromptWarningMessage(message.content) : formatCleanGuardrailMessage(message.content);
 
 	return (
 		<div

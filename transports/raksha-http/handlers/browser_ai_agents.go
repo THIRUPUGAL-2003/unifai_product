@@ -124,7 +124,7 @@ func (h *BrowserAIHandler) agentHeartbeat(ctx *fasthttp.RequestCtx) {
 	settings, _ := h.manager.GetAgentSettings(ctx)
 	fleet, _ := h.manager.GetFleetConfig(ctx)
 	command := ""
-	if agent != nil && (agent.UninstallRequested || agent.Status == logstore.AgentStatusUninstalled || agent.Status == logstore.AgentStatusUninstallPending) {
+	if agent != nil && (agent.UninstallRequested || agent.Status == logstore.AgentStatusUninstallPending) {
 		command = "uninstall"
 	} else if agent != nil && agent.Status == logstore.AgentStatusPaused {
 		command = "pause"

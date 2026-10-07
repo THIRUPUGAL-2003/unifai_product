@@ -108,7 +108,7 @@ def heartbeat_wants_uninstall(data: dict | None) -> bool:
         return True
     agent = data.get("agent") if isinstance(data.get("agent"), dict) else {}
     status = str(agent.get("status") or "").strip().lower()
-    return bool(agent.get("uninstall_requested")) or status in ("uninstall_pending", "uninstalled")
+    return bool(agent.get("uninstall_requested")) or status == "uninstall_pending"
 
 
 def apply_admin_uninstall(agent_id: str) -> None:

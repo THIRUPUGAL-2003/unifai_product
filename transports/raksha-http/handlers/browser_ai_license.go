@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"io"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -41,10 +42,11 @@ func (h *BrowserAIHandler) activateLicense(ctx *fasthttp.RequestCtx) {
 	if fileHeader, err := ctx.FormFile("license_file"); err == nil && fileHeader != nil {
 		file, fErr := fileHeader.Open()
 		if fErr == nil {
-			buf := make([]byte, fileHeader.Size)
-			_, _ = file.Read(buf)
+			buf, readErr := io.ReadAll(file)
 			_ = file.Close()
-			rawData = buf
+			if readErr == nil {
+				rawData = buf
+			}
 		}
 	}
 

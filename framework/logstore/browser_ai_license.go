@@ -23,8 +23,7 @@ var MasterPublicKeyBytes = []byte{
 }
 
 const (
-	BrowserAILicenseID     = "browser-ai-license-active"
-	DefaultUnlicensedSeats = 100 // Default seat allowance if no explicit signed license uploaded yet
+	BrowserAILicenseID = "browser-ai-license-active"
 )
 
 var (
@@ -214,30 +213,13 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			}
 		}
 
-		// Default enterprise state (1-year license validity)
-		maxSeats := DefaultUnlicensedSeats
-		rem := maxSeats - allocatedSeats
-		if rem < 0 {
-			rem = 0
-		}
-		evalExpiry := time.Now().UTC().AddDate(1, 0, 0).Format(time.RFC3339)
-		evalIssued := time.Now().UTC().Format(time.RFC3339)
 		return &LicenseStatusInfo{
-			IsActive:       true,
-			IsLicensed:     true,
+			IsActive:       false,
+			IsLicensed:     false,
 			IsExpired:      false,
-			LicenseID:      "YP-ENTERPRISE-PROD",
-			Issuer:         "YesPanchi Group of Companies",
-			Product:        "Raksha - Real-time AI Knowledge Screening & Hazard Audit",
-			ClientName:     "Enterprise Organization",
-			Tier:           "Enterprise On-Premise",
-			MaxSeats:       maxSeats,
 			ActiveSeats:    allocatedSeats,
-			RemainingSeats: rem,
-			ExpiresAt:      evalExpiry,
-			IssuedAt:       evalIssued,
-			Features:       []string{"browser_ai_guard", "dlp_regex"},
-			StatusMessage:  fmt.Sprintf("Enterprise On-Premise (%d/%d seats in use)", allocatedSeats, maxSeats),
+			RemainingSeats: 0,
+			StatusMessage:  "No signed license is activated. Upload a .lic file issued by YesPanchi.",
 		}, nil
 	}
 
@@ -410,4 +392,3 @@ func (m *BrowserAIManager) CheckSeatQuotaEnforcement(ctx context.Context, agentI
 
 	return nil
 }
-

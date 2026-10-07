@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/mail"
 	"os"
 	"strconv"
@@ -440,6 +442,13 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 
 	if !authenticated {
 		dbUser, dbErr := h.configStore.GetUserByUsername(ctx, payload.Username)
+		if (dbErr != nil || dbUser == nil) && strings.Contains(payload.Username, "@") {
+			byEmail, emailErr := h.configStore.GetUserByEmail(ctx, strings.ToLower(payload.Username))
+			if emailErr == nil && byEmail != nil {
+				dbUser = byEmail
+				dbErr = nil
+			}
+		}
 		if dbErr == nil && dbUser != nil {
 			compare, cmpErr := encrypt.CompareHash(dbUser.Password, payload.Password)
 			if cmpErr != nil || !compare {
@@ -475,6 +484,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				return
 			}
 			sessionRole = dbUser.Role
+			sessionUsername = dbUser.Username
 			notifyEmail = dbUser.Email
 			sessionAllowedSections = effectiveAllowedSections(ctx, h.configStore, dbUser)
 			authenticated = true
@@ -852,6 +862,51 @@ func (h *SessionHandler) getUsers(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, visible)
 }
 
+// generateTemporaryPassword returns a password that satisfies the login policy
+// (8+ characters, upper, lower, digit, symbol) without the admin typing one.
+func generateTemporaryPassword() (string, error) {
+	const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+	const lower = "abcdefghijkmnopqrstuvwxyz"
+	const digits = "23456789"
+	const special = "!@#$%&*"
+	pick := func(set string) (byte, error) {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(set))))
+		if err != nil {
+			return 0, err
+		}
+		return set[n.Int64()], nil
+	}
+	buf := make([]byte, 12)
+	var err error
+	if buf[0], err = pick(upper); err != nil {
+		return "", err
+	}
+	if buf[1], err = pick(lower); err != nil {
+		return "", err
+	}
+	if buf[2], err = pick(digits); err != nil {
+		return "", err
+	}
+	if buf[3], err = pick(special); err != nil {
+		return "", err
+	}
+	all := upper + lower + digits + special
+	for i := 4; i < len(buf); i++ {
+		if buf[i], err = pick(all); err != nil {
+			return "", err
+		}
+	}
+	for i := len(buf) - 1; i > 0; i-- {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return "", err
+		}
+		j := int(n.Int64())
+		buf[i], buf[j] = buf[j], buf[i]
+	}
+	return string(buf), nil
+}
+
 // createUser handles POST /api/session/users - Create a new user (Admin only)
 func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	if !h.isAdmin(ctx) {
@@ -875,9 +930,21 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 	payload.Username = strings.TrimSpace(payload.Username)
 	payload.Email = strings.TrimSpace(strings.ToLower(payload.Email))
-	if payload.Username == "" || payload.Password == "" || payload.Email == "" {
-		SendError(ctx, fasthttp.StatusBadRequest, "Username, email, and password are required")
+	if payload.Username == "" || payload.Email == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Username and email are required")
 		return
+	}
+	if strings.TrimSpace(payload.Password) == "" {
+		if block := temporaryPasswordMailReady(h.configStore, ctx); block != "" {
+			SendError(ctx, fasthttp.StatusBadRequest, block)
+			return
+		}
+		generated, genErr := generateTemporaryPassword()
+		if genErr != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to generate a temporary password")
+			return
+		}
+		payload.Password = generated
 	}
 	if len(payload.Username) > 128 || len(payload.Password) > 128 || len(payload.Email) > 254 {
 		SendError(ctx, fasthttp.StatusBadRequest, "Username, email, or password exceeds maximum allowed length")
@@ -980,7 +1047,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		if emailTo == "" {
 			emailTo = strings.TrimSpace(existing.Email)
 		}
-		emailSent, emailErr := trySendWelcomeEmail(h.configStore, ctx, payload.Username, emailTo, payload.Password)
+		emailSent, emailErr := trySendTemporaryPasswordEmail(h.configStore, ctx, payload.Username, emailTo, payload.Password)
 		SendJSON(ctx, map[string]any{
 			"id":                   existing.ID,
 			"username":             existing.Username,
@@ -1034,7 +1101,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	user.Password = ""
-	emailSent, emailErr := trySendWelcomeEmail(h.configStore, ctx, payload.Username, payload.Email, payload.Password)
+	emailSent, emailErr := trySendTemporaryPasswordEmail(h.configStore, ctx, payload.Username, payload.Email, payload.Password)
 	SendJSON(ctx, map[string]any{
 		"id":                   user.ID,
 		"username":             user.Username,
@@ -1550,15 +1617,16 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	roleChanged := false
 
 	var payload struct {
-		Username           string   `json:"username"`
-		Password           string   `json:"password"`
-		Role               string   `json:"role"`
-		Email              *string  `json:"email"`
-		Status             *string  `json:"status"`
-		Budget             *float64 `json:"budget"`
-		RateLimit          *int     `json:"rate_limit"`
-		AllowedPromptRepos *string  `json:"allowed_prompt_repos"`
-		AllowedSections    *string  `json:"allowed_sections"`
+		Username              string   `json:"username"`
+		Password              string   `json:"password"`
+		Role                  string   `json:"role"`
+		Email                 *string  `json:"email"`
+		Status                *string  `json:"status"`
+		Budget                *float64 `json:"budget"`
+		RateLimit             *int     `json:"rate_limit"`
+		AllowedPromptRepos    *string  `json:"allowed_prompt_repos"`
+		AllowedSections       *string  `json:"allowed_sections"`
+		SendTemporaryPassword bool     `json:"send_temporary_password"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
@@ -1627,6 +1695,24 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	if payload.Status != nil && (*payload.Status == tables.UserStatusApproved || *payload.Status == tables.UserStatusPending || *payload.Status == tables.UserStatusRejected) {
 		existingUser.Status = *payload.Status
 	}
+	tempPassword := ""
+	if payload.SendTemporaryPassword {
+		if strings.TrimSpace(existingUser.Email) == "" {
+			SendError(ctx, fasthttp.StatusBadRequest, "Email is required to send a temporary password")
+			return
+		}
+		if block := temporaryPasswordMailReady(h.configStore, ctx); block != "" {
+			SendError(ctx, fasthttp.StatusBadRequest, block)
+			return
+		}
+		generated, genErr := generateTemporaryPassword()
+		if genErr != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to generate a temporary password")
+			return
+		}
+		tempPassword = generated
+		payload.Password = generated
+	}
 	if payload.Password != "" {
 		if failures := getPasswordPolicyFailures(payload.Password); len(failures) > 0 {
 			SendError(ctx, fasthttp.StatusBadRequest, "Password must include "+strings.Join(failures, ", "))
@@ -1638,6 +1724,9 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		existingUser.Password = hashedPassword
+		if payload.SendTemporaryPassword {
+			existingUser.MustChangePassword = true
+		}
 	}
 	if payload.Role != "" {
 		role, ok := h.normalizeUserRole(ctx, payload.Role)
@@ -1686,7 +1775,7 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Terminate sessions on password change / reject; sync or revoke on role change.
-	if payload.Password != "" || (payload.Status != nil && (*payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusPending)) {
+	if payload.Password != "" || payload.SendTemporaryPassword || (payload.Status != nil && (*payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusPending)) {
 		_ = h.configStore.DeleteSessionsByUsername(ctx, existingUser.Username)
 		if prevUsername != "" && prevUsername != existingUser.Username {
 			_ = h.configStore.DeleteSessionsByUsername(ctx, prevUsername)
@@ -1707,7 +1796,20 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	existingUser.Password = ""
-	SendJSON(ctx, existingUser)
+	emailSent := false
+	emailErrMsg := ""
+	if tempPassword != "" {
+		emailSent, emailErrMsg = trySendTemporaryPasswordEmail(h.configStore, ctx, existingUser.Username, existingUser.Email, tempPassword)
+	}
+	SendJSON(ctx, struct {
+		*tables.TableUser
+		EmailSent  bool   `json:"email_sent"`
+		EmailError string `json:"email_error,omitempty"`
+	}{
+		TableUser:  existingUser,
+		EmailSent:  emailSent,
+		EmailError: emailErrMsg,
+	})
 }
 
 // deleteUser handles DELETE /api/session/users/{id} - Delete user (Admin only)
@@ -2113,6 +2215,11 @@ func (h *SessionHandler) changeTemporaryPassword(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
 		return
 	}
+	sameAsTemporary, cmpErr := encrypt.CompareHash(dbUser.Password, payload.NewPassword)
+	if cmpErr == nil && sameAsTemporary {
+		SendError(ctx, fasthttp.StatusBadRequest, "New password must be different from the temporary password")
+		return
+	}
 
 	hashedPassword, err := encrypt.Hash(payload.NewPassword)
 	if err != nil {
@@ -2134,4 +2241,3 @@ func (h *SessionHandler) changeTemporaryPassword(ctx *fasthttp.RequestCtx) {
 		"message": "Password updated successfully",
 	})
 }
-

@@ -157,16 +157,6 @@ function UserVirtualKeysCell({ userId, allVirtualKeys }: { userId: string; allVi
 	);
 }
 
-function passwordPolicyFailures(password: string): string[] {
-	const fails: string[] = [];
-	if (password.length < 8) fails.push("at least 8 characters");
-	if (!/[A-Z]/.test(password)) fails.push("one uppercase letter");
-	if (!/[a-z]/.test(password)) fails.push("one lowercase letter");
-	if (!/\d/.test(password)) fails.push("one number");
-	if (!/[^A-Za-z0-9]/.test(password)) fails.push("one special character");
-	return fails;
-}
-
 export default function UsersView() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [roleFilter, setRoleFilter] = useState<"all" | "user" | "admin">("all");
@@ -216,8 +206,7 @@ export default function UsersView() {
 	// Form states — Role (permission) and Team (org membership) are separate.
 	const [username, setUsername] = useState("");
 	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [confirmPassword, setConfirmPassword] = useState("");
+	const [sendTemporaryPassword, setSendTemporaryPassword] = useState(false);
 	const [role, setRole] = useState("user");
 	const [teamId, setTeamId] = useState("");
 	const [initialTeamId, setInitialTeamId] = useState("");
@@ -546,7 +535,6 @@ export default function UsersView() {
 	const userPayload = () => ({
 		username,
 		email: email.trim() || undefined,
-		password: password || undefined,
 		role,
 		budget: isUserRole(role) ? budget : 0,
 		rate_limit: isUserRole(role) ? rateLimit : 0,
@@ -558,12 +546,8 @@ export default function UsersView() {
 	const handleCreateUser = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (isCreating) return;
-		if (!username || !password) {
-			toast.error("Username and password are required");
-			return;
-		}
-		if (password !== confirmPassword) {
-			toast.error("Passwords do not match");
+		if (!username) {
+			toast.error("Username is required");
 			return;
 		}
 		if (!email.trim()) {
@@ -574,15 +558,10 @@ export default function UsersView() {
 			toast.error("Please enter a valid email address");
 			return;
 		}
-		const policyFails = passwordPolicyFailures(password);
-		if (policyFails.length > 0) {
-			toast.error("Password must include " + policyFails.join(", "));
-			return;
-		}
 		setIsCreating(true);
 		try {
-			// The create endpoint validates and stores the role (incl. admin-only checks).
-			const created = await createUser({ ...userPayload(), password }).unwrap();
+			// The server generates a temporary password, emails it, and forces a change on first login.
+			const created = await createUser(userPayload()).unwrap();
 			if (created?.id && isUserRole(role)) {
 				try {
 					await syncUserTeam(created.id, teamId, "");
@@ -607,11 +586,11 @@ export default function UsersView() {
 				}
 			}
 			if (created?.email_sent) {
-				toast.success("User created — welcome email sent. Share the password with the user separately.");
+				toast.success("User created. A temporary password was emailed. First login must set a new password.");
 			} else if (created?.email_error) {
-				toast.warning(`User created, but email failed: ${created.email_error}`);
+				toast.warning(`User created, but the temporary password email failed: ${created.email_error}`);
 			} else {
-				toast.success("User created successfully (no welcome email — check SMTP / Email on user create)");
+				toast.warning("User created, but the temporary password was not emailed. Check SMTP under Security settings.");
 			}
 			setIsCreateOpen(false);
 			resetForm();
@@ -634,20 +613,22 @@ export default function UsersView() {
 			toast.error("Please enter a valid email address");
 			return;
 		}
-		if (password) {
-			if (password !== confirmPassword) {
-				toast.error("Passwords do not match");
-				return;
-			}
-			const policyFails = passwordPolicyFailures(password);
-			if (policyFails.length > 0) {
-				toast.error("Password must include " + policyFails.join(", "));
-				return;
-			}
-		}
 		setIsUpdating(true);
 		try {
-			await updateUser({ id: selectedUser.id, updates: userPayload() }).unwrap();
+			const updated = await updateUser({
+				id: selectedUser.id,
+				updates: { ...userPayload(), send_temporary_password: sendTemporaryPassword },
+			}).unwrap();
+			if (sendTemporaryPassword) {
+				const mailed = updated as { email_sent?: boolean; email_error?: string };
+				if (mailed?.email_sent) {
+					toast.success("A new temporary password was emailed. They must set a new password on next login.");
+				} else if (mailed?.email_error) {
+					toast.warning(`Saved, but the temporary password email failed: ${mailed.email_error}`);
+				} else {
+					toast.warning("Saved, but the temporary password was not emailed. Check SMTP under Security settings.");
+				}
+			}
 			if (isUserRole(role)) {
 				await syncUserTeam(selectedUser.id, teamId, initialTeamId);
 				await syncUserVirtualKey(selectedUser.id, virtualKeyId, initialVirtualKeyId);
@@ -662,7 +643,9 @@ export default function UsersView() {
 					await syncUserVirtualKey(selectedUser.id, "", initialVirtualKeyId);
 				}
 			}
-			toast.success("User updated successfully");
+			if (!sendTemporaryPassword) {
+				toast.success("User updated successfully");
+			}
 			setIsEditOpen(false);
 			resetForm();
 		} catch (err) {
@@ -730,8 +713,7 @@ export default function UsersView() {
 	const resetForm = () => {
 		setUsername("");
 		setEmail("");
-		setPassword("");
-		setConfirmPassword("");
+		setSendTemporaryPassword(false);
 		setRole("user");
 		setTeamId("");
 		setInitialTeamId("");
@@ -750,8 +732,7 @@ export default function UsersView() {
 		setSelectedUser(user);
 		setUsername(user.username);
 		setEmail(user.email || "");
-		setPassword("");
-		setConfirmPassword("");
+		setSendTemporaryPassword(false);
 		const nextRole = (user.role || "user").trim() || "user";
 		setRole(nextRole);
 		setTeamId("");
@@ -1225,28 +1206,9 @@ export default function UsersView() {
 								className="bg-muted/20 border-border/50 focus:border-teal-500/50"
 							/>
 						</div>
-						<div className="space-y-2">
-							<label className="text-muted-foreground text-sm font-medium">Password</label>
-							<Input
-								type="password"
-								required
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								placeholder="Min 8 chars, 1 uppercase, 1 symbol"
-								className="bg-muted/20 border-border/50 focus:border-teal-500/50"
-							/>
-						</div>
-						<div className="space-y-2">
-							<label className="text-muted-foreground text-sm font-medium">Confirm Password</label>
-							<Input
-								type="password"
-								required
-								value={confirmPassword}
-								onChange={(e) => setConfirmPassword(e.target.value)}
-								placeholder="Re-enter password"
-								className="bg-muted/20 border-border/50 focus:border-teal-500/50"
-							/>
-						</div>
+						<p className="text-muted-foreground text-xs">
+							A temporary password is generated and emailed. The first login must set a new password (8+ characters, uppercase, lowercase, number, and symbol).
+						</p>
 						<div className="space-y-2">
 							<label className="text-muted-foreground text-sm font-medium">Role</label>
 							<p className="text-muted-foreground text-xs">
@@ -1405,28 +1367,18 @@ export default function UsersView() {
 								className="bg-muted/20 border-border/50 focus:border-teal-500/50"
 							/>
 						</div>
-						<div className="space-y-2">
-							<label className="text-muted-foreground text-sm font-medium">New Password (Leave blank to keep same)</label>
-							<Input
-								type="password"
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								placeholder="••••••••"
-								className="bg-muted/20 border-border/50 focus:border-teal-500/50"
+						<div className="border-border/50 bg-muted/10 flex items-center gap-2 rounded-lg border p-3">
+							<input
+								id="send-temporary-password"
+								type="checkbox"
+								checked={sendTemporaryPassword}
+								onChange={(e) => setSendTemporaryPassword(e.target.checked)}
+								className="border-border rounded text-teal-500 focus:ring-teal-500/50"
 							/>
+							<label htmlFor="send-temporary-password" className="text-foreground cursor-pointer text-sm">
+								Email a new temporary password. Their next login must set a new password.
+							</label>
 						</div>
-						{password && (
-							<div className="space-y-2">
-								<label className="text-muted-foreground text-sm font-medium">Confirm New Password</label>
-								<Input
-									type="password"
-									value={confirmPassword}
-									onChange={(e) => setConfirmPassword(e.target.value)}
-									placeholder="Re-enter new password"
-									className="bg-muted/20 border-border/50 focus:border-teal-500/50"
-								/>
-							</div>
-						)}
 						<div className="space-y-2">
 							<label className="text-muted-foreground text-sm font-medium">Role</label>
 							<p className="text-muted-foreground text-xs">

@@ -440,14 +440,14 @@ export default function LoginView() {
 									<>
 										<div className="space-y-1.5">
 											<Label htmlFor="username" className="text-xs font-medium text-slate-200">
-												Username
+												Username or email
 											</Label>
 											<div className="relative">
 												<User className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
 													id="username"
 													type="text"
-													placeholder="Enter your username"
+													placeholder="Username or email"
 													value={username}
 													onChange={(e) => {
 														setUsername(e.target.value);

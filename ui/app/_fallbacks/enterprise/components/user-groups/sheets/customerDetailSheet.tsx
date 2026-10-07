@@ -169,19 +169,39 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 
 						<DetailCard title="Teams">
 							{customerTeams.length > 0 ? (
-								<ul className="space-y-1.5 text-sm">
-									{customerTeams.map((team) => (
-										<li key={team.id} className="flex items-center justify-between gap-2">
-											<span>{team.name}</span>
-											<Link
-												to="/workspace/governance/teams"
-												className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-												onClick={() => onOpenChange(false)}
-											>
-												Open Teams
-											</Link>
-										</li>
-									))}
+								<ul className="space-y-3 text-sm">
+									{customerTeams.map((team) => {
+										const teamBudgets = [...(team.budgets || [])].sort((a, b) => (b.max_limit || 0) - (a.max_limit || 0));
+										const primary = teamBudgets[0];
+										const spent = primary?.current_usage ?? 0;
+										const max = primary?.max_limit ?? 0;
+										return (
+											<li key={team.id} className="space-y-1.5 rounded-md border px-3 py-2">
+												<div className="flex items-center justify-between gap-2">
+													<span className="font-medium">{team.name}</span>
+													<Link
+														to="/workspace/governance/teams"
+														className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+														onClick={() => onOpenChange(false)}
+													>
+														Open Teams
+													</Link>
+												</div>
+												{primary ? (
+													<div className="text-muted-foreground flex items-center justify-between font-mono text-xs">
+														<span>
+															Spent{" "}
+															<span className="text-foreground font-semibold">{formatCurrency(spent)}</span>
+															{max > 0 ? ` / ${formatCurrency(max)}` : " (Unlimited)"}
+														</span>
+														{max > 0 ? <span>{Math.min(100, (spent / max) * 100).toFixed(0)}%</span> : null}
+													</div>
+												) : (
+													<p className="text-muted-foreground text-xs">No team budget configured</p>
+												)}
+											</li>
+										);
+									})}
 								</ul>
 							) : (
 								<EmptyLine>No teams linked to this customer</EmptyLine>
