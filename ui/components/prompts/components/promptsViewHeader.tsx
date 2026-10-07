@@ -466,6 +466,7 @@ export default function PromptsViewHeader() {
 				)}
 			</div>
 		</div>
+	</div>
 	);
 }
 

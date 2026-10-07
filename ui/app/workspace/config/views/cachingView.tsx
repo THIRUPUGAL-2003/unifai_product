@@ -596,7 +596,7 @@ export default function CachingView() {
 				</div>
 			)}
 
-			{(vectorStoreError || pluginsError) && (
+			{Boolean(vectorStoreError || pluginsError) && (
 				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
 					<p className="text-destructive text-sm font-medium">Failed to load cache settings</p>
 					<p className="text-muted-foreground mt-1 text-sm">

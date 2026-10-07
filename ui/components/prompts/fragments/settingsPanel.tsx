@@ -87,7 +87,7 @@ export function SettingsPanel() {
 	});
 	const { data: skillsData, isError: skillsFailed, error: skillsError } = useListSkillsQuery({ limit: 100, offset: 0 });
 	const { data: mcpClientsData, isError: mcpFailed, error: mcpError } = useGetMCPClientsQuery();
-	const settingsQueryFailed = providersFailed || keysFailed || skillsFailed || mcpFailed || vkFailed || billingFailed;
+	const settingsQueryFailed = providersFailed || keysFailed || skillsFailed || mcpFailed || vkFailed;
 	const skillOptions = useMemo(
 		() => [
 			{ label: "None", value: "" },
@@ -264,7 +264,7 @@ export function SettingsPanel() {
 						<QueryErrorBanner
 							testId="prompts-settings-query-error"
 							message={
-								getErrorMessage(providersError || keysError || skillsError || mcpError || vkError || billingError) ||
+								getErrorMessage(providersError || keysError || skillsError || mcpError || vkError) ||
 									"Failed to load prompt settings data."
 							}
 						/>

@@ -297,7 +297,7 @@ export default function ClientSettingsView() {
 				<p className="text-muted-foreground text-sm">Configure client behavior and request handling.</p>
 			</div>
 
-			{(coreConfigError || largePayloadError || droppedRequestsError) && (
+			{Boolean(coreConfigError || largePayloadError || droppedRequestsError) && (
 				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
 					<p className="text-destructive text-sm font-medium">Failed to load client settings</p>
 					<p className="text-muted-foreground mt-1 text-sm">
