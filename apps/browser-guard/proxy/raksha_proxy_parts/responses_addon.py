@@ -1060,7 +1060,11 @@ class BrowserAIInterceptor:
             self._apply_duplicate_http_prompt(flow, domain, platform, prompt, client_ip, raw_text)
             return
 
-        print(f"[Raksha Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
+        try:
+            print(f"[Raksha Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
+        except UnicodeEncodeError:
+            safe_p = prompt[:80].encode("ascii", "backslashreplace").decode("ascii")
+            print(f"[Raksha Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {safe_p!r}")
         allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
             platform=platform,
             domain=domain,

@@ -989,10 +989,16 @@ def rule_matches_prompt(rule: dict, prompt: str) -> bool:
         return False
 
 
-def _redacted_forward(prompt: str, warning_message: str = "") -> str:
-    """ChatGPT receives full original prompt + redact notice. Logs keep original only."""
+def _redacted_forward(prompt: str, warning_message: str = "", rule: dict | None = None) -> str:
+    """Mask matching sensitive words with [REDACTED], append notice. Logs keep original only."""
+    text = prompt or ""
+    if rule and rule.get("regex") and text:
+        try:
+            text = rule["regex"].sub("[REDACTED]", text)
+        except Exception:
+            pass
     w = (warning_message or "").strip() or "This prompt triggered a Raksha Guard redaction policy."
-    body = (prompt or "").rstrip()
+    body = (text or "").rstrip()
     if body:
         return f"{body}\n\n[RAKSHA REDACTED] {w}"
     return f"[RAKSHA REDACTED] {w}"
@@ -1147,7 +1153,7 @@ def decide_prompt_locally(prompt: str) -> tuple[bool, str, str, str, str]:
 
     if best_redact is not None:
         r = best_redact
-        return True, r["name"], "Redacted", _redacted_forward(prompt, r.get("warning_message", "")), ""
+        return True, r["name"], "Redacted", _redacted_forward(prompt, r.get("warning_message", ""), r), ""
 
     if best_warn is not None:
         r = best_warn

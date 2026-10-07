@@ -1586,12 +1586,14 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
         if not rule_matches_prompt(r, prompt):
             continue
         rule_action = (r.get("action") or "BLOCK").upper()
-        if rule_action == "WARN":
-            rule_action = "REDACT"
+        if rule_action == "ALERT":
+            rule_action = "WARN"
         if rule_action == "BLOCK":
             return False, r["name"], "Blocked", prompt, _security_reply_text(r["name"], r.get("warning_message", "")), ""
         if rule_action == "REDACT":
-            return True, r["name"], "Redacted", _redacted_forward(prompt, r.get("warning_message", "")), "", ""
+            return True, r["name"], "Redacted", _redacted_forward(prompt, r.get("warning_message", ""), r), "", ""
+        if rule_action == "WARN":
+            return True, r["name"], "Warned", _warning_forward(prompt, r.get("warning_message", "")), "", ""
 
     # Backend / evaluator miss — regex already ran locally.
     # Default fail-CLOSED when AI Guard Bots are configured (do not silently allow).

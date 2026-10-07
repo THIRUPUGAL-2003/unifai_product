@@ -57,6 +57,7 @@ def _load_rule_from_backend(action: str) -> None:
         "pattern": RULE_PATTERN, "action": action, "severity": "HIGH",
         "warning_message": WARNING_TEXT,
     }]}
+    NS["RAKSHA_BACKEND_URL"] = "http://127.0.0.1:6000"
     NS["_fetch_json"] = lambda url, *a, **k: payload
     NS["get_guard_rules"](force_network=True)
 
