@@ -881,9 +881,11 @@ class BrowserAIInterceptor:
                 or (raw_bytes[:2] == b"PK" and len(raw_bytes) >= 512)
                 or _looks_like_audio(raw_bytes, content_type, "")
                 or _looks_like_image(raw_bytes, content_type, "")
-                or ct_l.startswith(("audio/", "image/", "video/"))
+                or ct_l.startswith(("audio/", "image/", "video/", "text/csv", "text/tab-separated-values", "application/csv"))
                 or "officedocument" in ct_l
                 or "msword" in ct_l
+                or "application/vnd." in ct_l
+                or "application/octet-stream" in ct_l
             ):
                 is_upload = True
                 upload_reason = "binary/multipart body on monitored domain"

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import time
 import unittest
 from pathlib import Path
 from mitmproxy.test import tflow, tutils
@@ -89,6 +90,7 @@ class ClaudeLiveComprehensiveTests(unittest.TestCase):
                 {"domain": "console.anthropic.com", "platform_name": "Claude", "monitored": True},
                 {"domain": "files.claudeusercontent.com", "platform_name": "Claude", "monitored": True},
                 {"domain": "claudeusercontent.com", "platform_name": "Claude", "monitored": True},
+                {"domain": "chatgpt.com", "platform_name": "ChatGPT", "monitored": True},
             ]
         })
         pat_ssn = r"\b\d{3}-\d{2}-\d{4}\b"
@@ -264,6 +266,226 @@ class ClaudeLiveComprehensiveTests(unittest.TestCase):
             self.assertTrue(is_mon, f"Subdomain {host} was not marked as monitored!")
 
         print("[Test Result] All Claude subdomains and endpoints verified successfully!")
+
+    def test_26_to_30_claude_symbols_and_numbers(self):
+        """Test symbols and math/code prompts in Claude: c++, x=1, #1, $50, ?, +, 10%, a:=1."""
+        symbol_prompts = [
+            ("c++", "c++"),
+            ("x=1", "x=1"),
+            ("#1", "#1"),
+            ("$50", "$50"),
+            ("?", "?"),
+            ("+", "+"),
+            ("10%", "10%"),
+            ("a:=1", "a:=1"),
+            ("1+1=2", "1+1=2"),
+            ("pi*r^2", "pi*r^2"),
+        ]
+        for prompt_text, label in symbol_prompts:
+            body = json.dumps({
+                "prompt": prompt_text,
+                "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+                "model": "claude-3-5-sonnet-20241022",
+            })
+            f = _flow("claude.ai", "/api/organizations/org1/chat_conversations/conv-sym/completion", body)
+            _run(f)
+            self.assertFalse(_blocked(f), f"Symbol prompt {label!r} was incorrectly blocked!")
+
+            extracted = NS["extract_prompt_universal"](
+                body.encode("utf-8"), "application/json", "claude.ai",
+                "/api/organizations/org1/chat_conversations/conv-sym/completion"
+            )
+            self.assertEqual(extracted, prompt_text, f"Symbol prompt {label!r} failed extraction: got {extracted!r}")
+
+        print("[Test Result] Claude symbol prompts (c++, x=1, #1, $50, ?, +, 10%, a:=1) verified with zero token leaks!")
+
+    def test_31_claude_word_document_prompt_extract_not_document_body(self):
+        """When a user uploads a Word file (.docx) and types a prompt, extract user prompt, NOT doc body."""
+        large_doc_text = "Executive Summary: Q3 Financial Results.\n" * 40  # > 1500 chars document dump
+        typed_prompt = "Please summarize this quarterly report in 3 bullets."
+
+        # Simulate Claude payload containing both document extract and user prompt
+        body = json.dumps({
+            "prompt": typed_prompt,
+            "attachments": [
+                {
+                    "file_name": "quarterly_financials.docx",
+                    "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "extracted_content": large_doc_text,
+                }
+            ],
+            "files": ["quarterly_financials.docx"],
+        })
+        extracted = NS["extract_prompt_universal"](
+            body.encode("utf-8"), "application/json", "claude.ai",
+            "/api/organizations/org1/chat_conversations/conv-docx/completion"
+        )
+        self.assertEqual(extracted, typed_prompt, f"Expected typed prompt {typed_prompt!r}, but got doc dump: {extracted[:80]!r}")
+
+        # Also verify via protobuf strings picker
+        candidates = [
+            "org_01xyz1234567890",
+            "quarterly_financials.docx",
+            large_doc_text,
+            typed_prompt,
+        ]
+        picked = NS["_filter_and_pick_claude_prompt"](candidates)
+        self.assertEqual(picked, typed_prompt, f"Claude picker selected doc dump instead of user prompt: {picked[:80]!r}")
+
+        print("[Test Result] Claude Word Document (.docx) upload: correctly extracted user prompt instead of document text dump!")
+
+    def test_32_file_upload_timing_zero_predict_on_upload_predict_on_send(self):
+        """Zero prediction on upload/import. Predict and check rules ONLY after Send, unless Block Upload is ON."""
+        # Step 1: Normal upload (Block Upload is OFF) -> Must NOT block or evaluate, cache only
+        ubody, mct = _multipart("file", "employee_notes.txt", "text/plain", b"Confidential tax SSN: 123-45-6789")
+        up_flow = _flow("chatgpt.com", "/backend-api/files/upload-test", ubody, content_type=mct)
+        _run(up_flow)
+        self.assertFalse(_blocked(up_flow), "Upload was prematurely blocked on import! Must wait for Send.")
+
+        # Step 2: On Send -> Must evaluate cached file and BLOCK because file contains SSN
+        send_body = json.dumps({
+            "prompt": "Analyze this notes file",
+            "attachments": [{"file_name": "employee_notes.txt"}],
+            "files": ["employee_notes.txt"],
+        })
+        send_flow = _flow("chatgpt.com", "/backend-api/f/conversation", send_body)
+        _run(send_flow)
+        self.assertTrue(_blocked(send_flow), "File with SSN was NOT blocked on Send!")
+
+        # Step 3: When admin enabled Block Upload -> MUST block immediately on upload
+        orig_ctrl = dict(NS["_cached_controls"])
+        orig_from_be = NS["_controls_from_backend"]
+        try:
+            NS["_cached_controls"] = {"enabled": True, "block_upload": True, "upload_warning": "File uploads are blocked by policy"}
+            NS["_controls_from_backend"] = True
+            NS["_controls_fetched_at"] = time.time()
+            blk_up = _flow("chatgpt.com", "/backend-api/files/upload-blocked", ubody, content_type=mct)
+            _run(blk_up)
+            self.assertTrue(_blocked(blk_up), "Upload was NOT blocked on import when Block Upload is ON!")
+        finally:
+            NS["_cached_controls"] = orig_ctrl
+            NS["_controls_from_backend"] = orig_from_be
+            NS["_controls_fetched_at"] = time.time()
+
+        print("[Test Result] Upload timing verified: zero predict on import; predict only on Send; block on import only when Block Upload is ON!")
+
+    def test_33_voice_upload_and_send(self):
+        """Voice audio (.m4a / .wav) upload and Send rule check."""
+        audio_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00data\x00\x00\x00\x00"
+        v_body, v_mct = _multipart("file", "meeting_recording.m4a", "audio/mp4", audio_bytes)
+        v_up = _flow("claude.ai", "/api/organizations/org1/upload-voice", v_body, content_type=v_mct)
+        _run(v_up)
+        self.assertFalse(_blocked(v_up), "Voice upload was blocked prematurely!")
+
+        v_send = json.dumps({
+            "prompt": "Transcribe and summarize this audio note.",
+            "attachments": [{"file_name": "meeting_recording.m4a"}],
+            "files": ["meeting_recording.m4a"],
+        })
+        v_send_flow = _flow("claude.ai", "/api/organizations/org1/chat_conversations/conv-voice/completion", v_send)
+        _run(v_send_flow)
+        self.assertFalse(_blocked(v_send_flow))
+
+        print("[Test Result] Voice audio upload (.m4a) and Send handling verified successfully!")
+
+    def test_34_multi_file_and_voice_rule_checks(self):
+        """Verify:
+        1. Multi-file upload: all files cached on import with 0 predict; on Send, each file is inspected and blocked if any contains sensitive data.
+        2. Filename-based rule check: blocked on Send when filename matches pattern.
+        3. Voice note upload: cached on import with 0 predict, evaluated on Send.
+        """
+        # 1. Multi-file batch where 1 of 3 has SSN
+        f1_data = b"%PDF-1.4 Clean Document 1"
+        f2_data = b"Clean notes document 2"
+        f3_data = b"Confidential document 3 with SSN: 987-65-4321"
+
+        b1, m1 = _multipart("file", "clean_doc1.pdf", "application/pdf", f1_data)
+        b2, m2 = _multipart("file", "clean_doc2.txt", "text/plain", f2_data)
+        b3, m3 = _multipart("file", "sensitive_doc3.txt", "text/plain", f3_data)
+
+        # Upload all 3 - NONE must be blocked on upload!
+        u1 = _flow("claude.ai", "/api/organizations/org1/upload-multi-1", b1, content_type=m1)
+        u2 = _flow("claude.ai", "/api/organizations/org1/upload-multi-2", b2, content_type=m2)
+        u3 = _flow("claude.ai", "/api/organizations/org1/upload-multi-3", b3, content_type=m3)
+        _run(u1)
+        _run(u2)
+        _run(u3)
+        self.assertFalse(_blocked(u1), "File 1 was blocked prematurely on upload!")
+        self.assertFalse(_blocked(u2), "File 2 was blocked prematurely on upload!")
+        self.assertFalse(_blocked(u3), "File 3 was blocked prematurely on upload!")
+
+        # Send all 3 files together -> MUST BE BLOCKED on Send because of sensitive_doc3.txt
+        multi_send = json.dumps({
+            "prompt": "Analyze all three uploaded files please",
+            "attachments": [
+                {"file_name": "clean_doc1.pdf"},
+                {"file_name": "clean_doc2.txt"},
+                {"file_name": "sensitive_doc3.txt"},
+            ],
+            "files": ["clean_doc1.pdf", "clean_doc2.txt", "sensitive_doc3.txt"],
+        })
+        s_multi = _flow("claude.ai", "/api/organizations/org1/chat_conversations/conv-multi-test/completion", multi_send)
+        _run(s_multi)
+        self.assertTrue(_blocked(s_multi), "Multi-file batch containing sensitive file was NOT blocked on Send!")
+
+        # 2. Filename-based rule check (Single file)
+        # Add a filename rule: Block files named passwords*.txt
+        with NS["_cache_lock"]:
+            NS["_cached_rules"].append({
+                "name": "Password File Rule",
+                "pattern": r"(?i)passwords?.*\.txt",
+                "regex": re.compile(r"(?i)passwords?.*\.txt"),
+                "action": "BLOCK",
+                "severity": "HIGH",
+            })
+        try:
+            pw_data = b"username: admin\nsecret: 12345"
+            pw_body, pw_mct = _multipart("file", "passwords_backup.txt", "text/plain", pw_data)
+            pw_up = _flow("claude.ai", "/api/organizations/org1/upload-pw", pw_body, content_type=pw_mct)
+            _run(pw_up)
+            self.assertFalse(_blocked(pw_up), "Password file upload was blocked prematurely before Send!")
+
+            pw_send = json.dumps({
+                "prompt": "Analyze password list",
+                "attachments": [{"file_name": "passwords_backup.txt"}],
+                "files": ["passwords_backup.txt"],
+            })
+            pw_s_flow = _flow("claude.ai", "/api/organizations/org1/chat_conversations/conv-pw/completion", pw_send)
+            _run(pw_s_flow)
+            self.assertTrue(_blocked(pw_s_flow), "File matching Password File Rule was NOT blocked on Send!")
+        finally:
+            with NS["_cache_lock"]:
+                NS["_cached_rules"] = [r for r in NS["_cached_rules"] if r.get("name") != "Password File Rule"]
+
+        # 3. Voice note check with sensitive keyword
+        with NS["_cache_lock"]:
+            NS["_cached_rules"].append({
+                "name": "Secret Voice Rule",
+                "pattern": r"(?i)SECRET_PROJECT_VOICE",
+                "regex": re.compile(r"(?i)SECRET_PROJECT_VOICE"),
+                "action": "BLOCK",
+                "severity": "HIGH",
+            })
+        try:
+            voice_data = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00data\x00\x00\x00\x00SECRET_PROJECT_VOICE"
+            v_body, v_mct = _multipart("file", "audio_leak.wav", "audio/wav", voice_data)
+            v_up = _flow("claude.ai", "/api/organizations/org1/upload-v-leak", v_body, content_type=v_mct)
+            _run(v_up)
+            self.assertFalse(_blocked(v_up), "Voice upload was blocked prematurely!")
+
+            v_send = json.dumps({
+                "prompt": "Transcribe this secret recording",
+                "attachments": [{"file_name": "audio_leak.wav"}],
+                "files": ["audio_leak.wav"],
+            })
+            v_s_flow = _flow("claude.ai", "/api/organizations/org1/chat_conversations/conv-v-leak/completion", v_send)
+            _run(v_s_flow)
+            self.assertTrue(_blocked(v_s_flow), "Voice file with SECRET_PROJECT_VOICE was NOT blocked on Send!")
+        finally:
+            with NS["_cache_lock"]:
+                NS["_cached_rules"] = [r for r in NS["_cached_rules"] if r.get("name") != "Secret Voice Rule"]
+
+        print("[Test Result] Multi-file batch, filename rule, and voice rule checks verified on Send!")
 
 
 if __name__ == "__main__":

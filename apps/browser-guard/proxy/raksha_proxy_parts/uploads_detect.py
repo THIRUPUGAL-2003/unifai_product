@@ -3191,6 +3191,27 @@ def _scan_upload_for_rules(
             rule_action = (rule_action or "").upper()
             if rule_action == "ALERT":
                 rule_action = "WARN"
+
+        # Check rule match on filename itself (e.g. passwords*.txt, sensitive.pdf, secret_*.docx)
+        for fn_candidate in (file_label, (cached or {}).get("file_name", "")):
+            fn_cand = (fn_candidate or "").strip()
+            if not fn_cand or _is_fake_upload_name(fn_cand):
+                continue
+            try:
+                fn_hit, fn_name, fn_action = match_guard_rules_on_text(fn_cand)
+                if fn_hit:
+                    fn_action = (fn_action or "").upper()
+                    if fn_action == "ALERT":
+                        fn_action = "WARN"
+                    if fn_action == "BLOCK" or not rule_hit:
+                        rule_hit, rule_name, rule_action = True, fn_name, fn_action
+                    if rule_action == "BLOCK":
+                        break
+            except Exception as e:
+                pass
+
+        if not excerpt and file_label and not _is_fake_upload_name(file_label):
+            excerpt = file_label.strip()[:180]
         # Backend regex/bot on extract or vision images.
         has_regex = bool(get_guard_rules())
         plat = (platform or domain or "Browser AI").strip()

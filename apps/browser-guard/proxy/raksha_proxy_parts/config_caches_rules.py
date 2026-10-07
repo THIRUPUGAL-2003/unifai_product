@@ -166,6 +166,7 @@ _GENERIC_UPLOAD_PATH_MARKERS = (
     "/process_upload", "/file-upload", "/fileupload", "/resumable",
     "/api/files", "/api/file", "/document", "/documents",
     "/asset", "/assets", "/blob", "/blobs", "/presigned",
+    "/storage", "/import", "/import_file", "/fife",
     "/voice", "/audio/upload", "/speech", "/transcribe",
 )
 
@@ -177,6 +178,10 @@ UPLOAD_CONTENT_TYPES = (
     "application/msword",
     "application/vnd.openxmlformats-officedocument",
     "application/vnd.ms-",
+    "application/vnd.",
+    "text/csv",
+    "text/tab-separated-values",
+    "application/csv",
     "image/",
     "video/",
     "audio/",

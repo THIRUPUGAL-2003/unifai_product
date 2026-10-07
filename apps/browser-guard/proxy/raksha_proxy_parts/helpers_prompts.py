@@ -531,29 +531,16 @@ def _is_internal_wire_text(text: str) -> bool:
         return True
     if " " not in t and re.fullmatch(r"[a-z]+(?:_[a-z0-9]+){2,}", low):
         return True
-    # Short wire fragments: B-mvY..., J12'54M, U}2T), 7cZ.
-    # Keep mostly-digit tokens (formatted IDs) — not opaque wire.
-    # Keep short symbols / light punctuation as prompts.
+    # Short expressions (symbols, code, math operators, tags): c++, x=1, #1, i++, a:=1, $50, 10%, fn(), etc.
     if len(t) <= 14 and " " not in t:
-        special = sum(1 for c in t if not c.isalnum() and c not in "._-'")
-        digits = sum(1 for c in t if c.isdigit())
-        letters = sum(1 for c in t if c.isalpha())
-        if digits >= 3 and special <= 2 and all(c.isdigit() or c in "+#*-(). " for c in t):
+        _allowed_syms = set("+-*/=<>!&|^%$#@?:;~_().[]{}'\",\\`")
+        if all(c.isalnum() or c in _allowed_syms for c in t):
+            # Only flag high-entropy base64/hex hashes without operators
+            if len(t) >= 6 and not any(c in "+-*/=<>!&|^%$#@?:;~_().[]{}'\"`" for c in t):
+                vowels = sum(1 for c in t.lower() if c in "aeiouy")
+                if vowels == 0 and sum(1 for c in t if c.isupper()) >= 2:
+                    return True
             return False
-        # Pure symbol / punctuation prompts (no letters/digits)
-        if not any(c.isalnum() for c in t):
-            return False
-        if len(t) == 1:
-            return False
-        # Word + light trailing/leading punctuation (hello!, hi?, @tag) — not wire
-        if letters >= 2 and special <= 2 and letters >= special:
-            return False
-        if special >= 1 and len(t) <= 10:
-            return True
-        if special >= 2:
-            return True
-        if letters and digits and special and len(t) <= 12:
-            return True
     return False
 
 
@@ -783,7 +770,7 @@ def _is_chat_metadata_token(text: str) -> bool:
         return True
     if any(ord(c) < 32 and c not in "\n\r\t" for c in t):
         return True
-    if len(t) == 1 and not t.isalnum():
+    if len(t) == 1 and t in "/.\\|":
         return True
     if _TIMEZONE_RE.match(t):
         return True
@@ -808,17 +795,21 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
             continue
         if _is_opaque_wire_blob(got) or _is_internal_wire_text(got) or _is_chat_metadata_token(got):
             continue
+        if _looks_like_document_body_dump(got):
+            continue
         if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", got, re.I):
             continue
-        score = len(got)
+        # User prompts are typically concise (1 to 500 chars).
+        score = min(len(got), 300)
+        if 1 <= len(got) <= 300:
+            score += 60
         if " " in got:
             score += 24
         if got.isdigit():
-            score += 16
-        if 1 <= len(got) <= 4 and got.isalpha():
-            score += 12
-        if re.search(r"[a-zA-Z]", got) and re.search(r"\d", got):
-            score += 4
+            score += 20
+        # Conversational prompt keywords
+        if any(w in got.lower() for w in ("please", "summarize", "explain", "what", "how", "why", "write", "analyze", "review", "check", "help", "create", "can you", "find", "compare")):
+            score += 80
         if score > best_score:
             best_score = score
             best = got
@@ -1156,7 +1147,7 @@ def _path_looks_like_upload(path: str) -> bool:
         return False
     if any(m in p for m in _GENERIC_UPLOAD_PATH_MARKERS):
         return True
-    return any(x in p for x in ("/files", "/upload", "/attachments", "/media/upload", "/convert_document"))
+    return any(x in p for x in ("/files", "/file/", "/upload", "/attachments", "/attachment", "/media/upload", "/convert_document", "/documents", "/document", "/storage", "/import", "/blob", "/blobs"))
 
 
 def is_unsubmitted_chat_body(path: str, body: str) -> bool:
@@ -2099,6 +2090,11 @@ def _filter_and_pick_claude_prompt(candidates: list[str]) -> str | None:
         valid.append(s_clean)
     if not valid:
         return None
+    # When a document is attached, protobuf payload contains both the extracted document
+    # and the user-typed prompt. Prioritize non-dump strings (the actual user prompt).
+    non_dumps = [c for c in valid if not _looks_like_document_body_dump(c)]
+    if non_dumps:
+        return _pick_best_user_text(non_dumps) or non_dumps[-1]
     return _pick_best_user_text(valid) or valid[-1]
 
 
@@ -2433,10 +2429,10 @@ def detect_file_upload(flow: http.HTTPFlow, raw_content: str) -> tuple[bool, str
     chat_submit = is_chat_path(path, host, raw)
     if not chat_submit:
         for prefix in UPLOAD_CONTENT_TYPES:
-            if prefix in content_type and body_len >= 512:
+            if prefix in content_type and body_len >= 64:
                 # Skip generic application/json mistaken as upload
                 if prefix in ("application/pdf", "image/", "audio/", "video/", "application/octet-stream",
-                              "application/msword", "application/vnd."):
+                              "application/msword", "application/vnd.", "text/csv", "text/tab-separated-values", "application/csv"):
                     return True, f"File content-type ({content_type.split(';')[0]})"
 
     # JSON attachment heuristics: NEVER on chat submit
