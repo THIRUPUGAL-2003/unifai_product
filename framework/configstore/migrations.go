@@ -462,6 +462,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"widen_prompt_message_json_mysql"}, run: migrationWidenPromptMessageJSONMySQL},
 	{IDs: []string{"drop_unconfigured_telemetry_otel_plugins"}, run: migrationDropUnconfiguredObservabilityPlugins},
 	{IDs: []string{"add_governance_scoping_to_prompts"}, run: migrationAddGovernanceScopingToPrompts},
+	{IDs: []string{"add_must_change_password_to_governance_users"}, run: migrationAddMustChangePasswordToGovernanceUsers},
 }
 
 // migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
@@ -10637,6 +10638,31 @@ func migrationAddExternalIDToGovernanceUsers(ctx context.Context, db *gorm.DB, l
 		Rollback: func(tx *gorm.DB) error {
 			tx = tx.WithContext(ctx)
 			return dropColumnIfExists(tx, logger, &tables.TableUser{}, "external_id")
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+// migrationAddMustChangePasswordToGovernanceUsers ensures governance_users has the must_change_password column.
+func migrationAddMustChangePasswordToGovernanceUsers(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_must_change_password_to_governance_users"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &tables.TableUser{}, "must_change_password"); err != nil {
+				return fmt.Errorf("add must_change_password to governance_users: %w", err)
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			return dropColumnIfExists(tx, logger, &tables.TableUser{}, "must_change_password")
 		},
 	}})
 	if err := m.Migrate(); err != nil {
