@@ -4,7 +4,7 @@ Enterprise On-Premise License Generator for Raksha / UnifAI.
 Signs license parameters using the Vendor Master Private Key (Ed25519).
 
 Default Issuer: YesPanchi Group of Companies
-Default Product: Raksha Enterprise AI Governance
+Default Product: Raksha - Real-time AI Knowledge Screening & Hazard Audit
 
 Usage:
     python tools/license/issue_license.py --client "ABC Corporation" --seats 100 --expiry "2027-10-07"

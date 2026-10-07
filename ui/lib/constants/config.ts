@@ -356,5 +356,5 @@ export const COMPANY_LOGO = (process.env.RAKSHA_COMPANY_LOGO || "/yes-panchi-log
 
 /** Footer copyright text — override via RAKSHA_FOOTER_COPYRIGHT / RAKSHA_FOOTER_SUBTITLE in .env. */
 export const FOOTER_COPYRIGHT = (process.env.RAKSHA_FOOTER_COPYRIGHT || "").trim();
-export const FOOTER_SUBTITLE = (process.env.RAKSHA_FOOTER_SUBTITLE || "Enterprise AI Governance Platform.").trim();
+export const FOOTER_SUBTITLE = (process.env.RAKSHA_FOOTER_SUBTITLE || "Raksha - Real-time AI Knowledge Screening & Hazard Audit").trim();
 export const DEFAULT_FOOTER_TEXT = FOOTER_COPYRIGHT || `© ${new Date().getFullYear()} ${COMPANY_NAME}. All rights reserved. ${FOOTER_SUBTITLE}`;

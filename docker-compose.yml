@@ -39,7 +39,7 @@ services:
       - RAKSHA_COMPANY_SHORT_NAME=${RAKSHA_COMPANY_SHORT_NAME:-YesPanchi}
       - RAKSHA_COMPANY_LOGO=${RAKSHA_COMPANY_LOGO:-/yes-panchi-logo.png}
       - RAKSHA_FOOTER_COPYRIGHT=${RAKSHA_FOOTER_COPYRIGHT:-}
-      - RAKSHA_FOOTER_SUBTITLE=${RAKSHA_FOOTER_SUBTITLE:-Enterprise AI Governance Platform.}
+      - RAKSHA_FOOTER_SUBTITLE=${RAKSHA_FOOTER_SUBTITLE:-Raksha - Real-time AI Knowledge Screening & Hazard Audit}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

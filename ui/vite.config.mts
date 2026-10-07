@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => {
 	const productName = env.RAKSHA_PRODUCT_NAME || env.PRODUCT_NAME || process.env.RAKSHA_PRODUCT_NAME || process.env.PRODUCT_NAME || "Raksha";
 	const productFullName = env.RAKSHA_PRODUCT_FULL_NAME || env.RAKSHA_PRODUCT_SUBTITLE || process.env.RAKSHA_PRODUCT_FULL_NAME || process.env.RAKSHA_PRODUCT_SUBTITLE || "Real-time AI Knowledge Screening & Hazard Audit";
 	const footerCopyright = env.RAKSHA_FOOTER_COPYRIGHT || process.env.RAKSHA_FOOTER_COPYRIGHT || "";
-	const footerSubtitle = env.RAKSHA_FOOTER_SUBTITLE || process.env.RAKSHA_FOOTER_SUBTITLE || "Enterprise AI Governance Platform.";
+	const footerSubtitle = env.RAKSHA_FOOTER_SUBTITLE || process.env.RAKSHA_FOOTER_SUBTITLE || "Raksha - Real-time AI Knowledge Screening & Hazard Audit";
 
 	return {
 		plugins: [

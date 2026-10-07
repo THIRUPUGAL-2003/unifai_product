@@ -216,13 +216,13 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			}
 		}
 
-		// Default enterprise state (30-day evaluation trial)
+		// Default enterprise state (1-year license validity)
 		maxSeats := DefaultUnlicensedSeats
 		rem := maxSeats - allocatedSeats
 		if rem < 0 {
 			rem = 0
 		}
-		evalExpiry := time.Now().UTC().AddDate(0, 1, 0).Format(time.RFC3339)
+		evalExpiry := time.Now().UTC().AddDate(1, 0, 0).Format(time.RFC3339)
 		evalIssued := time.Now().UTC().Format(time.RFC3339)
 		return &LicenseStatusInfo{
 			IsActive:       true,

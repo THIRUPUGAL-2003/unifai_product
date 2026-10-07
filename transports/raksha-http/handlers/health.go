@@ -133,7 +133,7 @@ func (h *HealthHandler) getBranding(ctx *fasthttp.RequestCtx) {
 	footerCopyright := strings.TrimSpace(os.Getenv("RAKSHA_FOOTER_COPYRIGHT"))
 	footerSubtitle := strings.TrimSpace(os.Getenv("RAKSHA_FOOTER_SUBTITLE"))
 	if footerSubtitle == "" {
-		footerSubtitle = "Enterprise AI Governance Platform."
+		footerSubtitle = "Raksha - Real-time AI Knowledge Screening & Hazard Audit"
 	}
 	if footerCopyright == "" {
 		footerCopyright = fmt.Sprintf("© %d %s. All rights reserved. %s", time.Now().Year(), companyName, footerSubtitle)

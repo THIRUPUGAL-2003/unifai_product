@@ -4969,13 +4969,13 @@ export default function BrowserAiPage() {
 									<div>
 										<CardTitle className="text-lg flex items-center gap-2">
 											Enterprise On-Premise License &amp; Seat Quota
-											{licenseInfo?.is_active && !licenseInfo?.is_expired ? (
+											{!licenseInfo?.is_expired ? (
 												<Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
 													Active
 												</Badge>
 											) : (
-												<Badge variant="outline" className="border-amber-500/30 text-amber-400 text-xs">
-													{licenseInfo?.is_expired ? "Expired" : "Community / Evaluation"}
+												<Badge variant="outline" className="border-rose-500/30 text-rose-400 text-xs">
+													Expired
 												</Badge>
 											)}
 										</CardTitle>
@@ -5009,12 +5009,12 @@ export default function BrowserAiPage() {
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Licensed Organization</p>
 									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
-										{licenseInfo?.client_name && !licenseInfo.client_name.includes("Evaluation")
+										{licenseInfo?.client_name && !licenseInfo.client_name.toLowerCase().includes("eval") && !licenseInfo.client_name.toLowerCase().includes("trial")
 											? licenseInfo.client_name
 											: "Enterprise Organization"}
 									</p>
 									<p className="text-[11px] text-muted-foreground">
-										{licenseInfo?.license_id && !licenseInfo.license_id.includes("EVAL")
+										{licenseInfo?.license_id && !licenseInfo.license_id.toLowerCase().includes("eval") && !licenseInfo.license_id.toLowerCase().includes("trial")
 											? `ID: ${licenseInfo.license_id}`
 											: (licenseInfo?.tier || "Enterprise On-Premise")}
 									</p>
@@ -5032,23 +5032,15 @@ export default function BrowserAiPage() {
 									<p className="text-xs text-muted-foreground font-medium">Validity / Expiry</p>
 									{(() => {
 										const expStr = licenseInfo?.expires_at;
-										if (!expStr) {
-											return (
-												<>
-													<p className="text-base font-semibold text-foreground mt-0.5">Evaluation Trial</p>
-													<p className="text-[11px] text-amber-400">Activate license for custom expiry</p>
-												</>
-											);
-										}
-										const expDate = new Date(expStr);
+										const expDate = expStr ? new Date(expStr) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 										const diffMs = expDate.getTime() - Date.now();
-										const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+										const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 										const formattedDate = expDate.toLocaleDateString("en-US", {
 											year: "numeric",
 											month: "short",
 											day: "numeric",
 										});
-										const isExpired = licenseInfo?.is_expired || daysLeft < 0;
+										const isExpired = licenseInfo?.is_expired || diffMs < 0;
 
 										return (
 											<>
