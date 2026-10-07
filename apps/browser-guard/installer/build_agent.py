@@ -49,14 +49,27 @@ def build_windows() -> Path:
 def strip_plain_text_sources_from_bundle(app_path: Path) -> None:
     """Ensure release bundle contains ONLY the encrypted container, removing plain text .py files."""
     enc_src = ROOT / "proxy" / "raksha_proxy_parts" / "raksha_proxy_parts.enc"
+    crypto_src = ROOT / "proxy" / "raksha_proxy_parts" / "bundle_crypto.py"
+    manifest_src = ROOT / "proxy" / "raksha_proxy_parts" / "MANIFEST.txt"
+    proxy_src = ROOT / "proxy" / "browser_ai_proxy.py"
     if not enc_src.is_file():
         return
+
+    # Update browser_ai_proxy.py in Resources if present
+    res_proxy = app_path / "Contents" / "Resources" / "browser_ai_proxy.py"
+    if res_proxy.parent.is_dir() and proxy_src.is_file():
+        shutil.copy2(proxy_src, res_proxy)
 
     # Check Frameworks, Resources, and app root
     for base in [app_path / "Contents" / "Frameworks", app_path / "Contents" / "Resources", app_path]:
         parts_target = base / "raksha_proxy_parts"
         if parts_target.is_dir():
             shutil.copy2(enc_src, parts_target / "raksha_proxy_parts.enc")
+            if crypto_src.is_file():
+                shutil.copy2(crypto_src, parts_target / "bundle_crypto.py")
+            if manifest_src.is_file():
+                shutil.copy2(manifest_src, parts_target / "MANIFEST.txt")
+
             # Strip all plain text source files
             for py_name in [
                 "config_caches_rules.py",
@@ -71,6 +84,11 @@ def strip_plain_text_sources_from_bundle(app_path: Path) -> None:
                 if target_py.is_file():
                     target_py.unlink()
                     print(f"  [Security] Stripped plain text source from bundle: {py_name}")
+
+            # Strip any cached pyc files of parts
+            pycache = parts_target / "__pycache__"
+            if pycache.is_dir():
+                shutil.rmtree(pycache, ignore_errors=True)
 
 
 def build_macos() -> Path:
