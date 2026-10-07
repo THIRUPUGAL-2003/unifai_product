@@ -216,12 +216,14 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			}
 		}
 
-		// Default evaluation state
+		// Default evaluation state (30-day evaluation trial)
 		maxSeats := DefaultUnlicensedSeats
 		rem := maxSeats - allocatedSeats
 		if rem < 0 {
 			rem = 0
 		}
+		evalExpiry := time.Now().UTC().AddDate(0, 1, 0).Format(time.RFC3339)
+		evalIssued := time.Now().UTC().Format(time.RFC3339)
 		return &LicenseStatusInfo{
 			IsActive:       true,
 			IsLicensed:     false,
@@ -234,8 +236,8 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			MaxSeats:       maxSeats,
 			ActiveSeats:    allocatedSeats,
 			RemainingSeats: rem,
-			ExpiresAt:      "",
-			IssuedAt:       "",
+			ExpiresAt:      evalExpiry,
+			IssuedAt:       evalIssued,
 			Features:       []string{"browser_ai_guard", "dlp_regex"},
 			StatusMessage:  fmt.Sprintf("Community Evaluation (%d/%d seats in use)", allocatedSeats, maxSeats),
 		}, nil

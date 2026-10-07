@@ -5026,10 +5026,37 @@ export default function BrowserAiPage() {
 								</div>
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Validity / Expiry</p>
-									<p className="text-base font-semibold text-foreground mt-0.5">
-										{licenseInfo?.expires_at ? new Date(licenseInfo.expires_at).toLocaleDateString() : "Perpetual / Offline"}
-									</p>
-									<p className="text-[11px] text-sky-400">Ed25519 Cryptographically Signed</p>
+									{(() => {
+										const expStr = licenseInfo?.expires_at;
+										if (!expStr) {
+											return (
+												<>
+													<p className="text-base font-semibold text-foreground mt-0.5">Evaluation Trial</p>
+													<p className="text-[11px] text-amber-400">Activate license for custom expiry</p>
+												</>
+											);
+										}
+										const expDate = new Date(expStr);
+										const diffMs = expDate.getTime() - Date.now();
+										const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+										const formattedDate = expDate.toLocaleDateString("en-US", {
+											year: "numeric",
+											month: "short",
+											day: "numeric",
+										});
+										const isExpired = licenseInfo?.is_expired || daysLeft < 0;
+
+										return (
+											<>
+												<p className={`text-base font-semibold mt-0.5 ${isExpired ? "text-rose-400" : "text-foreground"}`}>
+													{formattedDate}
+												</p>
+												<p className={`text-[11px] font-medium ${isExpired ? "text-rose-400" : daysLeft <= 30 ? "text-amber-400" : "text-emerald-400"}`}>
+													{isExpired ? "License Expired" : `${daysLeft} days remaining`}
+												</p>
+											</>
+										);
+									})()}
 								</div>
 							</div>
 
