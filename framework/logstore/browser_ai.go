@@ -2154,7 +2154,6 @@ func (m *BrowserAIManager) ensureAgentSettings(ctx context.Context) (*BrowserAIA
 }
 
 func (m *BrowserAIManager) GetAgentSettings(ctx context.Context) (*BrowserAIAgentSettings, error) {
-	db := m.GetDB()
 	return m.ensureAgentSettings(ctx)
 }
 
