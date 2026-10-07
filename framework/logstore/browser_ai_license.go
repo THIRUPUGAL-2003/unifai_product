@@ -301,11 +301,6 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.db == nil {
-		return nil, fmt.Errorf("database not initialized")
-	}
 
 	now := time.Now().UTC()
 	var expTime time.Time
@@ -327,25 +322,28 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	featuresJSON, _ := json.Marshal(payload.Features)
 	rawEnvBytes, _ := json.MarshalIndent(env, "", "  ")
 
-	rec := BrowserAILicenseRecord{
-		ID:          BrowserAILicenseID,
-		LicenseID:   payload.LicenseID,
-		Issuer:      firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
-		Product:     firstNonEmpty(payload.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
-		ClientName:  payload.ClientName,
-		Tier:        payload.Tier,
-		MaxSeats:    payload.MaxSeats,
-		Features:    string(featuresJSON),
-		RawEnvelope: string(rawEnvBytes),
-		Signature:   env.Signature,
-		IssuedAt:    issTime,
-		ExpiresAt:   expTime,
-		UpdatedAt:   now,
-		UpdatedBy:   strings.TrimSpace(updatedBy),
-	}
+	if m.db != nil {
+		rec := BrowserAILicenseRecord{
+			ID:          BrowserAILicenseID,
+			LicenseID:   payload.LicenseID,
+			Issuer:      firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
+			Product:     firstNonEmpty(payload.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
+			ClientName:  payload.ClientName,
+			Tier:        payload.Tier,
+			MaxSeats:    payload.MaxSeats,
+			Features:    string(featuresJSON),
+			RawEnvelope: string(rawEnvBytes),
+			Signature:   env.Signature,
+			IssuedAt:    issTime,
+			ExpiresAt:   expTime,
+			UpdatedAt:   now,
+			UpdatedBy:   strings.TrimSpace(updatedBy),
+		}
 
-	if err := m.db.WithContext(ctx).Save(&rec).Error; err != nil {
-		return nil, fmt.Errorf("failed to save license record: %w", err)
+		if err := m.db.WithContext(ctx).Save(&rec).Error; err != nil {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("failed to save license record: %w", err)
+		}
 	}
 
 	// Also backup to file
@@ -356,6 +354,9 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	licPath := filepath.Join(appDir, "raksha_license.lic")
 	_ = os.MkdirAll(appDir, 0755)
 	_ = os.WriteFile(licPath, rawEnvBytes, 0644)
+	_ = os.WriteFile("raksha_license.lic", rawEnvBytes, 0644)
+
+	m.mu.Unlock()
 
 	licenseCacheMu.Lock()
 	cachedLicenseInfo = nil
