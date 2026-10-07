@@ -71,7 +71,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -2614,43 +2614,7 @@ export default function BrowserAiPage() {
 
 			{/* Section content — nav is sidebar dropdown (Observability / Models style) */}
 			<Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-				{/* Top horizontal tab switcher */}
-				<div className="flex items-center overflow-x-auto pb-1 no-scrollbar border-b border-border/60">
-					<TabsList className="bg-muted/50 p-1 h-9 rounded-lg gap-1 border border-border/40">
-						<TabsTrigger value="overview" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<Activity className="h-3.5 w-3.5 text-blue-500" />
-							Overview
-						</TabsTrigger>
-						<TabsTrigger value="targets" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<Globe className="h-3.5 w-3.5 text-cyan-500" />
-							Target Websites
-						</TabsTrigger>
-						<TabsTrigger value="rules" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<Shield className="h-3.5 w-3.5 text-emerald-500" />
-							Guard Rules
-						</TabsTrigger>
-						<TabsTrigger value="logs" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<FileText className="h-3.5 w-3.5 text-amber-500" />
-							Prompt Logs
-						</TabsTrigger>
-						<TabsTrigger value="search-logs" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<Search className="h-3.5 w-3.5 text-violet-500" />
-							Search Logs
-						</TabsTrigger>
-						<TabsTrigger value="agents" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<Radio className="h-3.5 w-3.5 text-rose-500" />
-							Guard Agents
-						</TabsTrigger>
-						<TabsTrigger value="telemetry" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<BrainCircuit className="h-3.5 w-3.5 text-indigo-500" />
-							Guard Insights
-						</TabsTrigger>
-						<TabsTrigger value="setup" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-							<Terminal className="h-3.5 w-3.5 text-slate-500" />
-							Setup
-						</TabsTrigger>
-					</TabsList>
-				</div>
+
 				{/* TAB 1: OVERVIEW */}
 				<TabsContent value="overview" className="space-y-6">
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
