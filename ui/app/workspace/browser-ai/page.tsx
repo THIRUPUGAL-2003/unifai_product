@@ -256,6 +256,30 @@ export default function BrowserAiPage() {
 	});
 	const [uninstallKeyEditing, setUninstallKeyEditing] = useState(false);
 	const [showUninstallKey, setShowUninstallKey] = useState(false);
+
+	// Enterprise Cryptographic License State
+	const [licenseInfo, setLicenseInfo] = useState<{
+		is_active: boolean;
+		is_licensed: boolean;
+		is_expired: boolean;
+		license_id?: string;
+		issuer?: string;
+		product?: string;
+		client_name: string;
+		tier: string;
+		max_seats: number;
+		active_seats: number;
+		remaining_seats: number;
+		expires_at: string;
+		issued_at: string;
+		features?: string[];
+		status_message: string;
+	} | null>(null);
+	const [loadingLicense, setLoadingLicense] = useState(false);
+	const [licenseInput, setLicenseInput] = useState("");
+	const [activatingLicense, setActivatingLicense] = useState(false);
+	const [licenseMessage, setLicenseMessage] = useState("");
+	const [licenseError, setLicenseError] = useState("");
 	const [agentSearch, setAgentSearch] = useState("");
 	const [agentStatusFilter, setAgentStatusFilter] = useState("all");
 	const [agentTypeFilter, setAgentTypeFilter] = useState("all");
@@ -1871,6 +1895,65 @@ export default function BrowserAiPage() {
 			refetchAgentSettings();
 		} catch (error) {
 			setUninstallKeyError(error instanceof Error ? error.message : "Failed to save uninstall key");
+		}
+	};
+
+	const fetchLicense = useCallback(async () => {
+		setLoadingLicense(true);
+		try {
+			const res = await fetch("/api/browser-ai/license", { credentials: "include" });
+			if (res.ok) {
+				const json = await res.json();
+				if (json.license) {
+					setLicenseInfo(json.license);
+				}
+			}
+		} catch {
+		} finally {
+			setLoadingLicense(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (activeTab === "setup" || activeTab === "agents") {
+			void fetchLicense();
+		}
+	}, [activeTab, fetchLicense]);
+
+	const handleActivateLicense = async () => {
+		const key = licenseInput.trim();
+		if (!key) {
+			setLicenseError("Please upload a .lic file or paste the signed license text.");
+			return;
+		}
+		setActivatingLicense(true);
+		setLicenseError("");
+		setLicenseMessage("");
+		try {
+			const res = await fetch("/api/browser-ai/license/activate", {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ license_key: key }),
+			});
+			const json = await res.json().catch(() => ({}));
+			if (res.ok && json.status === "success") {
+				setLicenseMessage(json.message || "License activated successfully!");
+				if (json.license) {
+					setLicenseInfo(json.license);
+				}
+				setLicenseInput("");
+				toast({
+					title: "License Activated",
+					description: `Enabled ${json.license?.max_seats || 100} seats for ${json.license?.client_name || "enterprise"}.`,
+				});
+			} else {
+				setLicenseError(json.error || json.message || "License verification failed. Signature may be invalid or tampered.");
+			}
+		} catch (err: any) {
+			setLicenseError(err?.message || "Failed to communicate with license server.");
+		} finally {
+			setActivatingLicense(false);
 		}
 	};
 
@@ -4875,6 +4958,161 @@ export default function BrowserAiPage() {
 
 				{/* TAB 6: SETUP */}
 				<TabsContent value="setup" className="space-y-6">
+					{/* Enterprise On-Premise License Card */}
+					<Card className="bg-card border-border">
+						<CardHeader>
+							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+								<div className="flex items-center gap-3">
+									<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+										<ShieldCheck className="h-5 w-5" />
+									</div>
+									<div>
+										<CardTitle className="text-lg flex items-center gap-2">
+											Enterprise On-Premise License &amp; Seat Quota
+											{licenseInfo?.is_active && !licenseInfo?.is_expired ? (
+												<Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
+													Active
+												</Badge>
+											) : (
+												<Badge variant="outline" className="border-amber-500/30 text-amber-400 text-xs">
+													{licenseInfo?.is_expired ? "Expired" : "Community / Evaluation"}
+												</Badge>
+											)}
+										</CardTitle>
+										<CardDescription>
+											Cryptographic Ed25519 tamper-proof digital license enforcing maximum laptop capacity.
+										</CardDescription>
+									</div>
+								</div>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => void fetchLicense()}
+									disabled={loadingLicense}
+									className="gap-1.5 self-start sm:self-auto text-xs"
+								>
+									<RefreshCw className={`h-3.5 w-3.5 ${loadingLicense ? "animate-spin" : ""}`} />
+									Refresh Quota
+								</Button>
+							</div>
+						</CardHeader>
+						<CardContent className="space-y-6">
+							{/* Quota Progress Bar & Stats */}
+							<div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-lg bg-muted/40 border border-border">
+								<div>
+									<p className="text-xs text-muted-foreground font-medium">Vendor / Issuer</p>
+									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
+										{licenseInfo?.issuer || "YesPanchi Group of Companies"}
+									</p>
+									<p className="text-[11px] text-sky-400 truncate">{licenseInfo?.product || "Raksha Enterprise AI"}</p>
+								</div>
+								<div>
+									<p className="text-xs text-muted-foreground font-medium">Licensed Organization</p>
+									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
+										{licenseInfo?.client_name || "Evaluation"}
+									</p>
+									<p className="text-[11px] text-muted-foreground">
+										{licenseInfo?.license_id ? `ID: ${licenseInfo.license_id}` : (licenseInfo?.tier || "Enterprise On-Premise")}
+									</p>
+								</div>
+								<div>
+									<p className="text-xs text-muted-foreground font-medium">Seat Capacity</p>
+									<p className="text-base font-semibold text-foreground mt-0.5">
+										{licenseInfo?.active_seats || 0} / {licenseInfo?.max_seats || 100} Laptops
+									</p>
+									<p className="text-[11px] text-emerald-400">
+										{licenseInfo?.remaining_seats ?? 100} seats available
+									</p>
+								</div>
+								<div>
+									<p className="text-xs text-muted-foreground font-medium">Validity / Expiry</p>
+									<p className="text-base font-semibold text-foreground mt-0.5">
+										{licenseInfo?.expires_at ? new Date(licenseInfo.expires_at).toLocaleDateString() : "Perpetual / Offline"}
+									</p>
+									<p className="text-[11px] text-sky-400">Ed25519 Cryptographically Signed</p>
+								</div>
+							</div>
+
+							{/* Visual Progress Bar */}
+							<div className="space-y-1.5">
+								<div className="flex justify-between text-xs text-muted-foreground">
+									<span>Seat Allocation Usage</span>
+									<span className="font-mono">
+										{Math.round(((licenseInfo?.active_seats || 0) / (licenseInfo?.max_seats || 100)) * 100)}%
+									</span>
+								</div>
+								<div className="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+									<div
+										className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 transition-all duration-500"
+										style={{
+											width: `${Math.min(
+												100,
+												Math.round(((licenseInfo?.active_seats || 0) / (licenseInfo?.max_seats || 100)) * 100)
+											)}%`,
+										}}
+									/>
+								</div>
+							</div>
+
+							{/* Upload / Enter License Key Section */}
+							<div className="space-y-3 pt-2 border-t border-border">
+								<div className="flex items-center justify-between">
+									<Label className="text-sm font-medium">Update / Activate License Key</Label>
+									<span className="text-xs text-muted-foreground">
+										Upload your issued <code>.lic</code> file or paste key JSON
+									</span>
+								</div>
+
+								<div className="flex flex-col sm:flex-row gap-2">
+									<Textarea
+										placeholder='Paste signed license JSON (e.g. { "payload": ..., "signature": "..." })'
+										value={licenseInput}
+										onChange={(e) => setLicenseInput(e.target.value)}
+										className="font-mono text-xs min-h-[72px] resize-y flex-1"
+									/>
+								</div>
+
+								<div className="flex flex-wrap items-center gap-2">
+									<label className="cursor-pointer">
+										<input
+											type="file"
+											accept=".lic,.json"
+											className="hidden"
+											onChange={(e) => {
+												const file = e.target.files?.[0];
+												if (file) {
+													const reader = new FileReader();
+													reader.onload = (evt) => {
+														const text = evt.target?.result as string;
+														if (text) setLicenseInput(text);
+													};
+													reader.readAsText(file);
+												}
+											}}
+										/>
+										<Button variant="outline" size="sm" type="button" className="gap-2 pointer-events-none text-xs">
+											<Upload className="h-3.5 w-3.5" />
+											Upload .lic File
+										</Button>
+									</label>
+
+									<Button
+										size="sm"
+										onClick={handleActivateLicense}
+										disabled={activatingLicense || !licenseInput.trim()}
+										className="gap-2 text-xs bg-sky-600 hover:bg-sky-500 text-white"
+									>
+										<KeyRound className="h-3.5 w-3.5" />
+										{activatingLicense ? "Verifying..." : "Verify & Activate License"}
+									</Button>
+								</div>
+
+								{licenseMessage ? <p className="text-sm text-emerald-400 font-medium">{licenseMessage}</p> : null}
+								{licenseError ? <p className="text-sm text-red-400 font-medium">{licenseError}</p> : null}
+							</div>
+						</CardContent>
+					</Card>
+
 					<Card className="bg-card border-border">
 						<CardHeader>
 							<div className="flex items-center gap-3">

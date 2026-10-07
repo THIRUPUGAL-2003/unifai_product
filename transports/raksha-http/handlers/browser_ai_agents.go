@@ -114,6 +114,10 @@ func (h *BrowserAIHandler) agentHeartbeat(ctx *fasthttp.RequestCtx) {
 	}
 	agent, err := h.manager.UpsertAgentHeartbeat(ctx, &body)
 	if err != nil {
+		if strings.Contains(err.Error(), "SEAT_LIMIT_REACHED") || strings.Contains(err.Error(), "LICENSE_INACTIVE") {
+			SendError(ctx, fasthttp.StatusForbidden, err.Error())
+			return
+		}
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 		return
 	}

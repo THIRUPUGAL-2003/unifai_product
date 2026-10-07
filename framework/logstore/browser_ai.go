@@ -570,6 +570,7 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 		&BrowserGuardFleetConfig{},
 		&BrowserAIWarningEmailLog{},
 		&BrowserGuardRebuildLog{},
+		&BrowserAILicenseRecord{},
 	)
 	if err != nil {
 		return err
@@ -2367,6 +2368,11 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	var existing BrowserAIAgent
 	err := m.db.WithContext(ctx).Where("id = ?", incoming.ID).First(&existing).Error
 	if err != nil {
+		// Enforce enterprise seat quota on new laptop registrations
+		if quotaErr := m.CheckSeatQuotaEnforcement(ctx, incoming.ID, incoming.Hostname, incoming.MacAddress); quotaErr != nil {
+			return nil, quotaErr
+		}
+
 		agent := BrowserAIAgent{
 			ID:            strings.TrimSpace(incoming.ID),
 			Hostname:      strings.TrimSpace(incoming.Hostname),
@@ -2792,6 +2798,14 @@ func (m *BrowserAIManager) ResumeAgent(ctx context.Context, agentID string) (*Br
 	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
 	}
+
+	// If resuming from paused or uninstalled, verify active seat quota
+	if agent.Status != AgentStatusActive {
+		if quotaErr := m.CheckSeatQuotaEnforcement(ctx, agent.ID, agent.Hostname, agent.MacAddress); quotaErr != nil {
+			return nil, quotaErr
+		}
+	}
+
 	now := time.Now()
 	agent.Status = AgentStatusActive
 	agent.UninstallRequested = false
