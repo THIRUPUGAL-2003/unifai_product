@@ -37,7 +37,7 @@ if (-not $Server) {
         }
     }
     if (-not $Server) {
-        $Server = "root@76.13.243.253"
+        throw "Server target not specified. Pass -Server <user@host> or set DB_HOST in .env"
     }
 }
 $releaseDir = Join-Path $PSScriptRoot "..\apps\browser-guard\release"
