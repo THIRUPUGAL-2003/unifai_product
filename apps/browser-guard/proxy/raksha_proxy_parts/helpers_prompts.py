@@ -1602,7 +1602,7 @@ def _deep_extract_from_json(data, depth: int = 0, max_depth: int = 10) -> str | 
                 if isinstance(val, (int, float, bool)):
                     if key in ("code", "data", "payload", "body", "operation", "entry", "status", "type", "id", "index", "count", "version", "step"):
                         continue
-                    if val in (0, 1):
+                    if val in (0, 1) and key not in ("prompt", "text", "query", "user_input", "message"):
                         continue
                 sval = str(val).strip()
                 # Unpack nested JSON string values.
@@ -2066,17 +2066,24 @@ def _is_claude_wire_noise(s: str) -> bool:
         return True
     if _is_chat_metadata_token(t):
         return True
-    if any(x in t for x in ("anthropic.", "ConversationService", "PerformAction", "ReportViewing", "GetConversation", "ListConversations", "RecordAction")):
+    if any(x in t for x in ("anthropic.connect.", "ConversationService", "PerformAction", "ReportViewing", "GetConversation", "ListConversations", "RecordAction")):
         return True
-    if t.startswith("claude-") or t.startswith("anthropic-"):
+    if t.startswith("type.googleapis.com/") or t.startswith("anthropic.connect."):
         return True
-    if t in ("text", "text/plain", "user", "assistant", "human", "model", "application/json", "0", "1", "2", "3", "true", "false", "null", "undefined"):
+    # Lone model identifiers (e.g. claude-3-5-sonnet-20241022)
+    if re.fullmatch(r"claude-[0-9a-z\.\-]+", t, re.IGNORECASE) or re.fullmatch(r"anthropic\.[0-9a-z\.\-]+", t, re.IGNORECASE):
         return True
-    if t.isdigit() and len(t) <= 3:
+    # Claude internal entity IDs: org_..., chat_..., msg_...
+    if re.fullmatch(r"(?:org|chat|msg|user)_[0-9a-zA-Z]{12,}", t):
         return True
+    # Standard role and MIME tokens (numbers like '0', '1', '42' are real user inputs, never noise)
+    if t.lower() in ("text", "text/plain", "user", "assistant", "human", "model", "application/json", "application/connect+proto", "true", "false", "null", "undefined"):
+        return True
+    # Lone index brackets [0], [1]
     if re.fullmatch(r"\[\d+\]", t):
         return True
-    if t.isupper() and "_" in t and len(t) < 40:
+    # Only drop known RPC enum tokens like ACTION_TYPE_..., not user prompts
+    if t.isupper() and t.startswith(("ACTION_", "RPC_", "SERVICE_", "EVENT_", "STATUS_", "TYPE_")) and len(t) < 40:
         return True
     if _is_internal_wire_text(t) or _is_opaque_wire_blob(t):
         return True
