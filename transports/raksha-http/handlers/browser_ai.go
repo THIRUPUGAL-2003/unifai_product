@@ -81,8 +81,13 @@ func (h *BrowserAIHandler) initDB() {
 }
 
 func (h *BrowserAIHandler) ensureDB(ctx *fasthttp.RequestCtx) {
-	if h.manager == nil || h.manager.GetDB() == nil {
-		h.initDB()
+	if h.manager == nil {
+		return
+	}
+	if h.configStore != nil {
+		if db := h.configStore.DB(); db != nil && h.manager.GetDB() != db {
+			h.manager.SetDB(db)
+		}
 	}
 }
 
@@ -167,7 +172,7 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 func (h *BrowserAIHandler) getLogs(ctx *fasthttp.RequestCtx) {
 	h.ensureDB(ctx)
 	if h.manager != nil {
-		h.manager.ApplyPromptLogAutoDelete(ctx)
+		go h.manager.ApplyPromptLogAutoDelete(context.Background())
 	}
 
 	platform := string(ctx.QueryArgs().Peek("platform"))

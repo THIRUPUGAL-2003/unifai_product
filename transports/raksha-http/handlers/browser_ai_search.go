@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -161,9 +162,11 @@ func (h *BrowserAIHandler) getSearchLogs(ctx *fasthttp.RequestCtx) {
 
 	// Auto-purge old search logs when admin enabled retention.
 	if h.manager != nil {
-		if cutoff := h.manager.ApplySearchLogAutoDelete(ctx); cutoff != nil {
-			purgeInMemorySearchLogsBefore(*cutoff)
-		}
+		go func(m *logstore.BrowserAIManager) {
+			if cutoff := m.ApplySearchLogAutoDelete(context.Background()); cutoff != nil {
+				purgeInMemorySearchLogsBefore(*cutoff)
+			}
+		}(h.manager)
 	}
 
 	// 1. Try PostgreSQL database first

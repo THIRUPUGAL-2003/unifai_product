@@ -165,13 +165,11 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 	activeCount, _, _, _ := m.CountAgentsStatus(ctx, "", "")
 	allocatedSeats := int(activeCount)
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
+	db := m.GetDB()
 	var record BrowserAILicenseRecord
 	var hasRecord bool
-	if m.db != nil {
-		if err := m.db.WithContext(ctx).Where("id = ?", BrowserAILicenseID).First(&record).Error; err == nil {
+	if db != nil {
+		if err := db.WithContext(ctx).Where("id = ?", BrowserAILicenseID).First(&record).Error; err == nil {
 			hasRecord = true
 		}
 	}
@@ -300,8 +298,6 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 		return nil, err
 	}
 
-	m.mu.Lock()
-
 	now := time.Now().UTC()
 	var expTime time.Time
 	if payload.ExpiresAt != "" {
@@ -322,7 +318,8 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	featuresJSON, _ := json.Marshal(payload.Features)
 	rawEnvBytes, _ := json.MarshalIndent(env, "", "  ")
 
-	if m.db != nil {
+	db := m.GetDB()
+	if db != nil {
 		rec := BrowserAILicenseRecord{
 			ID:          BrowserAILicenseID,
 			LicenseID:   payload.LicenseID,
@@ -340,8 +337,7 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 			UpdatedBy:   strings.TrimSpace(updatedBy),
 		}
 
-		if err := m.db.WithContext(ctx).Save(&rec).Error; err != nil {
-			m.mu.Unlock()
+		if err := db.WithContext(ctx).Save(&rec).Error; err != nil {
 			return nil, fmt.Errorf("failed to save license record: %w", err)
 		}
 	}
@@ -355,8 +351,6 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	_ = os.MkdirAll(appDir, 0755)
 	_ = os.WriteFile(licPath, rawEnvBytes, 0644)
 	_ = os.WriteFile("raksha_license.lic", rawEnvBytes, 0644)
-
-	m.mu.Unlock()
 
 	licenseCacheMu.Lock()
 	cachedLicenseInfo = nil
@@ -383,11 +377,12 @@ func (m *BrowserAIManager) CheckSeatQuotaEnforcement(ctx context.Context, agentI
 	// A laptop is uniquely identified by:
 	// - Primary: exact Agent ID
 	// - Secondary: Hardware MAC Address + Hostname (for reinstalls)
-	if m.db != nil {
+	db := m.GetDB()
+	if db != nil {
 		// A) Exact Agent ID is already active:
 		if agentID != "" {
 			var agent BrowserAIAgent
-			if m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error == nil {
+			if db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error == nil {
 				if agent.Status == AgentStatusActive {
 					return nil // Already active, no new seat consumed!
 				}
@@ -397,7 +392,7 @@ func (m *BrowserAIManager) CheckSeatQuotaEnforcement(ctx context.Context, agentI
 		// B) Same physical hardware (MAC address + Hostname) already active:
 		if mac != "" && hostname != "" {
 			var hardwareAgent BrowserAIAgent
-			if m.db.WithContext(ctx).
+			if db.WithContext(ctx).
 				Where("LOWER(mac_address) = ? AND LOWER(hostname) = ? AND LOWER(status) = ?",
 					strings.ToLower(mac), strings.ToLower(hostname), AgentStatusActive).
 				First(&hardwareAgent).Error == nil {

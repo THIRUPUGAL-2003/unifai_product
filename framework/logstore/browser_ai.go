@@ -263,9 +263,8 @@ func (BrowserGuardRebuildLog) TableName() string { return "browser_guard_rebuild
 
 // RecordGuardRebuild stores a Rebuild history row.
 func (m *BrowserAIManager) RecordGuardRebuild(ctx context.Context, entry *BrowserGuardRebuildLog) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || entry == nil {
+	db := m.GetDB()
+	if db == nil || entry == nil {
 		return fmt.Errorf("database not initialized")
 	}
 	if entry.ID == "" {
@@ -274,21 +273,20 @@ func (m *BrowserAIManager) RecordGuardRebuild(ctx context.Context, entry *Browse
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now()
 	}
-	return m.db.WithContext(ctx).Create(entry).Error
+	return db.WithContext(ctx).Create(entry).Error
 }
 
 // ListGuardRebuilds returns the newest Rebuild history rows first.
 func (m *BrowserAIManager) ListGuardRebuilds(ctx context.Context, limit int) ([]BrowserGuardRebuildLog, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	db := m.GetDB()
 	out := []BrowserGuardRebuildLog{}
-	if m.db == nil {
+	if db == nil {
 		return out, nil
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
-	err := m.db.WithContext(ctx).Order("created_at DESC").Limit(limit).Find(&out).Error
+	err := db.WithContext(ctx).Order("created_at DESC").Limit(limit).Find(&out).Error
 	return out, err
 }
 
@@ -554,12 +552,18 @@ func (m *BrowserAIManager) GetDB() *gorm.DB {
 
 func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	if m.migrated {
+		m.mu.Unlock()
+		return nil
+	}
+	db := m.db
+	m.mu.Unlock()
+
+	if db == nil {
 		return nil
 	}
 
-	err := m.db.WithContext(ctx).AutoMigrate(
+	err := db.WithContext(ctx).AutoMigrate(
 		&BrowserAILog{},
 		&BrowserAISearchLog{},
 		&BrowserGuardRule{},
@@ -578,8 +582,8 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 
 	// Seed default browser control settings if missing
 	var ctrl BrowserControlSettings
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
-		_ = m.db.WithContext(ctx).Create(&BrowserControlSettings{
+	if err := db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
+		_ = db.WithContext(ctx).Create(&BrowserControlSettings{
 			ID:                  BrowserControlSettingsID,
 			Enabled:             true,
 			BlockUpload:         false,
@@ -589,8 +593,8 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 	}
 
 	var agentSettings BrowserAIAgentSettings
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserAIAgentSettingsID).First(&agentSettings).Error; err != nil {
-		_ = m.db.WithContext(ctx).Create(&BrowserAIAgentSettings{
+	if err := db.WithContext(ctx).Where("id = ?", BrowserAIAgentSettingsID).First(&agentSettings).Error; err != nil {
+		_ = db.WithContext(ctx).Create(&BrowserAIAgentSettings{
 			ID:                  BrowserAIAgentSettingsID,
 			RequireUninstallKey: true,
 			UpdatedAt:           time.Now(),
@@ -598,8 +602,8 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 	}
 
 	var fleet BrowserGuardFleetConfig
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserGuardFleetConfigID).First(&fleet).Error; err != nil {
-		_ = m.db.WithContext(ctx).Create(&BrowserGuardFleetConfig{
+	if err := db.WithContext(ctx).Where("id = ?", BrowserGuardFleetConfigID).First(&fleet).Error; err != nil {
+		_ = db.WithContext(ctx).Create(&BrowserGuardFleetConfig{
 			ID:               BrowserGuardFleetConfigID,
 			DefaultProxyAddr: defaultProxyAddrFromEnv(),
 			PacAdvertiseAddr: defaultProxyAddrFromEnv(),
@@ -617,22 +621,22 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 	// Do NOT seed default target websites.
 	// Proxy only monitors domains the admin adds in Target Websites.
 
+	m.mu.Lock()
 	m.migrated = true
+	m.mu.Unlock()
 	return nil
 }
 
 func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action, search string, limit, offset int) ([]BrowserAILog, int64, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	var logs []BrowserAILog
 	var total int64
 
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return logs, 0, nil
 	}
 
-	query := m.db.WithContext(ctx).Model(&BrowserAILog{})
+	query := db.WithContext(ctx).Model(&BrowserAILog{})
 
 	if platform != "" && strings.ToLower(platform) != "all" {
 		pLower := strings.ToLower(platform)
@@ -690,10 +694,9 @@ type BrowserAILogStats struct {
 
 // GetLogStats aggregates every prompt log (not just the current page) for the overview.
 func (m *BrowserAIManager) GetLogStats(ctx context.Context) (BrowserAILogStats, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	var out BrowserAILogStats
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return out, nil
 	}
 	var row struct {
@@ -703,7 +706,7 @@ func (m *BrowserAIManager) GetLogStats(ctx context.Context) (BrowserAILogStats, 
 		HighRisk int64
 		AvgRisk  *float64
 	}
-	err := m.db.WithContext(ctx).Model(&BrowserAILog{}).Select(`
+	err := db.WithContext(ctx).Model(&BrowserAILog{}).Select(`
 		COUNT(*) AS total,
 		COALESCE(SUM(CASE WHEN LOWER(action) = 'blocked' THEN 1 ELSE 0 END), 0) AS blocked,
 		COALESCE(SUM(CASE WHEN LOWER(action) IN ('redacted', 'warned') THEN 1 ELSE 0 END), 0) AS warned,
@@ -726,29 +729,27 @@ func (m *BrowserAIManager) ClearLogs(ctx context.Context) error {
 // ClearLogsInRange deletes prompt logs. If both since and until are nil, clears all.
 // Otherwise deletes rows where timestamp >= since (if set) AND timestamp < until (if set).
 func (m *BrowserAIManager) ClearLogsInRange(ctx context.Context, since, until *time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil
 	}
-	q := m.db.WithContext(ctx)
+	q := db.WithContext(ctx)
 	if since == nil && until == nil {
 		return q.Exec("DELETE FROM browser_ai_logs").Error
 	}
-	db := q.Model(&BrowserAILog{})
+	query := q.Model(&BrowserAILog{})
 	if since != nil {
-		db = db.Where("timestamp >= ?", *since)
+		query = query.Where("timestamp >= ?", *since)
 	}
 	if until != nil {
-		db = db.Where("timestamp < ?", *until)
+		query = query.Where("timestamp < ?", *until)
 	}
-	return db.Delete(&BrowserAILog{}).Error
+	return query.Delete(&BrowserAILog{}).Error
 }
 
 func (m *BrowserAIManager) RecordSearchLog(ctx context.Context, entry *BrowserAISearchLog) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil || entry == nil {
 		return nil
 	}
 	if entry.ID == "" {
@@ -760,29 +761,27 @@ func (m *BrowserAIManager) RecordSearchLog(ctx context.Context, entry *BrowserAI
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = entry.Timestamp
 	}
-	return m.db.WithContext(ctx).Create(entry).Error
+	return db.WithContext(ctx).Create(entry).Error
 }
 
 func (m *BrowserAIManager) GetSearchLogs(ctx context.Context, engine, browser, isIncognito, search string, limit, offset int) ([]BrowserAISearchLog, int64, int64, int64, int64, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	var logs []BrowserAISearchLog
 	var total int64
 	var incognitoCount int64
 	var queriesCount int64
 	var clicksCount int64
 
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return logs, 0, 0, 0, 0, nil
 	}
 
 	// Overall KPI metrics (unfiltered totals)
-	_ = m.db.WithContext(ctx).Model(&BrowserAISearchLog{}).Where("is_incognito = ?", true).Count(&incognitoCount).Error
-	_ = m.db.WithContext(ctx).Model(&BrowserAISearchLog{}).Where("query != '' AND query IS NOT NULL").Count(&queriesCount).Error
-	_ = m.db.WithContext(ctx).Model(&BrowserAISearchLog{}).Where("clicked_url != '' AND clicked_url IS NOT NULL").Count(&clicksCount).Error
+	_ = db.WithContext(ctx).Model(&BrowserAISearchLog{}).Where("is_incognito = ?", true).Count(&incognitoCount).Error
+	_ = db.WithContext(ctx).Model(&BrowserAISearchLog{}).Where("query != '' AND query IS NOT NULL").Count(&queriesCount).Error
+	_ = db.WithContext(ctx).Model(&BrowserAISearchLog{}).Where("clicked_url != '' AND clicked_url IS NOT NULL").Count(&clicksCount).Error
 
-	query := m.db.WithContext(ctx).Model(&BrowserAISearchLog{})
+	query := db.WithContext(ctx).Model(&BrowserAISearchLog{})
 
 	if engine != "" && strings.ToLower(engine) != "all" {
 		query = query.Where("LOWER(engine) LIKE ?", "%"+strings.ToLower(engine)+"%")
@@ -828,44 +827,41 @@ func (m *BrowserAIManager) ClearSearchLogs(ctx context.Context) error {
 // ClearSearchLogsInRange deletes search logs. If both since and until are nil, clears all.
 // Otherwise deletes rows where timestamp >= since (if set) AND timestamp < until (if set).
 func (m *BrowserAIManager) ClearSearchLogsInRange(ctx context.Context, since, until *time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil
 	}
-	q := m.db.WithContext(ctx)
+	q := db.WithContext(ctx)
 	if since == nil && until == nil {
 		return q.Exec("DELETE FROM browser_ai_search_logs").Error
 	}
-	db := q.Model(&BrowserAISearchLog{})
+	query := q.Model(&BrowserAISearchLog{})
 	if since != nil {
-		db = db.Where("timestamp >= ?", *since)
+		query = query.Where("timestamp >= ?", *since)
 	}
 	if until != nil {
-		db = db.Where("timestamp < ?", *until)
+		query = query.Where("timestamp < ?", *until)
 	}
-	return db.Delete(&BrowserAISearchLog{}).Error
+	return query.Delete(&BrowserAISearchLog{}).Error
 }
 
 // DeleteLogsByIDs deletes the given prompt log rows and returns how many were removed.
 func (m *BrowserAIManager) DeleteLogsByIDs(ctx context.Context, ids []string) (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || len(ids) == 0 {
+	db := m.GetDB()
+	if db == nil || len(ids) == 0 {
 		return 0, nil
 	}
-	res := m.db.WithContext(ctx).Where("id IN ?", ids).Delete(&BrowserAILog{})
+	res := db.WithContext(ctx).Where("id IN ?", ids).Delete(&BrowserAILog{})
 	return res.RowsAffected, res.Error
 }
 
 // DeleteSearchLogsByIDs deletes the given search log rows and returns how many were removed.
 func (m *BrowserAIManager) DeleteSearchLogsByIDs(ctx context.Context, ids []string) (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || len(ids) == 0 {
+	db := m.GetDB()
+	if db == nil || len(ids) == 0 {
 		return 0, nil
 	}
-	res := m.db.WithContext(ctx).Where("id IN ?", ids).Delete(&BrowserAISearchLog{})
+	res := db.WithContext(ctx).Where("id IN ?", ids).Delete(&BrowserAISearchLog{})
 	return res.RowsAffected, res.Error
 }
 
@@ -909,13 +905,12 @@ func parseRetentionDuration(retention string) time.Duration {
 // ApplySearchLogAutoDelete purges search logs older than the configured retention
 // when search_log_auto_delete is enabled. Returns the cutoff used, or nil if disabled.
 func (m *BrowserAIManager) ApplySearchLogAutoDelete(ctx context.Context) *time.Time {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil
 	}
 	var ctrl BrowserControlSettings
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
 		return nil
 	}
 	if !ctrl.SearchLogAutoDelete {
@@ -923,20 +918,19 @@ func (m *BrowserAIManager) ApplySearchLogAutoDelete(ctx context.Context) *time.T
 	}
 	age := parseRetentionDuration(ctrl.SearchLogRetention)
 	cutoff := time.Now().Add(-age)
-	_ = m.db.WithContext(ctx).Where("timestamp < ?", cutoff).Delete(&BrowserAISearchLog{}).Error
+	_ = db.WithContext(ctx).Where("timestamp < ?", cutoff).Delete(&BrowserAISearchLog{}).Error
 	return &cutoff
 }
 
 // ApplyPromptLogAutoDelete purges prompt logs older than the configured retention
 // when prompt_log_auto_delete is enabled. Returns the cutoff used, or nil if disabled.
 func (m *BrowserAIManager) ApplyPromptLogAutoDelete(ctx context.Context) *time.Time {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil
 	}
 	var ctrl BrowserControlSettings
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
 		return nil
 	}
 	if !ctrl.PromptLogAutoDelete {
@@ -944,18 +938,17 @@ func (m *BrowserAIManager) ApplyPromptLogAutoDelete(ctx context.Context) *time.T
 	}
 	age := parseRetentionDuration(ctrl.PromptLogRetention)
 	cutoff := time.Now().Add(-age)
-	_ = m.db.WithContext(ctx).Where("timestamp < ?", cutoff).Delete(&BrowserAILog{}).Error
+	_ = db.WithContext(ctx).Where("timestamp < ?", cutoff).Delete(&BrowserAILog{}).Error
 	return &cutoff
 }
 
 func (m *BrowserAIManager) GetRules(ctx context.Context) ([]BrowserGuardRule, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	var rules []BrowserGuardRule
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return rules, nil
 	}
-	err := m.db.WithContext(ctx).Order("created_at ASC").Find(&rules).Error
+	err := db.WithContext(ctx).Order("created_at ASC").Find(&rules).Error
 	if err != nil {
 		return rules, err
 	}
@@ -968,9 +961,8 @@ func (m *BrowserAIManager) GetRules(ctx context.Context) ([]BrowserGuardRule, er
 }
 
 func (m *BrowserAIManager) CreateRule(ctx context.Context, rule *BrowserGuardRule) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return fmt.Errorf("database not initialized")
 	}
 	if rule.ID == "" {
@@ -992,13 +984,12 @@ func (m *BrowserAIManager) CreateRule(ctx context.Context, rule *BrowserGuardRul
 	rule.Action = NormalizeGuardRuleAction(rule.Action)
 	rule.Severity = NormalizeGuardRuleSeverity(rule.Severity)
 	rule.CreatedAt = time.Now()
-	return m.db.WithContext(ctx).Create(rule).Error
+	return db.WithContext(ctx).Create(rule).Error
 }
 
 func (m *BrowserAIManager) UpdateRule(ctx context.Context, id string, updates map[string]any) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return fmt.Errorf("database not initialized")
 	}
 	allowed := map[string]bool{
@@ -1027,16 +1018,15 @@ func (m *BrowserAIManager) UpdateRule(ctx context.Context, id string, updates ma
 	if len(filtered) == 0 {
 		return nil
 	}
-	return m.db.WithContext(ctx).Model(&BrowserGuardRule{}).Where("id = ?", id).Updates(filtered).Error
+	return db.WithContext(ctx).Model(&BrowserGuardRule{}).Where("id = ?", id).Updates(filtered).Error
 }
 
 func (m *BrowserAIManager) UpdateLogRuleViolation(ctx context.Context, id, action, status, ruleTriggered string, riskScore int, predictiveRisk, predictedCategory string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil
 	}
-	return m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", id).Updates(map[string]any{
+	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", id).Updates(map[string]any{
 		"action":             action,
 		"status":             status,
 		"rule_triggered":     ruleTriggered,
@@ -1047,18 +1037,16 @@ func (m *BrowserAIManager) UpdateLogRuleViolation(ctx context.Context, id, actio
 }
 
 func (m *BrowserAIManager) DeleteRule(ctx context.Context, id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return fmt.Errorf("database not initialized")
 	}
-	return m.db.WithContext(ctx).Where("id = ?", id).Delete(&BrowserGuardRule{}).Error
+	return db.WithContext(ctx).Where("id = ?", id).Delete(&BrowserGuardRule{}).Error
 }
 
 func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSettings, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return &BrowserControlSettings{
 			ID:                  BrowserControlSettingsID,
 			Enabled:             true,
@@ -1072,7 +1060,7 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 		}, nil
 	}
 	var ctrl BrowserControlSettings
-	err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error
+	err := db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error
 	if err != nil {
 		ctrl = BrowserControlSettings{
 			ID:                  BrowserControlSettingsID,
@@ -1085,7 +1073,7 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 			PromptLogRetention:  "7d",
 			UpdatedAt:           time.Now(),
 		}
-		if createErr := m.db.WithContext(ctx).Create(&ctrl).Error; createErr != nil {
+		if createErr := db.WithContext(ctx).Create(&ctrl).Error; createErr != nil {
 			return &ctrl, createErr
 		}
 	}
@@ -1102,14 +1090,13 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 }
 
 func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[string]any) (*BrowserControlSettings, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 
 	var ctrl BrowserControlSettings
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
 		ctrl = BrowserControlSettings{
 			ID:                  BrowserControlSettingsID,
 			Enabled:             true,
@@ -1121,7 +1108,7 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 			PromptLogRetention:  "7d",
 			UpdatedAt:           time.Now(),
 		}
-		if createErr := m.db.WithContext(ctx).Create(&ctrl).Error; createErr != nil {
+		if createErr := db.WithContext(ctx).Create(&ctrl).Error; createErr != nil {
 			return nil, createErr
 		}
 	}
@@ -1175,10 +1162,10 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 	}
 	filtered["updated_at"] = time.Now()
 
-	if err := m.db.WithContext(ctx).Model(&BrowserControlSettings{}).Where("id = ?", BrowserControlSettingsID).Updates(filtered).Error; err != nil {
+	if err := db.WithContext(ctx).Model(&BrowserControlSettings{}).Where("id = ?", BrowserControlSettingsID).Updates(filtered).Error; err != nil {
 		return nil, err
 	}
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", BrowserControlSettingsID).First(&ctrl).Error; err != nil {
 		return nil, err
 	}
 	if ctrl.AttachmentRetention == "" {
@@ -1194,13 +1181,12 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 }
 
 func (m *BrowserAIManager) GetTargets(ctx context.Context) ([]BrowserTargetWebsite, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	var targets []BrowserTargetWebsite
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return targets, nil
 	}
-	if err := m.db.WithContext(ctx).Order("domain ASC").Find(&targets).Error; err != nil {
+	if err := db.WithContext(ctx).Order("domain ASC").Find(&targets).Error; err != nil {
 		return targets, err
 	}
 	// Heal status vs block_site/monitored drift (children could keep BLOCKED after Block was turned off).
@@ -1214,7 +1200,7 @@ func (m *BrowserAIManager) GetTargets(ctx context.Context) ([]BrowserTargetWebsi
 		}
 		if t.Status != want {
 			t.Status = want
-			_ = m.db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("id = ?", t.ID).Update("status", want).Error
+			_ = db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("id = ?", t.ID).Update("status", want).Error
 		}
 	}
 	return targets, nil
@@ -1360,9 +1346,8 @@ func (m *BrowserAIManager) BuildProxyPAC(ctx context.Context, proxyAddr string) 
 
 // GetTargetByDomain finds a monitored target matching host or parent domain.
 func (m *BrowserAIManager) GetTargetByDomain(ctx context.Context, host string) (*BrowserTargetWebsite, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, nil
 	}
 	host = NormalizeDomain(host)
@@ -1370,7 +1355,7 @@ func (m *BrowserAIManager) GetTargetByDomain(ctx context.Context, host string) (
 		return nil, nil
 	}
 	var targets []BrowserTargetWebsite
-	if err := m.db.WithContext(ctx).Find(&targets).Error; err != nil {
+	if err := db.WithContext(ctx).Find(&targets).Error; err != nil {
 		return nil, err
 	}
 	for i := range targets {
@@ -1387,9 +1372,8 @@ func (m *BrowserAIManager) GetTargetByDomain(ctx context.Context, host string) (
 }
 
 func (m *BrowserAIManager) CreateTarget(ctx context.Context, target *BrowserTargetWebsite) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return fmt.Errorf("database not initialized")
 	}
 	target.Domain = NormalizeDomain(target.Domain)
@@ -1411,7 +1395,7 @@ func (m *BrowserAIManager) CreateTarget(ctx context.Context, target *BrowserTarg
 			target.ParentID = ""
 		} else {
 			var parent BrowserTargetWebsite
-			if err := m.db.WithContext(ctx).Where("id = ?", target.ParentID).First(&parent).Error; err != nil {
+			if err := db.WithContext(ctx).Where("id = ?", target.ParentID).First(&parent).Error; err != nil {
 				target.ParentID = ""
 			} else if strings.TrimSpace(parent.ParentID) != "" {
 				target.ParentID = parent.ParentID
@@ -1440,16 +1424,15 @@ func (m *BrowserAIManager) CreateTarget(ctx context.Context, target *BrowserTarg
 		target.Status = "MONITORED"
 	}
 	target.CreatedAt = time.Now()
-	if err := m.db.WithContext(ctx).Create(target).Error; err != nil {
+	if err := db.WithContext(ctx).Create(target).Error; err != nil {
 		return err
 	}
 	return nil
 }
 
 func (m *BrowserAIManager) UpdateTarget(ctx context.Context, id string, updates map[string]any) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return fmt.Errorf("database not initialized")
 	}
 	if raw, ok := updates["domain"]; ok {
@@ -1490,7 +1473,7 @@ func (m *BrowserAIManager) UpdateTarget(ctx context.Context, id string, updates 
 			delete(filtered, "parent_id")
 		} else {
 			var parent BrowserTargetWebsite
-			if err := m.db.WithContext(ctx).Where("id = ?", pid).First(&parent).Error; err != nil {
+			if err := db.WithContext(ctx).Where("id = ?", pid).First(&parent).Error; err != nil {
 				delete(filtered, "parent_id")
 			} else if strings.TrimSpace(parent.ParentID) != "" {
 				filtered["parent_id"] = parent.ParentID
@@ -1514,7 +1497,7 @@ func (m *BrowserAIManager) UpdateTarget(ctx context.Context, id string, updates 
 			}
 		}
 	}
-	if err := m.db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("id = ?", id).Updates(filtered).Error; err != nil {
+	if err := db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("id = ?", id).Updates(filtered).Error; err != nil {
 		return err
 	}
 	child := map[string]any{}
@@ -1544,18 +1527,17 @@ func (m *BrowserAIManager) UpdateTarget(ctx context.Context, id string, updates 
 		}
 	}
 	if len(child) > 0 {
-		_ = m.db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("parent_id = ?", id).Updates(child).Error
+		_ = db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("parent_id = ?", id).Updates(child).Error
 	}
 	return nil
 }
 
 func (m *BrowserAIManager) DeleteTarget(ctx context.Context, id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return fmt.Errorf("database not initialized")
 	}
-	return m.db.WithContext(ctx).Where("id = ? OR parent_id = ?", id, id).Delete(&BrowserTargetWebsite{}).Error
+	return db.WithContext(ctx).Where("id = ? OR parent_id = ?", id, id).Delete(&BrowserTargetWebsite{}).Error
 }
 
 // NormalizeHostRole keeps only supported admin labels.
@@ -1573,10 +1555,9 @@ func NormalizeHostRole(raw string) string {
 }
 
 func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, promptFull, clientIP string, metadata map[string]any) (*BrowserAILog, string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, "", fmt.Errorf("database connection not available")
 	}
 
@@ -1614,7 +1595,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	}
 
 	var rules []BrowserGuardRule
-	_ = m.db.WithContext(ctx).Where("active = ?", true).Find(&rules).Error
+	_ = db.WithContext(ctx).Where("active = ?", true).Find(&rules).Error
 
 	action := "Allowed"
 	status := "Allowed"
@@ -1811,12 +1792,12 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		CreatedAt:         time.Now(),
 	}
 
-	if err := m.db.WithContext(ctx).Create(&logEntry).Error; err != nil {
+	if err := db.WithContext(ctx).Create(&logEntry).Error; err != nil {
 		return nil, "", err
 	}
 
 	if domain != "" {
-		m.db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("domain = ?", domain).UpdateColumn("intercepted_count", gorm.Expr("intercepted_count + 1"))
+		db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("domain = ?", domain).UpdateColumn("intercepted_count", gorm.Expr("intercepted_count + 1"))
 	}
 
 	return &logEntry, matchedWarning, nil
@@ -1830,9 +1811,8 @@ func (m *BrowserAIManager) UpdateLogAttachment(ctx context.Context, logID, name,
 
 // UpdateLogAttachmentMeta persists attachment index fields in Postgres (bytes stay on disk).
 func (m *BrowserAIManager) UpdateLogAttachmentMeta(ctx context.Context, logID, name, storedName, contentType string, sizeBytes int64, relPath string, expiresAt *time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || strings.TrimSpace(logID) == "" {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(logID) == "" {
 		return nil
 	}
 	updates := map[string]any{}
@@ -1857,21 +1837,20 @@ func (m *BrowserAIManager) UpdateLogAttachmentMeta(ctx context.Context, logID, n
 	if len(updates) == 0 {
 		return nil
 	}
-	return m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(updates).Error
+	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(updates).Error
 }
 
 // GetFleetConfig returns the singleton Guard fleet defaults (creates seed if missing).
 func (m *BrowserAIManager) GetFleetConfig(ctx context.Context) (*BrowserGuardFleetConfig, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return defaultFleetConfig(), nil
 	}
 	var row BrowserGuardFleetConfig
-	err := m.db.WithContext(ctx).Where("id = ?", BrowserGuardFleetConfigID).First(&row).Error
+	err := db.WithContext(ctx).Where("id = ?", BrowserGuardFleetConfigID).First(&row).Error
 	if err != nil {
 		seed := defaultFleetConfig()
-		_ = m.db.WithContext(ctx).Create(seed).Error
+		_ = db.WithContext(ctx).Create(seed).Error
 		return seed, nil
 	}
 	return &row, nil
@@ -1879,9 +1858,8 @@ func (m *BrowserAIManager) GetFleetConfig(ctx context.Context) (*BrowserGuardFle
 
 // SaveFleetConfig upserts company Guard fleet defaults into Postgres.
 func (m *BrowserAIManager) SaveFleetConfig(ctx context.Context, incoming *BrowserGuardFleetConfig) (*BrowserGuardFleetConfig, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	if incoming == nil {
@@ -1925,7 +1903,7 @@ func (m *BrowserAIManager) SaveFleetConfig(ctx context.Context, incoming *Browse
 	default:
 		row.AgentTypeDefault = "endpoint"
 	}
-	if err := m.db.WithContext(ctx).Save(&row).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
@@ -1946,38 +1924,35 @@ func defaultFleetConfig() *BrowserGuardFleetConfig {
 
 // ClearLogAttachmentFile removes the temp disk pointer only — keeps attachment_name forever.
 func (m *BrowserAIManager) ClearLogAttachmentFile(ctx context.Context, logID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || strings.TrimSpace(logID) == "" {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(logID) == "" {
 		return nil
 	}
-	return m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(map[string]any{
+	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(map[string]any{
 		"attachment_stored_name": "",
 	}).Error
 }
 
 // ClearLogAttachmentFileByStoredName clears stored file refs that match a disk basename.
 func (m *BrowserAIManager) ClearLogAttachmentFileByStoredName(ctx context.Context, storedName string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	storedName = strings.TrimSpace(storedName)
-	if m.db == nil || storedName == "" {
+	db := m.GetDB()
+	if db == nil || storedName == "" {
 		return nil
 	}
-	return m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("attachment_stored_name = ?", storedName).Updates(map[string]any{
+	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("attachment_stored_name = ?", storedName).Updates(map[string]any{
 		"attachment_stored_name": "",
 	}).Error
 }
 
 // GetLogByID returns one intercept log by id.
 func (m *BrowserAIManager) GetLogByID(ctx context.Context, id string) (*BrowserAILog, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.db == nil || strings.TrimSpace(id) == "" {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(id) == "" {
 		return nil, fmt.Errorf("log not found")
 	}
 	var log BrowserAILog
-	if err := m.db.WithContext(ctx).Where("id = ?", id).First(&log).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", id).First(&log).Error; err != nil {
 		return nil, err
 	}
 	return &log, nil
@@ -1985,12 +1960,11 @@ func (m *BrowserAIManager) GetLogByID(ctx context.Context, id string) (*BrowserA
 
 // UpdateLogReplyBot stores the Reply Bot provider/model/text on an existing intercept log.
 func (m *BrowserAIManager) UpdateLogReplyBot(ctx context.Context, logID, provider, model, text string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || strings.TrimSpace(logID) == "" {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(logID) == "" {
 		return nil
 	}
-	return m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(map[string]any{
+	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(map[string]any{
 		"reply_bot_provider": provider,
 		"reply_bot_model":    model,
 		"reply_bot_text":     text,
@@ -1999,9 +1973,8 @@ func (m *BrowserAIManager) UpdateLogReplyBot(ctx context.Context, logID, provide
 
 // UpdateLogActionStatus updates action/status after Reply Bot "all questions" mode answers.
 func (m *BrowserAIManager) UpdateLogActionStatus(ctx context.Context, logID, action, status string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || strings.TrimSpace(logID) == "" {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(logID) == "" {
 		return nil
 	}
 	updates := map[string]any{}
@@ -2014,7 +1987,7 @@ func (m *BrowserAIManager) UpdateLogActionStatus(ctx context.Context, logID, act
 	if len(updates) == 0 {
 		return nil
 	}
-	return m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(updates).Error
+	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(updates).Error
 }
 
 // NormalizeGuardRuleAction canonicalizes rule actions. Supported: BLOCK, REDACT, WARN.
@@ -2159,18 +2132,19 @@ func markAgentUninstallKeyFlag(agent *BrowserAIAgent) {
 	agent.HasUninstallKey = strings.TrimSpace(agent.UninstallKeyHash) != ""
 }
 
-func (m *BrowserAIManager) ensureAgentSettingsLocked(ctx context.Context) (*BrowserAIAgentSettings, error) {
-	if m.db == nil {
+func (m *BrowserAIManager) ensureAgentSettings(ctx context.Context) (*BrowserAIAgentSettings, error) {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	var settings BrowserAIAgentSettings
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserAIAgentSettingsID).First(&settings).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", BrowserAIAgentSettingsID).First(&settings).Error; err != nil {
 		settings = BrowserAIAgentSettings{
 			ID:                  BrowserAIAgentSettingsID,
 			RequireUninstallKey: true,
 			UpdatedAt:           time.Now(),
 		}
-		if createErr := m.db.WithContext(ctx).Create(&settings).Error; createErr != nil {
+		if createErr := db.WithContext(ctx).Create(&settings).Error; createErr != nil {
 			return nil, createErr
 		}
 	}
@@ -2180,15 +2154,13 @@ func (m *BrowserAIManager) ensureAgentSettingsLocked(ctx context.Context) (*Brow
 }
 
 func (m *BrowserAIManager) GetAgentSettings(ctx context.Context) (*BrowserAIAgentSettings, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.ensureAgentSettingsLocked(ctx)
+	db := m.GetDB()
+	return m.ensureAgentSettings(ctx)
 }
 
 func (m *BrowserAIManager) SaveUninstallKey(ctx context.Context, plaintext, updatedBy string, requireKey *bool) (*BrowserAIAgentSettings, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, err := m.ensureAgentSettingsLocked(ctx); err != nil {
+	db := m.GetDB()
+	if _, err := m.ensureAgentSettings(ctx); err != nil {
 		return nil, err
 	}
 	updates := map[string]any{
@@ -2202,20 +2174,19 @@ func (m *BrowserAIManager) SaveUninstallKey(ctx context.Context, plaintext, upda
 		updates["uninstall_key_enc"] = sealAgentUninstallKey(plaintext)
 	}
 	_ = requireKey // ignored — key is always required
-	if err := m.db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Updates(updates).Error; err != nil {
+	if err := db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	return m.ensureAgentSettingsLocked(ctx)
+	return m.ensureAgentSettings(ctx)
 }
 
 // GetCompanyUninstallKeyReveal returns the plaintext company uninstall key if configured.
 func (m *BrowserAIManager) GetCompanyUninstallKeyReveal(ctx context.Context) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return "", fmt.Errorf("database not initialized")
 	}
-	settings, err := m.ensureAgentSettingsLocked(ctx)
+	settings, err := m.ensureAgentSettings(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -2227,7 +2198,7 @@ func (m *BrowserAIManager) GetCompanyUninstallKeyReveal(ctx context.Context) (st
 	}
 	if settings.UninstallKeyHash == hashUninstallKey("12345678") {
 		enc := sealAgentUninstallKey("12345678")
-		_ = m.db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Update("uninstall_key_enc", enc)
+		_ = db.WithContext(ctx).Model(&BrowserAIAgentSettings{}).Where("id = ?", BrowserAIAgentSettingsID).Update("uninstall_key_enc", enc)
 		settings.UninstallKeyEnc = enc
 		return "12345678", nil
 	}
@@ -2235,13 +2206,12 @@ func (m *BrowserAIManager) GetCompanyUninstallKeyReveal(ctx context.Context) (st
 }
 
 func (m *BrowserAIManager) VerifyUninstallKey(ctx context.Context, plaintext string) (bool, *BrowserAIAgentSettings, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return false, nil, fmt.Errorf("database not initialized")
 	}
 	var settings BrowserAIAgentSettings
-	if err := m.db.WithContext(ctx).Where("id = ?", BrowserAIAgentSettingsID).First(&settings).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", BrowserAIAgentSettingsID).First(&settings).Error; err != nil {
 		return false, nil, err
 	}
 	settings.RequireUninstallKey = true
@@ -2256,6 +2226,7 @@ func (m *BrowserAIManager) VerifyUninstallKey(ctx context.Context, plaintext str
 
 // VerifyAgentUninstallKey accepts the per-Guard key OR the company uninstall key.
 func (m *BrowserAIManager) VerifyAgentUninstallKey(ctx context.Context, agentID, plaintext string) (bool, *BrowserAIAgentSettings, error) {
+	db := m.GetDB()
 	plaintext = strings.TrimSpace(plaintext)
 	agentID = strings.TrimSpace(agentID)
 	if plaintext == "" {
@@ -2263,12 +2234,10 @@ func (m *BrowserAIManager) VerifyAgentUninstallKey(ctx context.Context, agentID,
 	}
 
 	// Prefer per-Guard key when agent_id is known.
-	if agentID != "" && m.db != nil {
-		m.mu.RLock()
-		var agent BrowserAIAgent
-		err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error
-		m.mu.RUnlock()
-		if err == nil && strings.TrimSpace(agent.UninstallKeyHash) != "" {
+	if agentID != "" && db != nil {
+			var agent BrowserAIAgent
+		err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error
+			if err == nil && strings.TrimSpace(agent.UninstallKeyHash) != "" {
 			// Same expiry rule as reveal/auto-rotate, so yesterday's key stops working
 			// the moment the admin UI shows today's key.
 			if !IsAgentUninstallKeyExpired(agent.UninstallKeyRotatedAt) && hashUninstallKey(plaintext) == agent.UninstallKeyHash {
@@ -2285,9 +2254,8 @@ func (m *BrowserAIManager) VerifyAgentUninstallKey(ctx context.Context, agentID,
 // GetAgentUninstallKeyReveal returns the plaintext Guard uninstall key for admin UI.
 // Missing or expired daily keys are automatically regenerated.
 func (m *BrowserAIManager) GetAgentUninstallKeyReveal(ctx context.Context, agentID string) (plaintext string, agent *BrowserAIAgent, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return "", nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2295,7 +2263,7 @@ func (m *BrowserAIManager) GetAgentUninstallKeyReveal(ctx context.Context, agent
 		return "", nil, fmt.Errorf("agent id is required")
 	}
 	var row BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&row).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&row).Error; err != nil {
 		return "", nil, err
 	}
 	if strings.TrimSpace(row.UninstallKeyEnc) != "" && !IsAgentUninstallKeyExpired(row.UninstallKeyRotatedAt) {
@@ -2311,7 +2279,7 @@ func (m *BrowserAIManager) GetAgentUninstallKeyReveal(ctx context.Context, agent
 		return "", nil, genErr
 	}
 	row.UpdatedAt = time.Now()
-	if err := m.db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", row.ID).Updates(map[string]any{
+	if err := db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", row.ID).Updates(map[string]any{
 		"uninstall_key_hash":       row.UninstallKeyHash,
 		"uninstall_key_enc":        row.UninstallKeyEnc,
 		"uninstall_key_rotated_at": row.UninstallKeyRotatedAt,
@@ -2325,9 +2293,8 @@ func (m *BrowserAIManager) GetAgentUninstallKeyReveal(ctx context.Context, agent
 
 // RotateAgentUninstallKey issues a new per-Guard uninstall key.
 func (m *BrowserAIManager) RotateAgentUninstallKey(ctx context.Context, agentID string) (plaintext string, agent *BrowserAIAgent, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return "", nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2335,7 +2302,7 @@ func (m *BrowserAIManager) RotateAgentUninstallKey(ctx context.Context, agentID 
 		return "", nil, fmt.Errorf("agent id is required")
 	}
 	var row BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&row).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&row).Error; err != nil {
 		return "", nil, err
 	}
 	plain, genErr := assignAgentUninstallKey(&row)
@@ -2343,7 +2310,7 @@ func (m *BrowserAIManager) RotateAgentUninstallKey(ctx context.Context, agentID 
 		return "", nil, genErr
 	}
 	row.UpdatedAt = time.Now()
-	if err := m.db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", row.ID).Updates(map[string]any{
+	if err := db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", row.ID).Updates(map[string]any{
 		"uninstall_key_hash":       row.UninstallKeyHash,
 		"uninstall_key_enc":        row.UninstallKeyEnc,
 		"uninstall_key_rotated_at": row.UninstallKeyRotatedAt,
@@ -2356,9 +2323,8 @@ func (m *BrowserAIManager) RotateAgentUninstallKey(ctx context.Context, agentID 
 }
 
 func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *BrowserAIAgent) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	if incoming == nil || strings.TrimSpace(incoming.ID) == "" {
@@ -2366,7 +2332,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	}
 	now := time.Now()
 	var existing BrowserAIAgent
-	err := m.db.WithContext(ctx).Where("id = ?", incoming.ID).First(&existing).Error
+	err := db.WithContext(ctx).Where("id = ?", incoming.ID).First(&existing).Error
 	if err != nil {
 		// Enforce enterprise seat quota on new laptop registrations
 		if quotaErr := m.CheckSeatQuotaEnforcement(ctx, incoming.ID, incoming.Hostname, incoming.MacAddress); quotaErr != nil {
@@ -2402,7 +2368,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		// Reinstall on the same laptop gets a new Guard ID — keep the admin-saved contact email.
 		if agent.Hostname != "" {
 			var prev BrowserAIAgent
-			if m.db.WithContext(ctx).
+			if db.WithContext(ctx).
 				Where("LOWER(hostname) = ? AND contact_email_pinned = ?", strings.ToLower(agent.Hostname), true).
 				Order("updated_at DESC").First(&prev).Error == nil {
 				agent.ContactEmail = prev.ContactEmail
@@ -2412,7 +2378,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		if _, genErr := assignAgentUninstallKey(&agent); genErr != nil {
 			return nil, fmt.Errorf("generate guard uninstall key: %w", genErr)
 		}
-		if createErr := m.db.WithContext(ctx).Create(&agent).Error; createErr != nil {
+		if createErr := db.WithContext(ctx).Create(&agent).Error; createErr != nil {
 			return nil, createErr
 		}
 		m.purgeHostDuplicates(ctx, agent.ID, agent.Hostname, agent.MacAddress, agent.Username)
@@ -2475,7 +2441,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 			return nil, fmt.Errorf("generate guard uninstall key: %w", genErr)
 		}
 	}
-	if err := m.db.WithContext(ctx).Save(&existing).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&existing).Error; err != nil {
 		return nil, err
 	}
 	if existing.Status == AgentStatusActive {
@@ -2486,14 +2452,15 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 }
 
 func (m *BrowserAIManager) purgeHostDuplicates(ctx context.Context, keepID, hostname, macAddress, username string) {
-	if m.db == nil || strings.TrimSpace(hostname) == "" {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(hostname) == "" {
 		return
 	}
 	hostLower := strings.ToLower(strings.TrimSpace(hostname))
 	macClean := strings.ToLower(strings.TrimSpace(macAddress))
 	userLower := strings.ToLower(strings.TrimSpace(username))
 
-	subQuery := m.db.WithContext(ctx).Model(&BrowserAIAgent{}).
+	subQuery := db.WithContext(ctx).Model(&BrowserAIAgent{}).
 		Where("id != ? AND LOWER(hostname) = ?", keepID, hostLower)
 
 	if macClean != "" && macClean != "—" && macClean != "00:00:00:00:00:00" && !strings.HasPrefix(macClean, "00:00") {
@@ -2504,21 +2471,20 @@ func (m *BrowserAIManager) purgeHostDuplicates(ctx context.Context, keepID, host
 
 	var dupIDs []string
 	if err := subQuery.Pluck("id", &dupIDs).Error; err == nil && len(dupIDs) > 0 {
-		_ = m.db.WithContext(ctx).Model(&BrowserAILog{}).Where("agent_id IN ?", dupIDs).Update("agent_id", keepID).Error
-		_ = m.db.WithContext(ctx).Where("id IN ?", dupIDs).Delete(&BrowserAIAgent{}).Error
+		_ = db.WithContext(ctx).Model(&BrowserAILog{}).Where("agent_id IN ?", dupIDs).Update("agent_id", keepID).Error
+		_ = db.WithContext(ctx).Where("id IN ?", dupIDs).Delete(&BrowserAIAgent{}).Error
 	}
 }
 
 // AutoRotateDailyAgentUninstallKeys scans active agents and auto-rotates any expired daily uninstall keys.
 func (m *BrowserAIManager) AutoRotateDailyAgentUninstallKeys(ctx context.Context) (int, error) {
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return 0, nil
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	var agents []BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("status != ?", AgentStatusUninstalled).Find(&agents).Error; err != nil {
+	if err := db.WithContext(ctx).Where("status != ?", AgentStatusUninstalled).Find(&agents).Error; err != nil {
 		return 0, err
 	}
 
@@ -2527,7 +2493,7 @@ func (m *BrowserAIManager) AutoRotateDailyAgentUninstallKeys(ctx context.Context
 		if IsAgentUninstallKeyExpired(agents[i].UninstallKeyRotatedAt) || strings.TrimSpace(agents[i].UninstallKeyHash) == "" {
 			if _, err := assignAgentUninstallKey(&agents[i]); err == nil {
 				agents[i].UpdatedAt = time.Now()
-				_ = m.db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", agents[i].ID).Updates(map[string]any{
+				_ = db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", agents[i].ID).Updates(map[string]any{
 					"uninstall_key_hash":       agents[i].UninstallKeyHash,
 					"uninstall_key_enc":        agents[i].UninstallKeyEnc,
 					"uninstall_key_rotated_at": agents[i].UninstallKeyRotatedAt,
@@ -2565,15 +2531,14 @@ func firstNonEmpty(values ...string) string {
 }
 
 func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string, limit, offset int, agentType ...string) ([]BrowserAIAgent, int64, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	var agents []BrowserAIAgent
 	var total int64
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return agents, 0, nil
 	}
 
-	query := m.db.WithContext(ctx).Model(&BrowserAIAgent{})
+	query := db.WithContext(ctx).Model(&BrowserAIAgent{})
 	if status != "" && strings.ToLower(status) != "all" {
 		query = query.Where("LOWER(status) = ?", strings.ToLower(status))
 	}
@@ -2605,13 +2570,12 @@ func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string
 }
 
 func (m *BrowserAIManager) CountAgentsStatus(ctx context.Context, search string, agentType ...string) (active int64, uninstalled int64, paused int64, err error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return 0, 0, 0, nil
 	}
 	buildBase := func() *gorm.DB {
-		q := m.db.WithContext(ctx).Model(&BrowserAIAgent{})
+		q := db.WithContext(ctx).Model(&BrowserAIAgent{})
 		typeFilter := ""
 		if len(agentType) > 0 {
 			typeFilter = strings.TrimSpace(agentType[0])
@@ -2635,26 +2599,24 @@ func (m *BrowserAIManager) CountAgentsStatus(ctx context.Context, search string,
 }
 
 func (m *BrowserAIManager) GetAgent(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	var agent BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", strings.TrimSpace(agentID)).First(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", strings.TrimSpace(agentID)).First(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 func (m *BrowserAIManager) RecordAgentTamper(ctx context.Context, agentID, detail string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || strings.TrimSpace(agentID) == "" {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(agentID) == "" {
 		return nil
 	}
 	now := time.Now()
-	return m.db.WithContext(ctx).Model(&BrowserAIAgent{}).
+	return db.WithContext(ctx).Model(&BrowserAIAgent{}).
 		Where("id = ?", strings.TrimSpace(agentID)).
 		Updates(map[string]any{
 			"health_status": "tampered",
@@ -2664,9 +2626,8 @@ func (m *BrowserAIManager) RecordAgentTamper(ctx context.Context, agentID, detai
 }
 
 func (m *BrowserAIManager) MarkAgentUninstalled(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2675,7 +2636,7 @@ func (m *BrowserAIManager) MarkAgentUninstalled(ctx context.Context, agentID str
 	}
 	now := time.Now()
 	var agent BrowserAIAgent
-	err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error
+	err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error
 	if err != nil {
 		// Never registered / heartbeat never landed — still record uninstall so Windows setup can finish.
 		agent = BrowserAIAgent{
@@ -2688,7 +2649,7 @@ func (m *BrowserAIManager) MarkAgentUninstalled(ctx context.Context, agentID str
 			CreatedAt:          now,
 			UpdatedAt:          now,
 		}
-		if createErr := m.db.WithContext(ctx).Create(&agent).Error; createErr != nil {
+		if createErr := db.WithContext(ctx).Create(&agent).Error; createErr != nil {
 			return nil, createErr
 		}
 		return &agent, nil
@@ -2697,16 +2658,15 @@ func (m *BrowserAIManager) MarkAgentUninstalled(ctx context.Context, agentID str
 	agent.UninstallRequested = false
 	agent.UninstalledAt = &now
 	agent.UpdatedAt = now
-	if err := m.db.WithContext(ctx).Save(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 func (m *BrowserAIManager) RequestRemoteUninstall(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2714,7 +2674,7 @@ func (m *BrowserAIManager) RequestRemoteUninstall(ctx context.Context, agentID s
 		return nil, fmt.Errorf("agent id is required")
 	}
 	var agent BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
 	}
 	if agent.Status == AgentStatusUninstalled {
@@ -2724,16 +2684,15 @@ func (m *BrowserAIManager) RequestRemoteUninstall(ctx context.Context, agentID s
 	agent.UninstallRequested = true
 	agent.Status = AgentStatusUninstallPending
 	agent.UpdatedAt = now
-	if err := m.db.WithContext(ctx).Save(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 func (m *BrowserAIManager) AckRemoteUninstall(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2741,7 +2700,7 @@ func (m *BrowserAIManager) AckRemoteUninstall(ctx context.Context, agentID strin
 		return nil, fmt.Errorf("agent id is required")
 	}
 	var agent BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
 	}
 	if !agent.UninstallRequested && agent.Status != AgentStatusUninstallPending {
@@ -2752,16 +2711,15 @@ func (m *BrowserAIManager) AckRemoteUninstall(ctx context.Context, agentID strin
 	agent.UninstallRequested = false
 	agent.UninstalledAt = &now
 	agent.UpdatedAt = now
-	if err := m.db.WithContext(ctx).Save(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 func (m *BrowserAIManager) PauseAgent(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2769,7 +2727,7 @@ func (m *BrowserAIManager) PauseAgent(ctx context.Context, agentID string) (*Bro
 		return nil, fmt.Errorf("agent id is required")
 	}
 	var agent BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
 	}
 	if agent.Status == AgentStatusUninstalled {
@@ -2778,16 +2736,15 @@ func (m *BrowserAIManager) PauseAgent(ctx context.Context, agentID string) (*Bro
 	now := time.Now()
 	agent.Status = AgentStatusPaused
 	agent.UpdatedAt = now
-	if err := m.db.WithContext(ctx).Save(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 func (m *BrowserAIManager) ResumeAgent(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2795,7 +2752,7 @@ func (m *BrowserAIManager) ResumeAgent(ctx context.Context, agentID string) (*Br
 		return nil, fmt.Errorf("agent id is required")
 	}
 	var agent BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
 	}
 
@@ -2811,16 +2768,15 @@ func (m *BrowserAIManager) ResumeAgent(ctx context.Context, agentID string) (*Br
 	agent.UninstallRequested = false
 	agent.UninstalledAt = nil
 	agent.UpdatedAt = now
-	if err := m.db.WithContext(ctx).Save(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 func (m *BrowserAIManager) AllowReinstallAgent(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2828,7 +2784,7 @@ func (m *BrowserAIManager) AllowReinstallAgent(ctx context.Context, agentID stri
 		return nil, fmt.Errorf("agent id is required")
 	}
 	var agent BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
 	}
 	now := time.Now()
@@ -2836,16 +2792,15 @@ func (m *BrowserAIManager) AllowReinstallAgent(ctx context.Context, agentID stri
 	agent.UninstallRequested = false
 	agent.UninstalledAt = nil
 	agent.UpdatedAt = now
-	if err := m.db.WithContext(ctx).Save(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Save(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 func (m *BrowserAIManager) DeleteAgents(ctx context.Context, ids []string) (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return 0, fmt.Errorf("database not initialized")
 	}
 	unique := make([]string, 0, len(ids))
@@ -2864,7 +2819,7 @@ func (m *BrowserAIManager) DeleteAgents(ctx context.Context, ids []string) (int6
 	if len(unique) == 0 {
 		return 0, fmt.Errorf("at least one agent id is required")
 	}
-	result := m.db.WithContext(ctx).Where("id IN ?", unique).Delete(&BrowserAIAgent{})
+	result := db.WithContext(ctx).Where("id IN ?", unique).Delete(&BrowserAIAgent{})
 	return result.RowsAffected, result.Error
 }
 
@@ -2879,9 +2834,8 @@ func preferEmail(primary, fallback string) string {
 
 // RecordWarningEmail persists a Guard Insights / Agents warning email audit row.
 func (m *BrowserAIManager) RecordWarningEmail(ctx context.Context, entry *BrowserAIWarningEmailLog) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil || entry == nil {
+	db := m.GetDB()
+	if db == nil || entry == nil {
 		return nil
 	}
 	if entry.ID == "" {
@@ -2896,7 +2850,7 @@ func (m *BrowserAIManager) RecordWarningEmail(ctx context.Context, entry *Browse
 	if entry.Status == "" {
 		entry.Status = "sent"
 	}
-	return m.db.WithContext(ctx).Create(entry).Error
+	return db.WithContext(ctx).Create(entry).Error
 }
 
 // UpdateAgentContactEmail is the admin save: sets (or clears, with "") the warning-mail
@@ -2912,9 +2866,8 @@ func (m *BrowserAIManager) RememberAgentContactEmail(ctx context.Context, agentI
 }
 
 func (m *BrowserAIManager) setAgentContactEmail(ctx context.Context, agentID, email string, pin bool) (*BrowserAIAgent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
 	agentID = strings.TrimSpace(agentID)
@@ -2926,7 +2879,7 @@ func (m *BrowserAIManager) setAgentContactEmail(ctx context.Context, agentID, em
 		return nil, fmt.Errorf("invalid email address")
 	}
 	var agent BrowserAIAgent
-	if err := m.db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
 		return nil, fmt.Errorf("agent not found")
 	}
 	if !pin && agent.ContactEmailPinned {
@@ -2937,7 +2890,7 @@ func (m *BrowserAIManager) setAgentContactEmail(ctx context.Context, agentID, em
 		agent.ContactEmailPinned = true
 	}
 	agent.UpdatedAt = time.Now()
-	if err := m.db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", agent.ID).Updates(map[string]any{
+	if err := db.WithContext(ctx).Model(&BrowserAIAgent{}).Where("id = ?", agent.ID).Updates(map[string]any{
 		"contact_email":        agent.ContactEmail,
 		"contact_email_pinned": agent.ContactEmailPinned,
 		"updated_at":           agent.UpdatedAt,
@@ -2950,8 +2903,6 @@ func (m *BrowserAIManager) setAgentContactEmail(ctx context.Context, agentID, em
 
 // GetAgentInsightStats returns full-DB action totals per agent_id for Guard Insights.
 func (m *BrowserAIManager) GetAgentInsightStats(ctx context.Context) ([]BrowserAIAgentInsightStats, map[string]int64, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	out := []BrowserAIAgentInsightStats{}
 	totals := map[string]int64{
 		"allowed": 0,
@@ -2960,7 +2911,8 @@ func (m *BrowserAIManager) GetAgentInsightStats(ctx context.Context) ([]BrowserA
 		"redact":  0,
 		"total":   0,
 	}
-	if m.db == nil {
+	db := m.GetDB()
+	if db == nil {
 		return out, totals, nil
 	}
 
@@ -2970,7 +2922,7 @@ func (m *BrowserAIManager) GetAgentInsightStats(ctx context.Context) ([]BrowserA
 		Count   int64
 	}
 	var rows []row
-	err := m.db.WithContext(ctx).Model(&BrowserAILog{}).
+	err := db.WithContext(ctx).Model(&BrowserAILog{}).
 		Select("agent_id as agent_id, LOWER(action) as action, COUNT(*) as count").
 		Where("agent_id IS NOT NULL AND agent_id <> ''").
 		Group("agent_id, LOWER(action)").
