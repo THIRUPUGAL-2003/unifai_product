@@ -71,7 +71,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -197,7 +197,13 @@ export default function BrowserAiPage() {
 		"tab",
 		parseAsStringLiteral(BROWSER_AI_TABS).withDefault("overview"),
 	);
-	const activeTab: BrowserAiTab = tabParam;
+	// Immediately inspect URL query param on mount to prevent flash to overview on hard reload
+	const initialUrlTab = useMemo(() => {
+		if (typeof window === "undefined") return null;
+		const raw = new URLSearchParams(window.location.search).get("tab");
+		return raw && (BROWSER_AI_TABS as readonly string[]).includes(raw) ? (raw as BrowserAiTab) : null;
+	}, []);
+	const activeTab: BrowserAiTab = tabParam === "overview" && initialUrlTab ? initialUrlTab : tabParam;
 	const setActiveTab = useCallback(
 		(value: string) => {
 			const next = (BROWSER_AI_TABS as readonly string[]).includes(value)
@@ -408,9 +414,9 @@ export default function BrowserAiPage() {
 		skip: activeTab !== "overview",
 	});
 
-	const { data: rulesData, refetch: refetchRules } = useGetBrowserAiRulesQuery(undefined, { pollingInterval: activePolling });
-	const { data: targetsData, refetch: refetchTargets } = useGetBrowserAiTargetsQuery(undefined, { pollingInterval: activePolling });
-	const { data: controlsData } = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
+	const { data: rulesData, refetch: refetchRules, isFetching: rulesLoading } = useGetBrowserAiRulesQuery(undefined, { pollingInterval: activePolling });
+	const { data: targetsData, refetch: refetchTargets, isFetching: targetsLoading } = useGetBrowserAiTargetsQuery(undefined, { pollingInterval: activePolling });
+	const { data: controlsData, isFetching: controlsLoading } = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
 	const { data: providersData } = useGetProvidersQuery();
 	// Outsource = configured Model Providers (OpenRouter, OpenAI, …). Download = Ollama on server.
 	const outsourceProviderOptions = useMemo(() => {
@@ -2614,6 +2620,43 @@ export default function BrowserAiPage() {
 
 			{/* Section content — nav is sidebar dropdown (Observability / Models style) */}
 			<Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+				{/* Top horizontal tab switcher */}
+				<div className="flex items-center overflow-x-auto pb-1 no-scrollbar border-b border-border/60">
+					<TabsList className="bg-muted/50 p-1 h-9 rounded-lg gap-1 border border-border/40">
+						<TabsTrigger value="overview" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<Activity className="h-3.5 w-3.5 text-blue-500" />
+							Overview
+						</TabsTrigger>
+						<TabsTrigger value="targets" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<Globe className="h-3.5 w-3.5 text-cyan-500" />
+							Target Websites
+						</TabsTrigger>
+						<TabsTrigger value="rules" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<Shield className="h-3.5 w-3.5 text-emerald-500" />
+							Guard Rules
+						</TabsTrigger>
+						<TabsTrigger value="logs" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<FileText className="h-3.5 w-3.5 text-amber-500" />
+							Prompt Logs
+						</TabsTrigger>
+						<TabsTrigger value="search-logs" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<Search className="h-3.5 w-3.5 text-violet-500" />
+							Search Logs
+						</TabsTrigger>
+						<TabsTrigger value="agents" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<Radio className="h-3.5 w-3.5 text-rose-500" />
+							Guard Agents
+						</TabsTrigger>
+						<TabsTrigger value="telemetry" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<BrainCircuit className="h-3.5 w-3.5 text-indigo-500" />
+							Guard Insights
+						</TabsTrigger>
+						<TabsTrigger value="setup" className="gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+							<Terminal className="h-3.5 w-3.5 text-slate-500" />
+							Setup
+						</TabsTrigger>
+					</TabsList>
+				</div>
 				{/* TAB 1: OVERVIEW */}
 				<TabsContent value="overview" className="space-y-6">
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2919,13 +2962,22 @@ export default function BrowserAiPage() {
 												</TableCell>
 											</TableRow>
 										))}
-										{logs.length === 0 && (
+										{logsLoading && logs.length === 0 ? (
+											<TableRow>
+												<TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+													<div className="flex items-center justify-center gap-2">
+														<RefreshCw className="h-4 w-4 animate-spin text-primary" />
+														<span>Loading prompt logs...</span>
+													</div>
+												</TableCell>
+											</TableRow>
+										) : logs.length === 0 ? (
 											<TableRow>
 												<TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
 													No prompt logs match your filter criteria.
 												</TableCell>
 											</TableRow>
-										)}
+										) : null}
 									</TableBody>
 								</Table>
 							</div>
@@ -3105,7 +3157,16 @@ export default function BrowserAiPage() {
 										</TableRow>
 									</TableHeader>
 									<TableBody>
-										{searchLogs.length === 0 ? (
+										{searchLogsLoading && searchLogs.length === 0 ? (
+											<TableRow>
+												<TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+													<div className="flex flex-col items-center justify-center gap-2">
+														<RefreshCw className="h-5 w-5 animate-spin text-primary" />
+														<p>Loading search events...</p>
+													</div>
+												</TableCell>
+											</TableRow>
+										) : searchLogs.length === 0 ? (
 											<TableRow>
 												<TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
 													<div className="flex flex-col items-center justify-center gap-2">
@@ -3860,11 +3921,16 @@ export default function BrowserAiPage() {
 									</div>
 								))}
 
-								{filteredRules.length === 0 && (
+								{rulesLoading && filteredRules.length === 0 ? (
+									<div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
+										<RefreshCw className="h-5 w-5 animate-spin text-primary" />
+										<span>Loading Guard rules...</span>
+									</div>
+								) : filteredRules.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
 										No guard rules found matching your search.
 									</div>
-								)}
+								) : null}
 
 								{filteredRules.length > 0 && (
 									<DataTablePagination
@@ -4292,7 +4358,16 @@ export default function BrowserAiPage() {
 												</TableCell>
 											</TableRow>
 										))}
-										{visibleTargetRows.length === 0 && (
+										{targetsLoading && visibleTargetRows.length === 0 ? (
+											<TableRow>
+												<TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+													<div className="flex items-center justify-center gap-2">
+														<RefreshCw className="h-4 w-4 animate-spin text-primary" />
+														<span>Loading target websites...</span>
+													</div>
+												</TableCell>
+											</TableRow>
+										) : visibleTargetRows.length === 0 ? (
 											<TableRow>
 												<TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
 													{targets.length === 0
@@ -4300,7 +4375,7 @@ export default function BrowserAiPage() {
 														: "No target websites found matching your search."}
 												</TableCell>
 											</TableRow>
-										)}
+										) : null}
 									</TableBody>
 								</Table>
 							</div>
@@ -4893,13 +4968,22 @@ export default function BrowserAiPage() {
 											</TableCell>
 										</TableRow>
 									))}
-									{agents.length === 0 && (
+									{agentsLoading && agents.length === 0 ? (
+										<TableRow>
+											<TableCell colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
+												<div className="flex flex-col items-center justify-center gap-2">
+													<RefreshCw className="h-5 w-5 animate-spin text-primary" />
+													<span>Loading Guard fleet...</span>
+												</div>
+											</TableCell>
+										</TableRow>
+									) : agents.length === 0 ? (
 										<TableRow>
 											<TableCell colSpan={12} className="text-center py-10 text-muted-foreground text-sm">
 												No Guard agents yet. Install Raksha_Guard_Setup.exe (Windows) or Raksha_Guard_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d raksha_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
 											</TableCell>
 										</TableRow>
-									)}
+									) : null}
 								</TableBody>
 							</Table>
 						</CardContent>
