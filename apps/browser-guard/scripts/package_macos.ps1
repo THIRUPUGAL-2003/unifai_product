@@ -9,7 +9,15 @@ if (-not (Test-Path 'release\Gateway_Guard.app')) {
 
 Copy-Item -Force 'release\gateway_guard_config.json' 'release\Gateway_Guard.app\Contents\Resources\gateway_guard_config.json'
 Copy-Item -Force 'proxy\browser_ai_proxy.py' 'release\Gateway_Guard.app\Contents\Resources\browser_ai_proxy.py'
-Copy-Item -Recurse -Force 'proxy\gateway_proxy_parts\*' 'release\Gateway_Guard.app\Contents\Resources\gateway_proxy_parts\'
+$partsDest = 'release\Gateway_Guard.app\Contents\Resources\gateway_proxy_parts'
+New-Item -ItemType Directory -Force -Path $partsDest | Out-Null
+if (-not (Test-Path 'proxy\gateway_proxy_parts\gateway_proxy_parts.enc')) {
+    Write-Error "proxy\gateway_proxy_parts\gateway_proxy_parts.enc missing. Run installer\encrypt_proxy_bundle.py before packaging."
+    exit 1
+}
+Get-ChildItem $partsDest -File | Where-Object { $_.Extension -eq '.py' -or $_.Name -eq 'README.md' -or $_.Name -eq 'Gateway_proxy_parts.enc' } | Remove-Item -Force
+Copy-Item -Force 'proxy\gateway_proxy_parts\gateway_proxy_parts.enc' (Join-Path $partsDest 'gateway_proxy_parts.enc')
+Copy-Item -Force 'proxy\gateway_proxy_parts\MANIFEST.txt' (Join-Path $partsDest 'MANIFEST.txt')
 
 # Keep Resources/VERSION.txt aligned with the .app Info.plist (NOT root VERSION.txt).
 # Root VERSION.txt may be ahead after a Windows-only rebuild; Mac auto-update must not loop.

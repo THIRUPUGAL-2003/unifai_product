@@ -214,6 +214,10 @@ def selftest(code_dir: str) -> int:
                     raise RuntimeError(f"{name} did not load from the bundle")
             if not callable(getattr(sys.modules.get("gateway_agent"), "main", None)):
                 raise RuntimeError("gateway_agent.main missing")
+        if not getattr(sys, "frozen", False):
+            repo_parts = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy", "gateway_proxy_parts"))
+            if os.path.isdir(repo_parts) and repo_parts not in sys.path:
+                sys.path.insert(0, repo_parts)
         ns = runpy.run_path(os.path.join(code_dir, "browser_ai_proxy.py"), run_name="gateway_proxy_selftest")
         addons = ns.get("addons") or []
         if not (addons and type(addons[0]).__name__ == "BrowserAIInterceptor" and callable(getattr(addons[0], "request", None))):

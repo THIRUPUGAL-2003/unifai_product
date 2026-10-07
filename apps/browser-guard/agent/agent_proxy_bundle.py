@@ -1,7 +1,8 @@
 """Rebuild & Publish → installed Guards run the server's latest Guard code.
 
-The server publishes the Guard's Python code (agent/*.py + browser_ai_proxy.py +
-gateway_proxy_parts/) as a zip + SHA-256 and every heartbeat advertises it. This
+The server publishes agent/*.py, the proxy loader, and the encrypted
+gateway_proxy_parts.enc bundle (never the proxy part sources). Every heartbeat
+advertises the zip SHA-256. This
 module downloads it, verifies the hash, self-tests a full load in a subprocess
 (guard_bootstrap --bundle-selftest), records per-file hashes, then restarts the
 Guard so guard_bootstrap loads the new code. Bundles that fail are remembered as
@@ -34,8 +35,8 @@ AGENT = "agent"
 _MAX_BUNDLE_BYTES = 20 * 1024 * 1024
 _RETRY_FAILED_AFTER = 600
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
-_PART_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+\.py$")
 _MODULE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.py$")
+_ENC_NAME = "gateway_proxy_parts.enc"
 
 _apply_lock = threading.Lock()
 _failed_at: dict[str, float] = {}
@@ -117,7 +118,7 @@ def validate_bundle(data: bytes) -> dict[str, bytes]:
                 pass
             elif name.startswith(PARTS + "/"):
                 leaf = name[len(PARTS) + 1:]
-                if leaf != "MANIFEST.txt" and not _PART_NAME_RE.match(leaf):
+                if leaf not in ("MANIFEST.txt", _ENC_NAME):
                     raise ValueError(f"unexpected file in bundle: {name!r}")
             elif name.startswith(AGENT + "/"):
                 leaf = name[len(AGENT) + 1:]
@@ -128,19 +129,13 @@ def validate_bundle(data: bytes) -> dict[str, bytes]:
             files[name] = zf.read(info)
     if ENTRY not in files:
         raise ValueError("bundle has no browser_ai_proxy.py")
-    if not any(n.endswith(".py") and n.startswith(PARTS + "/") for n in files):
-        raise ValueError("bundle has no proxy parts")
+    if f"{PARTS}/{_ENC_NAME}" not in files:
+        raise ValueError("bundle has no encrypted proxy engine")
     if any(n.startswith(AGENT + "/") for n in files) and f"{AGENT}/gateway_agent.py" not in files:
         raise ValueError("bundle agent code has no gateway_agent.py")
     for name, body in files.items():
         if name.endswith(".py"):
             compile(body.decode("utf-8"), name, "exec")
-    manifest = files.get(PARTS + "/MANIFEST.txt")
-    if manifest is not None:
-        for line in manifest.decode("utf-8-sig").splitlines():
-            part = line.strip()
-            if part and f"{PARTS}/{part}" not in files:
-                raise ValueError(f"MANIFEST lists missing part {part!r}")
     return files
 
 

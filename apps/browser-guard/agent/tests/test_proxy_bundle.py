@@ -28,10 +28,15 @@ import guard_bootstrap as gb  # noqa: E402
 
 
 def source_files(mutate=None) -> dict[str, bytes]:
+    parts = PROXY_DIR / "gateway_proxy_parts"
+    enc = parts / "gateway_proxy_parts.enc"
+    if not enc.is_file():
+        raise unittest.SkipTest("gateway_proxy_parts.enc missing; run installer/encrypt_proxy_bundle.py")
     files = {"browser_ai_proxy.py": (PROXY_DIR / "browser_ai_proxy.py").read_bytes()}
-    for p in sorted((PROXY_DIR / "gateway_proxy_parts").iterdir()):
-        if p.suffix == ".py" or p.name == "MANIFEST.txt":
-            files[f"gateway_proxy_parts/{p.name}"] = p.read_bytes()
+    files["gateway_proxy_parts/gateway_proxy_parts.enc"] = enc.read_bytes()
+    manifest = parts / "MANIFEST.txt"
+    if manifest.is_file():
+        files["gateway_proxy_parts/MANIFEST.txt"] = manifest.read_bytes()
     for p in sorted(AGENT_DIR.glob("*.py")):
         if p.name != "guard_bootstrap.py":
             files[f"agent/{p.name}"] = p.read_bytes()
@@ -119,7 +124,7 @@ class ApplyBundleTests(unittest.TestCase):
 
     def test_proxy_code_that_crashes_on_load_is_rejected(self) -> None:
         def break_proxy(files):
-            files["gateway_proxy_parts/responses_addon.py"] += b"\nraise RuntimeError('proxy boom')\n"
+            files["gateway_proxy_parts/gateway_proxy_parts.enc"] = b"not-an-encrypted-bundle"
 
         self.served = zipped(source_files(break_proxy))
         self.assertFalse(pb.apply_bundle(info_for(self.served), self._restart))
@@ -135,9 +140,13 @@ class ApplyBundleTests(unittest.TestCase):
         self.assertFalse(pb.apply_bundle(info_for(self.served), self._restart))
 
     def test_validate_rejects_unexpected_or_broken_files(self) -> None:
-        ok = {"browser_ai_proxy.py": b"x = 1\n", "gateway_proxy_parts/a.py": b"a = 1\n"}
+        ok = {
+            "browser_ai_proxy.py": b"x = 1\n",
+            "gateway_proxy_parts/gateway_proxy_parts.enc": b"GATEWAYENC02\n" + b"x" * 64,
+        }
         pb.validate_bundle(zipped(ok))
         pb.validate_bundle(zipped({**ok, "agent/gateway_agent.py": b"def main(): pass\n"}))
+        pb.validate_bundle(zipped({**ok, "gateway_proxy_parts/MANIFEST.txt": b"a.py\n"}))
         for bad in (
             {**ok, "../evil.py": b"x"},
             {**ok, "gateway_proxy_parts/../../evil.py": b"x"},
@@ -146,8 +155,8 @@ class ApplyBundleTests(unittest.TestCase):
             {**ok, "agent/gateway_agent.py": b"x", "agent/guard_bootstrap.py": b"x"},
             {**ok, "agent/agent_http.py": b"x = 1\n"},
             {**ok, "agent_config.py": b"x"},
-            {**ok, "gateway_proxy_parts/a.py": b"def (:\n"},
-            {**ok, "gateway_proxy_parts/MANIFEST.txt": b"a.py\nmissing.py\n"},
+            {**ok, "gateway_proxy_parts/a.py": b"A = 1\n"},
+            {**ok, "gateway_proxy_parts/bundle_crypto.py": b"SEED = b'secret'\n"},
             {"gateway_proxy_parts/a.py": b"a = 1\n"},
         ):
             with self.assertRaises(Exception):

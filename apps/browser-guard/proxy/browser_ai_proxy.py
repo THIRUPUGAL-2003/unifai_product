@@ -54,8 +54,13 @@ def _load_parts() -> None:
 
     if enc_path.is_file():
         try:
-            sys.path.insert(0, str(parts))
-            import bundle_crypto
+            # Prefer the decryptor compiled into the frozen binary. A loose
+            # bundle_crypto.py beside the ciphertext would expose the key.
+            try:
+                import bundle_crypto
+            except ImportError:
+                sys.path.insert(0, str(parts))
+                import bundle_crypto
             code_map = bundle_crypto.decrypt_parts_bundle(enc_path)
 
             manifest = parts / "MANIFEST.txt"

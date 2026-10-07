@@ -19,7 +19,6 @@ bundle_crypto.encrypt_parts_bundle(PROXY_PARTS, PROXY_PARTS / "gateway_proxy_par
 datas = [
     (str(PROXY), "."),
     (str(PROXY_PARTS / "gateway_proxy_parts.enc"), "gateway_proxy_parts"),
-    (str(PROXY_PARTS / "bundle_crypto.py"), "gateway_proxy_parts"),
     (str(PROXY_PARTS / "MANIFEST.txt"), "gateway_proxy_parts"),
     (str(CONFIG), "."),
 ]
@@ -52,6 +51,7 @@ hiddenimports = [
     "guard_platform",
     "guard_bootstrap",
     "gateway_agent",
+    "bundle_crypto",
     # Stdlib headroom so hot-updated Guard code can use these without a new EXE.
     "shlex", "runpy", "csv", "difflib", "glob", "fnmatch", "queue", "secrets", "hmac",
     "gzip", "tarfile", "plistlib", "sqlite3", "xml.etree.ElementTree", "http.server",
@@ -66,7 +66,7 @@ for pkg in ("pypdf", "PIL", "winrt", "mitmproxy", "mitmproxy_windows"):
 
 a = Analysis(
     [str(AGENT)],
-    pathex=[str(ROOT / "agent")],
+    pathex=[str(ROOT / "agent"), str(PROXY_PARTS)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

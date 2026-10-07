@@ -779,7 +779,8 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 		"rebuilt_at":    time.Now().UTC().Format(time.RFC3339),
 		"log":           logTail,
 		"message": "Guard packages published for version " + releaseVer +
-			". Windows and macOS employees with Guard installed (matching guard_secret) silent-update on the next auto-update check. " +
+			". The proxy engine in the update is the encrypted bundle only. " +
+			"Windows and macOS employees with Guard installed (matching guard_secret) silent-update on the next auto-update check. " +
 			bundleMsg,
 	}
 	status := "success"

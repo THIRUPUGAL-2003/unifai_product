@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -18,10 +19,9 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// Guard code bundle: the Guard's Python code (agent/*.py + the mitmproxy addon
-// browser_ai_proxy.py + gateway_proxy_parts) is published by Rebuild and installed
-// Guards switch to it without a new installer (guard_bootstrap loads it). Only new
-// Python packages, runtime upgrades or installer changes need a new EXE/.app build.
+// Guard code bundle: agent/*.py, the proxy loader, and gateway_proxy_parts.enc
+// are published by Rebuild. Plain proxy part sources and bundle_crypto.py are
+// never included. Installed Guards switch to it without a new installer.
 
 const (
 	guardProxyEntry    = "browser_ai_proxy.py"
@@ -42,6 +42,40 @@ type guardProxyBundle struct {
 }
 
 var guardProxyBundleMu sync.Mutex
+
+// ensureProxyBundleEncrypted refreshes gateway_proxy_parts.enc from the proxy
+// sources when Python is available. Publish never falls back to plaintext parts.
+func ensureProxyBundleEncrypted(proxyDir string) error {
+	script := filepath.Join("apps", "browser-guard", "installer", "encrypt_proxy_bundle.py")
+	if _, err := os.Stat(script); err != nil {
+		script = filepath.Join(filepath.Dir(proxyDir), "installer", "encrypt_proxy_bundle.py")
+	}
+	if _, err := os.Stat(script); err != nil {
+		enc := filepath.Join(proxyDir, guardProxyPartsDir, "gateway_proxy_parts.enc")
+		if info, statErr := os.Stat(enc); statErr == nil && !info.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("encrypt_proxy_bundle.py not found and no encrypted bundle exists")
+	}
+	pythonBin, err := exec.LookPath("python")
+	if err != nil {
+		pythonBin, err = exec.LookPath("python3")
+	}
+	if err != nil {
+		enc := filepath.Join(proxyDir, guardProxyPartsDir, "gateway_proxy_parts.enc")
+		if info, statErr := os.Stat(enc); statErr == nil && !info.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("python is required to encrypt the proxy bundle: %w", err)
+	}
+	cmd := exec.Command(pythonBin, script)
+	cmd.Dir = "."
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("encrypt proxy bundle: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
 
 func guardProxySourceDir() (string, bool) {
 	for _, dir := range []string{
@@ -84,16 +118,15 @@ func guardProxyBundleStoreDir() string {
 // (proxy code only).
 func buildGuardProxyBundle(proxyDir, agentDir string) ([]byte, int, error) {
 	sources := map[string]string{guardProxyEntry: filepath.Join(proxyDir, guardProxyEntry)}
-	entries, err := os.ReadDir(filepath.Join(proxyDir, guardProxyPartsDir))
-	if err != nil {
-		return nil, 0, err
+	partsDir := filepath.Join(proxyDir, guardProxyPartsDir)
+	encPath := filepath.Join(partsDir, "gateway_proxy_parts.enc")
+	if info, err := os.Stat(encPath); err != nil || info.IsDir() {
+		return nil, 0, fmt.Errorf("encrypted proxy bundle missing at %s; refusing to publish plaintext proxy sources", encPath)
 	}
-	for _, e := range entries {
-		n := e.Name()
-		if e.IsDir() || !(strings.HasSuffix(n, ".py") || n == "MANIFEST.txt") {
-			continue
-		}
-		sources[guardProxyPartsDir+"/"+n] = filepath.Join(proxyDir, guardProxyPartsDir, n)
+	sources[guardProxyPartsDir+"/gateway_proxy_parts.enc"] = encPath
+	manifestPath := filepath.Join(partsDir, "MANIFEST.txt")
+	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
+		sources[guardProxyPartsDir+"/MANIFEST.txt"] = manifestPath
 	}
 	if agentDir != "" {
 		entries, err := os.ReadDir(agentDir)
@@ -166,6 +199,9 @@ func publishGuardProxyBundle() (*guardProxyBundle, error) {
 	agentSrc, agentOK := guardAgentSourceDir()
 	if !agentOK {
 		return nil, fmt.Errorf("Guard agent sources not found on server (apps/browser-guard/agent or /app/guard-agent)")
+	}
+	if err := ensureProxyBundleEncrypted(src); err != nil {
+		return nil, err
 	}
 	data, files, err := buildGuardProxyBundle(src, agentSrc)
 	if err != nil {
